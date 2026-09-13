@@ -20,11 +20,46 @@ FooterBar::FooterBar()
     bpmUnitLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     bpmUnitLabel.setJustificationType (juce::Justification::centred);
 
-    // Visual only -- no tap-tempo timing logic yet, see class doc comment.
     addAndMakeVisible (tapButton);
+    tapButton.onClick = [this] { tapTempo(); };
 
     setLevels (0.0f, 0.0f);
     setTuning ("--", 0.0f);
+}
+
+void FooterBar::tapTempo()
+{
+    const double now = juce::Time::getMillisecondCounterHiRes();
+
+    if (lastTapMs > 0.0)
+    {
+        const double interval = now - lastTapMs;
+
+        // Sane tempo range (20-300 BPM) -- anything outside it is either
+        // an accidental double-click or such a long pause that it can't
+        // plausibly be "the next beat" in the same tapping sequence, so
+        // start a fresh average instead of blending it into the old one.
+        if (interval >= 200.0 && interval <= 3000.0)
+        {
+            recentTapIntervalsMs.push_back (interval);
+            if (recentTapIntervalsMs.size() > 8)
+                recentTapIntervalsMs.erase (recentTapIntervalsMs.begin());
+
+            double sum = 0.0;
+            for (double ms : recentTapIntervalsMs)
+                sum += ms;
+            const double averageIntervalMs = sum / (double) recentTapIntervalsMs.size();
+
+            bpm = 60000.0 / averageIntervalMs;
+            bpmValueLabel.setText (juce::String (juce::roundToInt (bpm)), juce::dontSendNotification);
+        }
+        else
+        {
+            recentTapIntervalsMs.clear();
+        }
+    }
+
+    lastTapMs = now;
 }
 
 void FooterBar::setLevels (float inLevelIn, float outLevelIn)

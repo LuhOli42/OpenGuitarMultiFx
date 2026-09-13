@@ -21,7 +21,7 @@ This is explicitly a **dev-facing chain builder pulled forward from Phase 7**, n
 | App font (Sora, embedded) | `OpenGuitarMultiFxLookAndFeel.{h,cpp}`, `Assets/Fonts/` |
 | Settings screen (despite the filename) | `Tone3000Panel.{h,cpp}` — general Settings, TONE3000 account is just its first section |
 | Effect icon reference (categories/colours/glyphs) | `../../docs/icons/AGENT-icon-notes.md` — read before adding any icon |
-| Bottom bar (tuner/BPM-tap/IN-OUT meters) | `FooterBar.{h,cpp}` — tuner + IN/OUT meters fed real audio since Phase 5 (`MainComponent::timerCallback()` → `setLevels()`/`setTuning()`); BPM/tap-tempo is still a visual-only placeholder |
+| Bottom bar (tuner/BPM-tap/IN-OUT meters) | `FooterBar.{h,cpp}` — all three are real (Phase 5): tuner + IN/OUT meters fed from `AudioEngine` via `MainComponent::timerCallback()`; tap-tempo is self-contained wall-clock timing inside `FooterBar` itself, no audio thread involved |
 
 ### Key Relationships
 - `MainComponent` owns `chain` (`vector<unique_ptr<EffectProcessor>>`) and `blocks` (`OwnedArray<EffectBlockComponent>`) as two parallel arrays — any reorder must move both in lockstep (see Pitfalls).
@@ -69,6 +69,8 @@ Block removed → moved into `graveyard` (NOT destroyed) until the old SignalGra
 | Output routing = real hardware channel pairs, queried live | See `Source/Engine/AGENTS.md` — same decision, UI consequence is the row endpoint menus never hardcode a channel list | Abstract stereo/L/R selector |
 | Every former OS popup → `OverlayHost` card | Standalone touchscreen device has no window manager; "open another window" isn't a pedalboard mental model | `juce::DialogWindow`/`DocumentWindow` per popup |
 | `FooterBar`'s tuner/meters wired to real audio (Phase 5): `setMockLevels`/`setMockTuning` renamed to `setLevels`/`setTuning`, fed from `AudioEngine::getInputLevel()`/`getOutputLevel()`/`getDetectedFrequencyHz()` in `MainComponent::timerCallback()`, which was bumped from 200ms to 50ms for a responsive needle/meters | The Phase 5 roadmap item this whole placeholder was reserving space for — see `Source/Engine/AGENTS.md` for the `PitchDetector`/level-metering DSP itself. `FooterBar` still doesn't know anything about audio; it only draws whatever numbers it's given | A separate faster timer just for the footer (unnecessary complexity — the other timer jobs are cheap enough to just run more often too) |
+| Tap-tempo computed entirely inside `FooterBar` (`tapButton.onClick` → `tapTempo()`), not bridged through `MainComponent`/`AudioEngine` | Unlike the tuner/meters, BPM only needs wall-clock time between button presses — there's no audio-thread state to bridge, so routing it through the same telemetry path as the others would be pure indirection | Exposing it via the same `setX()` hook pattern as levels/tuning for consistency |
+| A tap-interval outside 200-3000ms (20-300 BPM) resets the running average instead of blending into it | An implausibly long or short gap almost certainly isn't "the next beat" of the same tapping session — averaging it in would drag a stable tempo toward a stray click, e.g. one bumped from 120 toward 20 by an accidental double-tap | Clamping the outlier interval into the average instead of discarding it |
 
 ## Entry Points
 | Task | Start Here |

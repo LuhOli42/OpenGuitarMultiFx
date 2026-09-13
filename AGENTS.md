@@ -33,7 +33,7 @@ Hardware + software guitar pedalboard for live use, not a demo. **Two-legged str
 | 2 — Delay + Reverb | done (all 14 non-Looper sheet variants shipped; `Looper` deferred to Phase 5's looper/tuner/MIDI work) |
 | 3 — Modulation | done (all 8 sheet variants shipped: `TremoloProcessor`, `ChorusProcessor`, `VibratoProcessor`, `FlangerProcessor`, `PhaserProcessor`, `RotaryProcessor`, `UniVibeProcessor`, `PitchModProcessor`) |
 | 4 — Pitch | done (`PitchShiftProcessor`, `OctaverProcessor`, `HarmonizerProcessor` shipped -- covers the sheet's Octaver/Pitch Shift/Harmonizer trio; "detune" from ARCHITECTURE.md's phase description is just PitchShiftProcessor/HarmonizerProcessor at a small semitone value, not a separate class) |
-| 5 — Looper, tuner, MIDI, advanced routing | in progress (`LooperProcessor` done -- a single-footswitch-style looper via an edge-detected `Trigger`/`Clear` float-as-button pair, same convention as `HoldProcessor`; tuner + IN/OUT level meters done -- `PitchDetector` (YIN) + peak metering in `AudioEngine`, wired to `FooterBar`'s real gauge/bars; MIDI, expression pedal, and advanced routing remain) |
+| 5 — Looper, tuner, MIDI, advanced routing | in progress (`LooperProcessor` done -- a single-footswitch-style looper via an edge-detected `Trigger`/`Clear` float-as-button pair, same convention as `HoldProcessor`; tuner + IN/OUT level meters done -- `PitchDetector` (YIN) + peak metering in `AudioEngine`, wired to `FooterBar`'s real gauge/bars; tap-tempo/BPM done -- self-contained wall-clock timing in `FooterBar`, no audio thread involved; MIDI, expression pedal, and advanced routing remain) |
 | 6 — Port to Radxa Cubie A7S | not started |
 | 7 — Full touch UI | not started |
 | 8–10 — Footswitches, PCB, final validation | not started |
