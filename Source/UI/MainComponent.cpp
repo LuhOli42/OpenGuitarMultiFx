@@ -1058,9 +1058,29 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
         blockXml->addChildElement (p->getState().release());
     }
 
-    auto* ioXml = xml->createNewChildElement ("IO");
-    ioXml->setAttribute ("inputChannel", audioEngine.getInputChannel());
-    ioXml->setAttribute ("outputPairStart", audioEngine.getOutputChannelPair());
+    // The FULL per-row routing (device I/O, splits, merges), not just a
+    // single global in/out pair -- see the class-level bug this fixes:
+    // presets used to only restore row 0's device input/output, silently
+    // discarding every other row's routing entirely, INCLUDING the split/
+    // merge configurations Phase 5's SignalGraph rewrite exists to run
+    // (see Source/Engine/AGENTS.md). A saved 3-row merge preset used to
+    // reload as three disconnected, silent rows.
+    auto* routingXml = xml->createNewChildElement ("Routing");
+    for (int row = 0; row < numRows; ++row)
+    {
+        const auto& r = rowRouting[(size_t) row];
+        auto* rowXml = routingXml->createNewChildElement ("Row");
+        rowXml->setAttribute ("index", row);
+        rowXml->setAttribute ("inputChannel", r.inputChannel);
+        rowXml->setAttribute ("toDevice", r.toDevice);
+        rowXml->setAttribute ("deviceOutputPair", r.deviceOutputPair);
+
+        int toRowsMask = 0;
+        for (int target = 0; target < numRows; ++target)
+            if (r.toRows[(size_t) target])
+                toRowsMask |= (1 << target);
+        rowXml->setAttribute ("toRowsMask", toRowsMask);
+    }
 
     return xml;
 }
@@ -1103,8 +1123,38 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         blocks.add (block.release());
     }
 
-    if (auto* ioXml = xml.getChildByName ("IO"))
+    for (auto& r : rowRouting)
+        r = RowRouting {};
+
+    if (auto* routingXml = xml.getChildByName ("Routing"))
     {
+        // Current format: every row's full routing, splits/merges included.
+        for (auto* rowXml : routingXml->getChildIterator())
+        {
+            const int row = rowXml->getIntAttribute ("index", -1);
+            if (row < 0 || row >= numRows)
+                continue; // a future build with more rows than this one understands -- skip, don't fail the load
+
+            auto& r = rowRouting[(size_t) row];
+            r.inputChannel = rowXml->getIntAttribute ("inputChannel", -1);
+            r.toDevice = rowXml->getBoolAttribute ("toDevice", false);
+            r.deviceOutputPair = rowXml->getIntAttribute ("deviceOutputPair", 0);
+
+            const int toRowsMask = rowXml->getIntAttribute ("toRowsMask", 0);
+            for (int target = 0; target < numRows; ++target)
+                r.toRows[(size_t) target] = (toRowsMask & (1 << target)) != 0;
+
+            if (r.inputChannel >= 0)
+                audioEngine.setInputChannel (r.inputChannel);
+            if (r.toDevice)
+                audioEngine.setOutputChannelPair (r.deviceOutputPair);
+        }
+    }
+    else if (auto* ioXml = xml.getChildByName ("IO"))
+    {
+        // Older preset format (saved before per-row routing existed): just
+        // row 0 wired straight device-in to device-out, same behaviour
+        // those presets always had.
         const int inCh = ioXml->getIntAttribute ("inputChannel", 0);
         const int outPair = ioXml->getIntAttribute ("outputPairStart", 0);
         audioEngine.setInputChannel (inCh);
@@ -1114,6 +1164,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         rowRouting[0].deviceOutputPair = outPair;
     }
 
+    refreshRowEndpoints();
     rebuildSignalGraph();
     layoutChain();
 }
