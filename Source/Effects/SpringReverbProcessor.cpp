@@ -88,7 +88,8 @@ void SpringReverbProcessor::process (juce::AudioBuffer<float>& buffer)
             const float bufferOut = c.buffer[(size_t) c.pos];
             c.lowpassState = bufferOut * (1.0f - dampCoeff) + c.lowpassState * dampCoeff;
             c.buffer[(size_t) c.pos] = allpassOut + c.lowpassState * decayAmount;
-            c.pos = (c.pos + 1) % (int) c.buffer.size();
+            if (++c.pos >= (int) c.buffer.size())
+                c.pos = 0;
 
             data[i] = input * (1.0f - wet) + bufferOut * wet;
         }

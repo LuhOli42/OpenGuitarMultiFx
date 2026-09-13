@@ -3,6 +3,8 @@
 
 #include <IconData.h>
 
+#include <array>
+
 namespace openguitarmultifx
 {
 
@@ -59,11 +61,20 @@ void CompressorProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
 
+    // Caching the write pointer once per channel avoids the bounds-checked
+    // indirection getSample()/setSample() would otherwise do on every one of
+    // these hot per-sample accesses. Capped at 2 (mono/stereo) -- same
+    // per-channel-state convention AnalogDelayProcessor's filterState uses.
+    std::array<float*, 2> channelData {};
+    const int cachedChannels = juce::jmin (numChannels, 2);
+    for (int ch = 0; ch < cachedChannels; ++ch)
+        channelData[(size_t) ch] = buffer.getWritePointer (ch);
+
     for (int i = 0; i < numSamples; ++i)
     {
         float peak = 0.0f;
-        for (int ch = 0; ch < numChannels; ++ch)
-            peak = juce::jmax (peak, std::abs (buffer.getSample (ch, i)));
+        for (int ch = 0; ch < cachedChannels; ++ch)
+            peak = juce::jmax (peak, std::abs (channelData[(size_t) ch][i]));
 
         const float envelope = detector.processSample (peak);
         const float envelopeDb = juce::Decibels::gainToDecibels (envelope, -100.0f);
@@ -75,8 +86,8 @@ void CompressorProcessor::process (juce::AudioBuffer<float>& buffer)
 
         const float gainLinear = juce::Decibels::decibelsToGain (gainDb);
 
-        for (int ch = 0; ch < numChannels; ++ch)
-            buffer.setSample (ch, i, buffer.getSample (ch, i) * gainLinear);
+        for (int ch = 0; ch < cachedChannels; ++ch)
+            channelData[(size_t) ch][i] *= gainLinear;
     }
 }
 

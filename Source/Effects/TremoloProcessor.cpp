@@ -3,6 +3,7 @@
 
 #include <IconData.h>
 
+#include <array>
 #include <cmath>
 
 namespace openguitarmultifx
@@ -49,14 +50,19 @@ void TremoloProcessor::process (juce::AudioBuffer<float>& buffer)
     const double phaseIncrement = twoPi * (double) rateHz->get() / currentSampleRate;
     const float depthAmount = depth->get();
 
+    std::array<float*, 2> channelData {};
+    const int cachedChannels = juce::jmin (numChannels, 2);
+    for (int ch = 0; ch < cachedChannels; ++ch)
+        channelData[(size_t) ch] = buffer.getWritePointer (ch);
+
     for (int i = 0; i < numSamples; ++i)
     {
         // Oscillates between (1-depth) and 1.0 -- full depth reaches
         // silence at the trough, zero depth leaves the signal untouched.
         const float gain = 1.0f - depthAmount * 0.5f * (1.0f - (float) std::cos (lfoPhase));
 
-        for (int ch = 0; ch < numChannels; ++ch)
-            buffer.setSample (ch, i, buffer.getSample (ch, i) * gain);
+        for (int ch = 0; ch < cachedChannels; ++ch)
+            channelData[(size_t) ch][i] *= gain;
 
         lfoPhase += phaseIncrement;
         if (lfoPhase >= twoPi)

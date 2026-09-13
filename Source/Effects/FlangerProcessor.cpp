@@ -77,7 +77,7 @@ void FlangerProcessor::process (juce::AudioBuffer<float>& buffer)
             readPos += (float) bufferLength;
 
         const int readIndex0 = (int) readPos;
-        const int readIndex1 = (readIndex0 + 1) % bufferLength;
+        const int readIndex1 = (readIndex0 + 1 >= bufferLength) ? 0 : readIndex0 + 1;
         const float frac = readPos - (float) readIndex0;
 
         for (int ch = 0; ch < numChannels; ++ch)
@@ -92,7 +92,8 @@ void FlangerProcessor::process (juce::AudioBuffer<float>& buffer)
             data[i] = input * (1.0f - wet) + delayed * wet;
         }
 
-        writePos = (writePos + 1) % bufferLength;
+        if (++writePos >= bufferLength)
+            writePos = 0;
         lfoPhase += phaseIncrement;
         if (lfoPhase >= twoPi)
             lfoPhase -= twoPi;

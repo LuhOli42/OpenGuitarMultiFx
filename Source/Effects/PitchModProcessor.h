@@ -76,7 +76,7 @@ private:
             while (readPos < 0.0f)
                 readPos += (float) bufferSize;
             const int i0 = (int) readPos;
-            const int i1 = (i0 + 1) % bufferSize;
+            const int i1 = (i0 + 1 >= bufferSize) ? 0 : i0 + 1;
             const float frac = readPos - (float) i0;
             return buffer[(size_t) i0] + frac * (buffer[(size_t) i1] - buffer[(size_t) i0]);
         }
@@ -101,7 +101,8 @@ private:
             else if (delayB >= grainSamples)
                 delayB -= grainSamples;
 
-            writePos = (writePos + 1) % bufferSize;
+            if (++writePos >= bufferSize)
+                writePos = 0;
             return outA + outB;
         }
     };

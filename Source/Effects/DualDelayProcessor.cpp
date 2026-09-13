@@ -81,28 +81,40 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
 
+        // Read position/fraction depend only on each tap's own writePos/
+        // delaySamples/bufferLength, not on channel -- computed once per tap
+        // here instead of once per (channel, tap), halving this math for
+        // stereo.
+        const std::array<float, 2> delaySamples { delaySamplesA, delaySamplesB };
+        std::array<int, 2> readIndex0 {};
+        std::array<int, 2> readIndex1 {};
+        std::array<float, 2> frac {};
+
+        for (size_t t = 0; t < taps.size(); ++t)
+        {
+            float readPos = (float) taps[t].writePos - delaySamples[t];
+            while (readPos < 0.0f)
+                readPos += (float) bufferLength;
+
+            readIndex0[t] = (int) readPos;
+            readIndex1[t] = readIndex0[t] + 1;
+            if (readIndex1[t] >= bufferLength)
+                readIndex1[t] = 0;
+            frac[t] = readPos - (float) readIndex0[t];
+        }
+
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* data = buffer.getWritePointer (ch);
             const float input = data[i];
             float wetSum = 0.0f;
 
-            const std::array<float, 2> delaySamples { delaySamplesA, delaySamplesB };
-
             for (size_t t = 0; t < taps.size(); ++t)
             {
                 auto& tap = taps[t];
                 auto* tapData = tap.buffer.getWritePointer (ch);
 
-                float readPos = (float) tap.writePos - delaySamples[t];
-                while (readPos < 0.0f)
-                    readPos += (float) bufferLength;
-
-                const int readIndex0 = (int) readPos;
-                const int readIndex1 = (readIndex0 + 1) % bufferLength;
-                const float frac = readPos - (float) readIndex0;
-
-                const float delayed = tapData[readIndex0] + frac * (tapData[readIndex1] - tapData[readIndex0]);
+                const float delayed = tapData[readIndex0[t]] + frac[t] * (tapData[readIndex1[t]] - tapData[readIndex0[t]]);
                 tapData[tap.writePos] = input + fb * delayed;
                 wetSum += delayed;
             }
@@ -111,7 +123,8 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         }
 
         for (auto& tap : taps)
-            tap.writePos = (tap.writePos + 1) % bufferLength;
+            if (++tap.writePos >= bufferLength)
+                tap.writePos = 0;
     }
 }
 

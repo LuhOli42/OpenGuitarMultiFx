@@ -79,7 +79,8 @@ private:
             const float output = buffer[(size_t) pos];
             filterStore = output * damp2 + filterStore * damp1;
             buffer[(size_t) pos] = input + filterStore * feedback + shiftedSample * shimmerGain;
-            pos = (pos + 1) % (int) buffer.size();
+            if (++pos >= (int) buffer.size())
+                pos = 0;
             return output;
         }
     };
@@ -103,7 +104,8 @@ private:
             const float bufOut = buffer[(size_t) pos];
             const float output = -input + bufOut;
             buffer[(size_t) pos] = input + bufOut * feedback;
-            pos = (pos + 1) % (int) buffer.size();
+            if (++pos >= (int) buffer.size())
+                pos = 0;
             return output;
         }
     };
@@ -146,7 +148,7 @@ private:
             while (readPos < 0.0f)
                 readPos += (float) bufferSize;
             const int i0 = (int) readPos;
-            const int i1 = (i0 + 1) % bufferSize;
+            const int i1 = (i0 + 1 >= bufferSize) ? 0 : i0 + 1;
             const float frac = readPos - (float) i0;
             return buffer[(size_t) i0] + frac * (buffer[(size_t) i1] - buffer[(size_t) i0]);
         }
@@ -165,7 +167,8 @@ private:
             if (delayB <= 0.0f)
                 delayB += grainSamples;
 
-            writePos = (writePos + 1) % bufferSize;
+            if (++writePos >= bufferSize)
+                writePos = 0;
             return outA + outB;
         }
     };

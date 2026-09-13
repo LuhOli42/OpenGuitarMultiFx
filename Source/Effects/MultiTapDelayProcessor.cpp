@@ -77,6 +77,28 @@ void MultiTapDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
 
+        // Read position/fraction depend only on writePos/baseDelaySamples/
+        // bufferLength, not on channel -- computed once per tap here instead
+        // of once per (channel, tap), halving this math for stereo.
+        std::array<int, numTaps> readIndex0 {};
+        std::array<int, numTaps> readIndex1 {};
+        std::array<float, numTaps> frac {};
+
+        for (int t = 0; t < numTaps; ++t)
+        {
+            const float delaySamples = baseDelaySamples * tapRatios[(size_t) t];
+
+            float readPos = (float) writePos - delaySamples;
+            while (readPos < 0.0f)
+                readPos += (float) bufferLength;
+
+            readIndex0[(size_t) t] = (int) readPos;
+            readIndex1[(size_t) t] = readIndex0[(size_t) t] + 1;
+            if (readIndex1[(size_t) t] >= bufferLength)
+                readIndex1[(size_t) t] = 0;
+            frac[(size_t) t] = readPos - (float) readIndex0[(size_t) t];
+        }
+
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* data = buffer.getWritePointer (ch);
@@ -88,18 +110,10 @@ void MultiTapDelayProcessor::process (juce::AudioBuffer<float>& buffer)
 
             for (int t = 0; t < numTaps; ++t)
             {
-                const float delaySamples = baseDelaySamples * tapRatios[(size_t) t];
-
-                float readPos = (float) writePos - delaySamples;
-                while (readPos < 0.0f)
-                    readPos += (float) bufferLength;
-
-                const int readIndex0 = (int) readPos;
-                const int readIndex1 = (readIndex0 + 1) % bufferLength;
-                const float frac = readPos - (float) readIndex0;
-
-                const float delayed = delayData[readIndex0] + frac * (delayData[readIndex1] - delayData[readIndex0]);
-                tapSum += delayed * tapLevels[(size_t) t];
+                const size_t st = (size_t) t;
+                const float delayed = delayData[readIndex0[st]]
+                    + frac[st] * (delayData[readIndex1[st]] - delayData[readIndex0[st]]);
+                tapSum += delayed * tapLevels[st];
 
                 if (t == numTaps - 1)
                     longestTapDelayed = delayed;
@@ -109,7 +123,8 @@ void MultiTapDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             data[i] = input * (1.0f - wet) + (tapSum / totalTapLevel) * wet;
         }
 
-        writePos = (writePos + 1) % bufferLength;
+        if (++writePos >= bufferLength)
+            writePos = 0;
     }
 }
 

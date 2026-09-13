@@ -24,16 +24,23 @@ public:
         updateCoefficients();
     }
 
+    // Callers (Gate/CompressorProcessor) call these unconditionally every
+    // block even when the knob hasn't moved -- skip the std::exp() in
+    // calcCoeff() when the time genuinely hasn't changed since last time.
     void setAttackTime (float milliseconds) noexcept
     {
+        if (milliseconds == attackMs)
+            return;
         attackMs = milliseconds;
-        updateCoefficients();
+        attackCoeff = calcCoeff (attackMs);
     }
 
     void setReleaseTime (float milliseconds) noexcept
     {
+        if (milliseconds == releaseMs)
+            return;
         releaseMs = milliseconds;
-        updateCoefficients();
+        releaseCoeff = calcCoeff (releaseMs);
     }
 
     void reset (float startingValue = 0.0f) noexcept { envelope = startingValue; }

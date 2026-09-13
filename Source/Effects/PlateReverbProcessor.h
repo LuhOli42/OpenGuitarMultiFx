@@ -54,7 +54,8 @@ private:
             const float bufOut = buffer[(size_t) pos];
             const float output = -input + bufOut;
             buffer[(size_t) pos] = input + bufOut * feedback;
-            pos = (pos + 1) % (int) buffer.size();
+            if (++pos >= (int) buffer.size())
+                pos = 0;
             return output;
         }
     };
@@ -81,7 +82,8 @@ private:
         void writeAndAdvance (float valueToStore) noexcept
         {
             buffer[(size_t) pos] = valueToStore;
-            pos = (pos + 1) % (int) buffer.size();
+            if (++pos >= (int) buffer.size())
+                pos = 0;
         }
     };
 

@@ -105,6 +105,10 @@ void GatedReverbProcessor::process (juce::AudioBuffer<float>& buffer)
         for (auto& c : bank)
             c.feedback = feedback;
 
+    std::array<const float*, 2> channelReadData {};
+    for (int ch = 0; ch < numChannels; ++ch)
+        channelReadData[(size_t) ch] = buffer.getReadPointer (ch);
+
     for (int i = 0; i < numSamples; ++i)
     {
         // Trigger off the loudest channel's dry input -- the same
@@ -112,7 +116,7 @@ void GatedReverbProcessor::process (juce::AudioBuffer<float>& buffer)
         // pluck on one channel still opens the gate.
         float peak = 0.0f;
         for (int ch = 0; ch < numChannels; ++ch)
-            peak = juce::jmax (peak, std::abs (buffer.getSample (ch, i)));
+            peak = juce::jmax (peak, std::abs (channelReadData[(size_t) ch][i]));
 
         const float detected = inputDetector.processSample (peak);
         if (detected >= thresholdLinear)

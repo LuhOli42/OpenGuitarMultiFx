@@ -32,6 +32,7 @@ public:
 
 private:
     static constexpr float maxDelayMs = 2000.0f;
+    static constexpr float saturationDrive = 1.4f; // tanh() input gain on the feedback path
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* timeMs = nullptr;

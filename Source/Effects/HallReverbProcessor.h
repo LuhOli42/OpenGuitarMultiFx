@@ -58,7 +58,8 @@ private:
             const float output = buffer[(size_t) pos];
             filterStore = output * damp2 + filterStore * damp1;
             buffer[(size_t) pos] = input + filterStore * feedback;
-            pos = (pos + 1) % (int) buffer.size();
+            if (++pos >= (int) buffer.size())
+                pos = 0;
             return output;
         }
     };
@@ -82,7 +83,8 @@ private:
             const float bufOut = buffer[(size_t) pos];
             const float output = -input + bufOut;
             buffer[(size_t) pos] = input + bufOut * feedback;
-            pos = (pos + 1) % (int) buffer.size();
+            if (++pos >= (int) buffer.size())
+                pos = 0;
             return output;
         }
     };

@@ -57,7 +57,8 @@ private:
             const float delayed = buffer[(size_t) pos];
             const float y = -feedback * x + delayed;
             buffer[(size_t) pos] = x + feedback * y;
-            pos = (pos + 1) % (int) buffer.size();
+            if (++pos >= (int) buffer.size())
+                pos = 0;
             return y;
         }
     };

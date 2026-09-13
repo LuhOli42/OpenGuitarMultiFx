@@ -77,13 +77,17 @@ void PlateReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     const float damp2 = tone->get();
     const float wet = mix->get();
 
+    std::array<float*, 2> channelData {};
+    for (int ch = 0; ch < numChannels; ++ch)
+        channelData[(size_t) ch] = buffer.getWritePointer (ch);
+
     for (int i = 0; i < numSamples; ++i)
     {
         std::array<float, 2> diffused { 0.0f, 0.0f };
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
-            float value = buffer.getSample (ch, i);
+            float value = channelData[(size_t) ch][i];
             for (auto& stage : diffuser[(size_t) ch])
                 value = stage.process (value);
             diffused[(size_t) ch] = value;
@@ -110,8 +114,8 @@ void PlateReverbProcessor::process (juce::AudioBuffer<float>& buffer)
         for (int ch = 0; ch < numChannels; ++ch)
         {
             const float wetSample = ch == 0 ? outA : outB;
-            const float input = buffer.getSample (ch, i);
-            buffer.setSample (ch, i, input * (1.0f - wet) + wetSample * wet);
+            const float input = channelData[(size_t) ch][i];
+            channelData[(size_t) ch][i] = input * (1.0f - wet) + wetSample * wet;
         }
     }
 }

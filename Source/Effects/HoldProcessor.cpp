@@ -3,6 +3,8 @@
 
 #include <IconData.h>
 
+#include <array>
+
 namespace openguitarmultifx
 {
 
@@ -67,18 +69,30 @@ void HoldProcessor::process (juce::AudioBuffer<float>& buffer)
     }
     wasHeld = isHeld;
 
+    std::array<float*, 2> ioData {};
+    std::array<float*, 2> loopData {};
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        ioData[(size_t) ch] = buffer.getWritePointer (ch);
+        loopData[(size_t) ch] = circularBuffer.getWritePointer (ch);
+    }
+
     for (int i = 0; i < numSamples; ++i)
     {
         if (isHeld)
         {
-            const int readIndex = (loopStartPos + loopOffset) % bufferLength;
+            // loopStartPos and loopOffset are each individually < bufferLength,
+            // so their sum needs at most one wraparound subtraction.
+            int readIndex = loopStartPos + loopOffset;
+            if (readIndex >= bufferLength)
+                readIndex -= bufferLength;
             for (int ch = 0; ch < numChannels; ++ch)
             {
-                auto* data = buffer.getWritePointer (ch);
-                const float wet = circularBuffer.getSample (ch, readIndex);
-                data[i] = data[i] * (1.0f - wetAmount) + wet * wetAmount;
+                const float wet = loopData[(size_t) ch][readIndex];
+                ioData[(size_t) ch][i] = ioData[(size_t) ch][i] * (1.0f - wetAmount) + wet * wetAmount;
             }
-            loopOffset = (loopOffset + 1) % frozenLoopLengthSamples;
+            if (++loopOffset >= frozenLoopLengthSamples)
+                loopOffset = 0;
         }
         else
         {
@@ -86,8 +100,9 @@ void HoldProcessor::process (juce::AudioBuffer<float>& buffer)
             // untouched), just continuously recording what a rising edge
             // would capture (see class doc comment).
             for (int ch = 0; ch < numChannels; ++ch)
-                circularBuffer.setSample (ch, writePos, buffer.getSample (ch, i));
-            writePos = (writePos + 1) % bufferLength;
+                loopData[(size_t) ch][writePos] = ioData[(size_t) ch][i];
+            if (++writePos >= bufferLength)
+                writePos = 0;
         }
     }
 }

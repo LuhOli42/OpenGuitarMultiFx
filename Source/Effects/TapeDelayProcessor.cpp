@@ -87,7 +87,7 @@ void TapeDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             readPos += (float) bufferLength;
 
         const int readIndex0 = (int) readPos;
-        const int readIndex1 = (readIndex0 + 1) % bufferLength;
+        const int readIndex1 = (readIndex0 + 1 >= bufferLength) ? 0 : readIndex0 + 1;
         const float frac = readPos - (float) readIndex0;
 
         for (int ch = 0; ch < numChannels; ++ch)
@@ -102,13 +102,18 @@ void TapeDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             // output -- successive repeats warm up and compress the way a
             // physical tape's repeated print-throughs do, without coloring
             // the very first (loudest, most audible) echo as heavily.
-            const float saturatedFeedback = std::tanh (delayed * saturationDrive) / std::tanh (saturationDrive);
+            // std::tanh (saturationDrive) is invariant for the process's whole
+            // lifetime -- a `static const` computes it once instead of every
+            // sample x channel via a full libm call.
+            static const float invTanhDrive = 1.0f / std::tanh (saturationDrive);
+            const float saturatedFeedback = std::tanh (delayed * saturationDrive) * invTanhDrive;
             delayData[writePos] = input + fb * saturatedFeedback;
 
             data[i] = input * (1.0f - wet) + delayed * wet;
         }
 
-        writePos = (writePos + 1) % bufferLength;
+        if (++writePos >= bufferLength)
+            writePos = 0;
     }
 }
 

@@ -82,16 +82,21 @@ void NAMProcessor::process (juce::AudioBuffer<float>& buffer)
     const float inGain = juce::Decibels::decibelsToGain (inputGainDb->get());
     const float outGain = juce::Decibels::decibelsToGain (outputGainDb->get());
 
+    const auto* inChannel = buffer.getReadPointer (0);
     for (int i = 0; i < numSamples; ++i)
-        inputScratch[(size_t) i] = buffer.getSample (0, i) * inGain;
+        inputScratch[(size_t) i] = inChannel[i] * inGain;
 
     float* inPtrs[1] = { inputScratch.data() };
     float* outPtrs[1] = { outputScratch.data() };
     model->process (inPtrs, outPtrs, numSamples);
 
+    // outputScratch * outGain is identical for every output channel -- scale
+    // once into itself, then copy, instead of redoing the multiply per channel.
+    for (int i = 0; i < numSamples; ++i)
+        outputScratch[(size_t) i] *= outGain;
+
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-        for (int i = 0; i < numSamples; ++i)
-            buffer.setSample (ch, i, outputScratch[(size_t) i] * outGain);
+        buffer.copyFrom (ch, 0, outputScratch.data(), numSamples);
 }
 
 std::unique_ptr<juce::XmlElement> NAMProcessor::getState() const

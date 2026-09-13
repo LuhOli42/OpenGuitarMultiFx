@@ -82,7 +82,7 @@ void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             readPos += (float) bufferLength;
 
         const int readIndex0 = (int) readPos;
-        const int readIndex1 = (readIndex0 + 1) % bufferLength;
+        const int readIndex1 = (readIndex0 + 1 >= bufferLength) ? 0 : readIndex0 + 1;
         const float frac = readPos - (float) readIndex0;
 
         const float delayedL = lineL[readIndex0] + frac * (lineL[readIndex1] - lineL[readIndex0]);
@@ -105,7 +105,8 @@ void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         left[i] = inputL * (1.0f - wet) + delayedL * wet;
         right[i] = inputR * (1.0f - wet) + delayedR * wet;
 
-        writePos = (writePos + 1) % bufferLength;
+        if (++writePos >= bufferLength)
+            writePos = 0;
     }
 }
 
