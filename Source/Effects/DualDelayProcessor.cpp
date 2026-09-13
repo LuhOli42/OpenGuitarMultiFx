@@ -25,6 +25,8 @@ DualDelayProcessor::DualDelayProcessor()
 
     timeA = timeAParam.get();
     timeB = timeBParam.get();
+    registerTempoSyncParam (timeA);
+    registerTempoSyncParam (timeB);
     feedback = fb.get();
     mix = mixParam.get();
 

@@ -21,6 +21,7 @@ PingPongDelayProcessor::PingPongDelayProcessor()
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
 
     timeMs = time.get();
+    registerTempoSyncParam (timeMs);
     feedback = fb.get();
     mix = mixParam.get();
 

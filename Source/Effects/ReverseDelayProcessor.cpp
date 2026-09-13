@@ -21,6 +21,7 @@ ReverseDelayProcessor::ReverseDelayProcessor()
     timeMs = time.get();
     feedback = fb.get();
     mix = mixParam.get();
+    registerTempoSyncParam (timeMs);
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "reversedelay", "Reverse Delay", "|",

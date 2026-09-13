@@ -76,8 +76,11 @@ public:
 private:
     void rebuildForCurrentProcessor();
     void browseInstalledModels();
+    void browseInstalledModelsForSlot (int slot);
     void openTone3000Search();
+    void openTone3000SearchForSlot (int slot);
     void showMidiLearnMenu (juce::AudioParameterFloat* param);
+    void cycleTempoSync (juce::AudioParameterFloat* param);
 
     EffectProcessor* current = nullptr;
     juce::File modelsDir;
@@ -119,6 +122,15 @@ private:
         std::unique_ptr<juce::Slider> slider;
         std::unique_ptr<LongPressLabel> label;
         juce::AudioParameterFloat* param = nullptr;
+
+        /** Only non-null for a param the processor registered via
+            registerTempoSyncParam() -- an always-visible small inline "ms"/
+            subdivision switch, per explicit user request (contrast with
+            MIDI Learn's long-press: this one was asked to stay visible,
+            "like a real pedal's mini-switch", not hidden). Tapping it
+            cycles ms -> 1/32 -> ... -> 1/1 -> ms, matching how a physical
+            multi-position selector switch steps -- no popup needed. */
+        std::unique_ptr<juce::TextButton> syncToggle;
     };
     std::vector<SliderRow> sliders;
 

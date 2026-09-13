@@ -61,7 +61,7 @@ public:
     void setState (const juce::XmlElement& state) override;
 
     bool wantsModelFile() const override { return true; }
-    void loadModelFile (const juce::File& file) override
+    void loadModelFile (const juce::File& file, int /*slotIndex*/) override
     {
         loadModel (std::filesystem::path (file.getFullPathName().toStdString()));
     }

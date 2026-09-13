@@ -61,7 +61,7 @@ public:
     // "model file" is a generic UI hook (see EffectProcessor) -- here it
     // means "IR file", not a neural model.
     bool wantsModelFile() const override { return true; }
-    void loadModelFile (const juce::File& file) override { loadImpulseResponse (file); }
+    void loadModelFile (const juce::File& file, int /*slotIndex*/) override { loadImpulseResponse (file); }
     juce::String getStatusText() const override
     {
         return hasImpulseResponse() ? "Loaded: " + loadedName : juce::String ("No IR loaded");

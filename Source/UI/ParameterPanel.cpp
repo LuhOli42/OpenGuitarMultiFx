@@ -6,6 +6,8 @@
 #include "TouchSizing.h"
 #include "../Tone3000/GearRouting.h"
 
+#include <algorithm>
+
 namespace openguitarmultifx
 {
 
@@ -27,6 +29,15 @@ namespace
     constexpr int knobCellWidth = 118;
     constexpr int knobCellHeight = 140;
     constexpr int knobDiameter = 90;
+
+    // Extra row height ONLY for a knob whose param registered for tempo
+    // sync (see EffectProcessor::registerTempoSyncParam()) -- most knobs
+    // don't have this, so cell height is computed per VISUAL grid row (the
+    // max over whichever knobs land in it), not a single global constant,
+    // to avoid reintroducing the "wasted space under every knob" MIDI
+    // Learn was corrected for (this toggle is deliberately visible by
+    // request, but only on the knobs that actually have it).
+    constexpr int syncToggleHeight = 22;
 }
 
 ParameterPanel::ParameterPanel()
@@ -69,6 +80,29 @@ void ParameterPanel::refresh()
     {
         statusLabel.setText (current->getStatusText(), juce::dontSendNotification);
         bypassToggle.setToggleState (current->isBypassed(), juce::dontSendNotification);
+
+        const auto& bindings = current->getTempoSyncBindings();
+        for (auto& row : sliders)
+        {
+            if (row.syncToggle == nullptr)
+                continue;
+
+            const auto it = std::find_if (bindings.begin(), bindings.end(),
+                [&row] (const TempoSyncBinding& b) { return b.param == row.param; });
+            if (it == bindings.end())
+                continue;
+
+            row.syncToggle->setButtonText (it->synced
+                ? juce::String (tempoSync::subdivisions[(size_t) it->subdivisionIndex].label)
+                : juce::String ("ms"));
+
+            // Synced: the knob just displays the BPM-computed ms value
+            // (MainComponent's timer keeps pushing it) -- disabled so a
+            // stray drag doesn't fight that every 50ms.
+            row.slider->setEnabled (! it->synced);
+            if (it->synced)
+                row.slider->setValue (row.param->get(), juce::dontSendNotification);
+        }
     }
 }
 
@@ -78,6 +112,8 @@ void ParameterPanel::rebuildForCurrentProcessor()
     {
         knobGridHost.removeChildComponent (row.slider.get());
         knobGridHost.removeChildComponent (row.label.get());
+        if (row.syncToggle != nullptr)
+            knobGridHost.removeChildComponent (row.syncToggle.get());
     }
     sliders.clear();
 
@@ -151,6 +187,18 @@ void ParameterPanel::rebuildForCurrentProcessor()
                     *floatParam = (float) rawSlider->getValue();
                 };
 
+                for (auto& binding : current->getTempoSyncBindings())
+                {
+                    if (binding.param != floatParam)
+                        continue;
+
+                    row.syncToggle = std::make_unique<juce::TextButton>();
+                    row.syncToggle->setColour (juce::TextButton::buttonColourId, accent.withAlpha (0.35f));
+                    row.syncToggle->onClick = [this, floatParam] { cycleTempoSync (floatParam); };
+                    knobGridHost.addAndMakeVisible (*row.syncToggle);
+                    break;
+                }
+
                 knobGridHost.addAndMakeVisible (*row.label);
                 knobGridHost.addAndMakeVisible (*row.slider);
                 sliders.push_back (std::move (row));
@@ -176,6 +224,32 @@ void ParameterPanel::browseInstalledModels()
     if (current == nullptr)
         return;
 
+    if (current->getModelSlotCount() > 1)
+    {
+        // Ask which slot before opening the browser at all -- a two-IR
+        // processor has no single obvious target, unlike every existing
+        // one-file processor this same button already serves.
+        juce::PopupMenu menu;
+        for (int i = 0; i < current->getModelSlotCount(); ++i)
+            menu.addItem (i + 1, "Load into: " + current->getModelSlotName (i));
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
+            [this] (int result)
+            {
+                if (result > 0)
+                    browseInstalledModelsForSlot (result - 1);
+            });
+        return;
+    }
+
+    browseInstalledModelsForSlot (0);
+}
+
+void ParameterPanel::browseInstalledModelsForSlot (int slot)
+{
+    if (current == nullptr)
+        return;
+
     const juce::String processorName (current->getName());
 
     // Every block only ever sees its OWN category subfolder -- a Neural
@@ -193,16 +267,19 @@ void ParameterPanel::browseInstalledModels()
     for (auto& f : folder.findChildFiles (juce::File::findFiles, false, wildcard))
         files.add (f);
 
-    auto dialog = std::make_unique<ModelListDialog> (processorName + " -- installed", files, folder, wildcard);
+    const auto dialogTitle = current->getModelSlotCount() > 1
+        ? processorName + " -- " + current->getModelSlotName (slot) + " -- installed"
+        : processorName + " -- installed";
+    auto dialog = std::make_unique<ModelListDialog> (dialogTitle, files, folder, wildcard);
 
-    dialog->onFileChosen = [this] (juce::File file)
+    dialog->onFileChosen = [this, slot] (juce::File file)
     {
         if (current == nullptr)
             return;
 
         try
         {
-            current->loadModelFile (file);
+            current->loadModelFile (file, slot);
             refresh();
         }
         catch (const std::exception& e)
@@ -215,6 +292,34 @@ void ParameterPanel::browseInstalledModels()
 
     if (onPushOverlay)
         onPushOverlay (std::move (dialog));
+}
+
+void ParameterPanel::cycleTempoSync (juce::AudioParameterFloat* param)
+{
+    if (current == nullptr)
+        return;
+
+    const auto& bindings = current->getTempoSyncBindings();
+    const auto it = std::find_if (bindings.begin(), bindings.end(),
+        [param] (const TempoSyncBinding& b) { return b.param == param; });
+    if (it == bindings.end())
+        return;
+
+    if (! it->synced)
+    {
+        current->setTempoSyncSubdivision (param, 0);
+        current->setTempoSyncEnabled (param, true);
+    }
+    else if (it->subdivisionIndex + 1 < tempoSync::numSubdivisions)
+    {
+        current->setTempoSyncSubdivision (param, it->subdivisionIndex + 1);
+    }
+    else
+    {
+        current->setTempoSyncEnabled (param, false);
+    }
+
+    refresh();
 }
 
 void ParameterPanel::showMidiLearnMenu (juce::AudioParameterFloat* param)
@@ -240,6 +345,29 @@ void ParameterPanel::openTone3000Search()
     if (current == nullptr || tone3000 == nullptr)
         return;
 
+    if (current->getModelSlotCount() > 1)
+    {
+        juce::PopupMenu menu;
+        for (int i = 0; i < current->getModelSlotCount(); ++i)
+            menu.addItem (i + 1, "Search for: " + current->getModelSlotName (i));
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
+            [this] (int result)
+            {
+                if (result > 0)
+                    openTone3000SearchForSlot (result - 1);
+            });
+        return;
+    }
+
+    openTone3000SearchForSlot (0);
+}
+
+void ParameterPanel::openTone3000SearchForSlot (int slot)
+{
+    if (current == nullptr || tone3000 == nullptr)
+        return;
+
     const juce::String processorName (current->getName());
     const auto gearFilter = tone3000routing::gearFilterForProcessorName (processorName);
     const auto subfolder = tone3000routing::subfolderForProcessorName (processorName);
@@ -247,14 +375,14 @@ void ParameterPanel::openTone3000Search()
 
     auto dialog = std::make_unique<Tone3000SearchDialog> (*tone3000, gearFilter, destinationFolder);
 
-    dialog->onFileReady = [this] (juce::File file)
+    dialog->onFileReady = [this, slot] (juce::File file)
     {
         if (current == nullptr)
             return;
 
         try
         {
-            current->loadModelFile (file);
+            current->loadModelFile (file, slot);
             refresh();
         }
         catch (const std::exception& e)
@@ -287,8 +415,19 @@ int ParameterPanel::getPreferredContentHeight (int availableWidth) const
 
     const int knobAreaWidth = juce::jmax (knobCellWidth, availableWidth - 20);
     const int columns = juce::jmax (1, knobAreaWidth / knobCellWidth);
-    const int rows = sliders.empty() ? 0 : (int) ((sliders.size() + (size_t) columns - 1) / (size_t) columns);
-    height += rows * knobCellHeight;
+
+    // Per VISUAL row, not a flat rows*knobCellHeight -- a row containing
+    // even one tempo-syncable knob needs the extra syncToggleHeight, and
+    // different visual rows can mix syncable and non-syncable knobs.
+    for (size_t start = 0; start < sliders.size(); start += (size_t) columns)
+    {
+        const size_t end = juce::jmin (sliders.size(), start + (size_t) columns);
+        int rowHeight = knobCellHeight;
+        for (size_t idx = start; idx < end; ++idx)
+            if (sliders[idx].syncToggle != nullptr)
+                rowHeight = juce::jmax (rowHeight, knobCellHeight + syncToggleHeight);
+        height += rowHeight;
+    }
     height += 6; // slack -- see above
 
     return height;
@@ -338,27 +477,35 @@ void ParameterPanel::resized()
     const int hostWidth = juce::jmax (knobCellWidth, knobViewport.getWidth());
     const int columns = juce::jmax (1, hostWidth / knobCellWidth);
 
-    int x = 0;
     int y = 0;
-    int col = 0;
 
-    for (auto& row : sliders)
+    for (size_t start = 0; start < sliders.size(); start += (size_t) columns)
     {
-        if (col >= columns)
+        const size_t end = juce::jmin (sliders.size(), start + (size_t) columns);
+
+        // This visual row's height is the max over whichever knobs land in
+        // it -- see getPreferredContentHeight()'s matching comment on why
+        // this can't just be a flat knobCellHeight per row.
+        int rowHeight = knobCellHeight;
+        for (size_t idx = start; idx < end; ++idx)
+            if (sliders[idx].syncToggle != nullptr)
+                rowHeight = juce::jmax (rowHeight, knobCellHeight + syncToggleHeight);
+
+        int x = 0;
+        for (size_t idx = start; idx < end; ++idx)
         {
-            col = 0;
-            x = 0;
-            y += knobCellHeight;
+            auto& row = sliders[idx];
+            row.label->setBounds (x, y, knobCellWidth, 22);
+            row.slider->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter + 28);
+            if (row.syncToggle != nullptr)
+                row.syncToggle->setBounds (x + (knobCellWidth - 72) / 2, y + 22 + knobDiameter + 28, 72, syncToggleHeight);
+            x += knobCellWidth;
         }
 
-        row.label->setBounds (x, y, knobCellWidth, 22);
-        row.slider->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter + 28);
-        x += knobCellWidth;
-        ++col;
+        y += rowHeight;
     }
 
-    const int totalRows = sliders.empty() ? 0 : (int) ((sliders.size() + (size_t) columns - 1) / (size_t) columns);
-    knobGridHost.setSize (hostWidth, totalRows * knobCellHeight);
+    knobGridHost.setSize (hostWidth, y);
 }
 
 void ParameterPanel::paint (juce::Graphics& g)

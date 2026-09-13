@@ -5,6 +5,7 @@
 #include "Effects/TapeDelayProcessor.h"
 #include "Effects/GateProcessor.h"
 #include "Effects/IRLoaderProcessor.h"
+#include "Effects/DynamicCabProcessor.h"
 #include "Effects/NAMProcessor.h"
 #include "Effects/OverdriveProcessor.h"
 #include "Effects/ReverbProcessor.h"
@@ -57,6 +58,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // IRLoaderProcessor.h -- this is NOT the same technology as NAM above.
     registry.registerType ("Cab", [] { return std::make_unique<IRLoaderProcessor> ("Cab"); });
     registry.registerType ("Reverb", [] { return std::make_unique<IRLoaderProcessor> ("Reverb"); });
+
+    // Two independently-loaded cab IRs crossfaded together -- static
+    // multi-mic blending (Dynamics=0) and level-dependent blending
+    // (Dynamics>0) in one processor, since they're the same DSP underneath
+    // (two convolutions + a crossfade), not two separate features. See
+    // DynamicCabProcessor.h.
+    registry.registerType ("DynamicCab", [] { return std::make_unique<DynamicCabProcessor>(); });
 
     // Phase 2: Delay + Reverb. Working through the icon sheet's named
     // variants one at a time -- each remaining Delay/Reverb glyph stays

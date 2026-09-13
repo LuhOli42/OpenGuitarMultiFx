@@ -23,6 +23,7 @@ AnalogDelayProcessor::AnalogDelayProcessor()
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.35f);
 
     timeMs = time.get();
+    registerTempoSyncParam (timeMs);
     feedback = fb.get();
     tone = toneParam.get();
     mix = mixParam.get();

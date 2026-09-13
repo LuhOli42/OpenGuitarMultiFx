@@ -23,6 +23,7 @@ DelayProcessor::DelayProcessor()
     timeMs = time.get();
     feedback = fb.get();
     mix = mixParam.get();
+    registerTempoSyncParam (timeMs);
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "delay", "Digital Delay", "|",

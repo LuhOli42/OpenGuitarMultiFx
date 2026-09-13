@@ -58,7 +58,7 @@ namespace
         if (displayName == "Overdrive")
             return "Drive";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab"
-            || displayName == "Neural Pedal" || displayName == "Cab")
+            || displayName == "Neural Pedal" || displayName == "Cab" || displayName == "Dynamic Cab")
             return "Amplifiers";
         if (displayName == "Reverb" || displayName == "Ambient" || displayName == "Spring" || displayName == "Hall"
             || displayName == "Plate" || displayName == "Room" || displayName == "Shimmer" || displayName == "Gated")
@@ -1173,6 +1173,15 @@ void MainComponent::timerCallback()
     footerBar.setLevels (audioEngine.getInputLevel(), audioEngine.getOutputLevel());
     const auto [noteName, cents] = frequencyToNoteAndCents (audioEngine.getDetectedFrequencyHz());
     footerBar.setTuning (noteName, cents / 50.0f); // +/-50 cents maps to the gauge's full deflection
+
+    // BPM-synced time parameters (ms/BPM-subdivision toggle -- see
+    // EffectProcessor::updateTempoSyncedParams()) recomputed here, at the
+    // same 50ms rate as everything else on this timer, whether or not
+    // tap-tempo just changed -- cheap (a no-op unless a processor actually
+    // has a synced binding) and keeps every synced knob tracking BPM live.
+    const auto bpm = footerBar.getBpm();
+    for (auto* block : blocks)
+        block->processor.updateTempoSyncedParams (bpm);
 
     const auto now = juce::Time::getMillisecondCounter();
     graveyard.erase (std::remove_if (graveyard.begin(), graveyard.end(),

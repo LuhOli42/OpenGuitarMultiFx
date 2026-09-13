@@ -24,6 +24,7 @@ GatedReverbProcessor::GatedReverbProcessor()
 
     decay = decayParam.get();
     holdMs = holdParam.get();
+    registerTempoSyncParam (holdMs);
     mix = mixParam.get();
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (

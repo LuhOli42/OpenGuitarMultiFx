@@ -19,6 +19,7 @@ HoldProcessor::HoldProcessor()
 
     hold = holdParam.get();
     captureMs = captureParam.get();
+    registerTempoSyncParam (captureMs);
     mix = mixParam.get();
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (

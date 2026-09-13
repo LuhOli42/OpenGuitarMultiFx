@@ -74,6 +74,7 @@ inline juce::String subfolderForProcessorName (const juce::String& processorName
     if (processorName == "Neural Amp + Cab")   return "amp-cab";
     if (processorName == "Neural Pedal")       return "pedals";
     if (processorName == "Cab")                return "cabs";
+    if (processorName == "Dynamic Cab")        return "cabs"; // same category as Cab -- just two IR slots
     if (processorName == "Reverb")             return "reverbs";
     return {};
 }
@@ -81,7 +82,7 @@ inline juce::String subfolderForProcessorName (const juce::String& processorName
 /** File-picker wildcard for a processor's expected file type. */
 inline juce::String fileWildcardForProcessorName (const juce::String& processorName)
 {
-    if (processorName == "Cab" || processorName == "Reverb")
+    if (processorName == "Cab" || processorName == "Dynamic Cab" || processorName == "Reverb")
         return "*.wav";
     if (processorName == "Neural Amp" || processorName == "Neural Amp + Cab" || processorName == "Neural Pedal")
         return "*.nam";
@@ -101,6 +102,7 @@ inline juce::String gearFilterForProcessorName (const juce::String& processorNam
     if (processorName == "Neural Amp + Cab")   return "amp-cab";
     if (processorName == "Neural Pedal")       return "pedal";
     if (processorName == "Cab")                return "cab";
+    if (processorName == "Dynamic Cab")        return "cab";
     if (processorName == "Reverb")             return "space";
     return {};
 }
