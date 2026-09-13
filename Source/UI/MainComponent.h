@@ -142,18 +142,17 @@ private:
     };
 
     void showRowInputMenu (int row);
-    /** Which row (if any) currently sends its audio into `row`. A row takes
-        at most one source -- summing two rows into one is a merge, which
-        the engine can't do yet -- so targets that are already fed aren't
-        offered. -1 when nothing feeds it. */
-    int feederRowFor (int row) const;
+    /** Every row currently sending its audio into `row` -- can be more than
+        one (a merge, summed by SignalGraph; see Source/Engine/SignalGraph.h).
+        Empty if nothing feeds it. */
+    std::vector<int> feedersFor (int row) const;
     void showRowOutputMenu (int row);
     /** "Line 2, 3" / "Out 1/2 + Line 3" -- what a row's output tile shows. */
     juce::String describeRowDestinations (int row) const;
+    /** "Line 1 + Line 2" -- what a row's input tile shows when fed by more
+        than one other row (a merge). */
+    juce::String describeRowFeeders (const std::vector<int>& feeders) const;
     void refreshRowEndpoints();
-    /** Rows whose audio reaches this one, in feed order, starting from a
-        row with a device input. Empty if `row` is never fed. */
-    std::vector<int> rowsFeedingInto (int row) const;
 
     void scrollBarMoved (juce::ScrollBar* bar, double newRangeStart) override;
     /** Pushes the viewport's current scroll state into chainScrollBar (and

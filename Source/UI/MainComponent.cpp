@@ -353,12 +353,13 @@ void MainComponent::selectBlock (EffectProcessor* processor)
     resized(); // the detail drawer only exists (and only takes up space) once something is selected
 }
 
-int MainComponent::feederRowFor (int row) const
+std::vector<int> MainComponent::feedersFor (int row) const
 {
+    std::vector<int> feeders;
     for (int candidate = 0; candidate < numRows; ++candidate)
         if (rowRouting[(size_t) candidate].toRows[(size_t) row])
-            return candidate;
-    return -1;
+            feeders.push_back (candidate);
+    return feeders;
 }
 
 juce::String MainComponent::describeRowDestinations (int row) const
@@ -380,6 +381,14 @@ juce::String MainComponent::describeRowDestinations (int row) const
     return parts.joinIntoString (" + ");
 }
 
+juce::String MainComponent::describeRowFeeders (const std::vector<int>& feeders) const
+{
+    juce::StringArray parts;
+    for (int feeder : feeders)
+        parts.add ("Line " + juce::String (feeder + 1));
+    return parts.joinIntoString (" + ");
+}
+
 void MainComponent::refreshRowEndpoints()
 {
     const auto inputNames = audioEngine.getAvailableInputChannelNames();
@@ -388,15 +397,15 @@ void MainComponent::refreshRowEndpoints()
     {
         const auto& routing = rowRouting[(size_t) row];
 
-        // Left: whatever already feeds this row. A row fed by ANOTHER row
-        // shows that link rather than a "+" -- the "+" invites adding an
-        // input, and a second source on top of the incoming one would be
-        // exactly the contradiction the routing model avoids (per user
-        // request 2026-09-11: "quando a linha tiver sendo usada por um
-        // output ela pode sumir o input +").
-        const int feeder = feederRowFor (row);
-        if (feeder >= 0)
-            rowInputBlocks[(size_t) row].setDisplay ("FROM", "Line " + juce::String (feeder + 1));
+        // Left: whatever already feeds this row -- possibly several rows at
+        // once (a merge). A row fed by ANOTHER row shows that link rather
+        // than a "+" -- the "+" invites adding a device input, and one on
+        // top of the incoming row(s) would be exactly the contradiction the
+        // routing model avoids (per user request 2026-09-11: "quando a
+        // linha tiver sendo usada por um output ela pode sumir o input +").
+        const auto feeders = feedersFor (row);
+        if (! feeders.empty())
+            rowInputBlocks[(size_t) row].setDisplay ("FROM", describeRowFeeders (feeders));
         else if (routing.inputChannel < 0)
             rowInputBlocks[(size_t) row].setDisplay ({}, {});
         else
@@ -412,30 +421,6 @@ void MainComponent::refreshRowEndpoints()
     }
 }
 
-std::vector<int> MainComponent::rowsFeedingInto (int row) const
-{
-    // Walk BACKWARDS from `row` to whichever row has a device input. A row
-    // takes at most one source (splits fan OUT, they don't merge back in),
-    // so this stays a simple walk rather than a search.
-    std::vector<int> path;
-    int current = row;
-
-    for (int guard = 0; guard < numRows + 1; ++guard)
-    {
-        path.insert (path.begin(), current);
-
-        if (rowRouting[(size_t) current].inputChannel >= 0)
-            return path; // reached a row that's actually fed by the device
-
-        const int feeder = feederRowFor (current);
-        if (feeder < 0)
-            return {}; // nothing feeds this row -- it's silent
-        current = feeder;
-    }
-
-    return {};
-}
-
 void MainComponent::showRowInputMenu (int row)
 {
     // Physical inputs only. Receiving FROM another row is expressed on that
@@ -445,34 +430,57 @@ void MainComponent::showRowInputMenu (int row)
     if (inputNames.isEmpty())
         inputNames.add ("Default");
 
-    const int feeder = feederRowFor (row);
+    const auto feeders = feedersFor (row);
+
+    // One "Disconnect from Line N" item per CURRENT feeder (there can be
+    // several now -- a merge), each removable independently, plus the
+    // physical-input list below. Feeder item IDs start at 1000 so they
+    // never collide with the input-list IDs (2..inputNames.size()+1) --
+    // there's no realistic input count anywhere near that.
+    constexpr int feederItemBase = 1000;
 
     juce::PopupMenu menu;
-    menu.addItem (1, feeder >= 0 ? "Disconnect from Line " + juce::String (feeder + 1) : juce::String ("Not connected"),
-                   true, feeder < 0 && rowRouting[(size_t) row].inputChannel < 0);
+    if (feeders.empty())
+        menu.addItem (1, "Not connected", true, rowRouting[(size_t) row].inputChannel < 0);
+    else
+        for (int feeder : feeders)
+            menu.addItem (feederItemBase + feeder, "Disconnect from Line " + juce::String (feeder + 1), true, false);
+
     menu.addSeparator();
     for (int i = 0; i < inputNames.size(); ++i)
-        menu.addItem (i + 2, inputNames[i], true, feeder < 0 && rowRouting[(size_t) row].inputChannel == i);
+        menu.addItem (i + 2, inputNames[i], true, feeders.empty() && rowRouting[(size_t) row].inputChannel == i);
 
     menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
-        [this, row, feeder] (int result)
+        [this, row] (int result)
         {
             if (result <= 0)
                 return;
 
-            // Picking anything here replaces whatever fed this row, so the
-            // incoming row link (if any) has to go -- one source per row.
-            if (feeder >= 0)
+            if (result >= feederItemBase)
+            {
+                // Disconnect just this one feeder -- the others (if any)
+                // and the row's own device input (if any) are untouched.
+                const int feeder = result - feederItemBase;
                 rowRouting[(size_t) feeder].toRows[(size_t) row] = false;
+            }
+            else
+            {
+                // Picking a physical input replaces every row-based feeder
+                // outright (device input and routed-row input stay
+                // mutually exclusive -- see refreshRowEndpoints()'s
+                // comment on why a row never shows both at once).
+                for (int candidate = 0; candidate < numRows; ++candidate)
+                    rowRouting[(size_t) candidate].toRows[(size_t) row] = false;
 
-            rowRouting[(size_t) row].inputChannel = result == 1 ? -1 : result - 2;
+                rowRouting[(size_t) row].inputChannel = result == 1 ? -1 : result - 2;
 
-            // Row 0's input is also the device's -- the engine only opens one
-            // input channel today, so a second fed row shares it. Selecting
-            // per-row physical inputs properly is an engine change (multiple
-            // input channels), not a UI one; see AGENTS.md.
-            if (rowRouting[(size_t) row].inputChannel >= 0)
-                audioEngine.setInputChannel (rowRouting[(size_t) row].inputChannel);
+                // Row 0's input is also the device's -- the engine only opens one
+                // input channel today, so a second fed row shares it. Selecting
+                // per-row physical inputs properly is an engine change (multiple
+                // input channels), not a UI one; see AGENTS.md.
+                if (rowRouting[(size_t) row].inputChannel >= 0)
+                    audioEngine.setInputChannel (rowRouting[(size_t) row].inputChannel);
+            }
 
             refreshRowEndpoints();
             rebuildSignalGraph();
@@ -513,15 +521,12 @@ void MainComponent::showRowOutputMenu (int row)
         if (target <= row)
             continue;
 
+        // Always offered, even if another row already feeds this target --
+        // that's a merge (SignalGraph sums every row that feeds a given
+        // one), not a conflict. No longer restricted to "whichever row got
+        // there first" now that the engine can actually mix them.
         const bool alreadyOn = routing.toRows[(size_t) target];
-        const int otherFeeder = feederRowFor (target);
-
-        // Offered unless another row already feeds it -- summing two rows
-        // into one is a merge, which the engine can't do yet. Greyed rather
-        // than hidden so the reason is visible.
-        const bool allowed = alreadyOn || otherFeeder < 0 || otherFeeder == row;
-
-        menu.addItem (rowItemBase + target, "Line " + juce::String (target + 1), allowed, alreadyOn);
+        menu.addItem (rowItemBase + target, "Line " + juce::String (target + 1), true, alreadyOn);
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
@@ -567,42 +572,34 @@ void MainComponent::showRowOutputMenu (int row)
 void MainComponent::rebuildSignalGraph()
 {
     // Order follows the ROW LINKS, not the flat block array: a row's blocks
-    // run left to right, then whatever rows it feeds, and so on.
-    //
-    // A split (one row feeding several) is drawn and stored faithfully, but
-    // the engine still runs ONE serial chain -- SignalGraph has no notion of
-    // parallel buses or mixing them back together. Branches are therefore
-    // flattened into a single order here, which is an approximation, not the
-    // real thing. Real parallel processing is engine work (see AGENTS.md);
-    // until then a split sounds like the branches in series.
+    // maps 1:1 onto SignalGraph's lanes now -- each row IS a lane, in the
+    // same order, so a row's routing translates directly into lane
+    // configuration with no flattening/approximation needed. Real splits
+    // and merges are the engine's own job now (Source/Engine/SignalGraph.h),
+    // not something this function has to fake by reordering blocks.
     auto signalGraph = std::make_unique<SignalGraph>();
 
-    // Start wherever the device input lands, then follow the links outwards.
-    std::array<bool, numRows> visited {};
-    std::vector<int> queue;
-
     for (int row = 0; row < numRows; ++row)
-        if (rowRouting[(size_t) row].inputChannel >= 0)
-            queue.push_back (row);
-
-    while (! queue.empty())
     {
-        const int row = queue.front();
-        queue.erase (queue.begin());
-
-        if (visited[(size_t) row])
-            continue;
-        visited[(size_t) row] = true;
+        const auto& routing = rowRouting[(size_t) row];
 
         // `blocks` is sorted by gridSlot and gridSlot == row * chainColumns +
         // col, so a row's blocks are already contiguous and in column order.
+        std::vector<EffectProcessor*> rowProcessors;
         for (auto* block : blocks)
             if (block->gridSlot / chainColumns == row)
-                signalGraph->addProcessor (&block->processor);
+                rowProcessors.push_back (&block->processor);
+        signalGraph->setLaneProcessors (row, std::move (rowProcessors));
+
+        // Every row with a device input reads the SAME live input -- the
+        // engine only opens one input channel today (see showRowInputMenu()'s
+        // comment), so several fed rows just share it.
+        signalGraph->setLaneReadsDeviceInput (row, routing.inputChannel >= 0);
+        signalGraph->setLaneWritesDeviceOutput (row, routing.toDevice);
 
         for (int target = 0; target < numRows; ++target)
-            if (rowRouting[(size_t) row].toRows[(size_t) target])
-                queue.push_back (target);
+            if (routing.toRows[(size_t) target])
+                signalGraph->addLaneConnection (row, target); // target > row always -- forward-only, enforced in showRowOutputMenu()
     }
 
     audioEngine.setSignalGraph (std::move (signalGraph));
