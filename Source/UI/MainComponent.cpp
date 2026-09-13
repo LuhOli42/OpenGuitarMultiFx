@@ -214,10 +214,25 @@ MainComponent::MainComponent()
     // parameterPanel.refresh()) are all cheap enough not to mind running
     // 4x more often.
     startTimer (50);
+
+    // Program Change -> preset switching (Phase 5). Every currently
+    // available MIDI input, not just one picked in a settings screen --
+    // there's no MIDI device picker yet, and a pedalboard's foot
+    // controller is normally the only MIDI device plugged in anyway.
+    for (auto& midiInput : juce::MidiInput::getAvailableDevices())
+    {
+        audioEngine.getDeviceManager().setMidiInputDeviceEnabled (midiInput.identifier, true);
+        audioEngine.getDeviceManager().addMidiInputDeviceCallback (midiInput.identifier, this);
+    }
 }
 
 MainComponent::~MainComponent()
 {
+    aliveFlag->store (false); // must be first -- an in-flight MIDI callAsync can still fire after this point
+
+    for (auto& midiInput : juce::MidiInput::getAvailableDevices())
+        audioEngine.getDeviceManager().removeMidiInputDeviceCallback (midiInput.identifier, this);
+
     audioEngine.stop(); // must happen before chain's processors are destroyed by the member destructors below
 }
 
@@ -841,13 +856,7 @@ void MainComponent::showPresetsPanel()
 
     dialog->onPresetChosen = [this] (juce::String name)
     {
-        if (auto xml = presets.loadPreset (name))
-        {
-            applyPresetXml (*xml);
-            currentPresetName = name;
-            currentPresetNumber = xml->getIntAttribute ("number", 0);
-            updatePresetDisplay();
-        }
+        loadPresetByName (name);
         overlayHost.popOverlay();
     };
 
@@ -867,6 +876,43 @@ void MainComponent::showPresetsPanel()
     dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
 
     overlayHost.pushOverlay (std::move (dialog));
+}
+
+void MainComponent::loadPresetByName (const juce::String& name)
+{
+    if (auto xml = presets.loadPreset (name))
+    {
+        applyPresetXml (*xml);
+        currentPresetName = name;
+        currentPresetNumber = xml->getIntAttribute ("number", 0);
+        updatePresetDisplay();
+    }
+}
+
+void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
+{
+    if (! message.isProgramChange())
+        return;
+
+    // MIDI Program Change is 0-127; preset numbers start at 1 (see
+    // PresetManager::nextAvailableNumber()'s "1 if there are none yet"),
+    // so PC 0 maps to preset 1 -- "Patch 1" on a foot controller landing
+    // on the first preset is the intuitive mapping, not an off-by-one.
+    const int presetNumber = message.getProgramChangeNumber() + 1;
+
+    // This callback runs on JUCE's MIDI thread, not the message thread --
+    // loadPresetByName() does real file I/O and touches the chain/UI, none
+    // of which is safe to call from here directly. `alive` guards against
+    // this firing after MainComponent has already been destroyed.
+    juce::MessageManager::callAsync ([this, presetNumber, alive = aliveFlag]
+    {
+        if (! alive->load())
+            return;
+
+        const auto name = presets.nameForNumber (presetNumber);
+        if (name.isNotEmpty())
+            loadPresetByName (name);
+    });
 }
 
 void MainComponent::savePresetAs (const juce::String& name)

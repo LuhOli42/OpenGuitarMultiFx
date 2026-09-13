@@ -15,6 +15,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -54,7 +55,8 @@ public:
 */
 class MainComponent : public juce::Component,
                        private juce::Timer,
-                       private juce::ScrollBar::Listener
+                       private juce::ScrollBar::Listener,
+                       private juce::MidiInputCallback
 {
 public:
     /** Four rows, fixed -- the Quad Cortex Grid reference this follows is a
@@ -88,11 +90,27 @@ private:
         saved preset (a resave, not a new slot) or assigning the next free
         one otherwise. Updates currentPresetName/Number and the top bar either way. */
     void savePresetAs (const juce::String& name);
+    /** The one real "load this preset and make it live" path -- both the
+        preset list dialog and an incoming MIDI Program Change call this,
+        rather than each having its own copy of load->apply->update-display. */
+    void loadPresetByName (const juce::String& name);
     void updatePresetDisplay();
     static juce::File getModelsDirectory();
     static juce::File getPresetsDirectory();
 
     void timerCallback() override;
+
+    /** MIDI thread -- never touches PresetManager/the chain directly, only
+        hops to the message thread first. See MainComponent.cpp for why. */
+    void handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiMessage& message) override;
+
+    /** Same "outlives the object" guard Tone3000Manager uses for its own
+        callAsync callbacks: set false in the destructor, captured by value
+        (not `this`) in the MIDI handler's callAsync lambda, checked before
+        touching `this` -- a Program Change that arrived just before
+        shutdown then simply does nothing instead of touching a
+        half-destroyed MainComponent. */
+    std::shared_ptr<std::atomic<bool>> aliveFlag = std::make_shared<std::atomic<bool>> (true);
 
     /** Where one row gets its audio from and where it sends it. Rows are
         INDEPENDENT by default -- nothing is connected until you pick it on

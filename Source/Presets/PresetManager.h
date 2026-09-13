@@ -46,6 +46,13 @@ public:
         are none yet) -- what a brand new preset should be numbered. */
     int nextAvailableNumber() const;
 
+    /** The reverse of numberForExistingPreset(): which saved preset (if
+        any) has this number. Empty string if none does -- e.g. a MIDI
+        Program Change for a slot nothing's been saved into yet. Linear
+        scan over every saved preset's XML; fine at pedalboard-preset-count
+        scale (dozens, not thousands), not called from a hot path. */
+    juce::String nameForNumber (int number) const;
+
 private:
     juce::File fileFor (const juce::String& name) const;
 

@@ -58,4 +58,12 @@ int PresetManager::nextAvailableNumber() const
     return highest + 1;
 }
 
+juce::String PresetManager::nameForNumber (int number) const
+{
+    for (auto& name : listPresetNames())
+        if (numberForExistingPreset (name) == number)
+            return name;
+    return {};
+}
+
 } // namespace openguitarmultifx
