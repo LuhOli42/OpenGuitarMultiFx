@@ -16,6 +16,7 @@
 
 #include <array>
 #include <atomic>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -183,6 +184,17 @@ private:
         juce::uint32 retiredAtMs;
     };
     std::vector<RetiredProcessor> graveyard;
+
+    // MIDI CC -> parameter mapping ("MIDI Learn", covers the expression
+    // pedal roadmap item too -- an expression pedal is just a continuous
+    // CC source from here). In-memory only, not saved into presets yet
+    // (see Source/UI/AGENTS.md decision entry). Cleared per-parameter in
+    // removeEffect() so a removed block can never leave a dangling
+    // AudioParameterFloat* behind in either map.
+    std::map<int, juce::AudioParameterFloat*> midiCcBindings;
+    juce::AudioParameterFloat* midiLearnArmedParam = nullptr;
+    void handleMidiCc (int ccNumber, int ccValue);
+    void clearMidiBindingsFor (EffectProcessor* processor);
 
     // Chain tile size -- SQUARE (blockWidth == blockHeight always) and
     // derived fresh in every resized() call from the available width so

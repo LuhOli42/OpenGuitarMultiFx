@@ -25,7 +25,11 @@ namespace
     // every processor that exists today, since none has more than 5
     // params and even one row comfortably holds ~10 at this width).
     constexpr int knobCellWidth = 118;
-    constexpr int knobCellHeight = 140;
+    // +24 over the knob/label's own 140px for a MIDI-learn button row
+    // (Phase 5) -- a secondary, setup-time control rather than a primary
+    // performance touch target, so it's deliberately not held to
+    // TouchSizing.h's 48px floor the way an always-live control would be.
+    constexpr int knobCellHeight = 164;
     constexpr int knobDiameter = 90;
 }
 
@@ -69,6 +73,26 @@ void ParameterPanel::refresh()
     {
         statusLabel.setText (current->getStatusText(), juce::dontSendNotification);
         bypassToggle.setToggleState (current->isBypassed(), juce::dontSendNotification);
+
+        // Polled rather than pushed -- MainComponent owns the actual
+        // learn/binding state and this already runs on a timer (see
+        // MainComponent::timerCallback()), so there's no need for a
+        // separate push-update path just to keep these buttons current.
+        for (auto& row : sliders)
+        {
+            if (row.midiButton == nullptr)
+                continue;
+
+            const bool armed = isMidiLearnArmedForParam && isMidiLearnArmedForParam (row.param);
+            const int cc = getMidiCcForParam ? getMidiCcForParam (row.param) : -1;
+
+            if (armed)
+                row.midiButton->setButtonText ("Listening...");
+            else if (cc >= 0)
+                row.midiButton->setButtonText ("CC " + juce::String (cc));
+            else
+                row.midiButton->setButtonText ("MIDI Learn");
+        }
     }
 }
 
@@ -78,6 +102,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
     {
         knobGridHost.removeChildComponent (row.slider.get());
         knobGridHost.removeChildComponent (row.label.get());
+        knobGridHost.removeChildComponent (row.midiButton.get());
     }
     sliders.clear();
 
@@ -149,8 +174,17 @@ void ParameterPanel::rebuildForCurrentProcessor()
                     *floatParam = (float) rawSlider->getValue();
                 };
 
+                row.midiButton = std::make_unique<juce::TextButton> ("MIDI Learn");
+                row.midiButton->setColour (juce::TextButton::textColourOffId, juce::Colours::lightgrey);
+                row.midiButton->onClick = [this, floatParam]
+                {
+                    if (onMidiLearnRequested)
+                        onMidiLearnRequested (floatParam);
+                };
+
                 knobGridHost.addAndMakeVisible (*row.label);
                 knobGridHost.addAndMakeVisible (*row.slider);
+                knobGridHost.addAndMakeVisible (*row.midiButton);
                 sliders.push_back (std::move (row));
             }
         }
@@ -333,6 +367,7 @@ void ParameterPanel::resized()
 
         row.label->setBounds (x, y, knobCellWidth, 22);
         row.slider->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter + 28);
+        row.midiButton->setBounds (x + 4, y + 22 + knobDiameter + 28, knobCellWidth - 8, 24);
         x += knobCellWidth;
         ++col;
     }

@@ -64,6 +64,16 @@ public:
     std::function<void (std::unique_ptr<juce::Component>)> onPushOverlay;
     std::function<void()> onPopOverlay;
 
+    /** Tapped a knob's MIDI-learn button. MainComponent owns what this
+        actually means (arm/cancel/clear) -- see its wiring. */
+    std::function<void (juce::AudioParameterFloat*)> onMidiLearnRequested;
+    /** -1 if unbound, else the bound CC number -- queried on every
+        refresh() to keep each knob's MIDI button text current. */
+    std::function<int (juce::AudioParameterFloat*)> getMidiCcForParam;
+    /** True while this exact param is the one currently listening for the
+        next CC message. */
+    std::function<bool (juce::AudioParameterFloat*)> isMidiLearnArmedForParam;
+
 private:
     void rebuildForCurrentProcessor();
     void browseInstalledModels();
@@ -83,6 +93,7 @@ private:
     {
         std::unique_ptr<juce::Slider> slider;
         std::unique_ptr<juce::Label> label;
+        std::unique_ptr<juce::TextButton> midiButton;
         juce::AudioParameterFloat* param = nullptr;
     };
     std::vector<SliderRow> sliders;

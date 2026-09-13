@@ -171,6 +171,36 @@ MainComponent::MainComponent()
     parameterPanel.setTone3000Manager (tone3000);
     parameterPanel.onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     parameterPanel.onPopOverlay  = [this] { overlayHost.popOverlay(); };
+
+    parameterPanel.onMidiLearnRequested = [this] (juce::AudioParameterFloat* param)
+    {
+        // Already bound -> tapping it clears the binding outright.
+        for (auto it = midiCcBindings.begin(); it != midiCcBindings.end(); ++it)
+        {
+            if (it->second == param)
+            {
+                midiCcBindings.erase (it);
+                midiLearnArmedParam = nullptr;
+                return;
+            }
+        }
+
+        // Tapping the already-armed knob again cancels the arm; tapping a
+        // different (unbound) knob arms that one instead -- only one knob
+        // can be listening for the next CC at a time.
+        midiLearnArmedParam = (midiLearnArmedParam == param) ? nullptr : param;
+    };
+    parameterPanel.getMidiCcForParam = [this] (juce::AudioParameterFloat* param) -> int
+    {
+        for (auto& [cc, boundParam] : midiCcBindings)
+            if (boundParam == param)
+                return cc;
+        return -1;
+    };
+    parameterPanel.isMidiLearnArmedForParam = [this] (juce::AudioParameterFloat* param)
+    {
+        return midiLearnArmedParam == param;
+    };
     addAndMakeVisible (parameterPanel);
 
     addAndMakeVisible (footerBar);
@@ -284,6 +314,8 @@ void MainComponent::addEffect (const juce::String& registryName, int targetGridS
 
 void MainComponent::removeEffect (EffectProcessor* processor)
 {
+    clearMidiBindingsFor (processor);
+
     for (int i = 0; i < blocks.size(); ++i)
     {
         if (&blocks[i]->processor == processor)
@@ -891,28 +923,95 @@ void MainComponent::loadPresetByName (const juce::String& name)
 
 void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
 {
-    if (! message.isProgramChange())
+    // Both branches below hop to the message thread via callAsync before
+    // touching anything -- this callback runs on JUCE's own MIDI thread,
+    // and both loadPresetByName() (file I/O, chain/UI mutation) and
+    // handleMidiCc() (parameter/binding-map mutation) need the message
+    // thread. `alive` guards against either firing after MainComponent has
+    // already been destroyed.
+    if (message.isProgramChange())
+    {
+        // MIDI Program Change is 0-127; preset numbers start at 1 (see
+        // PresetManager::nextAvailableNumber()'s "1 if there are none
+        // yet"), so PC 0 maps to preset 1 -- "Patch 1" on a foot
+        // controller landing on the first preset is the intuitive
+        // mapping, not an off-by-one.
+        const int presetNumber = message.getProgramChangeNumber() + 1;
+
+        juce::MessageManager::callAsync ([this, presetNumber, alive = aliveFlag]
+        {
+            if (! alive->load())
+                return;
+
+            const auto name = presets.nameForNumber (presetNumber);
+            if (name.isNotEmpty())
+                loadPresetByName (name);
+        });
+    }
+    else if (message.isController())
+    {
+        const int ccNumber = message.getControllerNumber();
+        const int ccValue = message.getControllerValue();
+
+        juce::MessageManager::callAsync ([this, ccNumber, ccValue, alive = aliveFlag]
+        {
+            if (alive->load())
+                handleMidiCc (ccNumber, ccValue);
+        });
+    }
+}
+
+void MainComponent::handleMidiCc (int ccNumber, int ccValue)
+{
+    // A knob armed for MIDI Learn takes priority over an existing binding
+    // on the same CC -- the next CC message received while armed is what
+    // gets learned, even if that CC number was already bound to something
+    // else (re-learning a CC onto a new parameter implicitly un-learns it
+    // from the old one, since a CC can only ever drive one parameter).
+    if (midiLearnArmedParam != nullptr)
+    {
+        for (auto it = midiCcBindings.begin(); it != midiCcBindings.end(); )
+            it = it->second == midiLearnArmedParam ? midiCcBindings.erase (it) : std::next (it);
+
+        midiCcBindings[ccNumber] = midiLearnArmedParam;
+        midiLearnArmedParam = nullptr;
+        return;
+    }
+
+    const auto it = midiCcBindings.find (ccNumber);
+    if (it == midiCcBindings.end())
         return;
 
-    // MIDI Program Change is 0-127; preset numbers start at 1 (see
-    // PresetManager::nextAvailableNumber()'s "1 if there are none yet"),
-    // so PC 0 maps to preset 1 -- "Patch 1" on a foot controller landing
-    // on the first preset is the intuitive mapping, not an off-by-one.
-    const int presetNumber = message.getProgramChangeNumber() + 1;
+    // CC values are 0-127; convert through the parameter's own
+    // NormalisableRange (not a plain linear map) so a log-skewed
+    // parameter like a delay Time knob still sweeps musically under CC
+    // control instead of spending most of the CC's range on one extreme.
+    auto* param = it->second;
+    const float normalised = (float) ccValue / 127.0f;
+    *param = param->getNormalisableRange().convertFrom0to1 (normalised);
+}
 
-    // This callback runs on JUCE's MIDI thread, not the message thread --
-    // loadPresetByName() does real file I/O and touches the chain/UI, none
-    // of which is safe to call from here directly. `alive` guards against
-    // this firing after MainComponent has already been destroyed.
-    juce::MessageManager::callAsync ([this, presetNumber, alive = aliveFlag]
+void MainComponent::clearMidiBindingsFor (EffectProcessor* processor)
+{
+    if (processor == nullptr)
+        return;
+
+    auto* group = processor->getParameters();
+    if (group == nullptr)
+        return;
+
+    for (auto* p : group->getParameters (true))
     {
-        if (! alive->load())
-            return;
+        auto* floatParam = dynamic_cast<juce::AudioParameterFloat*> (p);
+        if (floatParam == nullptr)
+            continue;
 
-        const auto name = presets.nameForNumber (presetNumber);
-        if (name.isNotEmpty())
-            loadPresetByName (name);
-    });
+        if (midiLearnArmedParam == floatParam)
+            midiLearnArmedParam = nullptr;
+
+        for (auto it = midiCcBindings.begin(); it != midiCcBindings.end(); )
+            it = it->second == floatParam ? midiCcBindings.erase (it) : std::next (it);
+    }
 }
 
 void MainComponent::savePresetAs (const juce::String& name)
