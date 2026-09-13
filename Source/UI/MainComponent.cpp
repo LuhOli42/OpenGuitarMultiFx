@@ -197,10 +197,6 @@ MainComponent::MainComponent()
                 return cc;
         return -1;
     };
-    parameterPanel.isMidiLearnArmedForParam = [this] (juce::AudioParameterFloat* param)
-    {
-        return midiLearnArmedParam == param;
-    };
     addAndMakeVisible (parameterPanel);
 
     addAndMakeVisible (footerBar);

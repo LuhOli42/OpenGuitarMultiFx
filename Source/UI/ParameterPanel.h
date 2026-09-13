@@ -64,20 +64,20 @@ public:
     std::function<void (std::unique_ptr<juce::Component>)> onPushOverlay;
     std::function<void()> onPopOverlay;
 
-    /** Tapped a knob's MIDI-learn button. MainComponent owns what this
-        actually means (arm/cancel/clear) -- see its wiring. */
+    /** "Learn MIDI CC..." was chosen from a knob's long-press menu.
+        MainComponent owns what this actually means (arm/cancel/clear) --
+        see its wiring. */
     std::function<void (juce::AudioParameterFloat*)> onMidiLearnRequested;
-    /** -1 if unbound, else the bound CC number -- queried on every
-        refresh() to keep each knob's MIDI button text current. */
+    /** -1 if unbound, else the bound CC number -- queried only when the
+        long-press menu is about to open, to word its "Clear MIDI Mapping
+        (CC n)" item. */
     std::function<int (juce::AudioParameterFloat*)> getMidiCcForParam;
-    /** True while this exact param is the one currently listening for the
-        next CC message. */
-    std::function<bool (juce::AudioParameterFloat*)> isMidiLearnArmedForParam;
 
 private:
     void rebuildForCurrentProcessor();
     void browseInstalledModels();
     void openTone3000Search();
+    void showMidiLearnMenu (juce::AudioParameterFloat* param);
 
     EffectProcessor* current = nullptr;
     juce::File modelsDir;
@@ -89,11 +89,35 @@ private:
     juce::TextButton searchTone3000Button { "Search TONE3000..." };
     juce::TextButton removeButton { "Remove" };
 
+    /** A knob's parameter name label, long-pressable to reach MIDI Learn --
+        completely invisible until pressed and held, per explicit user
+        request ("deixa escondido essa funcao"): no button, no persistent
+        indicator even when a CC is already bound. Owns its own
+        press-and-hold detection (juce::Label has no such gesture built in)
+        via mouseDown/mouseUp/timerCallback. */
+    class LongPressLabel : public juce::Label,
+                            private juce::Timer
+    {
+    public:
+        std::function<void()> onLongPress;
+
+        void mouseDown (const juce::MouseEvent&) override { startTimer (550); }
+        void mouseUp (const juce::MouseEvent&) override { stopTimer(); }
+        void mouseDrag (const juce::MouseEvent&) override { stopTimer(); } // a drag is not a press-and-hold
+
+    private:
+        void timerCallback() override
+        {
+            stopTimer();
+            if (onLongPress)
+                onLongPress();
+        }
+    };
+
     struct SliderRow
     {
         std::unique_ptr<juce::Slider> slider;
-        std::unique_ptr<juce::Label> label;
-        std::unique_ptr<juce::TextButton> midiButton;
+        std::unique_ptr<LongPressLabel> label;
         juce::AudioParameterFloat* param = nullptr;
     };
     std::vector<SliderRow> sliders;
