@@ -104,8 +104,25 @@ bool AudioEngine::start()
 
             const auto switchErr = deviceManager.setAudioDeviceSetup (setup, true);
             if (switchErr.isNotEmpty())
+            {
+                // A failed setAudioDeviceSetup() does NOT leave the manager
+                // on the previous device -- confirmed live (see
+                // Source/Engine/AGENTS.md): getCurrentAudioDevice() comes
+                // back nullptr here, not the original placeholder default.
+                // That silently broke every input-channel-dependent feature
+                // (the I/O selectors falling back to a synthetic "Default"
+                // entry, the tuner/level meters reading permanent silence)
+                // whenever this switch failed, with no visible symptom
+                // beyond a log line nobody was watching. Explicitly restore
+                // the pre-switch setup instead of assuming JUCE did it.
                 juce::Logger::writeToLog ("AudioEngine: could not switch to \"" + usbInputName + "\" -- "
-                                           + switchErr + " (staying on the default device)");
+                                           + switchErr + " -- restoring the previous device");
+
+                const auto restoreErr = deviceManager.setAudioDeviceSetup (currentSetup, true);
+                if (restoreErr.isNotEmpty())
+                    juce::Logger::writeToLog ("AudioEngine: failed to restore the previous device too -- "
+                                               + restoreErr);
+            }
         }
     }
 
