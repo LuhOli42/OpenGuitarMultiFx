@@ -105,6 +105,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/GateProcessor.cpp
   Source/Effects/CompressorProcessor.cpp
   Source/Effects/OverdriveProcessor.cpp
+  Source/Effects/PositiveGroundBoosterProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp

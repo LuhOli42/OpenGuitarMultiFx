@@ -8,6 +8,7 @@
 #include "Effects/DynamicCabProcessor.h"
 #include "Effects/NAMProcessor.h"
 #include "Effects/OverdriveProcessor.h"
+#include "Effects/PositiveGroundBoosterProcessor.h"
 #include "Effects/ReverbProcessor.h"
 #include "Effects/SpringReverbProcessor.h"
 #include "Effects/HallReverbProcessor.h"
@@ -42,6 +43,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("NoiseGate", [] { return std::make_unique<GateProcessor>(); });
     registry.registerType ("Compressor", [] { return std::make_unique<CompressorProcessor>(); });
     registry.registerType ("Overdrive", [] { return std::make_unique<OverdriveProcessor>(); });
+
+    // Physically-modelled (Ebers-Moll transistor, not neural) -- see
+    // Source/Effects/AGENTS.md's decision log and docs/circuits/
+    // PositiveGroundBooster.md for the full circuit-fidelity rationale.
+    registry.registerType ("PositiveGroundBooster", [] { return std::make_unique<PositiveGroundBoosterProcessor>(); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
