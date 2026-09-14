@@ -100,6 +100,7 @@ target_link_libraries(OpenGuitarMultiFx_Tests PRIVATE
   juce::juce_recommended_config_flags
   juce::juce_recommended_warning_flags
   nam_core
+  chowdsp::chowdsp_wdf
   OpenGuitarMultiFx_Icons
 )
 

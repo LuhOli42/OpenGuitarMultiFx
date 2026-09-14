@@ -19,6 +19,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 include(cmake/NAMCore.cmake)
+include(cmake/ChowdspWDF.cmake)
 
 # Sora (SIL OFL, see Assets/Fonts/SORA-LICENSE.txt), embedded rather than
 # relying on the OS having a decent font installed -- the final target is a
@@ -196,6 +197,7 @@ target_link_libraries(OpenGuitarMultiFx PRIVATE
   juce::juce_recommended_config_flags
   juce::juce_recommended_warning_flags
   nam_core
+  chowdsp::chowdsp_wdf
   OpenGuitarMultiFx_Fonts
   OpenGuitarMultiFx_Icons
   CURL::libcurl

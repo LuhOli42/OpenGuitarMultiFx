@@ -63,6 +63,7 @@ Every new effect is a new `EffectProcessor` subclass registered in `EffectRegist
 ## Global Decisions (don't reopen without a new reason)
 
 - **NAM engine:** `NeuralAmpModelerCore` (MIT), not `NeuralAudio` (CMake needs submodule-only paths, test models CC BY-NC-ND) and not AIDA-X/GuitarML (GPL-3.0 — license contamination in a closed-source product; reference only). Detail + the `nam_core` OBJECT-library and Eigen-pin pitfalls: `Source/Effects/AGENTS.md`.
+- **Non-neural amp engine:** `chowdsp_wdf` (Chowdhury-DSP, BSD 3-Clause — verified via GitHub's license API and its own LICENSE file), a header-only Wave Digital Filter toolkit, for a physically-modelled preamp/tone-stack complementing NAM's neural captures. Real finished plugins built with it (BYOD, and the reference circuit write-ups researched for this) are GPL-3.0 — same "read for technique, never copy code" rule as AIDA-X/GuitarML applies to those; only the toolkit itself is embedded. Vendoring detail: `cmake/ChowdspWDF.cmake`.
 - **NPU:** don't use for NAM — RKNN/eIQ/VIP9000 have no confirmed causal/dilated Conv1D support. All NAM processing is CPU-bound.
 - **TONE3000:** optional module, commercial-embedded terms not yet confirmed (`ARCHITECTURE.md` section I) — never couple a core feature to it.
 - **Phase 1 default:** 48kHz, 128-sample block (~2.7ms); round-trip target < 10ms.
