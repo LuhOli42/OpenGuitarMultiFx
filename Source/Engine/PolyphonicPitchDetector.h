@@ -71,6 +71,17 @@ private:
         std::atomic<bool> active { false };
         std::atomic<float> frequencyHz { 0.0f };
         std::atomic<float> cents { 0.0f };
+
+        // Audio-thread-only smoothing state (never touched from any other
+        // thread -- only pushSamples() reads/writes these). The underlying
+        // PitchDetector only updates at ~15Hz and each update carries some
+        // cycle-to-cycle estimate noise; without smoothing, both show up
+        // directly as a visibly jittery tuner needle. activityLevel gives
+        // `active` hysteresis (fast attack, slow release) instead of a
+        // hard per-update on/off flag, which otherwise flickered between
+        // consecutive 15Hz analysis updates.
+        float smoothedCents = 0.0f;
+        float activityLevel = 0.0f; // 0..1, thresholded at 0.5 for the exposed `active` bool
     };
 
     struct BandSet

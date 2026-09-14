@@ -10,7 +10,7 @@ Circuits with exactly one active device (a BJT) and no separate multi-stage line
 
 | Circuit | Processor | Device | Notes |
 |---|---|---|---|
-| [Positive Ground Booster](PositiveGroundBooster.md) | `PositiveGroundBoosterProcessor` | 1x PNP | Rangemaster-style treble booster; collector load IS the gain/level control (a pot, not a fixed resistor) |
+| [Positive Ground Booster](PositiveGroundBooster.md) ("Rangemaster-Style Booster" in-app — see that doc's trademark note) | `PositiveGroundBoosterProcessor` | 1x PNP | Rangemaster-style treble booster; collector load IS the gain/level control (a pot, not a fixed resistor) |
 
 **What would differ vs. what wouldn't, for a new circuit in this family:** component values, NPN vs. PNP, which terminal(s) have a variable (pot) resistance, whether the collector load is fixed or the gain control itself. What stays the same: the `EbersMollBJT`/`TrapezoidalCapacitor` building blocks, the direct-nodal-analysis architecture, the PNP-mirroring trick if needed. A new single-transistor circuit should very likely reuse both building blocks directly, only changing the Thevenin-network wiring and component values in its own processor `.cpp`.
 

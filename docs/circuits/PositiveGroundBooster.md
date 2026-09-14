@@ -2,6 +2,8 @@
 
 A Rangemaster-style single-transistor "positive ground" treble booster, modelled directly from General Guitar Gadgets' GEB schematic: https://generalguitargadgets.com/pdf/ggg_geb_pos_sc.pdf ("GEB - Rangemaster™ Positive Ground Booster", JD Sleep, 2012).
 
+**Displayed in the app as "Rangemaster-Style Booster"**, not "Rangemaster" — Rangemaster™ is a real, active trademark (Dallas Rangemaster → Dunlop), and using it directly as this project's own shipped feature name (rather than descriptively, as this doc does to cite the real circuit it's modelled from) risks implying sponsorship/endorsement that doesn't exist. "-Style" is standard practice for exactly this reason (nominative fair use covers describing/comparing, not branding your own product with someone else's mark) — see the `Source/Effects/AGENTS.md` decision log entry for the full reasoning. The C++ class (`PositiveGroundBoosterProcessor`) and this doc's own filename keep the more literal/descriptive name since they're internal/technical, not user-facing.
+
 This is the project's first *physically modelled* (not neural) circuit — see root `AGENTS.md`'s Global Decisions for the `chowdsp_wdf` dependency choice this grew out of. Read this file to understand how the circuit works before touching the code; don't re-derive it from the `.cpp` each time.
 
 ## What the real circuit does

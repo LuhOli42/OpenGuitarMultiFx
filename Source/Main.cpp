@@ -42,13 +42,23 @@ public:
     {
 #if JUCE_LINUX
         // WebKitGTK (the embedded browser TONE3000 login uses, see
-        // OAuthLoginDialog.h) is known to render blank under Wayland
-        // compositors unless its own compositing mode is disabled --
-        // must be set before the WebKit web-process subprocess is ever
-        // spawned (it reads this from its inherited environment), so as
-        // early as possible here, well before any WebBrowserComponent
-        // gets constructed later. The `0` (don't overwrite) respects an
-        // explicit value the user/environment may already have set.
+        // OAuthLoginDialog.h) renders blank in this dev environment --
+        // confirmed 2026-09-14 even against a trivial page (example.com),
+        // ruling out anything page-specific. Two standard mitigations
+        // tried: WEBKIT_DISABLE_COMPOSITING_MODE=1 alone runs fine but
+        // does NOT fix the blank render; ALSO forcing GDK_BACKEND=x11
+        // (to push the GTK widget into XEmbed/X11 embedding instead of
+        // native Wayland) made it WORSE -- the app crashed outright
+        // (window created per the log, then gone, no clean shutdown
+        // logged). GDK_BACKEND=x11 is deliberately NOT set here as a
+        // result -- see Source/Tone3000/AGENTS.md's decision log for the
+        // full story and open status; this remains a known, unresolved
+        // issue on this specific dev machine (JUCE inside a distrobox
+        // container talking to a Wayland host), not something to keep
+        // guessing more env vars at blindly. The compositing-mode var
+        // alone is harmless even though it didn't fix this machine, so
+        // it stays. The `0` (don't overwrite) respects an explicit value
+        // the user/environment may already have set.
         setenv ("WEBKIT_DISABLE_COMPOSITING_MODE", "1", 0);
 #endif
 

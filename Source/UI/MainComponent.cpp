@@ -57,7 +57,7 @@ namespace
     {
         if (displayName == "Noise Gate" || displayName == "Compressor")
             return "Dynamics";
-        if (displayName == "Overdrive" || displayName == "Positive Ground Booster")
+        if (displayName == "Overdrive" || displayName == "Rangemaster-Style Booster")
             return "Drive";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab"
             || displayName == "Neural Pedal" || displayName == "Cab" || displayName == "Dynamic Cab")

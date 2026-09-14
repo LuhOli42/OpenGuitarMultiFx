@@ -47,7 +47,7 @@ public:
     void reset() override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Positive Ground Booster"; }
+    const char* getName() const override { return "Rangemaster-Style Booster"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb8622a); }
 
     // Exposes channel 0's last-solved (real, unmirrored) terminal voltages

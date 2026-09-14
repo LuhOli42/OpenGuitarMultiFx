@@ -37,12 +37,18 @@ void PolyphonicPitchDetector::setTuning (const TuningProfile& tuning)
         band->targetFrequencyHz = tuned.frequencyHz;
         band->noteName = tuned.noteName;
 
-        // Q=3: wide enough to still pass a string that's a good way out of
-        // tune (this IS a tuner -- it has to work before you're in tune),
-        // narrow enough that neighbouring strings (guitar strings are
-        // roughly a 4th/5th apart) don't dominate YIN's fundamental guess.
+        // Q=2 (lowered from 3 -- see 2026-09-14 decision log entry): wide
+        // enough to still pass a string that's a good way out of tune
+        // (this IS a tuner -- it has to work before you're in tune) AND,
+        // critically, wide enough in ABSOLUTE Hz terms for low strings --
+        // a Q=3 filter's -3dB bandwidth (centreHz/Q) shrinks in lockstep
+        // with centreHz, so it was passing meaningfully less absolute
+        // signal for a 7-string's B1 (61.74Hz) than for, say, an E4
+        // (329.63Hz) at the exact same Q. Narrow enough that neighbouring
+        // strings (guitar strings are roughly a 4th/5th apart) still
+        // don't dominate YIN's fundamental guess.
         const auto centreHz = juce::jlimit (20.0f, (float) (sampleRate * 0.45), tuned.frequencyHz);
-        *band->filter.coefficients = *juce::dsp::IIR::Coefficients<float>::makeBandPass (sampleRate, centreHz, 3.0f);
+        *band->filter.coefficients = *juce::dsp::IIR::Coefficients<float>::makeBandPass (sampleRate, centreHz, 2.0f);
 
         // A shared, one-size-fits-all PitchDetector range/threshold
         // doesn't work here: (1) the default 70-1200Hz range can't even
@@ -56,7 +62,9 @@ void PolyphonicPitchDetector::setTuning (const TuningProfile& tuning)
         // generous enough to still get a reading on a string that's
         // badly out of tune (the whole point of a tuner) while staying
         // clear of neighbouring strings.
-        band->pitchDetector.prepare (sampleRate, tuned.frequencyHz * 0.7f, tuned.frequencyHz * 1.5f, 0.001f);
+        // Threshold lowered again (was 0.001, still too high -- 7-string
+        // B1 confirmed still undetected) -- see 2026-09-14 decision log.
+        band->pitchDetector.prepare (sampleRate, tuned.frequencyHz * 0.7f, tuned.frequencyHz * 1.5f, 0.0002f);
 
         newSet->bands.push_back (std::move (band));
     }
@@ -70,6 +78,18 @@ void PolyphonicPitchDetector::pushSamples (const float* data, int numSamples) no
     if (bandSet == nullptr || numSamples > (int) bandScratch.size())
         return;
 
+    // Block-rate one-pole smoothing coefficients -- see the Band struct's
+    // doc comment for why these exist. Computed from THIS call's actual
+    // numSamples so smoothing behaviour stays consistent regardless of
+    // the host's block size. attackCoeff (fast) lets a string light up
+    // promptly; releaseCoeff (slow, several multiples of the underlying
+    // PitchDetector's ~15Hz/67ms update period) keeps it from flickering
+    // off between individual analysis updates.
+    const float blockSeconds = (float) numSamples / (float) sampleRate;
+    const float centsCoeff = 1.0f - std::exp (-blockSeconds / 0.12f);     // ~120ms
+    const float attackCoeff = 1.0f - std::exp (-blockSeconds / 0.02f);    // ~20ms
+    const float releaseCoeff = 1.0f - std::exp (-blockSeconds / 0.25f);   // ~250ms
+
     for (auto& band : bandSet->bands)
     {
         for (int i = 0; i < numSamples; ++i)
@@ -78,14 +98,20 @@ void PolyphonicPitchDetector::pushSamples (const float* data, int numSamples) no
         band->pitchDetector.pushSamples (bandScratch.data(), numSamples);
 
         const float hz = band->pitchDetector.getDetectedFrequencyHz();
-        const bool isActive = hz > 0.0f;
+        const bool rawActive = hz > 0.0f;
+
+        const float activityTarget = rawActive ? 1.0f : 0.0f;
+        const float activityCoeff = activityTarget > band->activityLevel ? attackCoeff : releaseCoeff;
+        band->activityLevel += activityCoeff * (activityTarget - band->activityLevel);
+        const bool isActive = band->activityLevel > 0.5f;
         band->active.store (isActive, std::memory_order_relaxed);
         band->frequencyHz.store (hz, std::memory_order_relaxed);
 
-        if (isActive && band->targetFrequencyHz > 0.0f)
+        if (rawActive && band->targetFrequencyHz > 0.0f)
         {
-            const float cents = 1200.0f * std::log2 (hz / band->targetFrequencyHz);
-            band->cents.store (juce::jlimit (-50.0f, 50.0f, cents), std::memory_order_relaxed);
+            const float rawCents = juce::jlimit (-50.0f, 50.0f, 1200.0f * std::log2 (hz / band->targetFrequencyHz));
+            band->smoothedCents += centsCoeff * (rawCents - band->smoothedCents);
+            band->cents.store (band->smoothedCents, std::memory_order_relaxed);
         }
     }
 }
