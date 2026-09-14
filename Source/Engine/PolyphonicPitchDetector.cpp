@@ -43,7 +43,20 @@ void PolyphonicPitchDetector::setTuning (const TuningProfile& tuning)
         // roughly a 4th/5th apart) don't dominate YIN's fundamental guess.
         const auto centreHz = juce::jlimit (20.0f, (float) (sampleRate * 0.45), tuned.frequencyHz);
         *band->filter.coefficients = *juce::dsp::IIR::Coefficients<float>::makeBandPass (sampleRate, centreHz, 3.0f);
-        band->pitchDetector.prepare (sampleRate);
+
+        // A shared, one-size-fits-all PitchDetector range/threshold
+        // doesn't work here: (1) the default 70-1200Hz range can't even
+        // find several extended-range/bass strings (B0/E1/F#1/A1/B1 all
+        // sit under 70Hz), so every band needs its OWN range sized around
+        // its actual target; (2) a bandpass-filtered signal's RMS is well
+        // below what the shared 0.01 silence threshold (tuned for a
+        // full-band signal) expects, so bands were reading "silence" on a
+        // string that was clearly being played -- a lower threshold here
+        // is the fix. Range: roughly -6/+7 semitones around the target,
+        // generous enough to still get a reading on a string that's
+        // badly out of tune (the whole point of a tuner) while staying
+        // clear of neighbouring strings.
+        band->pitchDetector.prepare (sampleRate, tuned.frequencyHz * 0.7f, tuned.frequencyHz * 1.5f, 0.001f);
 
         newSet->bands.push_back (std::move (band));
     }

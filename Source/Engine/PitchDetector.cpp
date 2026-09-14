@@ -5,9 +5,12 @@
 namespace openguitarmultifx
 {
 
-void PitchDetector::prepare (double sampleRateToUse)
+void PitchDetector::prepare (double sampleRateToUse, float minFrequencyHz, float maxFrequencyHz, float silenceThreshold)
 {
     sampleRate = sampleRateToUse;
+    minFreqHz = minFrequencyHz;
+    maxFreqHz = maxFrequencyHz;
+    silenceRmsThreshold = silenceThreshold;
 
     tauMax = (int) (sampleRate / (double) minFreqHz) + 32;
     tauMin = juce::jmax (1, (int) (sampleRate / (double) maxFreqHz));

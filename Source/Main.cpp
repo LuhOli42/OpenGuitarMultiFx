@@ -40,6 +40,18 @@ public:
 
     void initialise (const juce::String&) override
     {
+#if JUCE_LINUX
+        // WebKitGTK (the embedded browser TONE3000 login uses, see
+        // OAuthLoginDialog.h) is known to render blank under Wayland
+        // compositors unless its own compositing mode is disabled --
+        // must be set before the WebKit web-process subprocess is ever
+        // spawned (it reads this from its inherited environment), so as
+        // early as possible here, well before any WebBrowserComponent
+        // gets constructed later. The `0` (don't overwrite) respects an
+        // explicit value the user/environment may already have set.
+        setenv ("WEBKIT_DISABLE_COMPOSITING_MODE", "1", 0);
+#endif
+
         // A real log file, independent of however stdout/stderr get
         // captured through distrobox/podman -- so "why did it close" is
         // answerable after the fact instead of guessed at.

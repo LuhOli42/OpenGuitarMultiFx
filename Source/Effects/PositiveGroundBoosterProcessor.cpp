@@ -41,6 +41,34 @@ void PositiveGroundBoosterProcessor::prepare (double newSampleRate, int, int)
         const float dividerVoltage = supplyVoltage * r2 / (r1 + r2);
         ch.transistor.reset (dividerVoltage, dividerVoltage - 0.55, supplyVoltage * 0.5);
     }
+
+    // Settle fully to the true DC operating point on SILENCE before this
+    // processor ever sees real audio -- reset() above only warm-starts
+    // the transistor's Newton-Raphson guess; the capacitor histories
+    // still start at literal 0V, and the gap between "guessed" and
+    // "actually converged" was audible as a pop/thump the instant this
+    // effect was spliced into a live chain. Same fix BYOD's own
+    // near-identical circuit uses (their prepare() does the same
+    // pre-buffering) -- reusing process() itself here rather than a
+    // separate closed-form DC calculation, so this settles through the
+    // exact same (already-verified) code path real audio will.
+    // 1 second covers several multiples of the slowest time constant
+    // (C4*R4 = 47uF*3.9k = ~183ms).
+    if (newSampleRate > 0.0)
+    {
+        const int settleBlockSize = 512;
+        juce::AudioBuffer<float> silence (2, settleBlockSize);
+        int samplesRemaining = (int) newSampleRate; // 1 second
+
+        while (samplesRemaining > 0)
+        {
+            const int thisBlock = juce::jmin (settleBlockSize, samplesRemaining);
+            silence.clear();
+            juce::AudioBuffer<float> silenceView (silence.getArrayOfWritePointers(), 2, thisBlock);
+            process (silenceView);
+            samplesRemaining -= thisBlock;
+        }
+    }
 }
 
 void PositiveGroundBoosterProcessor::reset()

@@ -162,6 +162,38 @@ public:
             expectLessThan (previousGain, 200.0f);
         }
 
+        beginTest ("CPU cost stays comfortably real-time capable (regression guard)");
+        {
+            PositiveGroundBoosterProcessor booster;
+            booster.prepare (48000.0, 512, 2); // stereo -- worst case, both channels solving every sample
+
+            juce::AudioBuffer<float> buffer (2, 512);
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+            {
+                buffer.setSample (0, i, 0.4f * std::sin ((float) i * 0.3f)); // loud + high-frequency-ish content, not a trivially-converged DC signal
+                buffer.setSample (1, i, 0.4f * std::sin ((float) i * 0.31f));
+            }
+
+            constexpr int numBlocks = 2000; // ~21.3 seconds of audio at 48kHz/512
+            const auto start = juce::Time::getHighResolutionTicks();
+            for (int block = 0; block < numBlocks; ++block)
+                booster.process (buffer);
+            const auto elapsedSeconds = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - start);
+
+            const double audioSeconds = (double) numBlocks * buffer.getNumSamples() / 48000.0;
+            const double realTimeFactor = audioSeconds / elapsedSeconds;
+            logMessage ("Processed " + juce::String (audioSeconds, 1) + "s of stereo audio in "
+                        + juce::String (elapsedSeconds, 3) + "s wall-clock -- " + juce::String (realTimeFactor, 1) + "x real-time");
+
+            // Generous floor (measured ~40x on this project's own dev
+            // machine) -- this exists to catch a future accidental
+            // regression (e.g. someone raising EbersMollBJT's default
+            // Newton-Raphson iteration count), not to assert a specific
+            // performance target.
+            expectGreaterThan (realTimeFactor, 5.0);
+            expect (std::isfinite (buffer.getSample (0, 0)));
+        }
+
         beginTest ("stereo channels stay independent and both finite");
         {
             PositiveGroundBoosterProcessor booster;

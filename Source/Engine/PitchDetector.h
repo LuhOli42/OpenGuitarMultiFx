@@ -29,8 +29,16 @@ namespace openguitarmultifx
 class PitchDetector
 {
 public:
-    /** Control thread (called from AudioEngine::audioDeviceAboutToStart()). */
-    void prepare (double sampleRateToUse);
+    /** Control thread (called from AudioEngine::audioDeviceAboutToStart()).
+        Defaults match this class's original fixed range/threshold (the
+        mono tuner's exact prior behaviour, unchanged). PolyphonicPitchDetector
+        passes tighter, band-specific values instead: a shared 70-1200Hz
+        range can't even find several extended-range/bass strings (B0/E1/
+        F#1/A1/B1 all fall under 70Hz), and a fixed silence threshold tuned
+        for a full-band signal reads a bandpass-filtered band's much
+        quieter signal as silence far too often. */
+    void prepare (double sampleRateToUse, float minFrequencyHz = 70.0f, float maxFrequencyHz = 1200.0f,
+                  float silenceThreshold = 0.01f);
 
     /** Audio thread. Never allocates -- all buffers are sized in prepare(). */
     void pushSamples (const float* data, int numSamples) noexcept;
@@ -41,11 +49,12 @@ public:
 private:
     void runAnalysis() noexcept;
 
-    static constexpr float minFreqHz = 70.0f;  // below standard low E (82.4Hz), covers drop-D too
-    static constexpr float maxFreqHz = 1200.0f;
     static constexpr float yinThreshold = 0.15f; // standard YIN absolute threshold
-    static constexpr float silenceRmsThreshold = 0.01f;
     static constexpr double updateRateHz = 15.0; // plenty responsive for a tuner display
+
+    float minFreqHz = 70.0f;
+    float maxFreqHz = 1200.0f;
+    float silenceRmsThreshold = 0.01f;
 
     std::vector<float> ringBuffer, analysisBuffer, diffBuffer, cmndBuffer;
     int ringSize = 0;
