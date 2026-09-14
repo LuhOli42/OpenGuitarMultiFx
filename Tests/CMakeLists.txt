@@ -14,6 +14,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   CompressorProcessorTests.cpp
   OverdriveProcessorTests.cpp
   PositiveGroundBoosterProcessorTests.cpp
+  DS1StyleDistortionProcessorTests.cpp
   NAMProcessorTests.cpp
   DelayProcessorTests.cpp
   TapeDelayProcessorTests.cpp
@@ -53,6 +54,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/Effects/CompressorProcessor.cpp
   ../Source/Effects/OverdriveProcessor.cpp
   ../Source/Effects/PositiveGroundBoosterProcessor.cpp
+  ../Source/Effects/DS1StyleDistortionProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp

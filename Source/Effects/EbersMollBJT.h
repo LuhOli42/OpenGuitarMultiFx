@@ -179,6 +179,22 @@ public:
         vcPrev = initialVc;
     }
 
+    /** The last converged solution (this sample's, once solve() has been
+        called, otherwise the previous sample's) -- lets a caller use one
+        terminal's value as a same-device, previous-sample "known" source
+        for another terminal's Thevenin equivalent, when a passive branch
+        bridges two of this device's own terminals (e.g. collector-to-base
+        feedback) and so can't be resolved by simple series/parallel
+        reduction before this device's own solve. See the DS-1 doc's
+        explanation of this exact case for why previous-sample (not exact
+        simultaneous) is the deliberate, documented choice. */
+    void getLastSolved (double& vb, double& ve, double& vc) const noexcept
+    {
+        vb = vbPrev;
+        ve = vePrev;
+        vc = vcPrev;
+    }
+
 private:
     static double clamp (double v) noexcept { return v < -1.0 ? -1.0 : (v > 1.0 ? 1.0 : v); }
 

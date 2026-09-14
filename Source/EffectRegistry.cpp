@@ -9,6 +9,7 @@
 #include "Effects/NAMProcessor.h"
 #include "Effects/OverdriveProcessor.h"
 #include "Effects/PositiveGroundBoosterProcessor.h"
+#include "Effects/DS1StyleDistortionProcessor.h"
 #include "Effects/ReverbProcessor.h"
 #include "Effects/SpringReverbProcessor.h"
 #include "Effects/HallReverbProcessor.h"
@@ -48,6 +49,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // Source/Effects/AGENTS.md's decision log and docs/circuits/
     // PositiveGroundBooster.md for the full circuit-fidelity rationale.
     registry.registerType ("PositiveGroundBooster", [] { return std::make_unique<PositiveGroundBoosterProcessor>(); });
+    registry.registerType ("DS1StyleDistortion", [] { return std::make_unique<DS1StyleDistortionProcessor>(); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
