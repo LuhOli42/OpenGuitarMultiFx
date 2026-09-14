@@ -160,6 +160,7 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     sampleRate.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
     blockSize.store (device->getCurrentBufferSizeSamples(), std::memory_order_relaxed);
     pitchDetector.prepare (device->getCurrentSampleRate());
+    polyphonicPitchDetector.prepare (device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -188,6 +189,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     if (in != nullptr)
     {
         pitchDetector.pushSamples (in, numSamples);
+        polyphonicPitchDetector.pushSamples (in, numSamples);
         const auto range = juce::FloatVectorOperations::findMinAndMax (in, numSamples);
         lastInputLevel.store (juce::jmax (std::abs (range.getStart()), std::abs (range.getEnd())),
                                std::memory_order_relaxed);

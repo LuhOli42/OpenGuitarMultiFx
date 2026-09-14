@@ -1,9 +1,11 @@
 #include "MainComponent.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
+#include "PolyphonicTunerOverlay.h"
 #include "PresetListDialog.h"
 #include "Tone3000Panel.h"
 #include "TouchSizing.h"
+#include "../Engine/TuningSettings.h"
 
 #include <algorithm>
 #include <cmath>
@@ -200,9 +202,18 @@ MainComponent::MainComponent()
     addAndMakeVisible (parameterPanel);
 
     addAndMakeVisible (footerBar);
+    footerBar.onTunerTapped = [this] { showPolyphonicTuner(); };
 
     if (! audioEngine.start())
         titleLabel.setText ("Audio device failed to open", juce::dontSendNotification);
+
+    // Remembered across launches (tunings::saveTuning()) -- a tuning
+    // describes the instrument physically plugged in, not a sound, so it
+    // isn't part of any guitar preset. Applied here regardless of whether
+    // audioEngine.start() actually got a device -- PolyphonicPitchDetector
+    // just holds it as pending until prepare() knows the sample rate.
+    currentTuning = tunings::loadSavedTuning();
+    audioEngine.setTuningProfile (currentTuning);
 
     // Row 0 starts wired device-in -> device-out so the app still makes
     // sound out of the box; rows 1-3 start unrouted, showing a "+" at both
@@ -867,6 +878,24 @@ void MainComponent::showSettingsPanel()
     panel->onPopOverlay  = [this] { overlayHost.popOverlay(); };
 
     overlayHost.pushOverlay (std::move (panel));
+}
+
+void MainComponent::showPolyphonicTuner()
+{
+    auto overlay = std::make_unique<PolyphonicTunerOverlay> (currentTuning);
+
+    overlay->getReading = [this] (int stringIndex) { return audioEngine.getTuningStringReading (stringIndex); };
+
+    overlay->onTuningChanged = [this] (const TuningProfile& tuning)
+    {
+        currentTuning = tuning;
+        audioEngine.setTuningProfile (tuning);
+        tunings::saveTuning (tuning);
+    };
+
+    overlay->onPopOverlay = [this] { overlayHost.popOverlay(); };
+
+    overlayHost.pushOverlay (std::move (overlay));
 }
 
 void MainComponent::showPresetsPanel()

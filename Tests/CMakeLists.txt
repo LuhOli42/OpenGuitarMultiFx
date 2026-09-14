@@ -44,6 +44,8 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/EffectRegistry.cpp
   ../Source/Engine/SignalGraph.cpp
   ../Source/Engine/PitchDetector.cpp
+  ../Source/Engine/PolyphonicPitchDetector.cpp
+  ../Source/Engine/TuningSettings.cpp
   ../Source/Engine/ParameterManager.cpp
   ../Source/Presets/PresetManager.cpp
   ../Source/Effects/GateProcessor.cpp

@@ -10,6 +10,9 @@ FooterBar::FooterBar()
     addAndMakeVisible (tunerNoteLabel);
     tunerNoteLabel.setFont (juce::Font (34.0f, juce::Font::bold));
     tunerNoteLabel.setJustificationType (juce::Justification::centred);
+    // So a tap anywhere in the tuner zone reaches FooterBar::mouseUp(), not
+    // just the gauge area the label doesn't cover -- see onTunerTapped.
+    tunerNoteLabel.setInterceptsMouseClicks (false, false);
 
     addAndMakeVisible (bpmValueLabel);
     bpmValueLabel.setFont (juce::Font (28.0f, juce::Font::bold));
@@ -77,6 +80,12 @@ void FooterBar::setTuning (const juce::String& note, float deviation)
     repaint();
 }
 
+void FooterBar::mouseUp (const juce::MouseEvent& event)
+{
+    if (tunerZoneBounds.contains (event.getPosition()) && onTunerTapped)
+        onTunerTapped();
+}
+
 void FooterBar::resized()
 {
     auto area = getLocalBounds().reduced (16, 10);
@@ -86,6 +95,7 @@ void FooterBar::resized()
     // tuner tem q ser uma barrinha horizontal com a letra que é a
     // afinacao").
     auto tunerZone = area.removeFromLeft (260);
+    tunerZoneBounds = tunerZone;
     tunerNoteLabel.setBounds (tunerZone.removeFromLeft (56));
     tunerZone.removeFromLeft (10);
     tunerGaugeBounds = tunerZone.withSizeKeepingCentre (tunerZone.getWidth(), 16).toFloat();

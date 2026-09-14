@@ -2,6 +2,7 @@
 
 #include "DeferredReclaimer.h"
 #include "PitchDetector.h"
+#include "PolyphonicPitchDetector.h"
 #include "SignalGraph.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -49,6 +50,16 @@ public:
     /** Safe to read from any thread. 0 means no clear pitch detected
         (silence or noise) -- for FooterBar's tuner gauge. */
     float getDetectedFrequencyHz() const noexcept { return pitchDetector.getDetectedFrequencyHz(); }
+
+    /** For the polyphonic tuner overlay -- see PolyphonicPitchDetector.h.
+        Fed the exact same input tap as the mono pitchDetector above, just
+        split into per-string bands. Control thread; safe from any thread. */
+    void setTuningProfile (const TuningProfile& tuning) { polyphonicPitchDetector.setTuning (tuning); }
+    int getTuningStringCount() const noexcept { return polyphonicPitchDetector.getNumStrings(); }
+    PolyphonicPitchDetector::StringReading getTuningStringReading (int stringIndex) const noexcept
+    {
+        return polyphonicPitchDetector.getReading (stringIndex);
+    }
 
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
 
@@ -100,6 +111,7 @@ private:
     std::atomic<float> lastInputLevel { 0.0f };
     std::atomic<float> lastOutputLevel { 0.0f };
     PitchDetector pitchDetector;
+    PolyphonicPitchDetector polyphonicPitchDetector;
 
     std::atomic<int> selectedInputChannel { 0 };
     std::atomic<int> selectedOutputPairStart { 0 };

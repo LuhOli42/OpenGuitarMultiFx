@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <vector>
 
 namespace openguitarmultifx
@@ -41,6 +42,7 @@ public:
 
     void resized() override;
     void paint (juce::Graphics& g) override;
+    void mouseUp (const juce::MouseEvent& event) override;
 
     /** 0-1 peak level for the IN/OUT meter bars. */
     void setLevels (float inLevel, float outLevel);
@@ -51,6 +53,11 @@ public:
 
     /** Current tap-tempo estimate. For future tempo-synced effects -- nothing reads this yet. */
     double getBpm() const noexcept { return bpm; }
+
+    /** Tapping anywhere in the tuner zone (note letter + gauge) opens the
+        polyphonic tuner overlay -- per user request ("seria legal abrir a
+        tela de tuner, se clickarmos no afinador"). */
+    std::function<void()> onTunerTapped;
 
 private:
     void tapTempo();
@@ -68,6 +75,7 @@ private:
     std::vector<double> recentTapIntervalsMs;
 
     juce::Rectangle<float> tunerGaugeBounds, inMeterBounds, outMeterBounds;
+    juce::Rectangle<int> tunerZoneBounds; // wider hit-test zone for onTunerTapped -- see resized()
 
     void drawHorizontalMeter (juce::Graphics& g, juce::Rectangle<float> bounds, float level, const juce::String& label) const;
     void drawTunerGauge (juce::Graphics& g, juce::Rectangle<float> bounds) const;

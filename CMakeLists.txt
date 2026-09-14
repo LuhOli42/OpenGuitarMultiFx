@@ -97,6 +97,8 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/EffectRegistry.cpp
   Source/Engine/AudioEngine.cpp
   Source/Engine/PitchDetector.cpp
+  Source/Engine/PolyphonicPitchDetector.cpp
+  Source/Engine/TuningSettings.cpp
   Source/Engine/SignalGraph.cpp
   Source/Engine/ParameterManager.cpp
   Source/Effects/GateProcessor.cpp
@@ -135,6 +137,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/ChainContainer.cpp
   Source/UI/EffectBlockComponent.cpp
   Source/UI/FooterBar.cpp
+  Source/UI/PolyphonicTunerOverlay.cpp
   Source/UI/RowEndpointBlock.cpp
   Source/UI/ModelListDialog.cpp
   Source/UI/OverlayHost.cpp
