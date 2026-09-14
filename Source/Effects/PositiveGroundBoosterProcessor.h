@@ -49,6 +49,7 @@ public:
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Rangemaster-Style Booster"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb8622a); }
+    void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     // Exposes channel 0's last-solved (real, unmirrored) terminal voltages
     // -- a permanent verification hook, not leftover debug scaffolding:

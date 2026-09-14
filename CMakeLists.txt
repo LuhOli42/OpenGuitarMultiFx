@@ -52,6 +52,7 @@ juce_add_binary_data(OpenGuitarMultiFx_Icons
     Assets/Icons/gate.svg
     Assets/Icons/pulse.svg
     Assets/Icons/overdrive.svg
+    Assets/Icons/boost.svg
     Assets/Icons/neura_chip.svg
     Assets/Icons/neura_chip_cab.svg
     Assets/Icons/cab.svg

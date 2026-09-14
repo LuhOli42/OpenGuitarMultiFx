@@ -1,4 +1,7 @@
 #include "PositiveGroundBoosterProcessor.h"
+#include "IconKit.h"
+
+#include <IconData.h>
 
 namespace openguitarmultifx
 {
@@ -180,6 +183,14 @@ PositiveGroundBoosterProcessor::DebugBiasPoint PositiveGroundBoosterProcessor::g
 {
     auto& ch = channels[0];
     return { (float) ch.lastVb, (float) ch.lastVe, (float) ch.lastVc };
+}
+
+void PositiveGroundBoosterProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
+{
+    // See docs/icons/reference-sheet.png / Assets/Icons/boost.svg -- the
+    // unified icon set's "Boost" glyph (Drive category), a plain up-arrow.
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::boost_svg, IconData::boost_svgSize);
+    icon::drawSvg (g, b, svg.get());
 }
 
 } // namespace openguitarmultifx
