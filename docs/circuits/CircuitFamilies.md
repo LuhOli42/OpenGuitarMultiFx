@@ -44,6 +44,43 @@ for the transistor stages, the "ideal op-amp closed-form, no Newton-
 Raphson" treatment for any op-amp gain stage, `chowdsp_wdf`'s `DiodePairT`
 for any shunt/series diode clipper rather than a hand-rolled solve.
 
+## Op-amp diode-in-feedback clippers (direct nodal analysis, 1D Newton-Raphson)
+
+Circuits whose core distortion mechanism is diode(s) placed directly in
+an op-amp's own negative feedback loop (not shunting a separately-gained
+signal to ground, which is the DS-1/Distortion+ family above) — the
+classic topology the BOSS OD-1 originated and the Ibanez Tube Screamer
+made famous two years later. The feedback network being nonlinear means
+the op-amp stage can't be solved in closed form the way the DS-1's linear-
+feedback stage can; it needs a genuine (if small — one unknown) Newton-
+Raphson solve, same category of problem as a transistor's KCL. Input/
+output buffering around the clipper is plain `EbersMollBJT` emitter
+followers, same as every other family here.
+
+| Circuit | Processor | Devices | Notes |
+|---|---|---|---|
+| [OD-1-Style Overdrive](OD1StyleOverdrive.md) | `OD1StyleOverdriveProcessor` | 2x NPN, 2 ideal op-amps, one ASYMMETRIC diode pair (1 diode one way, 2 in series the other) | Op-amp 1 = the clipper (diodes across a Drive-pot-controlled feedback resistance); op-amp 2 = fixed-gain (unity) treble-cut buffer, fully linear/closed-form; only 2 real controls (Drive, Level) — no Tone stage, unlike the DS-1 |
+
+**Why a NEW `AsymmetricDiodePair` class, not `chowdsp_wdf`'s `DiodePairT`
+again:** `DiodePairT`'s `nDiodes` parameter scales Vt equally on both
+sides of the pair — it has no way to express "1 diode this way, 2 the
+other," which is specifically what gives circuits in this family (the
+OD-1 being the textbook example) their documented asymmetric clipping
+character. Checked before writing a new class (per this project's
+research-first rule) — genuinely not covered by the vendored library or
+by anything else already in this codebase.
+
+**What would differ vs. what wouldn't, for a new circuit in this
+family:** diode count/orientation (symmetric → reuse `chowdsp_wdf`'s own
+`DiodePairT` instead; asymmetric → `AsymmetricDiodePair`), feedback
+network topology (a bare resistor here; the DS-1/Tube-Screamer lineage
+sometimes adds a cap in parallel for extra treble shaping — check the
+specific schematic), how many linear buffer/filter op-amp stages surround
+the clipper. What stays the same: the "pin the op-amp's virtual-short
+voltage, compute the known input current, solve the nonlinear feedback
+network for the resulting output" derivation pattern — see the OD-1 doc's
+worked-through equation for the template to adapt.
+
 ## Multi-stage tube preamps (not yet implemented)
 
 No circuit in this family exists in this project yet. Researched ahead of time (per the user's request, since this will come up): `chowdsp_wdf` has no triode element. The established real-world approach (Chowdhury-DSP's BYOD `JuniorB`) is a small neural network (RTNeural, 2 in/2 out) trained on real triode I-V curves for the nonlinearity specifically, combined with a **genuine `chowdsp_wdf` R-type WDF tree** for the surrounding reactive network — unlike the single-transistor family above, a real tube preamp usually has enough multi-stage topology (cathode bias networks, coupling stages, tone stacks) that the WDF tree's composability actually earns its keep.

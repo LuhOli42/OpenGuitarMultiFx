@@ -1,5 +1,6 @@
 #include "DS1StyleDistortionProcessor.h"
 #include "IconKit.h"
+#include "TheveninCombine.h"
 
 #include <IconData.h>
 
@@ -11,28 +12,6 @@ namespace openguitarmultifx
 
 namespace
 {
-    /** Combines two independent Thevenin-equivalent branches (Rth, Vth)
-        feeding the same node in parallel -- the same conductance-weighted
-        average used throughout every circuit-modelled processor here. */
-    struct Thevenin
-    {
-        double rth;
-        double vth;
-    };
-
-    Thevenin combineParallel (const Thevenin& a, const Thevenin& b) noexcept
-    {
-        const double ga = 1.0 / a.rth;
-        const double gb = 1.0 / b.rth;
-        const double g = ga + gb;
-        return { 1.0 / g, (a.vth * ga + b.vth * gb) / g };
-    }
-
-    Thevenin combineParallel (const Thevenin& a, const Thevenin& b, const Thevenin& c) noexcept
-    {
-        return combineParallel (combineParallel (a, b), c);
-    }
-
     /** Solves a 4x4 linear system (Gaussian elimination with partial
         pivoting) -- sized specifically for the Tone/Level stage's 4-node
         network (ToneIn, LugA, LugB, Wiper -- see docs/circuits/
@@ -122,6 +101,32 @@ void DS1StyleDistortionProcessor::prepare (double newSampleRate, int, int)
 {
     sampleRate = newSampleRate;
 
+    // The UI's chain-grid drag/reorder path rebuilds the whole SignalGraph
+    // and calls prepare() again on EVERY processor already in the chain,
+    // not just the one that moved (see Source/Engine/AGENTS.md) -- at the
+    // SAME sample rate, every single time. Re-running the full cold-start
+    // below (wipe every capacitor's history to 0V, re-seed every
+    // transistor's Newton-Raphson guess, settle through silence) would
+    // throw away this processor's actual live operating point -- built up
+    // from whatever real signal has been flowing through it -- right as
+    // that same real signal keeps arriving, producing an audible pop and,
+    // worse, a real risk of a transistor's Newton-Raphson landing in a
+    // different (possibly near-cutoff, near-silent) operating point than
+    // the one it had converged to under the real signal, since it's now
+    // converging from a silence-implied start instead. A same-rate
+    // re-prepare is a no-op: every Req/derived constant below depends only
+    // on sample rate, so there's nothing to recompute.
+    if (juce::exactlyEqual (settledSampleRate, newSampleRate))
+        return;
+    settledSampleRate = newSampleRate;
+
+    smoothedRfPot.reset (newSampleRate, 0.02);
+    smoothedRfPot.setCurrentAndTargetValue (juce::jmax (1.0f, driveMax * drive->get()));
+    smoothedRAtoWiper.reset (newSampleRate, 0.02);
+    smoothedRAtoWiper.setCurrentAndTargetValue (juce::jmax (1.0f, toneMax * tone->get()));
+    smoothedRTtoW.reset (newSampleRate, 0.02);
+    smoothedRTtoW.setCurrentAndTargetValue (juce::jmax (1.0f, levelMax * (1.0f - level->get())));
+
     for (auto& ch : channels)
     {
         ch.c1.prepare (newSampleRate, c1Value);
@@ -202,18 +207,25 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), (int) channels.size());
     const int numSamples = buffer.getNumSamples();
 
-    const double driveKnob = (double) drive->get();
-    const double toneKnob = (double) tone->get();
-    const double levelKnob = (double) level->get();
-
-    const double rfPot = juce::jmax (1.0, driveMax * driveKnob);
-    const double rAtoWiper = juce::jmax (1.0, (double) toneMax * toneKnob);
-    const double rBtoWiper = juce::jmax (1.0, (double) toneMax * (1.0 - toneKnob));
-    const double rTtoW = juce::jmax (1.0, (double) levelMax * (1.0 - levelKnob));
-    const double rWtoB = juce::jmax (1.0, (double) levelMax * levelKnob);
+    smoothedRfPot.setTargetValue (juce::jmax (1.0f, driveMax * drive->get()));
+    smoothedRAtoWiper.setTargetValue (juce::jmax (1.0f, toneMax * tone->get()));
+    smoothedRTtoW.setTargetValue (juce::jmax (1.0f, levelMax * (1.0f - level->get())));
 
     for (int i = 0; i < numSamples; ++i)
     {
+        // Sample-outer, channel-inner: all three pots are one real,
+        // physically shared component each, not per-channel -- advancing
+        // the smoothers once per sample (not once per channel) keeps a
+        // stereo signal's two channels seeing the exact same pot value at
+        // each instant, the same convention
+        // PositiveGroundBoosterProcessor's own smoothedBoostPotResistance
+        // uses.
+        const double rfPot = (double) smoothedRfPot.getNextValue();
+        const double rAtoWiper = (double) smoothedRAtoWiper.getNextValue();
+        const double rBtoWiper = juce::jmax (1.0, (double) toneMax - rAtoWiper);
+        const double rTtoW = (double) smoothedRTtoW.getNextValue();
+        const double rWtoB = juce::jmax (1.0, (double) levelMax - rTtoW);
+
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto& s = channels[(size_t) ch];

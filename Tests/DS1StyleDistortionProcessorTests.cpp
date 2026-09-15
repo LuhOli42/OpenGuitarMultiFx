@@ -170,6 +170,43 @@ public:
             expect (std::isfinite (buffer.getSample (0, 0)));
         }
 
+        beginTest ("a same-rate re-prepare() mid-signal does not click");
+        {
+            // The UI's chain-grid drag/reorder path rebuilds the whole
+            // SignalGraph and calls prepare() again on every processor
+            // already in the chain, at the same sample rate, mid-signal
+            // (see Source/Engine/AGENTS.md and this processor's own
+            // prepare() doc comment) -- this is exactly that scenario,
+            // and is the regression guard for a real reported pop.
+            DS1StyleDistortionProcessor ds1;
+            ds1.prepare (48000.0, 128, 1);
+            juce::AudioBuffer<float> buffer (1, 128);
+
+            for (int block = 0; block < 100; ++block)
+            {
+                for (int i = 0; i < 128; ++i)
+                {
+                    const double t = (double) (block * 128 + i) / 48000.0;
+                    buffer.setSample (0, i, (float) (0.4 * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * t)));
+                }
+                ds1.process (buffer);
+            }
+            const float beforeSample = buffer.getSample (0, 127);
+
+            ds1.prepare (48000.0, 128, 1); // simulated reorder-triggered re-prepare
+
+            for (int i = 0; i < 128; ++i)
+            {
+                const double t = (double) (100 * 128 + i) / 48000.0;
+                buffer.setSample (0, i, (float) (0.4 * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * t)));
+            }
+            ds1.process (buffer);
+            const float afterSample = buffer.getSample (0, 0);
+
+            logMessage ("before=" + juce::String (beforeSample, 5) + " after=" + juce::String (afterSample, 5));
+            expectLessThan (std::abs (beforeSample - afterSample), 1.0f);
+        }
+
         beginTest ("stereo channels stay independent and both finite");
         {
             DS1StyleDistortionProcessor ds1;

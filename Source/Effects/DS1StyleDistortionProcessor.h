@@ -98,7 +98,26 @@ private:
     juce::AudioParameterFloat* tone = nullptr;
     juce::AudioParameterFloat* level = nullptr;
 
+    // Every pot-derived resistance below feeds directly into this
+    // sample's Thevenin-network solve -- computing it fresh from the raw
+    // knob value once per BLOCK (as this processor's very first pass did)
+    // means a knob move is a step discontinuity in circuit topology
+    // between blocks, not just in the signal: an instant, unsmoothed jump
+    // in feedback/divider resistance, which is exactly what produces an
+    // audible zipper/crackle -- the same reasoning
+    // PositiveGroundBoosterProcessor's own smoothedBoostPotResistance
+    // already exists for. Only one value per pot is smoothed (not both
+    // segments independently) -- deriving the other from
+    // `<pot's total> - <smoothed value>` keeps each pot's own physical
+    // constraint (the two segments always sum to its total resistance)
+    // exact, rather than letting two independently-smoothed values drift
+    // apart mid-ramp.
+    juce::SmoothedValue<float> smoothedRfPot;
+    juce::SmoothedValue<float> smoothedRAtoWiper;
+    juce::SmoothedValue<float> smoothedRTtoW;
+
     double sampleRate = 0.0;
+    double settledSampleRate = -1.0; // see prepare()'s doc comment: guards against re-settling on a same-rate re-prepare
 
     // See docs/circuits/DS1StyleDistortion.md for where every one of
     // these numbers comes from and what simplifications/assumptions each
