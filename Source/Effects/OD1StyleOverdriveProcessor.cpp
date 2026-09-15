@@ -236,10 +236,27 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             s.q7.solve (q7Base.rth, q7Base.vth, q7Emitter.rth, q7Emitter.vth, q7Collector.rth, q7Collector.vth,
                         q7Vb, q7Ve, q7Vc);
 
-            const double vC5 = op2Out - levelTopVoltage;
-            s.c5.updateState ((float) vC5, (float) ((vC5 - histC5) / reqC5));
-            const double vC7 = levelWiperVoltage - q7Vb;
-            s.c7.updateState ((float) vC7, (float) ((vC7 - histC7) / reqC7));
+            // C5 has R10 in series (unlike a bare coupling cap) -- the
+            // branch's total voltage drop (op2Out - levelTopVoltage)
+            // includes R10's own IR drop too, so it is NOT C5's own
+            // voltage. Derive the branch current from the combined
+            // (reqC5+r10) Thevenin first, then read C5's own voltage back
+            // from that current -- same fix, and same reasoning, as C1's
+            // identical bug (R1 in series) found and fixed earlier this
+            // session. Unlike C1's case (where R2's much larger bias
+            // resistance made the error negligible), here R10 is
+            // comparable in magnitude to what C5 is combined against
+            // (the Level pot's own loading), so skipping this fix was
+            // audible: it collapsed a discrete companion-model capacitor
+            // into an effectively much-too-fast filter, cancelling most
+            // of the real AC signal instead of just blocking DC.
+            const double iC5Actual = (op2Out - histC5 - levelTopVoltage) / (reqC5 + r10);
+            s.c5.updateState ((float) (iC5Actual * reqC5 + histC5), (float) iC5Actual);
+            // Same fix as C5 above -- C7 has closedSwitchResistance in
+            // series (Q1's modelled-as-a-wire bypass switch), so the
+            // branch's full voltage drop is not C7's own voltage.
+            const double iC7Actual = (levelWiperVoltage - histC7 - q7Vb) / (closedSwitchResistance + reqC7);
+            s.c7.updateState ((float) (iC7Actual * reqC7 + histC7), (float) iC7Actual);
 
             const double reqC8 = (double) s.c8.getEquivalentResistance();
             const double histC8 = (double) s.c8.getHistoryVoltage();
