@@ -155,8 +155,8 @@ private:
     static constexpr float c14Value = 1.0e-6f;
 
     static constexpr float driveMax = 100.0e3f;
-    static constexpr float toneMax = 100.0e3f;
-    static constexpr float levelMax = 20.0e3f;
+    static constexpr float toneMax = 20.0e3f; // VR3, confirmed against Aion FX's clean "Comet Distortion" DS-1 clone doc
+    static constexpr float levelMax = 100.0e3f; // VR2, ditto
 
     static constexpr float closedSwitchResistance = 10.0f; // Q7 modelled as a closed bypass switch, see docs
     static constexpr float outputLoadResistance = 1.0e6f; // assumed downstream input impedance

@@ -383,19 +383,23 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             const double reqC13 = (double) s.c13.getEquivalentResistance();
             const double histC13 = (double) s.c13.getHistoryVoltage();
 
-            // Everything downstream of the TONE wiper (R15, the LEVEL
-            // pot, Q7's closed switch, R18, C13, Q3's own R19-to-BIAS1
-            // base bias) is a genuine tree -- no loop back into the Tone
-            // core -- so it reduces exactly via nested Thevenin
-            // combination, worked out from Q3's base backward.
+            // Everything downstream of the TONE wiper (the LEVEL pot,
+            // Q7's closed switch, R18, C13, Q3's own R19-to-BIAS1 base
+            // bias) is a genuine tree -- no loop back into the Tone core
+            // -- so it reduces exactly via nested Thevenin combination,
+            // worked out from Q3's base backward. The TONE wiper ties
+            // directly (a plain wire, no series resistor) to the LEVEL
+            // pot's top lug -- confirmed against Aion FX's clean "Comet
+            // Distortion" DS-1 clone schematic after the scanned board's
+            // own wiper trace proved ambiguous even at high zoom (see
+            // docs/circuits/DS1StyleDistortion.md); R18 sits in series
+            // between Q7's switch and the C13/R19 node, not as a separate
+            // branch to the supply as earlier assumed.
             const Thevenin q3BaseLocal { r19, bias1 };
             const Thevenin preC13ToQ3Base { r19 + reqC13, bias1 + histC13 };
-            const Thevenin preC13R18 { r18, supplyVoltage };
-            const Thevenin preC13Local = combineParallel (preC13ToQ3Base, preC13R18);
-            const Thevenin levelWiperDownstream { preC13Local.rth + closedSwitchResistance, preC13Local.vth };
+            const Thevenin levelWiperDownstream { closedSwitchResistance + r18 + preC13ToQ3Base.rth, preC13ToQ3Base.vth };
             const Thevenin levelWiperExclT = combineParallel (levelWiperDownstream, Thevenin { rWtoB, 0.0 });
-            const Thevenin levelTopDownstream { rTtoW + levelWiperExclT.rth, levelWiperExclT.vth };
-            const Thevenin toneWiperDownstream { r15 + levelTopDownstream.rth, levelTopDownstream.vth };
+            const Thevenin toneWiperDownstream { rTtoW + levelWiperExclT.rth, levelWiperExclT.vth };
 
             // The Tone core itself (ToneIn, LugA, LugB, Wiper) genuinely
             // loops (Wiper connects to both LugA and LugB, which both
@@ -417,7 +421,15 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             A[1][1] += gC12;
             bRhs[1] += gC12 * histC12;
 
-            const double gC11 = 1.0 / reqC11;
+            // C11 has R15 (2.2K) in series before it reaches LugB -- fold
+            // R15 into the branch's conductance (its own Req plus R15,
+            // exactly the R1+C1/R13+C8/R... pattern used everywhere else
+            // in this file for a resistor-in-series-with-a-cap branch);
+            // C11's OWN voltage (for updateState below) is NOT the full
+            // ToneIn-to-LugB drop once R15's own IR drop is folded in, so
+            // it has to be derived from the branch current after the
+            // solve, same as OD-1's C5/C7 fix this session.
+            const double gC11 = 1.0 / (r15 + reqC11);
             A[0][0] += gC11;
             A[2][2] += gC11;
             A[0][2] -= gC11;
@@ -452,17 +464,18 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             const double toneWiper = nodeVoltages[3];
 
             s.c10.updateState ((float) (nodeClip - toneIn), (float) ((nodeClip - histC10 - toneIn) / reqC10));
-            s.c11.updateState ((float) (toneIn - lugB), (float) ((toneIn - histC11 - lugB) / reqC11));
+            const double iC11 = (toneIn - histC11 - lugB) / (r15 + reqC11);
+            s.c11.updateState ((float) (iC11 * reqC11 + histC11), (float) iC11);
             s.c12.updateState ((float) lugA, (float) ((lugA - histC12) / reqC12));
 
-            // Forward-substitute from the Tone wiper out to preC13, now
-            // that the Tone wiper's actual voltage is known.
+            // Forward-substitute from the Tone wiper (== LEVEL's top lug,
+            // tied directly) out to preC13, now that the Tone wiper's
+            // actual voltage is known.
             const double iDown = (toneWiper - toneWiperDownstream.vth) / toneWiperDownstream.rth;
-            const double levelTop = toneWiper - iDown * r15;
-            const double levelWiper = levelTop - iDown * rTtoW;
+            const double levelWiper = toneWiper - iDown * rTtoW;
 
-            const Thevenin preC13FromLevel { closedSwitchResistance, levelWiper };
-            const Thevenin preC13 = combineParallel (preC13FromLevel, preC13R18, preC13ToQ3Base);
+            const Thevenin preC13FromLevel { closedSwitchResistance + r18, levelWiper };
+            const Thevenin preC13 = combineParallel (preC13FromLevel, preC13ToQ3Base);
             const double preC13Voltage = preC13.vth;
 
             // ---- Q3: emitter-follower output buffer ----

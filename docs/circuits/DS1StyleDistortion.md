@@ -194,32 +194,43 @@ wiper. Implemented as:
 
 - Bass branch: R16 (6.8K) in series from Node CLIP (post C10, 0.01uF)
   to TONE-pot lug A, C12 (0.1uF) lug A to ground.
-- Treble branch: C11 (0.022uF) in series from the same input node to
-  TONE-pot lug B, R17 (6.8K) lug B to ground.
-- TONE pot (VR2, 100KB) wiper blends the two; R15 (2.2K) in series from
-  the wiper to the LEVEL pot's top lug (standard Big Muff practice —
-  loads the tone wiper and sets the stage's overall insertion loss).
-- LEVEL pot (VR3, 20KB): top lug from R15, bottom lug to ground, wiper
-  is the final output tap. A simple bleed-to-ground volume control, not a
-  gain stage (matches ElectroSmash's "-12dB overall loss" note on the
-  equivalent stage in their revision).
+- Treble branch: C11 (0.022uF) in series with R15 (2.2K) from the same
+  input node to TONE-pot lug B, R17 (6.8K) lug B to ground.
+- TONE pot (VR3, 20KB) wiper ties directly (plain wire, no series
+  resistor) to the LEVEL pot's top lug.
+- LEVEL pot (VR2, 100KB): top lug from TONE's wiper, bottom lug to
+  ground, wiper is the final output tap, continuing through Q7's closed
+  switch and R18 (10K) to the C13/R19 coupling into Q3's base. A simple
+  bleed-to-ground volume control, not a gain stage (matches
+  ElectroSmash's "-12dB overall loss" note on the equivalent stage in
+  their revision).
 
-**Fidelity note on this stage specifically**: the scanned schematic's
-harness-numbered pot-lug connections (circles "8"/"6"/"7"/"5") were legible
-enough to confirm the *topology class* (two RC branches into a blend pot,
-loaded by a second volume pot) but not pixel-certain on which exact lug
-each of R16/C12 vs C11/R17 lands on. This is the one place in this
-processor where the implementation follows the standard, well-documented
-Big Muff-family topology plus this schematic's own component-value
-groupings (R16 was drawn adjacent to the "8"/lug-A column, C11+R15 shared
-a column, C12+R17 shared a column) rather than a fully pixel-verified
-trace — a deliberately lower-risk place to accept that uncertainty, since
-it's a purely linear, secondary tone-shaping stage: getting a lug swapped
-here shifts the tone sweep's character, it doesn't change whether the
-circuit is stable, correctly biased, or captures the actual distortion
-mechanism (which is fully pixel-verified above). Solved via ordinary
-Thevenin/conductance-weighted-average reduction, no Newton-Raphson needed
-(fully linear, resistors + `TrapezoidalCapacitor` companion models).
+**Fidelity note, superseding an earlier (wrong) reading**: an earlier pass
+had the TONE/LEVEL pot values swapped (100KB/20KB instead of 20KB/100KB),
+was missing R15 entirely from the treble branch, and — after a first
+correction attempt — briefly concluded TONE's wiper tied directly to
+LEVEL's own wiper (misreading a wire that detours past LEVEL's lug-3
+label on the scanned board schematic; the detour looks, at high zoom,
+like it could land on either the lug or the wiper arrow immediately
+below it). All of this was root-caused not by re-deriving the matrix math
+(which was correct throughout) but by finding an independent, cleanly
+CAD-drawn reference schematic of the same pre-1994 DS-1 circuit — Aion
+FX's "Comet Distortion" clone documentation — and cross-checking every
+component value in this stage against it (all matched exactly once the
+pot swap was corrected: R15/R16/R17, C11/C12, both pot values). That
+reference resolved the wiper ambiguity unambiguously: TONE's wiper feeds
+LEVEL's fixed top lug, LEVEL's own wiper is the true output — the
+conventional topology, also matching all three independent GitHub DS-1
+implementations researched earlier. Lesson generalized into persistent
+memory: when a scanned schematic's crossing/detour survives multiple zoom
+passes still ambiguous, look for a clean CAD reference of the same
+circuit and cross-check surrounding component values before trusting a
+pixel-level guess. Solved via ordinary Thevenin/conductance-weighted-
+average reduction for everything downstream of the Tone core, no
+Newton-Raphson needed (fully linear, resistors + `TrapezoidalCapacitor`
+companion models) — only the bridged Tone core itself (ToneIn/LugA/LugB/
+Wiper) needs the 4x4 linear solve, since it's the one part of this stage
+that genuinely loops back on itself.
 
 ### 6. Output buffer — Q7 (JFET) treated as a closed switch, Q3 (BJT) emitter follower
 
@@ -274,11 +285,12 @@ here, unlike Q2).
 | C10 | 0.01uF | Node CLIP -> tone stack coupling |
 | R16 | 6.8K | tone bass branch series |
 | C12 | 0.1uF | tone bass branch shunt |
-| C11 | 0.022uF | tone treble branch series |
+| C11 | 0.022uF | tone treble branch series (with R15) |
+| R15 | 2.2K | tone treble branch series (with C11) |
 | R17 | 6.8K | tone treble branch shunt |
-| VR2 (TONE) | 100KB linear | tone blend |
-| R15 | 2.2K | tone wiper -> level pot series |
-| VR3 (LEVEL) | 20KB linear | output bleed/volume |
+| VR3 (TONE) | 20KB linear | tone blend |
+| VR2 (LEVEL) | 100KB linear | output bleed/volume; top lug tied directly to TONE's wiper |
+| R18 | 10K | LEVEL wiper -> C13 series (after Q7's switch) |
 | C13 | 0.047uF | Q3 base coupling |
 | R21 | 10K | Q3 emitter resistor |
 | C14 | 1uF/50 | Q3 output coupling |
