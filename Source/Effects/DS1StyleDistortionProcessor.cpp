@@ -356,24 +356,29 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             const double vC8 = iRg * reqC8 + histC8;
             s.c8.updateState ((float) vC8, (float) iRg);
 
-            // ---- Diode clipper (chowdsp_wdf DiodePairT) ----
-            const double reqC9 = (double) s.c9.getEquivalentResistance();
-            const double histC9 = (double) s.c9.getHistoryVoltage();
-            const double diodeVthRelative = (nodeMid - histC9) - (double) bias1;
-            s.diodeSource.setResistanceValue (reqC9);
-            s.diodeSource.setVoltage (diodeVthRelative);
-            s.diodePair->incident (s.diodeSource.reflected());
-            s.diodeSource.incident (s.diodePair->reflected());
-            const double nodeClipRelative = chowdsp::wdft::voltage<double> (s.diodeSource);
-            const double nodeClip = nodeClipRelative + (double) bias1;
-
-            const double vC9 = nodeMid - nodeClip;
-            s.c9.updateState ((float) vC9, (float) ((vC9 - histC9) / reqC9));
-
-            // ---- Tone/Level stage (passive, Big Muff-style, genuine
-            // 4-node bridged network -- see docs/circuits/
-            // DS1StyleDistortion.md for why this needs a real linear
-            // solve, not nested Thevenin reduction) ----
+            // ---- Tone/Level stage's linear network, reduced to a
+            // Thevenin at the clip node BEFORE the diode solve (see
+            // docs/circuits/DS1StyleDistortion.md). R16 and the C11+R15
+            // branch tap directly off the clip node itself -- confirmed
+            // against Aion FX's clean "Comet Distortion" DS-1 clone
+            // schematic; an earlier pass wrongly modelled C10 (0.01uF) as
+            // a SERIES coupling cap into a separate "ToneIn" node, when
+            // it's actually just a shunt-to-BIAS1 cap sitting at the SAME
+            // node the diode pair clips, adding a phantom highpass stage
+            // that doesn't exist in the real circuit (measured effect:
+            // severe, bug-only bass loss below ~300Hz that a real DS-1
+            // doesn't have). Since the clip node is a genuine unknown
+            // shared between this passive network and the nonlinear
+            // diode pair, it's solved via superposition: one solve with
+            // the real sources (bias1, capacitor histories) and node0 as
+            // an open port gives this network's open-circuit voltage;
+            // one solve with a unit test current at node0 and every real
+            // source zeroed gives its Thevenin resistance. Combined
+            // (Rth, Vth) is this whole passive network's Thevenin as seen
+            // by the diode pair; once the diode solve fixes the clip
+            // node's actual voltage, the same two solves reconstruct
+            // LugA/LugB/Wiper exactly via superposition, no third solve
+            // needed.
             const double reqC10 = (double) s.c10.getEquivalentResistance();
             const double histC10 = (double) s.c10.getHistoryVoltage();
             const double reqC11 = (double) s.c11.getEquivalentResistance();
@@ -389,27 +394,30 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             // -- so it reduces exactly via nested Thevenin combination,
             // worked out from Q3's base backward. The TONE wiper ties
             // directly (a plain wire, no series resistor) to the LEVEL
-            // pot's top lug -- confirmed against Aion FX's clean "Comet
-            // Distortion" DS-1 clone schematic after the scanned board's
-            // own wiper trace proved ambiguous even at high zoom (see
-            // docs/circuits/DS1StyleDistortion.md); R18 sits in series
-            // between Q7's switch and the C13/R19 node, not as a separate
-            // branch to the supply as earlier assumed.
+            // pot's top lug -- confirmed against the Comet reference
+            // after the scanned board's own wiper trace proved ambiguous
+            // even at high zoom; R18 sits in series between Q7's switch
+            // and the C13/R19 node, not as a separate branch to the
+            // supply as earlier assumed.
             const Thevenin q3BaseLocal { r19, bias1 };
             const Thevenin preC13ToQ3Base { r19 + reqC13, bias1 + histC13 };
             const Thevenin levelWiperDownstream { closedSwitchResistance + r18 + preC13ToQ3Base.rth, preC13ToQ3Base.vth };
-            const Thevenin levelWiperExclT = combineParallel (levelWiperDownstream, Thevenin { rWtoB, 0.0 });
+            // LEVEL's bottom lug (pin1) also returns to BIAS1/"VA", not
+            // true ground -- same fix as C12/R17 below.
+            const Thevenin levelWiperExclT = combineParallel (levelWiperDownstream, Thevenin { rWtoB, bias1 });
             const Thevenin toneWiperDownstream { rTtoW + levelWiperExclT.rth, levelWiperExclT.vth };
 
-            // The Tone core itself (ToneIn, LugA, LugB, Wiper) genuinely
-            // loops (Wiper connects to both LugA and LugB, which both
-            // connect back to ToneIn) -- solved as one 4x4 linear system.
+            // The Tone core itself (node0=clip node, LugA, LugB, Wiper)
+            // genuinely loops (Wiper connects to both LugA and LugB,
+            // which both connect back to node0) -- solved as one 4x4
+            // linear system, twice (see comment above).
             double A[4][4] = {};
-            double bRhs[4] = {};
+            double bRhsReal[4] = {};
 
-            const double gSource = 1.0 / reqC10;
-            A[0][0] += gSource;
-            bRhs[0] += gSource * (nodeClip - histC10);
+            // C10 shunts the clip node itself to BIAS1.
+            const double gC10 = 1.0 / reqC10;
+            A[0][0] += gC10;
+            bRhsReal[0] += gC10 * ((double) bias1 + histC10);
 
             const double gR16 = 1.0 / r16;
             A[0][0] += gR16;
@@ -417,16 +425,23 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             A[0][1] -= gR16;
             A[1][0] -= gR16;
 
+            // C12 shunts LugA to BIAS1 (the schematic's own "VA" bias
+            // rail, confirmed against the Comet reference's R21/R22
+            // divider feeding the equivalent bypass cap), NOT true
+            // ground -- an earlier pass wrongly treated this (and R17/
+            // LEVEL's bottom lug above) as true ground, pinning the whole
+            // Tone/Level network's DC operating point near 0V instead of
+            // BIAS1 and starving Q3's base bias of headroom.
             const double gC12 = 1.0 / reqC12;
             A[1][1] += gC12;
-            bRhs[1] += gC12 * histC12;
+            bRhsReal[1] += gC12 * ((double) bias1 + histC12);
 
             // C11 has R15 (2.2K) in series before it reaches LugB -- fold
             // R15 into the branch's conductance (its own Req plus R15,
             // exactly the R1+C1/R13+C8/R... pattern used everywhere else
             // in this file for a resistor-in-series-with-a-cap branch);
             // C11's OWN voltage (for updateState below) is NOT the full
-            // ToneIn-to-LugB drop once R15's own IR drop is folded in, so
+            // node0-to-LugB drop once R15's own IR drop is folded in, so
             // it has to be derived from the branch current after the
             // solve, same as OD-1's C5/C7 fix this session.
             const double gC11 = 1.0 / (r15 + reqC11);
@@ -434,11 +449,13 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             A[2][2] += gC11;
             A[0][2] -= gC11;
             A[2][0] -= gC11;
-            bRhs[0] += gC11 * histC11;
-            bRhs[2] -= gC11 * histC11;
+            bRhsReal[0] += gC11 * histC11;
+            bRhsReal[2] -= gC11 * histC11;
 
+            // R17 shunts LugB to BIAS1 too (same "VA" rail, same fix).
             const double gR17 = 1.0 / r17;
             A[2][2] += gR17;
+            bRhsReal[2] += gR17 * (double) bias1;
 
             const double gAtoWiper = 1.0 / rAtoWiper;
             A[1][1] += gAtoWiper;
@@ -454,19 +471,58 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
 
             const double gDown = 1.0 / toneWiperDownstream.rth;
             A[3][3] += gDown;
-            bRhs[3] += gDown * toneWiperDownstream.vth;
+            bRhsReal[3] += gDown * toneWiperDownstream.vth;
 
-            double nodeVoltages[4] = { nodeClip, nodeClip, nodeClip, nodeClip }; // fallback if solve fails
-            solve4x4 (A, bRhs, nodeVoltages);
-            const double toneIn = nodeVoltages[0];
-            const double lugA = nodeVoltages[1];
-            const double lugB = nodeVoltages[2];
-            const double toneWiper = nodeVoltages[3];
+            double AOpen[4][4];
+            double ATest[4][4];
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c)
+                    AOpen[r][c] = ATest[r][c] = A[r][c];
 
-            s.c10.updateState ((float) (nodeClip - toneIn), (float) ((nodeClip - histC10 - toneIn) / reqC10));
-            const double iC11 = (toneIn - histC11 - lugB) / (r15 + reqC11);
+            double xOpen[4] = { (double) bias1, (double) bias1, (double) bias1, (double) bias1 };
+            solve4x4 (AOpen, bRhsReal, xOpen);
+
+            double bRhsTest[4] = { 1.0, 0.0, 0.0, 0.0 };
+            double xTest[4] = { 0.0, 0.0, 0.0, 0.0 };
+            solve4x4 (ATest, bRhsTest, xTest);
+
+            const Thevenin toneNetwork { xTest[0], xOpen[0] };
+
+            // ---- Diode clipper (chowdsp_wdf DiodePairT) ----
+            // R14 (2.2K, confirmed against the Comet reference's R12) sits
+            // in series between the op-amp's output and C9 -- an earlier
+            // pass declared r14 but never actually wired it in, feeding
+            // C9 directly from the ideal op-amp output with zero series
+            // resistance. Same series-resistor-in-a-cap-branch pattern as
+            // everywhere else in this file: fold r14 into the branch's
+            // Thevenin resistance, derive C9's own voltage from the
+            // branch current after the solve.
+            const double reqC9 = (double) s.c9.getEquivalentResistance();
+            const double histC9 = (double) s.c9.getHistoryVoltage();
+            const Thevenin fromOpAmp { r14 + reqC9, nodeMid - histC9 };
+            const Thevenin diodeThevenin = combineParallel (fromOpAmp, toneNetwork);
+            const double diodeVthRelative = diodeThevenin.vth - (double) bias1;
+            s.diodeSource.setResistanceValue (diodeThevenin.rth);
+            s.diodeSource.setVoltage (diodeVthRelative);
+            s.diodePair->incident (s.diodeSource.reflected());
+            s.diodeSource.incident (s.diodePair->reflected());
+            const double nodeClipRelative = chowdsp::wdft::voltage<double> (s.diodeSource);
+            const double nodeClip = nodeClipRelative + (double) bias1;
+
+            const double iC9 = (nodeMid - histC9 - nodeClip) / (r14 + reqC9);
+            s.c9.updateState ((float) (iC9 * reqC9 + histC9), (float) iC9);
+
+            // Reconstruct LugA/LugB/Wiper via superposition now the clip
+            // node's actual (diode-solved) voltage is known.
+            const double i0 = (nodeClip - toneNetwork.vth) / toneNetwork.rth;
+            const double lugA = xOpen[1] + i0 * xTest[1];
+            const double lugB = xOpen[2] + i0 * xTest[2];
+            const double toneWiper = xOpen[3] + i0 * xTest[3];
+
+            s.c10.updateState ((float) (nodeClip - bias1), (float) ((nodeClip - (double) bias1 - histC10) / reqC10));
+            const double iC11 = (nodeClip - histC11 - lugB) / (r15 + reqC11);
             s.c11.updateState ((float) (iC11 * reqC11 + histC11), (float) iC11);
-            s.c12.updateState ((float) lugA, (float) ((lugA - histC12) / reqC12));
+            s.c12.updateState ((float) (lugA - bias1), (float) ((lugA - (double) bias1 - histC12) / reqC12));
 
             // Forward-substitute from the Tone wiper (== LEVEL's top lug,
             // tied directly) out to preC13, now that the Tone wiper's
@@ -491,13 +547,24 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             const double vC13 = preC13Voltage - q3Vb;
             s.c13.updateState ((float) vC13, (float) ((vC13 - histC13) / reqC13));
 
+            // R22 (Comet's R19, 1K) sits in series between Q3's emitter
+            // and C14 -- an earlier pass wired C14 straight to q3Ve with
+            // no series resistor at all, missing this entirely. R20
+            // (Comet's R20, 100K) is the pedal's OWN internal bleed
+            // resistor from the output jack to true ground, always
+            // present regardless of what's plugged in downstream -- also
+            // missing entirely; the assumed external amp input impedance
+            // (outputLoadResistance, 1M) loads the jack IN PARALLEL with
+            // R20, not alone, and R20 dominates that combination (100K
+            // vs 1M) rather than being a rounding error.
             const double reqC14 = (double) s.c14.getEquivalentResistance();
             const double histC14 = (double) s.c14.getHistoryVoltage();
-            const double outputBranchCurrent = (q3Ve - histC14) / (reqC14 + outputLoadResistance);
+            const double rLoadCombined = (outputLoadResistance * (double) r20) / (outputLoadResistance + (double) r20);
+            const double outputBranchCurrent = (q3Ve - histC14) / ((double) r22 + reqC14 + rLoadCombined);
             const double vC14 = outputBranchCurrent * reqC14 + histC14;
             s.c14.updateState ((float) vC14, (float) outputBranchCurrent);
 
-            data[i] = (float) (outputBranchCurrent * (double) outputLoadResistance);
+            data[i] = (float) (outputBranchCurrent * rLoadCombined);
         }
     }
 }

@@ -171,6 +171,35 @@ fraction of a percent within the audio band, whereas approximating a BJT
 as non-loading discards a big, audible part of what makes it sound like
 that BJT.
 
+**Re-examined during this session's full-circuit audit against the Comet
+reference and reaffirmed as-is**: Comet's equivalent feedback network
+(R9/R10/C5/C6/C7 around its own IC1A) is wired in a way that doesn't
+reduce to a plain resistive Rf/Rg divider by inspection — its DIST pot
+appears to reach the op-amp's output only through a 150pF cap, too small
+to carry real audio-band feedback current on its own, which would leave
+no obvious low-frequency feedback path at all under a textbook-op-amp
+reading. Given the TA7136P is a special-purpose IC ("not even a true
+op-amp" per this doc's own opening), not a generic part with documented
+internals, and this project's existing Rf=DIST-pot/Rg=R13+C8 model
+already matches (a) Aion's own written description ("Drive controls the
+amount of gain from the op amp"), (b) ElectroSmash's independently-
+verified formula for the equivalent stage, and (c) all three GitHub
+DS-1 implementations researched earlier this session — the existing
+model was kept rather than reverse-engineering an undocumented vintage
+chip's internals from a hobbyist's redrawn schematic. Flagged here
+explicitly as a re-affirmed simplification, not a re-examined-and-fixed
+bug, so a future pass knows this spot was looked at and why it wasn't
+changed.
+
+**R14 fidelity note**: this doc always correctly described R14 (2.2K) as
+sitting in series between the op-amp's output and Node MID/C9 (see
+above) — but the actual `.cpp` never wired it in, feeding C9 straight
+from the ideal op-amp output with zero series resistance instead. Found
+and fixed during this session's full-circuit re-audit (folded into C9's
+branch conductance, same pattern as every other resistor-in-series-
+with-a-cap in this file); a real, if modest, implementation gap between
+a correct doc and an incomplete `.cpp`, not a doc error.
+
 **Diode clipper**: Node MID (through C9, 0.47uF NP) feeds Node CLIP, shunt-
 clipped by D4/D5 wired back-to-back (anti-parallel) to BIAS1 — classic
 Distortion+-style hard clipping to AC ground, confirmed by both the
@@ -250,12 +279,24 @@ JFET solve — flagged explicitly as an interpretation, not a pixel-certain
 read, but a well-supported one.
 
 Q3 (2SC732TM GR) is the real output buffer: a plain emitter follower, C13
-(0.047uF) coupling in, R21 (10K) emitter resistor, C14 (1uF)/R23 (100K)
-coupling out — mirrors Q1's input buffer exactly, and ElectroSmash's own
-analysis of their revision's equivalent stage says exactly that ("mirrors
-the input stage... unity gain and low output impedance"). Reused:
-`EbersMollBJT`, independent per-terminal Thevenin (no feedback bridge
-here, unlike Q2).
+(0.047uF) coupling in, R21 (10K) emitter-to-true-ground bias resistor,
+then a **second, separate series resistor (1K, the code's `r22` — the
+factory board's own designator for it wasn't pixel-legible, confirmed
+against the Comet reference's equivalent R19)** between the emitter node
+and C14, C14 (1uF)/R23 (100K, the code's `r20` — same naming caveat, this
+is the pedal's own internal output-jack bleed-to-ground resistor, always
+present regardless of what's plugged in downstream) coupling out —
+mirrors Q1's input buffer, and ElectroSmash's own analysis of their
+revision's equivalent stage says exactly that ("mirrors the input
+stage... unity gain and low output impedance"). **Both r22 and r20 were
+confirmed missing from the implementation entirely during this session's
+full-circuit re-audit** (r20 existed only as `outputLoadResistance`, a
+1M *assumed external amp input impedance* standing in for the pedal's
+own internal 100K bleed resistor — the two are supposed to combine in
+parallel, not substitute for one another; r22 wasn't modelled at all,
+C14 was wired straight to the emitter with zero series resistance).
+Reused: `EbersMollBJT`, independent per-terminal Thevenin (no feedback
+bridge here, unlike Q2).
 
 ## Component values (this schematic's own designators)
 
@@ -292,9 +333,10 @@ here, unlike Q2).
 | VR2 (LEVEL) | 100KB linear | output bleed/volume; top lug tied directly to TONE's wiper |
 | R18 | 10K | LEVEL wiper -> C13 series (after Q7's switch) |
 | C13 | 0.047uF | Q3 base coupling |
-| R21 | 10K | Q3 emitter resistor |
+| R21 | 10K | Q3 emitter-to-true-ground DC bias resistor |
+| R22 (code name; factory designator not pixel-legible) | 1K | Q3 emitter -> C14 series resistor -- confirmed missing entirely until this session's audit |
 | C14 | 1uF/50 | Q3 output coupling |
-| R23 | 100K | Q3 output bias |
+| R23 (code name `r20`; factory designator not pixel-legible) | 100K | pedal's own output-jack bleed-to-ground resistor -- confirmed missing entirely until this session's audit (previously stood in for by `outputLoadResistance`, an assumed EXTERNAL 1M amp input impedance that should combine in parallel with this, not replace it) |
 | supply | 9V battery | -> BIAS1 = supply/2 |
 
 Transistor parameters (2SC2240GR/2SC3378GR for Q1/Q2, 2SC732TM GR for Q3):

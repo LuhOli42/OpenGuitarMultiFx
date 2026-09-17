@@ -139,7 +139,9 @@ private:
     static constexpr float r17 = 6.8e3f;
     static constexpr float r18 = 10.0e3f;
     static constexpr float r19 = 1.0e6f;
-    static constexpr float r21 = 10.0e3f;
+    static constexpr float r21 = 10.0e3f; // Q3 emitter DC bias, to true ground (confirmed against Comet's R18)
+    static constexpr float r22 = 1.0e3f; // Q3 emitter -> C14 series resistor (Comet's R19) -- was missing entirely
+    static constexpr float r20 = 100.0e3f; // output jack bleed-to-ground resistor (Comet's R20) -- was missing entirely
 
     static constexpr float c1Value = 0.047e-6f;
     static constexpr float c2Value = 0.47e-6f;
