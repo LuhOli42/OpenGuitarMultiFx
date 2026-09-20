@@ -27,8 +27,6 @@ OD1StyleOverdriveProcessor::OD1StyleOverdriveProcessor()
         // Representative small-signal silicon NPN parameters (Q6/Q7) --
         // same values as the DS-1's Q1/Q2/Q3, same "documented, adjustable
         // assumption" status, see docs/circuits/OD1StyleOverdrive.md.
-        ch.q6.setParameters (1.0e-14, 25.85e-3, 200.0, 4.0);
-        ch.q7.setParameters (1.0e-14, 25.85e-3, 200.0, 4.0);
 
         // 1 diode forward, 2 in series reverse -- the OD-1's documented
         // asymmetric clipping (see the doc's "Op-amp 1" section).
@@ -72,8 +70,6 @@ void OD1StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         // operating point -- same rationale as the DS-1/booster's
         // prepare(). Q6/Q7 mirror the DS-1's Q1/Q3 emitter followers
         // exactly (base near BIAS1, emitter ~0.6V below).
-        ch.q6.reset (bias1, bias1 - 0.6, supplyVoltage);
-        ch.q7.reset (bias1, bias1 - 0.6, supplyVoltage);
         ch.clipper.reset (0.0);
     }
 
@@ -165,16 +161,20 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             const Thevenin emitterToPin6Branch { reqC2, pin6Voltage + histC2 };
             const Thevenin q6Emitter = combineParallel (emitterLocalBranch, emitterToPin6Branch);
 
-            const Thevenin q6Collector { 1.0e-6, supplyVoltage };
-
-            double q6Vb, q6Ve, q6Vc;
-            s.q6.solve (q6Base.rth, q6Base.vth, q6Emitter.rth, q6Emitter.vth, q6Collector.rth, q6Collector.vth,
-                        q6Vb, q6Ve, q6Vc);
+            // Q6/Q7 are emitter followers with their collectors on the rail: buffers, nothing that clips. An ideal
+            // follower (base draws no current, emitter = base - Vbe) is the same sound without a Newton solve per sample.
+            const double q6Vb = q6Base.vth;
+            const double q6Ve = q6Vb - followerDrop;
+            s.debugQ6Vb = q6Vb;
+            s.debugQ6Ve = q6Ve;
 
             const double iC1Actual = (x - histC1 - q6Vb) / (r1 + reqC1);
             s.c1.updateState ((iC1Actual * reqC1 + histC1), iC1Actual);
-            const double vC2 = q6Ve - pin6Voltage;
-            s.c2.updateState (vC2, ((vC2 - histC2) / reqC2));
+            // C2 sits between the follower and op-amp 1's virtual ground. The real follower has an output resistance
+            // (1/gm = 74 ohm at 0.35 mA) in series with it, which is also what damps the trapezoid rule here: an IDEAL
+            // source straight across a capacitor rings at Nyquist forever (hist alternates sign), so keep it.
+            const double iC2 = (q6Ve - pin6Voltage - histC2) / (reqC2 + followerOutputResistance);
+            s.c2.updateState ((iC2 * reqC2 + histC2), iC2);
 
             // ---- Op-amp 1: the clipper. Current in from C2+R4 (pin 6 is
             // KNOWN/fixed, so this is fully determined already), must all
@@ -182,7 +182,7 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             // with the asymmetric diode pair bridged across it) -- solved
             // via AsymmetricDiodePair's own 1D Newton-Raphson. See the
             // docs file for the full derivation. ----
-            const Thevenin pin6FromC2 { reqC2, q6Ve - histC2 };
+            const Thevenin pin6FromC2 { reqC2 + followerOutputResistance, q6Ve - histC2 };
             const Thevenin pin6FromR4 { r4, bias1 };
             const Thevenin pin6Input = combineParallel (pin6FromC2, pin6FromR4);
             const double iInput = (pin6Input.vth - pin6Voltage) / pin6Input.rth;
@@ -229,12 +229,8 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             const Thevenin q7BaseFromWiper { closedSwitchResistance + reqC7, levelWiperVoltage - histC7 };
             const Thevenin q7Base = combineParallel (q7BaseFromWiper, q7BaseLocal);
 
-            const Thevenin q7Emitter { r13, 0.0 };
-            const Thevenin q7Collector { 1.0e-6, supplyVoltage };
-
-            double q7Vb, q7Ve, q7Vc;
-            s.q7.solve (q7Base.rth, q7Base.vth, q7Emitter.rth, q7Emitter.vth, q7Collector.rth, q7Collector.vth,
-                        q7Vb, q7Ve, q7Vc);
+            const double q7Vb = q7Base.vth;
+            const double q7Ve = q7Vb - followerDrop;
 
             // C5 has R10 in series (unlike a bare coupling cap) -- the
             // branch's total voltage drop (op2Out - levelTopVoltage)

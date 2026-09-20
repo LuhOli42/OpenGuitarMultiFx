@@ -60,8 +60,6 @@ TubeScreamerStyleOverdriveProcessor::TubeScreamerStyleOverdriveProcessor (Model 
         // 2SC1815-class small-signal NPN (Q1/Q2); Geofex quotes a typical
         // gain of ~300. Same documented-assumption status as the other
         // circuit models' transistor parameters.
-        ch.q1.setParameters (1.0e-14, 25.85e-3, 300.0, 4.0);
-        ch.q2.setParameters (1.0e-14, 25.85e-3, 300.0, 4.0);
 
         // Two silicon diodes anti-parallel, one each way: the TS family's
         // SYMMETRIC clipping. (AsymmetricDiodePair with 1/1 diodes is the
@@ -108,8 +106,6 @@ void TubeScreamerStyleOverdriveProcessor::prepare (double newSampleRate, int, in
         // Warm-start the transistors near their DC operating points: with
         // a ~510K base bias to 4.5V, base sits ~0.6V under the rail and
         // the emitter a further ~0.65V below that.
-        ch.q1.reset (spec.q1BiasVoltage - 0.6, spec.q1BiasVoltage - 1.25, supplyVoltage);
-        ch.q2.reset (bias - 0.6, bias - 1.25, supplyVoltage);
         ch.clipper.reset (0.0);
     }
 
@@ -211,11 +207,12 @@ void TubeScreamerStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buf
             const Thevenin emitterToOpAmpBranch { reqC2 + rClipperIn + r5, (double) bias + histC2 };
             const Thevenin q1Emitter = combineParallel (emitterLocalBranch, emitterToOpAmpBranch);
 
-            const Thevenin q1Collector { 1.0e-6, supplyVoltage };
-
-            double q1Vb, q1Ve, q1Vc;
-            s.q1.solve (q1Base.rth, q1Base.vth, q1Emitter.rth, q1Emitter.vth, q1Collector.rth, q1Collector.vth,
-                        q1Vb, q1Ve, q1Vc);
+            // Q1 is an emitter follower with its collector on the rail: a buffer, nothing that clips. An ideal follower
+            // (base draws no current, emitter = base - Vbe) is the same sound without a Newton solve per sample.
+            const double q1Vb = q1Base.vth;
+            const double q1Ve = q1Vb - followerDrop;
+            s.debugQ1Vb = q1Vb;
+            s.debugQ1Ve = q1Ve;
 
             // C1/C2 each have a plain resistor in series (R1 / R5), so the
             // branch's total voltage drop is NOT the capacitor's own
@@ -329,11 +326,8 @@ void TubeScreamerStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buf
             const Thevenin q2EmitterToOutput { rSeriesOut + reqC9 + rOut, histC9 };
             const Thevenin q2Emitter = combineParallel (q2EmitterLocal, q2EmitterToOutput);
 
-            const Thevenin q2Collector { 1.0e-6, supplyVoltage };
-
-            double q2Vb, q2Ve, q2Vc;
-            s.q2.solve (q2Base.rth, q2Base.vth, q2Emitter.rth, q2Emitter.vth, q2Collector.rth, q2Collector.vth,
-                        q2Vb, q2Ve, q2Vc);
+            const double q2Vb = q2Base.vth; // output buffer: same ideal follower
+            const double q2Ve = q2Vb - followerDrop;
 
             const double iC8 = (d.vth - histC8 - q2Vb) / (d.rth + reqC8);
             const double vD = d.vth - iC8 * d.rth;

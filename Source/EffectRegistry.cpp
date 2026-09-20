@@ -9,6 +9,7 @@
 #include "Effects/NAMProcessor.h"
 #include "Effects/OverdriveProcessor.h"
 #include "Effects/OversampledEffect.h"
+#include <atomic>
 #include "Effects/OutputTrimEffect.h"
 #include "Effects/PositiveGroundBoosterProcessor.h"
 #include "Effects/DS1StyleDistortionProcessor.h"
@@ -52,10 +53,18 @@ namespace
         harmonics above Nyquist would otherwise fold back as inharmonic fizz. Factors come from the measurements
         in docs/circuits/Oversampling.md -- the pedals that are absent from the list (Centaur, Booster, the
         old Overdrive) were already clean at 1x (< -80 dB) and are not worth the CPU. */
+    struct Orders { int eco, balanced, high; }; // 0 = none, 1 = 2x, 2 = 4x
+
     template <typename Processor, typename... Args>
-    std::unique_ptr<EffectProcessor> oversampled (int order, Args&&... args)
+    std::unique_ptr<EffectProcessor> oversampled (Orders orders, Args&&... args)
     {
-        return std::make_unique<OversampledEffect> (std::make_unique<Processor> (std::forward<Args> (args)...), order);
+        using Q = EffectRegistry::OversamplingQuality;
+        const auto quality = EffectRegistry::getOversamplingQuality();
+        const int order = quality == Q::eco ? orders.eco : (quality == Q::high ? orders.high : orders.balanced);
+        auto processor = std::make_unique<Processor> (std::forward<Args> (args)...);
+        if (order <= 0)
+            return processor;
+        return std::make_unique<OversampledEffect> (std::move (processor), order);
     }
 
     /** Sets a pedal's noon-everything setting to unity gain for the reference signal in PedalUnityLevelTests (an E3
@@ -68,6 +77,22 @@ namespace
     }
 }
 
+namespace
+{
+    std::atomic<int>& qualityStorage()
+    {
+        static std::atomic<int> value = [] {
+            const juce::String env = juce::SystemStats::getEnvironmentVariable ("OGMFX_QUALITY", {}).toLowerCase();
+            using Q = EffectRegistry::OversamplingQuality;
+            return (int) (env == "eco" ? Q::eco : (env == "high" ? Q::high : Q::balanced));
+        }();
+        return value;
+    }
+}
+
+void EffectRegistry::setOversamplingQuality (OversamplingQuality quality) noexcept { qualityStorage().store ((int) quality); }
+EffectRegistry::OversamplingQuality EffectRegistry::getOversamplingQuality() noexcept { return (OversamplingQuality) qualityStorage().load(); }
+
 void registerBuiltInEffects (EffectRegistry& registry)
 {
     registry.registerType ("NoiseGate", [] { return std::make_unique<GateProcessor>(); });
@@ -78,18 +103,18 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // Source/Effects/AGENTS.md's decision log and docs/circuits/
     // PositiveGroundBooster.md for the full circuit-fidelity rationale.
     registry.registerType ("PositiveGroundBooster", [] { return trimmed (std::make_unique<PositiveGroundBoosterProcessor>(), -3.2f); });
-    registry.registerType ("DS1StyleDistortion", [] { return trimmed (oversampled<DS1StyleDistortionProcessor> (2), 3.05f); });
-    registry.registerType ("OD1StyleOverdrive", [] { return trimmed (oversampled<OD1StyleOverdriveProcessor> (1), 8.2f); });
+    registry.registerType ("DS1StyleDistortion", [] { return trimmed (oversampled<DS1StyleDistortionProcessor> (Orders { 0, 1, 2 }), 2.87f); });
+    registry.registerType ("OD1StyleOverdrive", [] { return trimmed (oversampled<OD1StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 8.11f); });
 
     // One class, three models (TS808/TS9/TS10 share one circuit, see
     // docs/circuits/TubeScreamerStyleOverdrive.md).
     using TSModel = TubeScreamerStyleOverdriveProcessor::Model;
-    registry.registerType ("TS808StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (1, TSModel::ts808), 6.7f); });
-    registry.registerType ("TS9StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (1, TSModel::ts9), 6.5f); });
-    registry.registerType ("HM2StyleDistortion", [] { return trimmed (oversampled<HM2StyleDistortionProcessor> (1), 6.3f); });
-    registry.registerType ("BD2StyleOverdrive", [] { return trimmed (oversampled<BD2StyleOverdriveProcessor> (1), -11.5f); });
+    registry.registerType ("TS808StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts808), 6.27f); });
+    registry.registerType ("TS9StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts9), 6.22f); });
+    registry.registerType ("HM2StyleDistortion", [] { return trimmed (oversampled<HM2StyleDistortionProcessor> (Orders { 0, 1, 2 }), 6.3f); });
+    registry.registerType ("BD2StyleOverdrive", [] { return trimmed (oversampled<BD2StyleOverdriveProcessor> (Orders { 0, 1, 2 }), -10.66f); });
     registry.registerType ("CentaurStyleOverdrive", [] { return trimmed (std::make_unique<CentaurStyleOverdriveProcessor>(), -11.8f); });
-    registry.registerType ("TS10StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (1, TSModel::ts10), 7.2f); });
+    registry.registerType ("TS10StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 6.9f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

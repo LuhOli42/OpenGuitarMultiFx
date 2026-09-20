@@ -3,6 +3,12 @@
 Display name **"BD-2-Style Overdrive"**. Runs on
 [`NodalCircuit`](./NodalCircuitSolver.md) — transistor level.
 
+## Cost simplification (2026-09-20)
+The three emitter/source followers (Q3 input buffer, Q7 gyrator buffer, Q1 output buffer)
+are ideal followers, the tail-pair JFETs with their drain on the rail (Q11, Q13) are
+one-port devices, and the clipper diode pairs are single ports; the gain stages' own
+transistors (Q9/Q10, Q12/Q14) are untouched. Timbre within 0.8 dB of the full model.
+
 ## Source
 The factory board schematic ("BD-2 MT BOARD", hobby-hour.com and
 experimentalistsanonymous.com), read region by region at 2-3x zoom; the

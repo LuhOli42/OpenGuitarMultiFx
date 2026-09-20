@@ -40,6 +40,14 @@ public:
         recreates it. Empty if no registered type's name matches. */
     juce::String keyForDisplayName (const juce::String& displayName) const;
 
+    /** How much the clipping pedals oversample (see docs/circuits/Oversampling.md for the measurements behind each
+        pedal's orders): eco = none (cheapest, audible aliasing on the hardest clippers), balanced = the default,
+        high = the most the measurements say is worth it. Read when a pedal is CREATED, so set it before building the
+        chain; the OGMFX_QUALITY environment variable (eco / balanced / high) sets the initial value. */
+    enum class OversamplingQuality { eco, balanced, high };
+    static void setOversamplingQuality (OversamplingQuality quality) noexcept;
+    static OversamplingQuality getOversamplingQuality() noexcept;
+
 private:
     std::map<juce::String, Creator> creators;
     std::map<juce::String, juce::String> displayNamesByKey;

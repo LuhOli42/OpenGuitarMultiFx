@@ -53,9 +53,7 @@ public:
     struct DebugBiasPoint { float vBase, vEmitter, vCollector; };
     DebugBiasPoint getDebugBiasPoint() const noexcept
     {
-        double vb, ve, vc;
-        channels[0].q1.getLastSolved (vb, ve, vc);
-        return { (float) vb, (float) ve, (float) vc };
+        return { (float) channels[0].debugQ1Vb, (float) channels[0].debugQ1Ve, (float) supplyVoltage };
     }
 
     /** Fraction of the failed-to-converge diode solves since prepare() --
@@ -91,7 +89,7 @@ private:
     struct ChannelState
     {
         TrapezoidalCapacitor c1, c2, c3, c4, c5, c6, c7, c8, c9, cWiper;
-        EbersMollBJT q1, q2;
+        double debugQ1Vb = 0.0, debugQ1Ve = 0.0; // Q1 is an ideal follower now (see process()); kept for the bias-point test hook
         AsymmetricDiodePair clipper;
     };
     std::array<ChannelState, 2> channels;
@@ -155,6 +153,7 @@ private:
     static constexpr float closedSwitchResistance = 100.0f; // JFET bypass switch, "on": ~100ohm per Geofex
     static constexpr float outputLoadResistance = 1.0e6f;   // assumed downstream input impedance
     static constexpr float supplyVoltage = 9.0f;
+    static constexpr double followerDrop = 0.62; // Vbe of Q1/Q2 (emitter followers at ~0.35 mA), see process()
     static constexpr float bias = supplyVoltage * 0.5f; // R16/R17 divider + C11, treated as an ideal 4.5V rail
 
     // Standard SPICE model shared by the 1N914 / 1N4148 (the diodes the

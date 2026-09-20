@@ -73,7 +73,7 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addResistor (in, xin, 10.0e3);
         c.addCapacitor (xin, g1, 47.0e-9);
         c.addResistor (g1, nv45, 1.0e6);
-        c.addJfet (nv9, g1, s1, jfet2SK30);       // Q1 2SK30 / BF245
+        c.addFollower (g1, s1, -0.964);           // Q1 2SK30 / BF245 source follower (vgs -0.96 V at DC): a buffer
         c.addResistor (s1, gnd, 10.0e3);
 
         // Filtered supply for the transistor stages: 1K + 47uF.

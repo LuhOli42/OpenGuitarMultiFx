@@ -62,6 +62,12 @@ The two series diodes of the "2 in series the other way" branch are one
 `addDiode` with twice the thermal voltage (identical diodes in series with nothing
 on the middle node are exactly that), which drops a node and a Newton port.
 
+## Cost simplification (2026-09-20)
+Q1 (the input JFET source follower) is an ideal follower with its DC level shift (-0.96 V);
+timbre within 0.13 dB of the full model. Q6/Q7 (the self-biased stages that clip), the
+op-amp's diode network and the Ge/Si pairs remain devices; antiparallel pairs are single
+ports.
+
 ## Assumptions
 2SK30 Idss 4 mA, Vp -1.5 V; both BJTs beta 400; silicon = 1N4148 (N 1.752); "GE.DIOD"
 = 1N34A-class as in the Centaur model; the 4.5 V bias rail treated as ideal.

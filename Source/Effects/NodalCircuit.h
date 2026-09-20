@@ -1,5 +1,4 @@
 #pragma once
-
 #include "EbersMollBJT.h"
 #include "ShichmanHodgesJFET.h"
 
@@ -10,6 +9,7 @@
 #include <vector>
 #ifdef NODAL_DEBUG
 #include <cstdio>
+
 #endif
 
 namespace openguitarmultifx
@@ -76,8 +76,8 @@ public:
         Euler (heavily damped). 0.6 cuts the ringing energy above 12 kHz by ~9 dB (HM-2 clipping op-amp) for a 0.03 dB
         change in the audible-band response; going to 1.0 gains only 4 dB more and costs 1.3 dB at 8 kHz. */
     static inline double defaultTheta = 0.6;
-    /** Newton stops when a step moves no node by more than this (V); see solveDevices(). */
-    static inline double defaultNodeTolerance = 3.0e-4;
+    /** Newton stops when the leftover error, mapped to any node voltage, is below this (V); see solveDevices(). */
+    static inline double defaultNodeTolerance = 1.0e-5;
     void setIntegrationTheta (double newTheta) noexcept { theta = newTheta; }
 
     struct BjtParams { double Is, Vt, betaF, betaR; };
@@ -116,7 +116,13 @@ public:
     }
 
     /** Ideal op-amp: drives `out` so that V(inPlus) == V(inMinus). */
-    void addOpAmp (Node inPlus, Node inMinus, Node out) { opAmps.push_back ({ inPlus, inMinus, out }); }
+    void addOpAmp (Node inPlus, Node inMinus, Node out) { opAmps.push_back ({ inPlus, inMinus, out, 0.0 }); }
+
+    /** Emitter/source follower without the transistor: `out` = `in` - `drop` exactly, `in` draws no current. For a
+        follower whose collector sits on a rail and whose job is to buffer (unity gain 0.95-0.99 in the real part, and
+        nothing that clips) this is the same sound with no Newton port at all; the DC level shift is kept so the
+        operating point stays put. */
+    void addFollower (Node in, Node out, double drop) { opAmps.push_back ({ in, out, out, drop }); }
 
     /** A real op-amp's output limits (see addSaturatingOpAmp). */
     struct OpAmpSpec
@@ -139,7 +145,7 @@ public:
     {
         satOpIndex = (int) opAmps.size();
         satSpec = spec;
-        opAmps.push_back ({ inPlus, inMinus, out });
+        opAmps.push_back ({ inPlus, inMinus, out, 0.0 });
     }
 
     void addDiode (Node anode, Node cathode, double saturationCurrent, double nTimesVt)
@@ -154,10 +160,12 @@ public:
         bjts.push_back (q);
     }
 
-    /** N-channel JFET. Gate current is taken as zero. */
-    void addJfet (Node drain, Node gate, Node source, const JfetParams& p)
+    /** N-channel JFET. Gate current is taken as zero. `assumedVds` > 0 marks a JFET that stays in saturation (a
+        long-tailed pair's device with its drain on the rail, a source follower): its current then depends on vgs
+        alone (channel-length modulation taken at that vds, ~1% for lambda = 0.02), which makes it a ONE-port device. */
+    void addJfet (Node drain, Node gate, Node source, const JfetParams& p, double assumedVds = 0.0)
     {
-        Jfet j { drain, gate, source, {} };
+        Jfet j { drain, gate, source, {}, assumedVds };
         j.model.setParameters (p.idss, p.pinchOff, p.lambda);
         jfets.push_back (j);
     }
@@ -220,7 +228,7 @@ public:
             const auto& o = opAmps[oi];
             const int r = indexOf[(size_t) o.out];
             if (r >= 0)
-                opTerms.push_back ({ r, o.plus, o.minus, (int) oi == satOpIndex });
+                opTerms.push_back ({ r, o.plus, o.minus, (int) oi == satOpIndex, o.offset });
         }
         satMode = 0;
         parked.assign (satOpIndex >= 0 ? 3 : 0, Parked {});
@@ -296,7 +304,6 @@ public:
                 rebuildLinearMatrix (true);
             if (! luValid)
                 factorAndBuildReducedModel();
-
             double* rhs = rhsLinear.data();
             for (int i = 0; i < unknownCount; ++i)
                 rhs[i] = 0.0;
@@ -313,7 +320,6 @@ public:
 
             for (const auto& o : opTerms)
                 rhs[o.row] = opRhs (o);
-
             // No-device response of the linear network.
             for (int i = 0; i < unknownCount; ++i)
                 xLinear[i] = rhsLinear[(size_t) i];
@@ -428,10 +434,10 @@ private:
     struct Res { Node a, b; double g; };
     struct Cap { Node a, b; double farads, g, vPrev, iPrev, ieq; int ia = -1, ib = -1; };
     struct Src { Node node; double volts; };
-    struct Op { Node plus, minus, out; };
+    struct Op { Node plus, minus, out; double offset; }; // V(plus) - V(minus) = offset
     struct Dio { Node a, k; double Is, nVt; };
     struct Bjt { Node c, b, e; bool pnp; EbersMollBJT model; };
-    struct Jfet { Node d, g, s; ShichmanHodgesJFET model; };
+    struct Jfet { Node d, g, s; ShichmanHodgesJFET model; double assumedVds = 0.0; };
 
     // -- element storage --
     std::vector<Res> resistors;
@@ -441,6 +447,7 @@ private:
     std::vector<Dio> diodes;
     std::vector<Bjt> bjts;
     std::vector<Jfet> jfets;
+    std::vector<std::pair<int, int>> diodePairs; // built by buildPorts(): indices of the two antiparallel diodes
     std::vector<double> guess;
 
     int nodeCount = 0;
@@ -468,7 +475,7 @@ private:
 
     struct KnownTerm { int row; Node knownNode; double g; };
     std::vector<KnownTerm> knownTerms; // g * V(known) added to rhs rows, for elements touching a rail/input
-    struct OpTerm { int row; Node plus, minus; bool saturating; };
+    struct OpTerm { int row; Node plus, minus; bool saturating; double offset; };
     std::vector<OpTerm> opTerms;
 
     // -- reduced (DK-method) transient solver state --
@@ -511,16 +518,17 @@ private:
     double K[maxPortsV][maxPortsI] {};         // P_j . W_k
     double uState[maxPortsV] {};               // last converged port voltages (Newton warm start)
     double uStatePrev[maxPortsV] {};           // the one before (for the linear-extrapolation predictor)
-    double nodeTolerance = defaultNodeTolerance;             // Newton stops when a step moves no node by more than this (V)
+    double nodeTolerance = defaultNodeTolerance;             // Newton stops when the leftover node error is below this (V)
     static inline double predictWeight = 1.0;
     static inline bool predictorEnabled = true;
-    struct JunctionInfo { bool isJunction; double vt, vcrit; };
+    struct JunctionInfo { bool isJunction; double vt, vcrit; bool pair = false; double vt2 = 0.0, vcrit2 = 0.0; }; // pair: antiparallel diodes, forward limits on both sides
     JunctionInfo junction[maxPortsV] {};       // per voltage port: p-n junction limiting data (SPICE pnjlim)
     double xLinear[maxUnknowns] {};
 #ifdef NODAL_DEBUG
     double dbgTrace[100][12] {};
 #endif
     double Dscratch[maxPortsI][maxPortsV] {};
+    double DscratchNext[maxPortsI][maxPortsV] {};
 
     static constexpr double gmin = 1.0e-12;
 
@@ -582,7 +590,7 @@ private:
             return satSpec.lowRail;
         const double kp = (o.plus > 0 && indexOf[(size_t) o.plus] < 0) ? knownVoltage[(size_t) o.plus] : 0.0;
         const double km = (o.minus > 0 && indexOf[(size_t) o.minus] < 0) ? knownVoltage[(size_t) o.minus] : 0.0;
-        return -(kp - km);
+        return o.offset - (kp - km);
     }
 
     void constraintRhs (const Op& o, double* rhs) const noexcept
@@ -592,7 +600,7 @@ private:
             return;
         const double kp = (o.plus > 0 && indexOf[(size_t) o.plus] < 0) ? knownVoltage[(size_t) o.plus] : 0.0;
         const double km = (o.minus > 0 && indexOf[(size_t) o.minus] < 0) ? knownVoltage[(size_t) o.minus] : 0.0;
-        rhs[r] = -(kp - km);
+        rhs[r] = o.offset - (kp - km);
     }
 
     void rebuildLinearMatrix (bool includeCaps) noexcept
@@ -957,6 +965,7 @@ private:
         deviceMaps.clear();
         for (auto& j : junction)
             j = { false, 0.0, 0.0 };
+        diodePairs.clear();
 
         auto addJunction = [this] (double Is, double vt)
         {
@@ -965,8 +974,34 @@ private:
                 junction[j] = { true, vt, vt * std::log (vt / (1.4142135623730951 * Is)) };
         };
 
+        // Antiparallel diodes (a clipper) are ONE device with ONE port: i(v) = Is1 (e^{v/n1} - 1) - Is2 (e^{-v/n2} - 1).
+        // Exactly the same circuit, one Newton dimension fewer per pair.
+        std::vector<bool> merged (diodes.size(), false);
         for (size_t i = 0; i < diodes.size(); ++i)
         {
+            if (merged[i])
+                continue;
+            int partner = -1;
+            for (size_t j = i + 1; j < diodes.size() && partner < 0; ++j)
+                if (! merged[j] && diodes[j].a == diodes[i].k && diodes[j].k == diodes[i].a)
+                    partner = (int) j;
+
+            if (partner >= 0)
+            {
+                merged[(size_t) partner] = true;
+                diodePairs.push_back ({ (int) i, partner });
+                deviceMaps.push_back ({ 5, (int) voltagePorts.size(), (int) currentPorts.size(), (int) diodePairs.size() - 1, 1, 1 });
+                const size_t j = voltagePorts.size();
+                voltagePorts.push_back ({ diodes[i].a, diodes[i].k });
+                currentPorts.push_back ({ diodes[i].a, diodes[i].k, 1.0 });
+                const auto& d1 = diodes[i];
+                const auto& d2 = diodes[(size_t) partner];
+                if (j < (size_t) maxPortsV)
+                    junction[j] = { true, d1.nVt, d1.nVt * std::log (d1.nVt / (1.4142135623730951 * d1.Is)), true,
+                                    d2.nVt, d2.nVt * std::log (d2.nVt / (1.4142135623730951 * d2.Is)) };
+                continue;
+            }
+
             deviceMaps.push_back ({ 0, (int) voltagePorts.size(), (int) currentPorts.size(), (int) i, 1, 1 });
             voltagePorts.push_back ({ diodes[i].a, diodes[i].k });
             addJunction (diodes[i].Is, diodes[i].nVt);
@@ -976,6 +1011,30 @@ private:
         for (size_t i = 0; i < bjts.size(); ++i)
         {
             const auto& q = bjts[i];
+
+            // An emitter follower (or any transistor whose collector sits on a fixed rail) never forward-biases its
+            // collector junction, whose current is ~1e-15 A: it is a one-port device (vbe). Same answer, one port fewer.
+            const bool collectorFixed = q.c <= 0 || indexOf[(size_t) q.c] < 0;
+            if (collectorFixed)
+            {
+                deviceMaps.push_back ({ 4, (int) voltagePorts.size(), (int) currentPorts.size(), (int) i, 1, 2 });
+                if (! q.pnp)
+                {
+                    voltagePorts.push_back ({ q.b, q.e });
+                    addJunction (q.model.saturationCurrentValue(), q.model.thermalVoltageValue());
+                    currentPorts.push_back ({ q.c, q.e, 1.0 });
+                    currentPorts.push_back ({ q.b, q.e, 1.0 });
+                }
+                else
+                {
+                    voltagePorts.push_back ({ q.e, q.b });
+                    addJunction (q.model.saturationCurrentValue(), q.model.thermalVoltageValue());
+                    currentPorts.push_back ({ q.c, q.e, -1.0 });
+                    currentPorts.push_back ({ q.b, q.e, -1.0 });
+                }
+                continue;
+            }
+
             deviceMaps.push_back ({ 1, (int) voltagePorts.size(), (int) currentPorts.size(), (int) i, 2, 2 });
             if (! q.pnp)
             {
@@ -1002,6 +1061,13 @@ private:
         for (size_t i = 0; i < jfets.size(); ++i)
         {
             const auto& j = jfets[i];
+            if (j.assumedVds > 0.0)
+            {
+                deviceMaps.push_back ({ 6, (int) voltagePorts.size(), (int) currentPorts.size(), (int) i, 1, 1 });
+                voltagePorts.push_back ({ j.g, j.s }); // vgs only
+                currentPorts.push_back ({ j.d, j.s, 1.0 }); // iD
+                continue;
+            }
             deviceMaps.push_back ({ 2, (int) voltagePorts.size(), (int) currentPorts.size(), (int) i, 2, 1 });
             voltagePorts.push_back ({ j.g, j.s }); // vgs
             voltagePorts.push_back ({ j.d, j.s }); // vds
@@ -1072,21 +1138,27 @@ private:
                 // logarithmic limit the Newton steps obey, so a fast edge cannot throw the start into an
                 // exponential's overflow region.
                 double guess = uState[j] + predictWeight * (uState[j] - uStatePrev[j]);
-                if (junction[j].isJunction)
+                if (junction[j].pair)
+                    guess = guess >= 0.0 ? limitJunction (guess, std::max (uState[j], 0.0), junction[j].vt, junction[j].vcrit)
+                                         : -limitJunction (-guess, std::max (-uState[j], 0.0), junction[j].vt2, junction[j].vcrit2);
+                else if (junction[j].isJunction)
                     guess = limitJunction (guess, uState[j], junction[j].vt, junction[j].vcrit);
                 u[j] = guess;
             }
         }
 
-        double cur[maxPortsI];
+        double cur[maxPortsI], curNext[maxPortsI];
         bool converged = false;
         double previousStep = 1.0e9;
+        double (*Dnow)[maxPortsV] = Dscratch;
+        double (*Dnext)[maxPortsV] = DscratchNext;
 
         ++samplesSolved;
+        evaluateDevices (u, cur, Dnow);
+
         for (int iter = 0; iter < 100 && ! converged; ++iter)
         {
             ++iterationsTotal;
-            evaluateDevices (u, cur, Dscratch);
 
             // J = I + K * D, exploiting that D is block-diagonal (each device
             // couples only its own currents to its own port voltages).
@@ -1106,27 +1178,39 @@ private:
                 for (int k = m.i0; k < m.i0 + m.ni; ++k)
                     for (int c = m.v0; c < m.v0 + m.nv; ++c)
                     {
-                        const double dk = Dscratch[k][c];
+                        const double dk = Dnow[k][c];
                         for (int j = 0; j < nv; ++j)
                             J[j][c] += K[j][k] * dk;
                     }
-
-            // Solve J * delta = f (small dense system, partial pivoting).
+            // Solve J * delta = f (small dense system, partial pivoting; one reciprocal per pivot, not a division
+            // per element).
+            double invPivot[maxPortsV];
             for (int col = 0; col < nv; ++col)
             {
                 int best = col;
+                double bestAbs = std::abs (J[col][col]);
                 for (int r = col + 1; r < nv; ++r)
-                    if (std::abs (J[r][col]) > std::abs (J[best][col]))
+                {
+                    const double a = std::abs (J[r][col]);
+                    if (a > bestAbs)
+                    {
+                        bestAbs = a;
                         best = r;
-                if (std::abs (J[best][col]) < 1.0e-30)
+                    }
+                }
+                if (bestAbs < 1.0e-30)
                     return false;
                 if (best != col)
                     for (int c = col; c <= nv; ++c)
                         std::swap (J[col][c], J[best][c]);
+                const double inv = 1.0 / J[col][col];
+                invPivot[col] = inv;
                 for (int r = col + 1; r < nv; ++r)
                 {
-                    const double fct = J[r][col] / J[col][col];
-                    for (int c = col; c <= nv; ++c)
+                    const double fct = J[r][col] * inv;
+                    if (! (fct < 0.0 || fct > 0.0))
+                        continue;
+                    for (int c = col + 1; c <= nv; ++c)
                         J[r][c] -= fct * J[col][c];
                 }
             }
@@ -1137,7 +1221,7 @@ private:
                 double sum = J[r][nv];
                 for (int c = r + 1; c < nv; ++c)
                     sum -= J[r][c] * delta[c];
-                delta[r] = sum / J[r][r];
+                delta[r] = sum * invPivot[r];
             }
 
             // Proposed update, with SPICE-style logarithmic limiting on p-n junction ports: an exponential's
@@ -1149,7 +1233,17 @@ private:
             for (int j = 0; j < nv; ++j)
             {
                 double unew = u[j] - delta[j];
-                if (junction[j].isJunction)
+                if (junction[j].pair)
+                {
+                    // Antiparallel pair: the forward limit of whichever diode is (about to be) conducting.
+                    const double limitedValue = unew >= 0.0
+                        ? limitJunction (unew, std::max (u[j], 0.0), junction[j].vt, junction[j].vcrit)
+                        : -limitJunction (-unew, std::max (-u[j], 0.0), junction[j].vt2, junction[j].vcrit2);
+                    if (limitedValue != unew)
+                        limited = true;
+                    unew = limitedValue;
+                }
+                else if (junction[j].isJunction)
                 {
                     const double limitedValue = limitJunction (unew, u[j], junction[j].vt, junction[j].vcrit);
                     if (limitedValue != unew)
@@ -1162,11 +1256,11 @@ private:
 
             const bool fullStep = maxStep <= 1.0;
             const double scale = fullStep ? 1.0 : 1.0 / maxStep;
-            double uBefore[maxPortsV];
+            double step[maxPortsV];
             for (int j = 0; j < nv; ++j)
             {
-                uBefore[j] = u[j];
-                u[j] += scale * (proposed[j] - u[j]);
+                step[j] = scale * (proposed[j] - u[j]);
+                u[j] += step[j];
             }
 
 #ifdef NODAL_DEBUG
@@ -1174,50 +1268,42 @@ private:
             dbgTrace[iter % 100][1] = limited ? 1.0 : 0.0;
             for (int q = 0; q < nv && q < 8; ++q) dbgTrace[iter % 100][2 + q] = u[q];
 #endif
-            // Converged when the change this step makes to the NODE voltages (what the audio sees) is below 300 uV (quadratic convergence leaves <1 uV).
-            // Judging by the port step alone is wrong in both directions: a diode's port voltage moves ~Vt per
-            // e-fold of current, so a 2 uV port error becomes microamps -- times a 220K feedback resistor, tens of
-            // uV of audible error -- while a stiff network can carry double-precision noise in the port step that
-            // no node ever sees. The node change is dx = -W * dI with dI = D * dU (linearised, dU = the step taken).
-            // ...but that estimate linearises the devices at the point the step STARTED from, so it is only
-            // meaningful if the step stayed inside the region where that linearisation holds: a junction moves
-            // ~nVt per e-fold, a step that leaves that region (a diode turning on: slope ~0 at the start, so a huge step
-            // "changes nothing") has to be iterated again, whatever the estimate says.
-            bool linearised = true;
-            for (int j = 0; j < nv && linearised; ++j)
-            {
-                const double step = std::abs (u[j] - uBefore[j]);
-                if (junction[j].isJunction && step > junction[j].vt)
-                    linearised = false;
-            }
+            // What the step predicted the device currents would do (D * step), then what they actually do at the
+            // new point. The Newton step solves the LINEARISED equations exactly, so the whole leftover error is
+            // the difference between those two -- push it through W and it is the error in every node voltage,
+            // the thing the audio hears. No estimate about where a linearisation holds: it is measured.
+            double predictedDelta[maxPortsI];
+            for (int k = 0; k < ni; ++k)
+                predictedDelta[k] = 0.0;
+            for (const auto& m : deviceMaps)
+                for (int k = m.i0; k < m.i0 + m.ni; ++k)
+                    for (int c = m.v0; c < m.v0 + m.nv; ++c)
+                        predictedDelta[k] += Dnow[k][c] * step[c];
+            evaluateDevices (u, curNext, Dnext);
 
-            bool converged_ = false;
-            if (fullStep && ! limited && linearised)
+            double nodeErrorVec[maxUnknowns];
+            for (int node = 0; node < unknownCount; ++node)
+                nodeErrorVec[node] = 0.0;
+            for (int k = 0; k < ni; ++k)
             {
-                double dI[maxPortsI];
-                for (int k = 0; k < ni; ++k)
-                    dI[k] = 0.0;
-                for (const auto& m : deviceMaps)
-                    for (int k = m.i0; k < m.i0 + m.ni; ++k)
-                        for (int c2 = m.v0; c2 < m.v0 + m.nv; ++c2)
-                            dI[k] += Dscratch[k][c2] * (proposed[c2] - uBefore[c2]);
-
-                double nodeChange = 0.0;
+                const double residual = curNext[k] - cur[k] - predictedDelta[k];
+                const double* Wk = W[k];
                 for (int node = 0; node < unknownCount; ++node)
-                {
-                    double v = 0.0;
-                    for (int k = 0; k < ni; ++k)
-                        v += W[k][node] * dI[k];
-                    nodeChange = std::max (nodeChange, std::abs (v));
-                }
-                // Newton converges quadratically, so the error left AFTER a step this small is ~ step^2 / (2 nVt): a step
-                // of 300 uV leaves well under a microvolt for an exponential device (nVt >= 26 mV), and one extra
-                // iteration just to watch a step shrink is what made the solver 2-3 iterations per sample.
-                converged_ = nodeChange < nodeTolerance;
+                    nodeErrorVec[node] += Wk[node] * residual;
             }
-            if (converged_ || (fullStep && ! limited && iter > 3 && maxStep < 1.0e-4 && maxStep > 0.9 * previousStep))
+            double nodeError = 0.0;
+            for (int node = 0; node < unknownCount; ++node)
+                nodeError = std::max (nodeError, std::abs (nodeErrorVec[node]));
+
+            // Accept the new point (with the currents evaluated AT it, so the reconstruction below is consistent
+            // with it) when the leftover is below tolerance; or, at the noise floor, when steps have stopped shrinking.
+            if (nodeError < nodeTolerance || (fullStep && ! limited && iter > 3 && maxStep < 1.0e-4 && maxStep > 0.9 * previousStep))
                 converged = true;
             previousStep = maxStep;
+
+            for (int k = 0; k < ni; ++k)
+                cur[k] = curNext[k];
+            std::swap (Dnow, Dnext);
         }
 
         if (! converged)
@@ -1233,9 +1319,7 @@ private:
             return false;
         }
 
-        // `cur` was evaluated one Newton step (< 1e-7 V) ago -- well inside the
-        // solution's accuracy, and one fewer round of exp() per sample.
-
+        // `cur` was evaluated AT the accepted u, so the node vector below is consistent with it.
         for (int i = 0; i < unknownCount; ++i)
         {
             double v = xLinear[i];
@@ -1287,7 +1371,7 @@ private:
     }
 
     /** Device currents (one per current port) and d(current)/d(port voltage). */
-    void evaluateDevices (const double* u, double* cur, double (&D)[maxPortsI][maxPortsV]) const noexcept
+    void evaluateDevices (const double* u, double* cur, double (*D)[maxPortsV]) const noexcept
     {
         for (const auto& m : deviceMaps)
         {
@@ -1309,6 +1393,34 @@ private:
                 D[m.i0][m.v0 + 1] = op.diC_dvbc;
                 D[m.i0 + 1][m.v0] = op.diB_dvbe;
                 D[m.i0 + 1][m.v0 + 1] = op.diB_dvbc;
+            }
+            else if (m.kind == 4)
+            {
+                const auto& q = bjts[(size_t) m.index];
+                // vbc pinned far reverse: its exponential is ~1e-85 and drops out.
+                const auto op = q.model.evaluate (u[m.v0], 0.0, u[m.v0] + 5.0);
+                cur[m.i0] = op.iC;
+                cur[m.i0 + 1] = op.iB;
+                D[m.i0][m.v0] = op.diC_dvbe;
+                D[m.i0 + 1][m.v0] = op.diB_dvbe;
+            }
+            else if (m.kind == 6)
+            {
+                const auto& j = jfets[(size_t) m.index];
+                double iD, dD, dS;
+                j.model.evaluate (u[m.v0], j.assumedVds, 0.0, iD, dD, dS);
+                cur[m.i0] = iD;
+                D[m.i0][m.v0] = -dD - dS; // d/dvgs
+            }
+            else if (m.kind == 5)
+            {
+                const auto& pr = diodePairs[(size_t) m.index];
+                const auto& d1 = diodes[(size_t) pr.first];
+                const auto& d2 = diodes[(size_t) pr.second];
+                const double e1 = std::exp (std::min (u[m.v0] / d1.nVt, 40.0));
+                const double e2 = std::exp (std::min (-u[m.v0] / d2.nVt, 40.0));
+                cur[m.i0] = d1.Is * (e1 - 1.0) - d2.Is * (e2 - 1.0);
+                D[m.i0][m.v0] = d1.Is / d1.nVt * e1 + d2.Is / d2.nVt * e2;
             }
             else
             {

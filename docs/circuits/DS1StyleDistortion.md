@@ -35,6 +35,10 @@ the steady-state output did not repeat with a repeating input (non-periodic erro
 - Non-periodic error -5 dB -> -322 dB; 0 solver failures; alias metric at 1x/2x/4x
   -17.8 / -28 / -54.7 dB, hence the registry runs it **4x** oversampled
   ([Oversampling](./Oversampling.md)).
+- **Cost simplifications (2026-09-20, checked against the full model: timbre within 0.05 dB):**
+  Q1 and Q3 (emitter followers with their collectors on the rail) are ideal followers
+  (`addFollower`, Vbe 0.62 V), and Q6 (a JFET used as a VCR with vgs ~ 0) is its 333 ohm
+  triode resistance. Only Q2 and the clipper remain as Newton devices (3 ports).
 - **The op-amp is a saturating one** (TA7136AP on 9 V: output limited to 1.5 ... 7.5 V, see
   [NodalCircuitSolver.md](./NodalCircuitSolver.md)). At the DS-1's gain (the transistor
   booster's 35 dB then up to 26 dB more) the op-amp is at a rail for most of every

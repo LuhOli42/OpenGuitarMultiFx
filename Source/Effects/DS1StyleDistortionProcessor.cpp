@@ -68,13 +68,16 @@ void DS1StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addCapacitor (in, x1, 0.047e-6);            // C1
         c.addResistor (x1, b1, 1.0e3);                // R1
         c.addResistor (b1, nvb, 470.0e3);             // R2
-        c.addBjt (nv9, b1, e1, false, npn);           // Q1
+        c.addFollower (b1, e1, 0.62);                 // Q1 emitter follower (Vbe 0.62 V at 0.33 mA): a buffer, nothing that clips
         c.addResistor (e1, gnd, 10.0e3);              // R3
 
         // Q6: JFET used as a voltage-controlled resistor between node A and node B (gate on the bias rail).
         c.addCapacitor (e1, nA, 0.47e-6);             // C2
         c.addResistor (nA, nvb, 100.0e3);             // R4
-        c.addJfet (nA, nvb, nB, jfetQ6);              // Q6
+        // Q6: a JFET used as a resistor with its gate on the bias rail, so vgs ~ 0 and it sits in the triode region at
+        // r_ds = 1/(2 beta (0 - Vp)) = 333 ohm; the signal at this point is < 0.3 V against Vp = -2 V, i.e. a 15% wobble
+        // of a 333 ohm resistor in series with 100K and 47 nF. Same sound, two Newton ports fewer.
+        c.addResistor (nA, nB, 333.0);                // Q6
         c.addResistor (nB, nvb, 1.0e6);               // R5
 
         // Q2: common-emitter gain stage with collector-to-base shunt feedback (R7 || C4).
@@ -139,7 +142,7 @@ void DS1StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addResistor (w, p13, closedSwitchResistance + 10.0e3); // Q7 (closed) + R18
         c.addCapacitor (p13, b3, 0.047e-6);           // C13
         c.addResistor (b3, nvb, 1.0e6);               // R19
-        c.addBjt (nv9, b3, e3, false, npn);           // Q3
+        c.addFollower (b3, e3, 0.62);                 // Q3 emitter follower
         c.addResistor (e3, gnd, 10.0e3);              // R21
         c.addResistor (e3, x14, 1.0e3);               // R22
         c.addCapacitor (x14, out, 1.0e-6);            // C14

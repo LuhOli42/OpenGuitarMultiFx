@@ -66,7 +66,7 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (in, x18, 10.0e3);          // R18
         c.addCapacitor (x18, g3, 0.047e-6);       // C14
         c.addResistor (g3, v4, 1.0e6);            // R15
-        c.addJfet (v8, g3, s3, jfet2SK184);       // Q3 2SK184GR, source follower
+        c.addFollower (g3, s3, -0.819);           // Q3 2SK184GR source follower (vgs -0.82 V at DC): a buffer
         c.addResistor (s3, gnd, 10.0e3);          // R19
         c.addCapacitor (s3, nc15, 10.0e-6);       // C15
         c.addResistor (nc15, v4, 100.0e3);        // R17
@@ -98,7 +98,7 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addJfet (d10, g10, s10, jfet2SK184);    // Q10
         c.addResistor (v8, d10, 2.2e3);           // R28
         c.addResistor (s10, gnd, 4.7e3);          // R30 (tail)
-        c.addJfet (v8, g11, s10, jfet2SK184);     // Q11 (drain straight to the rail)
+        c.addJfet (v8, g11, s10, jfet2SK184, 5.0); // Q11 (drain straight to the rail: always saturated, vds ~ 5 V)
         c.addBjt (c9, d10, v8, true, pnp2SA1335); // Q9 2SA1335R PNP
         c.addCapacitor (d10, c9, 47.0e-12);       // C21 (Miller)
         c.addResistor (c9, gnd, 2.2e3);           // R32
@@ -152,7 +152,7 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addJfet (d14, g14, s14, jfet2SK184);    // Q14
         c.addResistor (v8, d14, 2.2e3);           // R33
         c.addResistor (s14, gnd, 4.7e3);          // R36 (tail)
-        c.addJfet (v8, g13, s14, jfet2SK184);     // Q13
+        c.addJfet (v8, g13, s14, jfet2SK184, 5.0); // Q13 (drain on the rail)
         c.addBjt (s2, d14, v8, true, pnp2SA1335); // Q12 2SA1335R PNP
         c.addCapacitor (d14, s2, 100.0e-12);      // C20 (Miller)
         c.addResistor (s2, gnd, 2.2e3);           // R25
@@ -207,7 +207,7 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addCapacitor (m, x, 0.056e-6);          // C9
         c.addCapacitor (x, b7, 0.056e-6);         // C16
         c.addResistor (b7, v4, 470.0e3);          // R10
-        c.addBjt (v8, b7, e7, false, npn2SC2459); // Q7 2SC2459R emitter follower
+        c.addFollower (b7, e7, 0.62);             // Q7 2SC2459R emitter follower (the gyrator's buffer)
         c.addResistor (e7, gnd, 10.0e3);          // R20
         c.addResistor (x, e7, 1.2e3);             // R21
 
@@ -233,7 +233,7 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (nm, v4, 100.0e3);          // R8 (bias at the switch's output node)
         c.addCapacitor (nm, b1, 10.0e-6);         // C6
         c.addResistor (b1, v4, 100.0e3);          // R7
-        c.addBjt (v8, b1, e1, false, npn2SC2459); // Q1 emitter follower
+        c.addFollower (b1, e1, 0.62);             // Q1 emitter follower
         c.addResistor (e1, gnd, 10.0e3);          // R2
         c.addCapacitor (e1, nc1, 10.0e-6);        // C1
         c.addResistor (nc1, gnd, 100.0e3);        // R3

@@ -42,17 +42,17 @@ test, not a guess):
   ~740 V no-device response to be pulled back to ~0.6 V: plain Newton overshoots
   the exponential and then sheds only ~Vt per iteration, failing 4-18% of
   samples. With it: 0.
-- **A step only counts as converged if it stayed inside the region where the
-  linearisation it was judged by holds** (a junction moved less than nVt): a diode
-  turning on has slope ~0 at the start, so a huge step "changes nothing" by the
-  estimate alone.
-- **Convergence judged on the NODE voltages, not the port voltages.** A step is
-  accepted when it moves no node by more than 300 uV: Newton converges
-  quadratically, so the error *left after* such a step is ~step^2 / (2 nVt),
-  well under a microvolt for any exponential device (nVt >= 26 mV). (The DC
-  operating point uses a 1 nV tolerance -- it is computed once.) A step below
-  100 uV that has stopped shrinking also counts (the DK Jacobian can carry
-  entries ~1e5, putting a ~5e-7 V double-precision floor under the step).
+- **Convergence is MEASURED, not estimated.** After each Newton step the devices are
+  evaluated at the new point; the step solved the linearised equations exactly, so the
+  whole leftover error is `cur_actual - (cur_before + D * step)`, and pushing that through
+  `W` gives the error in every node voltage -- the thing the audio hears. The point is
+  accepted when that is below 10 uV, and the currents evaluated AT it are used for the
+  reconstruction (no stale currents). The previous rule (accept when the step's estimated
+  node change was < 300 uV, linearised at the point the step *started* from) turned out
+  to leave errors of 0.1-0.5 mV against a 1 nV reference (a diode turning on has slope ~0
+  at the start, so a huge step "changes nothing"); this one agrees with the reference to
+  a few uV, and the evaluation it needs is the one the next iteration would have done
+  anyway (Newton iterations are 1.0-1.3 per sample in practice).
 - **Newton warm start**: the previous port voltages extrapolated linearly by
   the last step, with junction ports passed through the same `pnjlim` limit.
   (Unlimited, the extrapolation threw a fast edge into exp() overflow and made
@@ -73,6 +73,28 @@ test, not a guess):
   one-sample-delayed or predicted coupling is multiplied by whatever gain follows.
 - Initial guesses matter for the relaxation: a guess that contradicts the DC
   point (4 V on a node the diodes hold at 0 V) hands the diodes a huge current.
+
+## What was simplified to make it cheap (2026-09-20), and how each was checked
+Same sound, fewer Newton dimensions. Every change below was compared against the
+previous solver on 12 renders (6 pedals x 2 gain settings, a decaying three-note chord);
+"timbre" = octave-band spectral shape with the level removed, worst band:
+
+- **Antiparallel diodes are one device with one port** (`i = Is1(e^{v/n1}-1) - Is2(e^{-v/n2}-1)`):
+  exact (-170 dB vs before).
+- **A BJT whose collector is on a fixed rail is a one-port device** (vbe only; its
+  collector junction is ~1e-15 A): exact.
+- **A JFET marked `assumedVds` is a one-port device** (channel-length modulation taken at
+  that vds; used for the BD-2's tail-pair devices with their drain on the rail): BD-2 timbre
+  0.7 dB.
+- **Emitter/source followers that only buffer are ideal followers** (`addFollower(in, out,
+  drop)`: out = in - drop, no base current, no Newton port): DS-1 Q1/Q3, HM-2 Q1, BD-2
+  Q3/Q7/Q1, TS Q1/Q2, OD-1 Q6/Q7. Timbre within 0.04-0.3 dB (BD-2 0.8), waveform ~-28 dB
+  because a 1-5% gain change is amplified by the clipping stages after them (the pedals
+  are re-trimmed to unity, so only the shape matters). Caveat learned in the OD-1: an
+  ideal source straight across a capacitor makes the trapezoid rule ring at Nyquist
+  forever, so the follower's output resistance (1/gm, 74 ohm) stays in that branch.
+- **The DS-1's Q6 JFET is a 333 ohm resistor** (used as a VCR with vgs ~ 0 in the triode
+  region; the signal there is < 0.3 V against Vp = -2 V): timbre 0.04 dB.
 
 ## Saturating op-amps (`addSaturatingOpAmp`)
 A real op-amp on 9 V runs out of output swing (TA7136AP: "+1.5 V to Vcc - 1.5 V";
@@ -117,11 +139,11 @@ methods, same circuit).
 ## Cost
 | | unknowns | us/sample (1 channel) | % of one core @ 48 kHz |
 |---|---|---|---|
-| TS808 netlist (test) | 21 | ~1.7 | 8% |
-| Centaur | 2 + 16 + 7 | ~1.1 | 5% |
-| DS-1 | 2 blocks | ~2.3 | 11% |
-| HM-2 | 15 + 8 + 17 | ~3.3 | 16% |
-| BD-2 | 6 + 13 + 12 + 5 + 6 | ~3.6 | 17% |
+| TS808 netlist (test) | 21 | ~0.45 | 2.2% |
+| Centaur | 2 + 16 + 7 | ~0.5 | 2.4% |
+| DS-1 | 2 blocks | ~0.7 | 3.5% |
+| HM-2 | 3 blocks | ~1.6 | 7.8% |
+| BD-2 | 5 blocks | ~1.7 | 8.1% |
 
 (All at the host rate. The pedals with a clipper run through
 [`OversampledEffect`](./Oversampling.md), which multiplies these by 2 or 4.)

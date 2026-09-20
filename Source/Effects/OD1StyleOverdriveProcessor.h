@@ -56,9 +56,7 @@ public:
     struct DebugBiasPoint { float vBase, vEmitter, vCollector; };
     DebugBiasPoint getDebugBiasPoint() const noexcept
     {
-        double vb, ve, vc;
-        channels[0].q6.getLastSolved (vb, ve, vc);
-        return { (float) vb, (float) ve, (float) vc };
+        return { (float) channels[0].debugQ6Vb, (float) channels[0].debugQ6Ve, (float) supplyVoltage };
     }
 
 private:
@@ -70,14 +68,14 @@ private:
     struct ChannelState
     {
         TrapezoidalCapacitor c1, c2;
-        EbersMollBJT q6;
+        double debugQ6Vb = 0.0, debugQ6Ve = 0.0; // Q6 is an ideal follower now (see process()); kept for the bias-point test hook
 
         TrapezoidalCapacitor c4; // op-amp 2's feedback treble-cut
 
         AsymmetricDiodePair clipper;
 
         TrapezoidalCapacitor c5, c7, c8;
-        EbersMollBJT q7;
+
     };
     std::array<ChannelState, 2> channels;
 
@@ -133,6 +131,8 @@ private:
 
     static constexpr float closedSwitchResistance = 10.0f; // Q1 modelled as a closed bypass switch, see docs
     static constexpr float outputLoadResistance = 1.0e6f;  // assumed downstream input impedance
+    static constexpr double followerOutputResistance = 74.0; // 1/gm of Q6 at 0.35 mA
+    static constexpr double followerDrop = 0.62; // Vbe of Q6/Q7 (emitter followers at ~0.35 mA), see process()
     static constexpr float supplyVoltage = 9.0f;
     static constexpr float bias1 = supplyVoltage * 0.5f; // R6/R7+R30 divider, see docs -- treated as an ideal fixed rail
 

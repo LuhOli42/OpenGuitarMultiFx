@@ -230,7 +230,7 @@ public:
             const auto gnd = NodalCircuit::ground;
 
             c.addCapacitor (in, n1, 0.02e-6);   c.addResistor (n1, nb, 1.0e3);   c.addResistor (nb, bias, 510.0e3);
-            c.addBjt (vcc, nb, ne, false, npn); c.addResistor (ne, gnd, 10.0e3);
+            c.addFollower (nb, ne, 0.62); c.addResistor (ne, gnd, 10.0e3);
             c.addCapacitor (ne, np, 1.0e-6);    c.addResistor (np, bias, 10.0e3);
             c.addOpAmp (np, nm, o1);
             c.addCapacitor (nm, nc3, 0.047e-6); c.addResistor (nc3, gnd, 4.7e3);
@@ -245,7 +245,7 @@ public:
             c.addResistor (nt, nlw, 100.0e3 * (1.0 - level * level));
             c.addResistor (nlw, gnd, 100.0e3 * level * level);
             c.addResistor (nlw, nsw, 100.0);    c.addCapacitor (nsw, nqb, 0.1e-6);   c.addResistor (nqb, bias, 510.0e3);
-            c.addBjt (vcc, nqb, nqe, false, npn); c.addResistor (nqe, gnd, 10.0e3);
+            c.addFollower (nqb, nqe, 0.62); c.addResistor (nqe, gnd, 10.0e3);
             c.addResistor (nqe, nc9, 100.0);    c.addCapacitor (nc9, out, 10.0e-6);
             c.addResistor (out, gnd, 1.0 / (1.0 / 10.0e3 + 1.0 / 1.0e6));
             expect (c.prepare (sr));
@@ -357,7 +357,7 @@ public:
             const NodalCircuit::BjtParams npn { 1.0e-14, 25.85e-3, 300.0, 4.0 };
             const auto gnd = NodalCircuit::ground;
             c.addCapacitor (in, n1, 0.02e-6);   c.addResistor (n1, nb, 1.0e3);   c.addResistor (nb, bias, 510.0e3);
-            c.addBjt (vcc, nb, ne, false, npn); c.addResistor (ne, gnd, 10.0e3);
+            c.addFollower (nb, ne, 0.62); c.addResistor (ne, gnd, 10.0e3);
             c.addCapacitor (ne, np, 1.0e-6);    c.addResistor (np, bias, 10.0e3);
             c.addOpAmp (np, nm, o1);
             c.addCapacitor (nm, nc3, 0.047e-6); c.addResistor (nc3, gnd, 4.7e3);
@@ -371,7 +371,7 @@ public:
             c.addCapacitor (o2, n7, 1.0e-6);    c.addResistor (n7, nt, 1.0e3);
             c.addResistor (nt, nlw, 75.0e3);    c.addResistor (nlw, gnd, 25.0e3);
             c.addResistor (nlw, nsw, 100.0);    c.addCapacitor (nsw, nqb, 0.1e-6);   c.addResistor (nqb, bias, 510.0e3);
-            c.addBjt (vcc, nqb, nqe, false, npn); c.addResistor (nqe, gnd, 10.0e3);
+            c.addFollower (nqb, nqe, 0.62); c.addResistor (nqe, gnd, 10.0e3);
             c.addResistor (nqe, nc9, 100.0);    c.addCapacitor (nc9, out, 10.0e-6);
             c.addResistor (out, gnd, 9.9e3);
             expect (c.prepare (sr));
