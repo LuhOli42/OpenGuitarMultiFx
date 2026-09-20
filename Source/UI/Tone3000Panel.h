@@ -1,6 +1,7 @@
 #pragma once
 
 #include "OAuthLoginDialog.h"
+#include "../Tone3000/LoopbackServer.h"
 #include "../Tone3000/Tone3000Manager.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -41,8 +42,11 @@ public:
 private:
     void refreshLoginState();
     void doLogin();
+    void doLoginEmbedded (const juce::String& authorizeUrl);
+    void finishLogin (const juce::StringPairArray& redirectParams);
 
     Tone3000Manager& manager;
+    LoopbackServer loopback; // system-browser login path; idle unless a login is pending
 
     juce::Label titleLabel { {}, "Settings" };
     juce::Label tone3000SectionLabel { {}, "TONE3000 account" };

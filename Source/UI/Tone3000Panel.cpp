@@ -70,35 +70,72 @@ void Tone3000Panel::doLogin()
         return;
     }
 
+    // Preferred path: the system browser, where the user is usually already
+    // signed in to TONE3000, with a one-shot loopback listener catching the
+    // redirect. Needs no embedded WebKit at all, which is what made the
+    // in-app login pane render blank on this dev machine. If either half is
+    // unavailable (port taken, or no browser on the device -- the final
+    // touchscreen target) fall through to the embedded browser instead.
+    const auto redirectPort = juce::URL (manager.getRedirectUri()).getPort();
+
+    const bool listening = loopback.start (redirectPort, [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)]
+                                                          (const juce::StringPairArray& params)
+    {
+        // Background thread -- hop to the message thread before touching UI/manager.
+        juce::MessageManager::callAsync ([safeThis, params]
+        {
+            if (safeThis != nullptr)
+                safeThis->finishLogin (params);
+        });
+    });
+
+    if (listening && juce::URL (authorizeUrl).launchInDefaultBrowser())
+    {
+        statusLabel.setText ("Finish logging in in your browser, then come back here.",
+                             juce::dontSendNotification);
+        return;
+    }
+
+    loopback.stop();
+    doLoginEmbedded (authorizeUrl);
+}
+
+void Tone3000Panel::finishLogin (const juce::StringPairArray& params)
+{
+    const auto code = params["code"];
+    const auto state = params["state"];
+    const auto oauthError = params["error"];
+
+    if (oauthError.isNotEmpty())
+    {
+        statusLabel.setText ("Authorization denied: " + oauthError, juce::dontSendNotification);
+        return;
+    }
+
+    statusLabel.setText ("Completing login...", juce::dontSendNotification);
+
+    manager.completeLogin (code, state, [this] (bool success, juce::String error)
+    {
+        statusLabel.setText (success ? "Logged in." : error, juce::dontSendNotification);
+        refreshLoginState();
+    });
+}
+
+void Tone3000Panel::doLoginEmbedded (const juce::String& authorizeUrl)
+{
     // Embedded in-app browser, not the system one -- see OAuthLoginDialog
     // and Tone3000Manager's class comment for why: this is the only login
-    // flow that also works on the final touchscreen target. Shown as a
-    // further overlay layer on top of this panel, not a second window.
+    // flow that also works on a touchscreen device with no browser. Shown as
+    // a further overlay layer on top of this panel, not a second window.
     auto dialog = std::make_unique<OAuthLoginDialog> (authorizeUrl, manager.getRedirectUri());
     auto* dialogPtr = dialog.get();
 
     dialogPtr->onRedirectReached = [this] (const juce::StringPairArray& params)
     {
-        const auto code = params["code"];
-        const auto state = params["state"];
-        const auto oauthError = params["error"];
-
         if (onPopOverlay)
             onPopOverlay(); // back to this panel
 
-        if (oauthError.isNotEmpty())
-        {
-            statusLabel.setText ("Authorization denied: " + oauthError, juce::dontSendNotification);
-            return;
-        }
-
-        statusLabel.setText ("Completing login...", juce::dontSendNotification);
-
-        manager.completeLogin (code, state, [this] (bool success, juce::String error)
-        {
-            statusLabel.setText (success ? "Logged in." : error, juce::dontSendNotification);
-            refreshLoginState();
-        });
+        finishLogin (params);
     };
 
     dialogPtr->onCancelled = [this]

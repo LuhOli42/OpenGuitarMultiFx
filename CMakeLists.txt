@@ -155,6 +155,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/Tone3000SearchDialog.cpp
   Source/UI/OAuthLoginDialog.cpp
   Source/Presets/PresetManager.cpp
+  Source/Tone3000/LoopbackServer.cpp
   Source/Tone3000/Tone3000Manager.cpp
 )
 
