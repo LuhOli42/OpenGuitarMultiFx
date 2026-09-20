@@ -198,3 +198,8 @@ nonlinear device, no separate complex sub-network" category.
 
 See [`CircuitFamilies.md`](./CircuitFamilies.md) for how this relates to
 the DS-1 and the booster.
+
+## Diode model (2026-09-20 fix)
+`AsymmetricDiodePair` is given nVt = N x Vt with N = 1.752 (a real 1N4148/1S1588 with
+Is = 2.52 nA). It used to get N = 1, which clipped at ~0.33 V (and ~0.66 V for the pair)
+instead of the ~0.6 V / ~1.2 V this document describes, with a knee twice as sharp.

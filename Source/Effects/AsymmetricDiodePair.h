@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 
 namespace openguitarmultifx
@@ -48,6 +50,7 @@ namespace openguitarmultifx
 class AsymmetricDiodePair
 {
 public:
+    static inline std::atomic<long long> solveFailures { 0 }; // see EbersMollBJT::solveFailures
     void setParameters (double saturationCurrent, double thermalVoltage,
                          double diodeCountForward, double diodeCountReverse) noexcept
     {
@@ -57,14 +60,30 @@ public:
     }
 
     /** Solves for the port voltage V given the branch's Thevenin
-        equivalent (Rth, Vth). vIn is the previous sample's converged
-        value, used as the Newton-Raphson warm start (same reasoning as
-        EbersMollBJT::solve()). Returns false if the solve failed to
-        converge, in which case the caller should hold the previous
-        sample's value rather than use a non-converged result. */
+        equivalent (Rth, Vth). Newton-Raphson starts from an analytic
+        upper bound on the root (see the comment inside), not last
+        sample's value. Returns false if the solve failed to converge, in
+        which case `v` is set to the last CONVERGED value and the caller
+        should use that rather than a non-converged result. */
     bool solve (double rth, double vth, double& v, int maxIterations = 12, double tolerance = 1.0e-9) noexcept
     {
-        v = vPrev;
+        // Start from an analytic UPPER BOUND on the root instead of last
+        // sample's value: the diode alone carrying the whole Thevenin
+        // short-circuit current vth/rth sits at V0 = Vt*ln(1 + (vth/rth)/Is)
+        // (mirrored for negative vth), and since the resistor takes some of
+        // that current the true root is at or below V0 in magnitude (never
+        // above vth either). f(V) = (vth-V)/rth - I(V) is concave and
+        // decreasing, so Newton from the right of the root converges
+        // monotonically. Warm-starting from vPrev instead overshoots badly
+        // when the drive is hot: the exponential's Newton step from far
+        // away only sheds ~Vt per iteration, so a sample that jumps from
+        // "diodes off" to "hard clipping" ran out of iterations (measured:
+        // ~0.5% failed solves at max gain, each one an audible held-sample
+        // glitch).
+        if (vth >= 0.0)
+            v = std::min (vth, VtForward * std::log1p ((vth / rth) / Is));
+        else
+            v = -std::min (-vth, VtReverse * std::log1p ((-vth / rth) / Is));
 
         for (int iter = 0; iter < maxIterations; ++iter)
         {
@@ -96,6 +115,7 @@ public:
             v -= f / dfdv;
         }
 
+        solveFailures.fetch_add (1, std::memory_order_relaxed);
         v = vPrev;
         return false;
     }

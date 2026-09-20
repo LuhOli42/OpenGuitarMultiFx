@@ -58,7 +58,10 @@ namespace
         if (displayName == "Noise Gate" || displayName == "Compressor")
             return "Dynamics";
         if (displayName == "Overdrive" || displayName == "Rangemaster-Style Booster"
-            || displayName == "DS-1-Style Distortion" || displayName == "OD-1-Style Overdrive")
+            || displayName == "DS-1-Style Distortion" || displayName == "OD-1-Style Overdrive"
+            || displayName == "TS808-Style Overdrive" || displayName == "TS9-Style Overdrive"
+            || displayName == "TS10-Style Overdrive" || displayName == "Centaur-Style Overdrive"
+            || displayName == "BD-2-Style Overdrive" || displayName == "HM-2-Style Distortion")
             return "Drive";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab"
             || displayName == "Neural Pedal" || displayName == "Cab" || displayName == "Dynamic Cab")

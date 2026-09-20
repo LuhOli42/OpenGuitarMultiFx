@@ -32,7 +32,7 @@ OD1StyleOverdriveProcessor::OD1StyleOverdriveProcessor()
 
         // 1 diode forward, 2 in series reverse -- the OD-1's documented
         // asymmetric clipping (see the doc's "Op-amp 1" section).
-        ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage, 1.0, 2.0);
+        ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage * diodeIdealityFactor, 1.0, 2.0);
     }
 }
 
@@ -143,8 +143,8 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             const double x = (double) data[i];
 
             // ---- Q6: emitter-follower input buffer ----
-            const double reqC1 = (double) s.c1.getEquivalentResistance();
-            const double histC1 = (double) s.c1.getHistoryVoltage();
+            const double reqC1 = s.c1.getEquivalentResistance();
+            const double histC1 = s.c1.getHistoryVoltage();
 
             const Thevenin baseInputBranch { r1 + reqC1, x - histC1 };
             const Thevenin baseBiasBranch { r2, bias1 };
@@ -159,8 +159,8 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             // constant value, unlike the DS-1's Q1/Q6-JFET coupling --
             // no delay approximation needed here at all.
             constexpr double pin6Voltage = (double) bias1;
-            const double reqC2 = (double) s.c2.getEquivalentResistance();
-            const double histC2 = (double) s.c2.getHistoryVoltage();
+            const double reqC2 = s.c2.getEquivalentResistance();
+            const double histC2 = s.c2.getHistoryVoltage();
             const Thevenin emitterLocalBranch { r3, 0.0 };
             const Thevenin emitterToPin6Branch { reqC2, pin6Voltage + histC2 };
             const Thevenin q6Emitter = combineParallel (emitterLocalBranch, emitterToPin6Branch);
@@ -172,9 +172,9 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
                         q6Vb, q6Ve, q6Vc);
 
             const double iC1Actual = (x - histC1 - q6Vb) / (r1 + reqC1);
-            s.c1.updateState ((float) (iC1Actual * reqC1 + histC1), (float) iC1Actual);
+            s.c1.updateState ((iC1Actual * reqC1 + histC1), iC1Actual);
             const double vC2 = q6Ve - pin6Voltage;
-            s.c2.updateState ((float) vC2, (float) ((vC2 - histC2) / reqC2));
+            s.c2.updateState (vC2, ((vC2 - histC2) / reqC2));
 
             // ---- Op-amp 1: the clipper. Current in from C2+R4 (pin 6 is
             // KNOWN/fixed, so this is fully determined already), must all
@@ -196,23 +196,23 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             // "ideal op-amp with linear feedback" reasoning as the DS-1's
             // non-inverting stage). pin 3 is fixed at BIAS1 by the exact
             // same "nothing else attached" argument as op-amp 1's pin 5. ----
-            const double reqC4 = (double) s.c4.getEquivalentResistance();
-            const double histC4 = (double) s.c4.getHistoryVoltage();
+            const double reqC4 = s.c4.getEquivalentResistance();
+            const double histC4 = s.c4.getHistoryVoltage();
             const double iR7 = (op1Out - (double) bias1) / r7;
             const double gFeedback2 = 1.0 / r8 + 1.0 / reqC4;
             const double op2Out = (double) bias1 - (iR7 + histC4 / reqC4) / gFeedback2;
 
             const double vC4 = (double) bias1 - op2Out;
-            s.c4.updateState ((float) vC4, (float) ((vC4 - histC4) / reqC4));
+            s.c4.updateState (vC4, ((vC4 - histC4) / reqC4));
 
             // ---- Level pot + output buffer (a linear tree, no bridging
             // -- see docs). Reduced backward from Q7's base to find what
             // the Level wiper "sees" downstream, then forward-substitute
             // for the actual node voltages. ----
-            const double reqC5 = (double) s.c5.getEquivalentResistance();
-            const double histC5 = (double) s.c5.getHistoryVoltage();
-            const double reqC7 = (double) s.c7.getEquivalentResistance();
-            const double histC7 = (double) s.c7.getHistoryVoltage();
+            const double reqC5 = s.c5.getEquivalentResistance();
+            const double histC5 = s.c5.getHistoryVoltage();
+            const double reqC7 = s.c7.getEquivalentResistance();
+            const double histC7 = s.c7.getHistoryVoltage();
 
             const Thevenin q7BaseLocal { r12, bias1 };
             const Thevenin toQ7Base { closedSwitchResistance + reqC7 + r12, bias1 + histC7 };
@@ -251,18 +251,18 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             // into an effectively much-too-fast filter, cancelling most
             // of the real AC signal instead of just blocking DC.
             const double iC5Actual = (op2Out - histC5 - levelTopVoltage) / (reqC5 + r10);
-            s.c5.updateState ((float) (iC5Actual * reqC5 + histC5), (float) iC5Actual);
+            s.c5.updateState ((iC5Actual * reqC5 + histC5), iC5Actual);
             // Same fix as C5 above -- C7 has closedSwitchResistance in
             // series (Q1's modelled-as-a-wire bypass switch), so the
             // branch's full voltage drop is not C7's own voltage.
             const double iC7Actual = (levelWiperVoltage - histC7 - q7Vb) / (closedSwitchResistance + reqC7);
-            s.c7.updateState ((float) (iC7Actual * reqC7 + histC7), (float) iC7Actual);
+            s.c7.updateState ((iC7Actual * reqC7 + histC7), iC7Actual);
 
-            const double reqC8 = (double) s.c8.getEquivalentResistance();
-            const double histC8 = (double) s.c8.getHistoryVoltage();
+            const double reqC8 = s.c8.getEquivalentResistance();
+            const double histC8 = s.c8.getHistoryVoltage();
             const double outputBranchCurrent = (q7Ve - histC8) / (reqC8 + outputLoadResistance);
             const double vC8 = outputBranchCurrent * reqC8 + histC8;
-            s.c8.updateState ((float) vC8, (float) outputBranchCurrent);
+            s.c8.updateState (vC8, outputBranchCurrent);
 
             data[i] = (float) (outputBranchCurrent * (double) outputLoadResistance);
         }

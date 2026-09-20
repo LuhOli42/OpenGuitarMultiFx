@@ -1,64 +1,32 @@
 #include "DS1StyleDistortionProcessor.h"
+#include "DualMono.h"
 #include "IconKit.h"
-#include "TheveninCombine.h"
 
 #include <IconData.h>
-
-#include <cmath>
-#include <utility>
 
 namespace openguitarmultifx
 {
 
 namespace
 {
-    /** Solves a 4x4 linear system (Gaussian elimination with partial
-        pivoting) -- sized specifically for the Tone/Level stage's 4-node
-        network (ToneIn, LugA, LugB, Wiper -- see docs/circuits/
-        DS1StyleDistortion.md for why this stage is a genuine bridged
-        network, not a simple ladder, and needs a real linear solve rather
-        than nested Thevenin reduction). Not promoted to a general utility
-        header since nothing else in this project needs an NxN solve yet;
-        worth extracting if a future circuit does. */
-    bool solve4x4 (double A[4][4], double b[4], double x[4]) noexcept
-    {
-        int order[4] = { 0, 1, 2, 3 };
+    constexpr double v9 = 9.0;
+    constexpr double vb = 4.5; // R24/R25 divider, treated as an ideal fixed rail (see docs)
 
-        for (int col = 0; col < 4; ++col)
-        {
-            int pivotRow = col;
-            double pivotMag = std::abs (A[order[col]][col]);
-            for (int row = col + 1; row < 4; ++row)
-            {
-                const double mag = std::abs (A[order[row]][col]);
-                if (mag > pivotMag)
-                {
-                    pivotMag = mag;
-                    pivotRow = row;
-                }
-            }
-            if (pivotMag < 1.0e-15)
-                return false;
-            std::swap (order[col], order[pivotRow]);
+    // Representative small-signal silicon NPN (Q1/Q2/Q3) and 2SK30ATM-GR-grade JFET (Q6) parameters:
+    // same "documented, adjustable assumption" status as before, see docs/circuits/DS1StyleDistortion.md.
+    const NodalCircuit::BjtParams npn { 1.0e-14, 25.85e-3, 200.0, 4.0 };
+    const NodalCircuit::JfetParams jfetQ6 { 3.0e-3, -2.0, 0.02 };
 
-            for (int row = col + 1; row < 4; ++row)
-            {
-                const double factor = A[order[row]][col] / A[order[col]][col];
-                for (int k = col; k < 4; ++k)
-                    A[order[row]][k] -= factor * A[order[col]][k];
-                b[order[row]] -= factor * b[order[col]];
-            }
-        }
+    // 1N4148-class: Is = 2.52 nA with the emission coefficient N = 1.752 (the same pair every other pedal here uses).
+    // It used to be N = 1, which is not a real diode: with this Is it clips at ~0.33 V instead of the ~0.6-0.7 V a
+    // 1S1588/1N4148 really does (ElectroSmash measures 1.4 Vpp after the DS-1's clipper), and a knee twice as sharp --
+    // harsher, quieter, and out of scale with every other pedal.
+    constexpr double diodeIs = 2.52e-9;
+    constexpr double diodeNVt = 1.752 * 25.85e-3;
 
-        for (int col = 3; col >= 0; --col)
-        {
-            double sum = b[order[col]];
-            for (int k = col + 1; k < 4; ++k)
-                sum -= A[order[col]][k] * x[k];
-            x[col] = sum / A[order[col]][col];
-        }
-        return true;
-    }
+    constexpr double driveMax = 100.0e3, toneMax = 20.0e3, levelMax = 100.0e3;
+    constexpr double closedSwitchResistance = 10.0; // Q7 modelled as a closed bypass switch
+    constexpr double outputLoadResistance = 1.0e6;  // assumed downstream input impedance
 }
 
 DS1StyleDistortionProcessor::DS1StyleDistortionProcessor()
@@ -79,124 +47,166 @@ DS1StyleDistortionProcessor::DS1StyleDistortionProcessor()
     group->addChild (std::move (toneParam));
     group->addChild (std::move (levelParam));
     parameters = std::move (group);
+}
+
+void DS1StyleDistortionProcessor::buildChannel (Channel& ch)
+{
+    const auto gnd = NodalCircuit::ground;
+
+    // ---------------------------------------------------------------- pre
+    {
+        auto& c = ch.pre;
+        const auto nv9 = c.addNode(), nvb = c.addNode(), in = c.addNode();
+        const auto x1 = c.addNode(), b1 = c.addNode(), e1 = c.addNode(), nA = c.addNode(), nB = c.addNode();
+        const auto b2 = c.addNode(), c2 = c.addNode(), e2 = c.addNode();
+        const auto vp = c.addNode(), nm = c.addNode(), x8 = c.addNode(), o = c.addNode();
+        c.addSource (nv9, v9);
+        c.addSource (nvb, vb);
+        ch.srcIn = c.addSource (in, 0.0);
+
+        // Q1: emitter follower input buffer.
+        c.addCapacitor (in, x1, 0.047e-6);            // C1
+        c.addResistor (x1, b1, 1.0e3);                // R1
+        c.addResistor (b1, nvb, 470.0e3);             // R2
+        c.addBjt (nv9, b1, e1, false, npn);           // Q1
+        c.addResistor (e1, gnd, 10.0e3);              // R3
+
+        // Q6: JFET used as a voltage-controlled resistor between node A and node B (gate on the bias rail).
+        c.addCapacitor (e1, nA, 0.47e-6);             // C2
+        c.addResistor (nA, nvb, 100.0e3);             // R4
+        c.addJfet (nA, nvb, nB, jfetQ6);              // Q6
+        c.addResistor (nB, nvb, 1.0e6);               // R5
+
+        // Q2: common-emitter gain stage with collector-to-base shunt feedback (R7 || C4).
+        c.addCapacitor (nB, b2, 0.047e-6);            // C3
+        c.addResistor (b2, gnd, 100.0e3);             // R6
+        c.addResistor (b2, c2, 470.0e3);              // R7
+        c.addCapacitor (b2, c2, 250.0e-12);           // C4
+        c.addBjt (c2, b2, e2, false, npn);            // Q2
+        c.addResistor (e2, gnd, 22.0);                // R9
+        c.addResistor (nv9, c2, 10.0e3);              // R8
+
+        // Op-amp gain stage (ideal): (+) via C5 from Q2's collector, R11 bias; (-) leg R13 + C8 to ground;
+        // Drive pot in the feedback.
+        c.addCapacitor (c2, vp, 0.47e-6);             // C5
+        c.addResistor (vp, nvb, 100.0e3);             // R11
+        // TA7136AP on a single 9 V supply: output swing "+1.5 V to Vcc - 1.5 V" (datasheet), so it runs out of room
+        // long before the diodes after it do -- a big part of the DS-1's sound, and what an ideal op-amp lacks.
+        NodalCircuit::OpAmpSpec ta7136;
+        ta7136.lowRail = 1.5;
+        ta7136.highRail = v9 - 1.5;
+        c.addSaturatingOpAmp (vp, nm, o, ta7136);
+        c.addResistor (nm, x8, 4.7e3);                // R13
+        c.addCapacitor (x8, gnd, 1.0e-6);             // C8
+        ch.rDrive = c.addResistor (nm, o, 50.0e3);    // VR1 (Drive)
+
+        ch.nB2 = b2; ch.nE2 = e2; ch.nC2 = c2; ch.nO = o;
+        c.setInitialGuess (b1, 3.9); c.setInitialGuess (e1, 3.3); c.setInitialGuess (nA, vb); c.setInitialGuess (nB, vb);
+        c.setInitialGuess (b2, 0.65); c.setInitialGuess (c2, 4.0); c.setInitialGuess (e2, 0.02);
+        c.setInitialGuess (vp, vb); c.setInitialGuess (nm, vb); c.setInitialGuess (x8, vb); c.setInitialGuess (o, vb);
+    }
+
+    // ---------------------------------------------------------------- post
+    {
+        auto& c = ch.post;
+        const auto nv9 = c.addNode(), nvb = c.addNode(), o = c.addNode();
+        const auto x9 = c.addNode(), n0 = c.addNode(), n1 = c.addNode(), n2 = c.addNode(), x11 = c.addNode();
+        const auto n3 = c.addNode(), w = c.addNode(), p13 = c.addNode(), b3 = c.addNode(), e3 = c.addNode();
+        const auto x14 = c.addNode(), out = c.addNode();
+        c.addSource (nv9, v9);
+        c.addSource (nvb, vb);
+        ch.srcO = c.addSource (o, vb);
+
+        // R14 + C9 into the clipper node; anti-parallel diode pair to the bias rail.
+        c.addResistor (o, x9, 2.2e3);                 // R14
+        c.addCapacitor (x9, n0, 0.47e-6);             // C9
+        c.addDiode (n0, nvb, diodeIs, diodeNVt);      // D4
+        c.addDiode (nvb, n0, diodeIs, diodeNVt);      // D5
+
+        // Big Muff-style Tone network (a genuine bridged network, not a ladder).
+        c.addCapacitor (n0, nvb, 0.01e-6);            // C10
+        c.addResistor (n0, n1, 6.8e3);                // R16
+        c.addCapacitor (n1, nvb, 0.1e-6);             // C12
+        c.addCapacitor (n0, x11, 0.022e-6);           // C11
+        c.addResistor (x11, n2, 2.2e3);               // R15
+        c.addResistor (n2, nvb, 6.8e3);               // R17
+        ch.rToneA = c.addResistor (n1, n3, 10.0e3);   // VR2: lug A -> wiper
+        ch.rToneB = c.addResistor (n2, n3, 10.0e3);   // VR2: lug B -> wiper
+
+        // Level pot, the closed bypass switch + R18, C13 into Q3.
+        ch.rLevelTop = c.addResistor (n3, w, 50.0e3);
+        ch.rLevelBottom = c.addResistor (w, nvb, 50.0e3);
+        c.addResistor (w, p13, closedSwitchResistance + 10.0e3); // Q7 (closed) + R18
+        c.addCapacitor (p13, b3, 0.047e-6);           // C13
+        c.addResistor (b3, nvb, 1.0e6);               // R19
+        c.addBjt (nv9, b3, e3, false, npn);           // Q3
+        c.addResistor (e3, gnd, 10.0e3);              // R21
+        c.addResistor (e3, x14, 1.0e3);               // R22
+        c.addCapacitor (x14, out, 1.0e-6);            // C14
+        c.addResistor (out, gnd, 1.0 / (1.0 / 100.0e3 + 1.0 / outputLoadResistance)); // R20 || assumed load
+
+        ch.nOut = out;
+        for (auto n : { o, x9, n0, n1, n2, x11, n3, w, p13 })
+            c.setInitialGuess (n, vb);
+        c.setInitialGuess (b3, 3.9); c.setInitialGuess (e3, 3.3);
+    }
+}
+
+void DS1StyleDistortionProcessor::updatePots (double driveKnob, double toneKnob, double levelKnob)
+{
+    const double rDrive = juce::jmax (1.0, driveMax * driveKnob);
+    const double rToneA = juce::jmax (1.0, toneMax * toneKnob);
+    const double rToneB = juce::jmax (1.0, toneMax - rToneA);
+    const double rLevelTop = juce::jmax (1.0, levelMax * (1.0 - levelKnob));
+    const double rLevelBottom = juce::jmax (1.0, levelMax - rLevelTop);
 
     for (auto& ch : channels)
     {
-        // Representative small-signal silicon NPN parameters (Q1/Q2/Q3) --
-        // same "documented, adjustable assumption" status as the
-        // booster's PNP parameters, see docs/circuits/DS1StyleDistortion.md.
-        ch.q1.setParameters (1.0e-14, 25.85e-3, 200.0, 4.0);
-        ch.q2.setParameters (1.0e-14, 25.85e-3, 200.0, 4.0);
-        ch.q3.setParameters (1.0e-14, 25.85e-3, 200.0, 4.0);
-
-        // Representative 2SK30ATM-GR-grade N-channel JFET parameters.
-        ch.q6.setParameters (3.0e-3, -2.0, 0.02);
-
-        ch.diodePair = std::make_unique<chowdsp::wdft::DiodePairT<double, chowdsp::wdft::ResistiveVoltageSourceT<double>>> (
-            ch.diodeSource, diodeSaturationCurrent, diodeThermalVoltage, 1.0);
+        ch.pre.setResistance (ch.rDrive, rDrive);
+        ch.post.setResistance (ch.rToneA, rToneA);
+        ch.post.setResistance (ch.rToneB, rToneB);
+        ch.post.setResistance (ch.rLevelTop, rLevelTop);
+        ch.post.setResistance (ch.rLevelBottom, rLevelBottom);
     }
 }
 
 void DS1StyleDistortionProcessor::prepare (double newSampleRate, int, int)
 {
+    // A same-rate re-prepare is a no-op (the UI's chain reorder re-prepares every processor already in the chain):
+    // rebuilding would wipe live circuit state.
+    if (juce::exactlyEqual (sampleRate, newSampleRate) && sampleRate > 0.0)
+        return;
     sampleRate = newSampleRate;
 
-    // The UI's chain-grid drag/reorder path rebuilds the whole SignalGraph
-    // and calls prepare() again on EVERY processor already in the chain,
-    // not just the one that moved (see Source/Engine/AGENTS.md) -- at the
-    // SAME sample rate, every single time. Re-running the full cold-start
-    // below (wipe every capacitor's history to 0V, re-seed every
-    // transistor's Newton-Raphson guess, settle through silence) would
-    // throw away this processor's actual live operating point -- built up
-    // from whatever real signal has been flowing through it -- right as
-    // that same real signal keeps arriving, producing an audible pop and,
-    // worse, a real risk of a transistor's Newton-Raphson landing in a
-    // different (possibly near-cutoff, near-silent) operating point than
-    // the one it had converged to under the real signal, since it's now
-    // converging from a silence-implied start instead. A same-rate
-    // re-prepare is a no-op: every Req/derived constant below depends only
-    // on sample rate, so there's nothing to recompute.
-    if (juce::exactlyEqual (settledSampleRate, newSampleRate))
-        return;
-    settledSampleRate = newSampleRate;
-
-    smoothedRfPot.reset (newSampleRate, 0.02);
-    smoothedRfPot.setCurrentAndTargetValue (juce::jmax (1.0f, driveMax * drive->get()));
-    smoothedRAtoWiper.reset (newSampleRate, 0.02);
-    smoothedRAtoWiper.setCurrentAndTargetValue (juce::jmax (1.0f, toneMax * tone->get()));
-    smoothedRTtoW.reset (newSampleRate, 0.02);
-    smoothedRTtoW.setCurrentAndTargetValue (juce::jmax (1.0f, levelMax * (1.0f - level->get())));
-
     for (auto& ch : channels)
     {
-        ch.c1.prepare (newSampleRate, c1Value);
-        ch.c2.prepare (newSampleRate, c2Value);
-        ch.c3.prepare (newSampleRate, c3Value);
-        ch.c4.prepare (newSampleRate, c4Value);
-        ch.c5.prepare (newSampleRate, c5Value);
-        ch.c8.prepare (newSampleRate, c8Value);
-        ch.c9.prepare (newSampleRate, c9Value);
-        ch.c10.prepare (newSampleRate, c10Value);
-        ch.c11.prepare (newSampleRate, c11Value);
-        ch.c12.prepare (newSampleRate, c12Value);
-        ch.c13.prepare (newSampleRate, c13Value);
-        ch.c14.prepare (newSampleRate, c14Value);
-
-        // Warm-start every nonlinear device near its approximate DC
-        // operating point -- same rationale as the booster's prepare():
-        // Newton-Raphson would find the real point from any reasonable
-        // start, but starting close means the first processed samples
-        // don't have to converge from a wild guess. See docs/circuits/
-        // DS1StyleDistortion.md for where these estimates come from.
-        ch.q1.reset (bias1, bias1 - 0.6, supplyVoltage);
-        ch.q2.reset (0.65, 0.02, 4.0);
-        ch.q3.reset (bias1, bias1 - 0.6, supplyVoltage);
-        ch.q6.reset (bias1, bias1);
-        ch.lastQ2Vb = 0.65;
-        ch.lastQ2Vc = 4.0;
+        ch = Channel {};
+        buildChannel (ch);
     }
 
-    // Settle fully to the true DC operating point on silence before this
-    // processor ever sees real audio -- same pop-fix approach as
-    // PositiveGroundBoosterProcessor::prepare(). The slowest time
-    // constant here is C14's own output coupling against the assumed
-    // downstream load (outputLoadResistance*C14 = 1Mohm*1uF = ~1 second
-    // -- an order of magnitude slower than any other RC in this circuit),
-    // so settling needs several multiples of a full second, not one.
-    if (newSampleRate > 0.0)
-    {
-        const int settleBlockSize = 512;
-        juce::AudioBuffer<float> silence (2, settleBlockSize);
-        int samplesRemaining = (int) (newSampleRate * 6.0); // ~6x the slowest time constant
+    smoothedDrive.reset (newSampleRate, 0.02);
+    smoothedDrive.setCurrentAndTargetValue (drive->get());
+    smoothedTone.reset (newSampleRate, 0.02);
+    smoothedTone.setCurrentAndTargetValue (tone->get());
+    smoothedLevel.reset (newSampleRate, 0.02);
+    smoothedLevel.setCurrentAndTargetValue (level->get());
 
-        while (samplesRemaining > 0)
-        {
-            const int thisBlock = juce::jmin (settleBlockSize, samplesRemaining);
-            silence.clear();
-            juce::AudioBuffer<float> silenceView (silence.getArrayOfWritePointers(), 2, thisBlock);
-            process (silenceView);
-            samplesRemaining -= thisBlock;
-        }
-    }
-}
+    updatePots (drive->get(), tone->get(), level->get());
 
-void DS1StyleDistortionProcessor::reset()
-{
+    dcOk = true;
     for (auto& ch : channels)
     {
-        ch.c1.reset();
-        ch.c2.reset();
-        ch.c3.reset();
-        ch.c4.reset();
-        ch.c5.reset();
-        ch.c8.reset();
-        ch.c9.reset();
-        ch.c10.reset();
-        ch.c11.reset();
-        ch.c12.reset();
-        ch.c13.reset();
-        ch.c14.reset();
+        dcOk = ch.pre.prepare (newSampleRate) && dcOk;
+        ch.post.setSource (ch.srcO, ch.pre.voltage (ch.nO));
+        dcOk = ch.post.prepare (newSampleRate) && dcOk;
     }
+
+    controlCounter = 0;
+    sampleCount = 0;
+    failureCount = 0;
+    channelsSynced = true;
+    channel1Stale = false;
+    identicalRun = 0;
 }
 
 void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -207,375 +217,81 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), (int) channels.size());
     const int numSamples = buffer.getNumSamples();
 
-    smoothedRfPot.setTargetValue (juce::jmax (1.0f, driveMax * drive->get()));
-    smoothedRAtoWiper.setTargetValue (juce::jmax (1.0f, toneMax * tone->get()));
-    smoothedRTtoW.setTargetValue (juce::jmax (1.0f, levelMax * (1.0f - level->get())));
+    // Dual-mono shortcut: see CentaurStyleOverdriveProcessor::process().
+    const bool dualMono = numChannels == 2 && blockIsDualMono (buffer);
+    bool useShortcut = false;
+    if (numChannels == 2)
+    {
+        identicalRun = dualMono ? identicalRun + numSamples : 0;
+
+        if (! channelsSynced && identicalRun >= (long long) (10.0 * sampleRate))
+        {
+            channels[1] = channels[0];
+            channelsSynced = true;
+            channel1Stale = false;
+        }
+
+        useShortcut = dualMono && channelsSynced;
+
+        if (! useShortcut && channel1Stale)
+        {
+            channels[1] = channels[0];
+            channel1Stale = false;
+        }
+
+        if (! dualMono)
+            channelsSynced = false;
+    }
+    const int solveChannels = useShortcut ? 1 : numChannels;
+    if (useShortcut)
+        channel1Stale = true;
+
+    smoothedDrive.setTargetValue (drive->get());
+    smoothedTone.setTargetValue (tone->get());
+    smoothedLevel.setTargetValue (level->get());
 
     for (int i = 0; i < numSamples; ++i)
     {
-        // Sample-outer, channel-inner: all three pots are one real,
-        // physically shared component each, not per-channel -- advancing
-        // the smoothers once per sample (not once per channel) keeps a
-        // stereo signal's two channels seeing the exact same pot value at
-        // each instant, the same convention
-        // PositiveGroundBoosterProcessor's own smoothedBoostPotResistance
-        // uses.
-        const double rfPot = (double) smoothedRfPot.getNextValue();
-        const double rAtoWiper = (double) smoothedRAtoWiper.getNextValue();
-        const double rBtoWiper = juce::jmax (1.0, (double) toneMax - rAtoWiper);
-        const double rTtoW = (double) smoothedRTtoW.getNextValue();
-        const double rWtoB = juce::jmax (1.0, (double) levelMax - rTtoW);
+        const float d = smoothedDrive.getNextValue();
+        const float t = smoothedTone.getNextValue();
+        const float l = smoothedLevel.getNextValue();
 
-        for (int ch = 0; ch < numChannels; ++ch)
+        if (++controlCounter >= controlInterval)
         {
-            auto& s = channels[(size_t) ch];
-            auto* data = buffer.getWritePointer (ch);
-            const double x = (double) data[i];
+            controlCounter = 0;
+            updatePots (d, t, l);
+        }
 
-            // ---- Q1: emitter-follower input buffer ----
-            const double reqC1 = (double) s.c1.getEquivalentResistance();
-            const double histC1 = (double) s.c1.getHistoryVoltage();
-            const Thevenin baseInputBranch { r1 + reqC1, x - histC1 };
-            const Thevenin baseBiasBranch { r2, bias1 };
-            const Thevenin q1Base = combineParallel (baseInputBranch, baseBiasBranch);
+        for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
+        {
+            auto& ch = channels[(size_t) chIdx];
+            auto* data = buffer.getWritePointer (chIdx);
 
-            // Emitter loading from C2 toward Q6's node A uses node A's
-            // PREVIOUS sample value -- node A is one of Q6's own two
-            // simultaneous unknowns, not resolvable before Q6's own solve
-            // (see docs/circuits/DS1StyleDistortion.md and
-            // EbersMollBJT::getLastSolved()'s doc comment for why this
-            // specific, explained delay is used).
-            double nodeAPrev, nodeBPrev;
-            s.q6.getLastSolved (nodeAPrev, nodeBPrev);
-            const double reqC2 = (double) s.c2.getEquivalentResistance();
-            const double histC2 = (double) s.c2.getHistoryVoltage();
-            const Thevenin emitterLocalBranch { r3, 0.0 };
-            const Thevenin emitterToNodeABranch { reqC2, nodeAPrev + histC2 };
-            const Thevenin q1Emitter = combineParallel (emitterLocalBranch, emitterToNodeABranch);
+            ch.pre.setSource (ch.srcIn, (double) data[i]);
+            bool ok = ch.pre.solveSample();
 
-            const Thevenin q1Collector { 1.0e-6, supplyVoltage };
+            ch.post.setSource (ch.srcO, ch.pre.voltage (ch.nO));
+            ok = ch.post.solveSample() && ok;
 
-            double q1Vb, q1Ve, q1Vc;
-            s.q1.solve (q1Base.rth, q1Base.vth, q1Emitter.rth, q1Emitter.vth, q1Collector.rth, q1Collector.vth,
-                        q1Vb, q1Ve, q1Vc);
+            data[i] = (float) ch.post.voltage (ch.nOut);
 
-            // ---- Q6: JFET used as a voltage-controlled resistor ----
-            // Node A (drain): Q1's emitter (just solved) through C2, in
-            // parallel with R4 to BIAS1.
-            const Thevenin nodeAFromQ1 { reqC2, q1Ve - histC2 };
-            const Thevenin nodeALocal { r4, bias1 };
-            const Thevenin nodeAThevenin = combineParallel (nodeAFromQ1, nodeALocal);
-
-            // Node B (source): Q2's base network, via C3's PREVIOUS
-            // sample history (Q2 hasn't been solved yet this sample --
-            // this is a normal forward-direction cascade, not a delay
-            // approximation: C3's history term is exactly the same kind
-            // of one-sample memory every capacitor companion model here
-            // already carries).
-            const double reqC3 = (double) s.c3.getEquivalentResistance();
-            const double histC3 = (double) s.c3.getHistoryVoltage();
-            const Thevenin nodeBLocal { r5, bias1 };
-            // R6 (to true ground) and R7/C4 (feedback from Q2's collector,
-            // one-sample-delayed, see below) also load Q2's base, and
-            // hence node B through C3 -- fold them in here so node B's
-            // Thevenin is accurate, not just R5's contribution.
-            const double reqC4 = (double) s.c4.getEquivalentResistance();
-            const double histC4 = (double) s.c4.getHistoryVoltage();
-            const Thevenin q2BaseR6 { r6, 0.0 };
-            const Thevenin q2BaseR7 { r7, s.lastQ2Vc };
-            const Thevenin q2BaseC4 { reqC4, s.lastQ2Vc + histC4 };
-            const Thevenin q2BaseLocal = combineParallel (q2BaseR6, combineParallel (q2BaseR7, q2BaseC4));
-
-            // node B feeds Q2's base through C3; Q2's base network (R6 ||
-            // R7/C4-feedback, using last sample's collector -- see above)
-            // is what node B "sees" beyond C3. Combine node B's own local
-            // branch (R5) with the C3-plus-Q2-base branch (C3 in series
-            // with Q2's base Thevenin).
-            const Thevenin nodeBSeries { reqC3 + q2BaseLocal.rth, q2BaseLocal.vth + histC3 };
-            const Thevenin nodeBThevenin = combineParallel (nodeBLocal, nodeBSeries);
-
-            double nodeA, nodeB;
-            s.q6.solve (bias1, nodeAThevenin.rth, nodeAThevenin.vth, nodeBThevenin.rth, nodeBThevenin.vth, nodeA, nodeB);
-
-            // ---- Q2: common-emitter gain stage with shunt feedback ----
-            const Thevenin q2BaseFromNodeB { reqC3, nodeB - histC3 };
-            const Thevenin q2Base = combineParallel (q2BaseFromNodeB, q2BaseR6, combineParallel (q2BaseR7, q2BaseC4));
-
-            const Thevenin q2Emitter { r9, 0.0 };
-
-            const Thevenin q2CollectorR8 { r8, supplyVoltage };
-            const Thevenin q2CollectorR7 { r7, s.lastQ2Vb };
-            const Thevenin q2CollectorC4 { reqC4, s.lastQ2Vb - histC4 };
-            const Thevenin q2Collector = combineParallel (q2CollectorR8, combineParallel (q2CollectorR7, q2CollectorC4));
-
-            double q2Vb, q2Ve, q2Vc;
-            s.q2.solve (q2Base.rth, q2Base.vth, q2Emitter.rth, q2Emitter.vth, q2Collector.rth, q2Collector.vth,
-                        q2Vb, q2Ve, q2Vc);
-
-            // Update every capacitor touched by the pregain so far, now
-            // that both ends of each are known this sample. C1 has R1 in
-            // series (unlike every other coupling cap here, which connects
-            // its two nodes directly) -- "x - q1Vb" is the combined R1+C1
-            // branch's voltage, NOT C1's own terminal voltage, so the
-            // branch current has to be derived first and C1's own voltage
-            // read back from that (same pattern as C8/C14 below, which
-            // also sit in series with a plain resistor).
-            const double iC1 = (x - histC1 - q1Vb) / (r1 + reqC1);
-            const double vC1 = iC1 * reqC1 + histC1;
-            s.c1.updateState ((float) vC1, (float) iC1);
-            const double vC2 = q1Ve - nodeA;
-            s.c2.updateState ((float) vC2, (float) ((vC2 - histC2) / reqC2));
-            const double vC3 = nodeB - q2Vb;
-            s.c3.updateState ((float) vC3, (float) ((vC3 - histC3) / reqC3));
-            const double vC4 = q2Vb - q2Vc;
-            s.c4.updateState ((float) vC4, (float) ((vC4 - histC4) / reqC4));
-            s.lastQ2Vb = q2Vb;
-            s.lastQ2Vc = q2Vc;
-
-            // ---- Op-amp gain stage (ideal, closed form) ----
-            // Non-inverting input: Q2's collector through C5, in
-            // parallel with R11 to BIAS1. The op-amp draws no input
-            // current, so this parallel combine's open-circuit voltage
-            // IS v+ exactly (see docs/circuits/DS1StyleDistortion.md).
-            const double reqC5 = (double) s.c5.getEquivalentResistance();
-            const double histC5 = (double) s.c5.getHistoryVoltage();
-            const Thevenin vPlusFromQ2 { reqC5, q2Vc - histC5 };
-            const Thevenin vPlusLocal { r11, bias1 };
-            const Thevenin vPlusThevenin = combineParallel (vPlusFromQ2, vPlusLocal);
-            const double vPlus = vPlusThevenin.vth; // I == 0 at an ideal op-amp input
-
-            const double reqC8 = (double) s.c8.getEquivalentResistance();
-            const double histC8 = (double) s.c8.getHistoryVoltage();
-            const double rgTotal = r13 + reqC8;
-            const double iRg = (vPlus - histC8) / rgTotal;
-            const double nodeMid = vPlus + rfPot * iRg;
-
-            // Update C5 now that both Q2's collector and v+ are known.
-            const double iC5 = (q2Vc - vPlus - histC5) / reqC5;
-            s.c5.updateState ((float) (q2Vc - vPlus), (float) iC5);
-            const double vC8 = iRg * reqC8 + histC8;
-            s.c8.updateState ((float) vC8, (float) iRg);
-
-            // ---- Tone/Level stage's linear network, reduced to a
-            // Thevenin at the clip node BEFORE the diode solve (see
-            // docs/circuits/DS1StyleDistortion.md). R16 and the C11+R15
-            // branch tap directly off the clip node itself -- confirmed
-            // against Aion FX's clean "Comet Distortion" DS-1 clone
-            // schematic; an earlier pass wrongly modelled C10 (0.01uF) as
-            // a SERIES coupling cap into a separate "ToneIn" node, when
-            // it's actually just a shunt-to-BIAS1 cap sitting at the SAME
-            // node the diode pair clips, adding a phantom highpass stage
-            // that doesn't exist in the real circuit (measured effect:
-            // severe, bug-only bass loss below ~300Hz that a real DS-1
-            // doesn't have). Since the clip node is a genuine unknown
-            // shared between this passive network and the nonlinear
-            // diode pair, it's solved via superposition: one solve with
-            // the real sources (bias1, capacitor histories) and node0 as
-            // an open port gives this network's open-circuit voltage;
-            // one solve with a unit test current at node0 and every real
-            // source zeroed gives its Thevenin resistance. Combined
-            // (Rth, Vth) is this whole passive network's Thevenin as seen
-            // by the diode pair; once the diode solve fixes the clip
-            // node's actual voltage, the same two solves reconstruct
-            // LugA/LugB/Wiper exactly via superposition, no third solve
-            // needed.
-            const double reqC10 = (double) s.c10.getEquivalentResistance();
-            const double histC10 = (double) s.c10.getHistoryVoltage();
-            const double reqC11 = (double) s.c11.getEquivalentResistance();
-            const double histC11 = (double) s.c11.getHistoryVoltage();
-            const double reqC12 = (double) s.c12.getEquivalentResistance();
-            const double histC12 = (double) s.c12.getHistoryVoltage();
-            const double reqC13 = (double) s.c13.getEquivalentResistance();
-            const double histC13 = (double) s.c13.getHistoryVoltage();
-
-            // Everything downstream of the TONE wiper (the LEVEL pot,
-            // Q7's closed switch, R18, C13, Q3's own R19-to-BIAS1 base
-            // bias) is a genuine tree -- no loop back into the Tone core
-            // -- so it reduces exactly via nested Thevenin combination,
-            // worked out from Q3's base backward. The TONE wiper ties
-            // directly (a plain wire, no series resistor) to the LEVEL
-            // pot's top lug -- confirmed against the Comet reference
-            // after the scanned board's own wiper trace proved ambiguous
-            // even at high zoom; R18 sits in series between Q7's switch
-            // and the C13/R19 node, not as a separate branch to the
-            // supply as earlier assumed.
-            const Thevenin q3BaseLocal { r19, bias1 };
-            const Thevenin preC13ToQ3Base { r19 + reqC13, bias1 + histC13 };
-            const Thevenin levelWiperDownstream { closedSwitchResistance + r18 + preC13ToQ3Base.rth, preC13ToQ3Base.vth };
-            // LEVEL's bottom lug (pin1) also returns to BIAS1/"VA", not
-            // true ground -- same fix as C12/R17 below.
-            const Thevenin levelWiperExclT = combineParallel (levelWiperDownstream, Thevenin { rWtoB, bias1 });
-            const Thevenin toneWiperDownstream { rTtoW + levelWiperExclT.rth, levelWiperExclT.vth };
-
-            // The Tone core itself (node0=clip node, LugA, LugB, Wiper)
-            // genuinely loops (Wiper connects to both LugA and LugB,
-            // which both connect back to node0) -- solved as one 4x4
-            // linear system, twice (see comment above).
-            double A[4][4] = {};
-            double bRhsReal[4] = {};
-
-            // C10 shunts the clip node itself to BIAS1.
-            const double gC10 = 1.0 / reqC10;
-            A[0][0] += gC10;
-            bRhsReal[0] += gC10 * ((double) bias1 + histC10);
-
-            const double gR16 = 1.0 / r16;
-            A[0][0] += gR16;
-            A[1][1] += gR16;
-            A[0][1] -= gR16;
-            A[1][0] -= gR16;
-
-            // C12 shunts LugA to BIAS1 (the schematic's own "VA" bias
-            // rail, confirmed against the Comet reference's R21/R22
-            // divider feeding the equivalent bypass cap), NOT true
-            // ground -- an earlier pass wrongly treated this (and R17/
-            // LEVEL's bottom lug above) as true ground, pinning the whole
-            // Tone/Level network's DC operating point near 0V instead of
-            // BIAS1 and starving Q3's base bias of headroom.
-            const double gC12 = 1.0 / reqC12;
-            A[1][1] += gC12;
-            bRhsReal[1] += gC12 * ((double) bias1 + histC12);
-
-            // C11 has R15 (2.2K) in series before it reaches LugB -- fold
-            // R15 into the branch's conductance (its own Req plus R15,
-            // exactly the R1+C1/R13+C8/R... pattern used everywhere else
-            // in this file for a resistor-in-series-with-a-cap branch);
-            // C11's OWN voltage (for updateState below) is NOT the full
-            // node0-to-LugB drop once R15's own IR drop is folded in, so
-            // it has to be derived from the branch current after the
-            // solve, same as OD-1's C5/C7 fix this session.
-            const double gC11 = 1.0 / (r15 + reqC11);
-            A[0][0] += gC11;
-            A[2][2] += gC11;
-            A[0][2] -= gC11;
-            A[2][0] -= gC11;
-            bRhsReal[0] += gC11 * histC11;
-            bRhsReal[2] -= gC11 * histC11;
-
-            // R17 shunts LugB to BIAS1 too (same "VA" rail, same fix).
-            const double gR17 = 1.0 / r17;
-            A[2][2] += gR17;
-            bRhsReal[2] += gR17 * (double) bias1;
-
-            const double gAtoWiper = 1.0 / rAtoWiper;
-            A[1][1] += gAtoWiper;
-            A[3][3] += gAtoWiper;
-            A[1][3] -= gAtoWiper;
-            A[3][1] -= gAtoWiper;
-
-            const double gBtoWiper = 1.0 / rBtoWiper;
-            A[2][2] += gBtoWiper;
-            A[3][3] += gBtoWiper;
-            A[2][3] -= gBtoWiper;
-            A[3][2] -= gBtoWiper;
-
-            const double gDown = 1.0 / toneWiperDownstream.rth;
-            A[3][3] += gDown;
-            bRhsReal[3] += gDown * toneWiperDownstream.vth;
-
-            double AOpen[4][4];
-            double ATest[4][4];
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c)
-                    AOpen[r][c] = ATest[r][c] = A[r][c];
-
-            double xOpen[4] = { (double) bias1, (double) bias1, (double) bias1, (double) bias1 };
-            solve4x4 (AOpen, bRhsReal, xOpen);
-
-            double bRhsTest[4] = { 1.0, 0.0, 0.0, 0.0 };
-            double xTest[4] = { 0.0, 0.0, 0.0, 0.0 };
-            solve4x4 (ATest, bRhsTest, xTest);
-
-            const Thevenin toneNetwork { xTest[0], xOpen[0] };
-
-            // ---- Diode clipper (chowdsp_wdf DiodePairT) ----
-            // R14 (2.2K, confirmed against the Comet reference's R12) sits
-            // in series between the op-amp's output and C9 -- an earlier
-            // pass declared r14 but never actually wired it in, feeding
-            // C9 directly from the ideal op-amp output with zero series
-            // resistance. Same series-resistor-in-a-cap-branch pattern as
-            // everywhere else in this file: fold r14 into the branch's
-            // Thevenin resistance, derive C9's own voltage from the
-            // branch current after the solve.
-            const double reqC9 = (double) s.c9.getEquivalentResistance();
-            const double histC9 = (double) s.c9.getHistoryVoltage();
-            const Thevenin fromOpAmp { r14 + reqC9, nodeMid - histC9 };
-            const Thevenin diodeThevenin = combineParallel (fromOpAmp, toneNetwork);
-            const double diodeVthRelative = diodeThevenin.vth - (double) bias1;
-            s.diodeSource.setResistanceValue (diodeThevenin.rth);
-            s.diodeSource.setVoltage (diodeVthRelative);
-            s.diodePair->incident (s.diodeSource.reflected());
-            s.diodeSource.incident (s.diodePair->reflected());
-            const double nodeClipRelative = chowdsp::wdft::voltage<double> (s.diodeSource);
-            const double nodeClip = nodeClipRelative + (double) bias1;
-
-            const double iC9 = (nodeMid - histC9 - nodeClip) / (r14 + reqC9);
-            s.c9.updateState ((float) (iC9 * reqC9 + histC9), (float) iC9);
-
-            // Reconstruct LugA/LugB/Wiper via superposition now the clip
-            // node's actual (diode-solved) voltage is known.
-            const double i0 = (nodeClip - toneNetwork.vth) / toneNetwork.rth;
-            const double lugA = xOpen[1] + i0 * xTest[1];
-            const double lugB = xOpen[2] + i0 * xTest[2];
-            const double toneWiper = xOpen[3] + i0 * xTest[3];
-
-            s.c10.updateState ((float) (nodeClip - bias1), (float) ((nodeClip - (double) bias1 - histC10) / reqC10));
-            const double iC11 = (nodeClip - histC11 - lugB) / (r15 + reqC11);
-            s.c11.updateState ((float) (iC11 * reqC11 + histC11), (float) iC11);
-            s.c12.updateState ((float) (lugA - bias1), (float) ((lugA - (double) bias1 - histC12) / reqC12));
-
-            // Forward-substitute from the Tone wiper (== LEVEL's top lug,
-            // tied directly) out to preC13, now that the Tone wiper's
-            // actual voltage is known.
-            const double iDown = (toneWiper - toneWiperDownstream.vth) / toneWiperDownstream.rth;
-            const double levelWiper = toneWiper - iDown * rTtoW;
-
-            const Thevenin preC13FromLevel { closedSwitchResistance + r18, levelWiper };
-            const Thevenin preC13 = combineParallel (preC13FromLevel, preC13ToQ3Base);
-            const double preC13Voltage = preC13.vth;
-
-            // ---- Q3: emitter-follower output buffer ----
-            const Thevenin q3BaseFromC13 { reqC13, preC13Voltage - histC13 };
-            const Thevenin q3Base = combineParallel (q3BaseFromC13, q3BaseLocal);
-            const Thevenin q3Emitter { r21, 0.0 };
-            const Thevenin q3Collector { 1.0e-6, supplyVoltage };
-
-            double q3Vb, q3Ve, q3Vc;
-            s.q3.solve (q3Base.rth, q3Base.vth, q3Emitter.rth, q3Emitter.vth, q3Collector.rth, q3Collector.vth,
-                        q3Vb, q3Ve, q3Vc);
-
-            const double vC13 = preC13Voltage - q3Vb;
-            s.c13.updateState ((float) vC13, (float) ((vC13 - histC13) / reqC13));
-
-            // R22 (Comet's R19, 1K) sits in series between Q3's emitter
-            // and C14 -- an earlier pass wired C14 straight to q3Ve with
-            // no series resistor at all, missing this entirely. R20
-            // (Comet's R20, 100K) is the pedal's OWN internal bleed
-            // resistor from the output jack to true ground, always
-            // present regardless of what's plugged in downstream -- also
-            // missing entirely; the assumed external amp input impedance
-            // (outputLoadResistance, 1M) loads the jack IN PARALLEL with
-            // R20, not alone, and R20 dominates that combination (100K
-            // vs 1M) rather than being a rounding error.
-            const double reqC14 = (double) s.c14.getEquivalentResistance();
-            const double histC14 = (double) s.c14.getHistoryVoltage();
-            const double rLoadCombined = (outputLoadResistance * (double) r20) / (outputLoadResistance + (double) r20);
-            const double outputBranchCurrent = (q3Ve - histC14) / ((double) r22 + reqC14 + rLoadCombined);
-            const double vC14 = outputBranchCurrent * reqC14 + histC14;
-            s.c14.updateState ((float) vC14, (float) outputBranchCurrent);
-
-            data[i] = (float) (outputBranchCurrent * rLoadCombined);
+            if (chIdx == 0)
+            {
+                ++sampleCount;
+                if (! ok)
+                    ++failureCount;
+            }
         }
     }
+
+    if (useShortcut)
+        buffer.copyFrom (1, 0, buffer, 0, 0, numSamples);
 }
 
 void DS1StyleDistortionProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    // Standing until the reference sheet's dedicated "Distortion" glyph
-    // (Drive category) is confirmed -- see docs/icons/AGENT-icon-notes.md.
-    // Same category as Overdrive, so its glyph is the least-wrong
-    // placeholder available rather than inventing new geometry, which
-    // this project's icon rule explicitly forbids without the sheet.
+    // The sheet lists "Distortion" as its own distinct glyph, but it still isn't saved in the repo (see
+    // docs/icons/AGENT-icon-notes.md), so this reuses the overdrive icon as a placeholder.
     static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::overdrive_svg, IconData::overdrive_svgSize);
     icon::drawSvg (g, b, svg.get());
 }

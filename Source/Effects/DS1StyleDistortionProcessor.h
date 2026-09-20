@@ -1,11 +1,7 @@
 #pragma once
 
-#include "EbersMollBJT.h"
 #include "EffectProcessor.h"
-#include "ShichmanHodgesJFET.h"
-#include "TrapezoidalCapacitor.h"
-
-#include <chowdsp_wdf/chowdsp_wdf.h>
+#include "NodalCircuit.h"
 
 #include <array>
 
@@ -13,29 +9,31 @@ namespace openguitarmultifx
 {
 
 /**
-    A BOSS DS-1-style distortion -- modelled directly from the original
-    (pre-1994, TA7136P-based) DS-1 factory board schematic, cross-checked
-    stage-by-stage against ElectroSmash's independent analysis of a later
-    revision. See docs/circuits/DS1StyleDistortion.md for the full circuit
-    writeup (topology, every stage's role, every simplification made and
-    why) -- read that file to understand this processor, not this comment
-    or the .cpp.
+    A BOSS DS-1-style distortion -- modelled from the original (pre-1994,
+    TA7136P-based) DS-1 factory board schematic, cross-checked stage-by-stage
+    against ElectroSmash's independent analysis of a later revision. See
+    docs/circuits/DS1StyleDistortion.md for the full circuit writeup
+    (topology, every stage's role, every simplification made and why).
 
-    Signal path: Q1 (NPN emitter-follower input buffer) -> Q6 (JFET used
-    as a voltage-controlled resistor, not a gain stage -- biased at
-    Vgs≈0) -> Q2 (NPN common-emitter gain stage with collector-to-base
-    shunt feedback) -> an ideal-op-amp non-inverting gain stage (Drive pot
-    sets closed-loop gain, solved in closed form -- no Newton-Raphson
-    needed for an ideal op-amp) -> anti-parallel diode-to-AC-ground hard
-    clipping (chowdsp_wdf's DiodePairT, the one genuine WDF use in this
-    processor) -> a passive Big Muff-style Tone stack -> Level pot ->
-    Q7 (JFET, modelled as a closed bypass switch -- see the docs file for
-    why) -> Q3 (NPN emitter-follower output buffer).
+    Runs as a netlist on NodalCircuit (see docs/circuits/NodalCircuitSolver.md).
+    The first version of this processor was hand-derived, with three couplings
+    approximated by ONE-SAMPLE DELAYS (Q1's emitter into the JFET's node, Q2's
+    collector-to-base shunt feedback, the JFET's coupling into Q2). Downstream
+    gain multiplies whatever error a delay makes, and the measured result was
+    a genuinely unstable/noisy output (~5% non-periodic error, a spike after
+    every edge of the clipped waveform) and hundreds of failed transistor
+    solves per second. A netlist solves those couplings exactly.
 
-    Three controls, matching the three pots the real pedal has: Drive
-    (VR1), Tone (VR2), Level (VR3) -- all linear ("B") taper per the
-    schematic's own pot markings, unlike the booster's single log-taper
-    pot.
+    Signal path: Q1 (NPN emitter-follower input buffer) -> Q6 (JFET used as a
+    voltage-controlled resistor, biased at Vgs ~ 0) -> Q2 (NPN common-emitter
+    gain stage with collector-to-base shunt feedback) -> an ideal op-amp
+    non-inverting gain stage (Drive pot in its feedback) -> R14 + C9 -> the
+    anti-parallel diode clipper shared with the Big Muff-style Tone network
+    -> Level pot -> Q3 (NPN emitter-follower output buffer). (Q7, the
+    bypass JFET, is modelled as a closed switch.)
+
+    Three controls, matching the three pots the real pedal has: Drive (VR1),
+    Tone (VR2), Level (VR3), all linear.
 */
 class DS1StyleDistortionProcessor : public EffectProcessor
 {
@@ -44,129 +42,59 @@ public:
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
-    void reset() override;
+    void reset() override {}
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "DS-1-Style Distortion"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb8622a); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
-    // Exposes channel 0's last-solved Q2 terminal voltages -- Q2 is this
-    // circuit's main gain stage, so this is the same kind of permanent
-    // verification hook PositiveGroundBoosterProcessor's
-    // getDebugBiasPoint() is: boundedness/no-NaN tests alone can't
-    // distinguish a correctly-biased gain stage from one silently stuck
-    // at cutoff. See Tests/DS1StyleDistortionProcessorTests.cpp.
+    // Channel 0's Q2 terminal voltages -- Q2 is the main gain stage, so this is the permanent verification hook
+    // that a correctly-biased gain stage can be told from one silently stuck at cutoff.
     struct DebugBiasPoint { float vBase, vEmitter, vCollector; };
     DebugBiasPoint getDebugBiasPoint() const noexcept
     {
-        double vb, ve, vc;
-        channels[0].q2.getLastSolved (vb, ve, vc);
-        return { (float) vb, (float) ve, (float) vc };
+        const auto& ch = channels[0];
+        return { (float) ch.pre.voltage (ch.nB2), (float) ch.pre.voltage (ch.nE2), (float) ch.pre.voltage (ch.nC2) };
     }
 
+    bool dcConverged() const noexcept { return dcOk; }
+    double getSolveFailureRate() const noexcept { return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0; }
+
 private:
-    /** Per-channel circuit state -- every reactive element's history plus
-        every nonlinear device's own Newton-Raphson warm-start point, so
-        channel 1/2 never leak state into each other (stereo in, but the
-        real circuit this models is mono -- run identically per channel,
-        same convention every other circuit-modelled processor here uses). */
-    struct ChannelState
+    struct Channel
     {
-        // Pregain: Q1 (input buffer) -> Q6 (JFET VCR) -> Q2 (gain stage).
-        TrapezoidalCapacitor c1, c2, c3, c4, c5;
-        EbersMollBJT q1, q2;
-        ShichmanHodgesJFET q6;
-        double lastQ2Vb = 0.0, lastQ2Vc = 0.0; // for R7/C4's one-sample-delayed feedback, see docs
+        NodalCircuit pre, post; // pre: buffer + JFET VCR + Q2 + op-amp stage; post: clipper/tone/level/output buffer
 
-        // Op-amp gain stage + diode clipper.
-        TrapezoidalCapacitor c8, c9, c10;
-        chowdsp::wdft::ResistiveVoltageSourceT<double> diodeSource;
-        std::unique_ptr<chowdsp::wdft::DiodePairT<double, chowdsp::wdft::ResistiveVoltageSourceT<double>>> diodePair;
-
-        // Tone stack + Level.
-        TrapezoidalCapacitor c11, c12;
-
-        // Output buffer: Q7 (closed switch) -> Q3.
-        TrapezoidalCapacitor c13, c14;
-        EbersMollBJT q3;
+        int srcIn = 0;
+        NodalCircuit::Node nB2 = 0, nE2 = 0, nC2 = 0, nO = 0; // pre
+        int srcO = 0;                                          // post: driven from the op-amp output
+        NodalCircuit::Node nOut = 0;                           // post
+        int rDrive = 0;                                        // pre: Drive pot (op-amp feedback)
+        int rToneA = 0, rToneB = 0, rLevelTop = 0, rLevelBottom = 0; // post
     };
-    std::array<ChannelState, 2> channels;
+
+    void buildChannel (Channel& ch);
+    void updatePots (double drive, double tone, double level);
+
+    std::array<Channel, 2> channels;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* drive = nullptr;
     juce::AudioParameterFloat* tone = nullptr;
     juce::AudioParameterFloat* level = nullptr;
 
-    // Every pot-derived resistance below feeds directly into this
-    // sample's Thevenin-network solve -- computing it fresh from the raw
-    // knob value once per BLOCK (as this processor's very first pass did)
-    // means a knob move is a step discontinuity in circuit topology
-    // between blocks, not just in the signal: an instant, unsmoothed jump
-    // in feedback/divider resistance, which is exactly what produces an
-    // audible zipper/crackle -- the same reasoning
-    // PositiveGroundBoosterProcessor's own smoothedBoostPotResistance
-    // already exists for. Only one value per pot is smoothed (not both
-    // segments independently) -- deriving the other from
-    // `<pot's total> - <smoothed value>` keeps each pot's own physical
-    // constraint (the two segments always sum to its total resistance)
-    // exact, rather than letting two independently-smoothed values drift
-    // apart mid-ramp.
-    juce::SmoothedValue<float> smoothedRfPot;
-    juce::SmoothedValue<float> smoothedRAtoWiper;
-    juce::SmoothedValue<float> smoothedRTtoW;
+    juce::SmoothedValue<float> smoothedDrive, smoothedTone, smoothedLevel;
 
     double sampleRate = 0.0;
-    double settledSampleRate = -1.0; // see prepare()'s doc comment: guards against re-settling on a same-rate re-prepare
+    int controlCounter = 0;
+    long long sampleCount = 0, failureCount = 0;
+    bool dcOk = false;
+    bool channel1Stale = false;
+    bool channelsSynced = true;
+    long long identicalRun = 0;
 
-    // See docs/circuits/DS1StyleDistortion.md for where every one of
-    // these numbers comes from and what simplifications/assumptions each
-    // one carries.
-    static constexpr float r1 = 1.0e3f;
-    static constexpr float r2 = 470.0e3f;
-    static constexpr float r3 = 10.0e3f;
-    static constexpr float r4 = 100.0e3f;
-    static constexpr float r5 = 1.0e6f;
-    static constexpr float r6 = 100.0e3f;
-    static constexpr float r7 = 470.0e3f;
-    static constexpr float r8 = 10.0e3f;
-    static constexpr float r9 = 22.0f;
-    static constexpr float r11 = 100.0e3f;
-    static constexpr float r13 = 4.7e3f;
-    static constexpr float r14 = 2.2e3f;
-    static constexpr float r15 = 2.2e3f;
-    static constexpr float r16 = 6.8e3f;
-    static constexpr float r17 = 6.8e3f;
-    static constexpr float r18 = 10.0e3f;
-    static constexpr float r19 = 1.0e6f;
-    static constexpr float r21 = 10.0e3f; // Q3 emitter DC bias, to true ground (confirmed against Comet's R18)
-    static constexpr float r22 = 1.0e3f; // Q3 emitter -> C14 series resistor (Comet's R19) -- was missing entirely
-    static constexpr float r20 = 100.0e3f; // output jack bleed-to-ground resistor (Comet's R20) -- was missing entirely
-
-    static constexpr float c1Value = 0.047e-6f;
-    static constexpr float c2Value = 0.47e-6f;
-    static constexpr float c3Value = 0.047e-6f;
-    static constexpr float c4Value = 250.0e-12f;
-    static constexpr float c5Value = 0.47e-6f;
-    static constexpr float c8Value = 1.0e-6f;
-    static constexpr float c9Value = 0.47e-6f;
-    static constexpr float c10Value = 0.01e-6f;
-    static constexpr float c11Value = 0.022e-6f;
-    static constexpr float c12Value = 0.1e-6f;
-    static constexpr float c13Value = 0.047e-6f;
-    static constexpr float c14Value = 1.0e-6f;
-
-    static constexpr float driveMax = 100.0e3f;
-    static constexpr float toneMax = 20.0e3f; // VR3, confirmed against Aion FX's clean "Comet Distortion" DS-1 clone doc
-    static constexpr float levelMax = 100.0e3f; // VR2, ditto
-
-    static constexpr float closedSwitchResistance = 10.0f; // Q7 modelled as a closed bypass switch, see docs
-    static constexpr float outputLoadResistance = 1.0e6f; // assumed downstream input impedance
-    static constexpr float supplyVoltage = 9.0f;
-    static constexpr float bias1 = supplyVoltage * 0.5f; // R24/R25 divider, see docs -- treated as an ideal fixed rail
-
-    static constexpr double diodeSaturationCurrent = 2.52e-9; // 1N4148-class, matches D4/D5's schematic role
-    static constexpr double diodeThermalVoltage = 25.85e-3;
+    static constexpr int controlInterval = 16;
 };
 
 } // namespace openguitarmultifx

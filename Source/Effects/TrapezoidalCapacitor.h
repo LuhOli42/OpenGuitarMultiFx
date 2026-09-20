@@ -29,44 +29,47 @@ namespace openguitarmultifx
     Current/voltage sign convention: i is the current flowing INTO the
     capacitor's positive terminal (the terminal v is measured at, taking
     the other terminal as the reference/0V node) -- standard passive sign
-    convention. Callers are responsible for using this consistently when
+    convention. Everything is double: a float state (24-bit mantissa) on a
+    node sitting at a few volts of bias quantises the capacitor's memory at
+    ~0.3 uV per sample, and a high-gain stage downstream turns that into an
+    audible noise floor. Callers are responsible for using this consistently when
     folding getEquivalentResistance()/getHistoryVoltage() into their own
     node equations.
 */
 class TrapezoidalCapacitor
 {
 public:
-    void prepare (double sampleRate, float capacitanceFarads) noexcept
+    void prepare (double sampleRate, double capacitanceFarads) noexcept
     {
         sampleRate_ = sampleRate;
         setCapacitance (capacitanceFarads);
         reset();
     }
 
-    void setCapacitance (float capacitanceFarads) noexcept
+    void setCapacitance (double capacitanceFarads) noexcept
     {
         capacitance = capacitanceFarads;
-        equivalentResistance = (float) (1.0 / sampleRate_) / (2.0f * capacitance);
+        equivalentResistance = (1.0 / sampleRate_) / (2.0 * capacitance);
     }
 
     void reset() noexcept
     {
-        voltage = 0.0f;
-        current = 0.0f;
+        voltage = 0.0;
+        current = 0.0;
     }
 
-    float getEquivalentResistance() const noexcept { return equivalentResistance; }
+    double getEquivalentResistance() const noexcept { return equivalentResistance; }
 
     /** This sample's history/memory voltage, computed from last sample's
         converged state -- add this as a fixed offset (an independent
         voltage source in series with getEquivalentResistance()) into the
         surrounding circuit's node equations before solving. */
-    float getHistoryVoltage() const noexcept { return voltage + equivalentResistance * current; }
+    double getHistoryVoltage() const noexcept { return voltage + equivalentResistance * current; }
 
     /** Called once the surrounding circuit's solve has determined this
         sample's actual voltage/current for this capacitor -- updates the
         state getHistoryVoltage() will use next sample. */
-    void updateState (float newVoltage, float newCurrent) noexcept
+    void updateState (double newVoltage, double newCurrent) noexcept
     {
         voltage = newVoltage;
         current = newCurrent;
@@ -74,10 +77,10 @@ public:
 
 private:
     double sampleRate_ = 48000.0;
-    float capacitance = 1.0e-6f;
-    float equivalentResistance = 1.0f;
-    float voltage = 0.0f;
-    float current = 0.0f;
+    double capacitance = 1.0e-6;
+    double equivalentResistance = 1.0;
+    double voltage = 0.0;
+    double current = 0.0;
 };
 
 } // namespace openguitarmultifx

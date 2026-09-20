@@ -60,6 +60,16 @@ followers, same as every other family here.
 | Circuit | Processor | Devices | Notes |
 |---|---|---|---|
 | [OD-1-Style Overdrive](OD1StyleOverdrive.md) | `OD1StyleOverdriveProcessor` | 2x NPN, 2 ideal op-amps, one ASYMMETRIC diode pair (1 diode one way, 2 in series the other) | Op-amp 1 = the clipper (diodes across a Drive-pot-controlled feedback resistance); op-amp 2 = fixed-gain (unity) treble-cut buffer, fully linear/closed-form; only 2 real controls (Drive, Level) — no Tone stage, unlike the DS-1 |
+| [TS808 / TS9 / TS10-Style Overdrive](TubeScreamerStyleOverdrive.md) | `TubeScreamerStyleOverdriveProcessor` (one class, 3 registered models) | 2x NPN, 2 ideal op-amps, one SYMMETRIC diode pair (1 each way) + a 51 pF cap across it | Op-amp 1 = the non-inverting clipper (diodes + C4 across a Drive-controlled feedback resistance, 1D Newton-Raphson via `AsymmetricDiodePair` with 1/1 diodes); op-amp 2 = closed-form linear tone stage (passive lowpass + pot-controlled shunt); 3 controls (Drive, Tone, Level). TS808/TS9 differ only in two output resistors; the TS10 is modelled from a real schematic (higher Q1 bias, a 220 ohm before the op-amp bias node, extra coupling cap + JFET-bias loading after Level) |
+
+**Symmetric pairs (Tube Screamer family) reuse `AsymmetricDiodePair` with
+1/1 diodes rather than `DiodePairT`:** the `DiodePairT` Lambert-W solve is a
+WDF-port element; this family's diodes sit in an op-amp feedback network
+solved by direct nodal analysis, which needs the plain `I(V)` Newton form
+`AsymmetricDiodePair` already provides. Its Newton solve starts from an
+analytic upper bound on the root (see its header) -- necessary once the
+gain is high enough that a sample can jump from diodes-off to hard
+clipping.
 
 **Why a NEW `AsymmetricDiodePair` class, not `chowdsp_wdf`'s `DiodePairT`
 again:** `DiodePairT`'s `nDiodes` parameter scales Vt equally on both
@@ -71,8 +81,10 @@ research-first rule) — genuinely not covered by the vendored library or
 by anything else already in this codebase.
 
 **What would differ vs. what wouldn't, for a new circuit in this
-family:** diode count/orientation (symmetric → reuse `chowdsp_wdf`'s own
-`DiodePairT` instead; asymmetric → `AsymmetricDiodePair`), feedback
+family:** diode count/orientation (asymmetric → `AsymmetricDiodePair`; symmetric →
+`AsymmetricDiodePair` with 1/1 diodes, as the Tube Screamer does, since the
+diodes sit in a nodal-analysis feedback network — `DiodePairT` is for a
+shunt clipper inside a WDF tree), feedback
 network topology (a bare resistor here; the DS-1/Tube-Screamer lineage
 sometimes adds a cap in parallel for extra treble shaping — check the
 specific schematic), how many linear buffer/filter op-amp stages surround
@@ -80,6 +92,29 @@ the clipper. What stays the same: the "pin the op-amp's virtual-short
 voltage, compute the known input current, solve the nonlinear feedback
 network for the resulting output" derivation pattern — see the OD-1 doc's
 worked-through equation for the template to adapt.
+
+## Netlist-solved circuits (`NodalCircuit`)
+
+For circuits that outgrew hand-derived Thevenin chains: stages that *interact*
+(feed-forward networks, discrete-transistor op-amps with the gain pot in their
+feedback, gyrator filters). A pedal is described as a netlist and solved with
+[`NodalCircuit`](NodalCircuitSolver.md) (MNA + trapezoidal capacitors + a
+DK-method Newton over device ports; verified against a hand-derived pedal to
+0.013%). Cut into blocks wherever an ideal op-amp output / JFET gate / op-amp (+)
+pin can't be loaded back.
+
+| Circuit | Processor | Devices | Notes |
+|---|---|---|---|
+| [Centaur-Style Overdrive](CentaurStyleOverdrive.md) | `CentaurStyleOverdriveProcessor` | 4 ideal op-amps, germanium diode pair | gain stage + 2 feed-forward networks (one through the second Gain gang) + inverting summer + active treble + clean bleed; 5% of a core |
+| [BD-2-Style Overdrive](BD2StyleOverdrive.md) | `BD2StyleOverdriveProcessor` | 3 JFET, 4 BJT (2 PNP), 8 diodes, 1 ideal op-amp | two DISCRETE JFET+PNP op-amps with the Gain pot in their feedback, fixed tone stack, two series-diode-pair clippers, transistor gyrator peak filter; 23% of a core |
+| [HM-2-Style Distortion](HM2StyleDistortion.md) | `HM2StyleDistortionProcessor` | JFET, NPN, PNP, 9 diodes, 5 ideal op-amps | self-biased high-gain transistor stages, asymmetric-diode clipping op-amp, germanium pair in series with the signal, three gyrator followers on the Low/High pots; 18% of a core |
+
+**What would differ vs. what wouldn't, for a new circuit in this family:** the
+netlist, the block cuts, the assumed device parameters. What stays the same:
+`NodalCircuit`, the DC-by-relaxation prepare, the dual-mono shortcut pattern in
+`process()`, and the per-pedal doc's sections (source, topology, assumptions,
+verification, not modelled). Read the solver doc's "Limits" before starting:
+ideal op-amps only, no rail clipping.
 
 ## Multi-stage tube preamps (not yet implemented)
 
@@ -90,3 +125,14 @@ When the first tube circuit comes in: read [PositiveGroundBooster.md](PositiveGr
 ## Multi-mic / dynamic cabinet simulation
 
 Not a "circuit" in the SPICE-topology sense (no schematic, no active device) — `DynamicCabProcessor` (see `Source/Effects/AGENTS.md`'s decision log) blends two convolution IRs, optionally level-dependent. Listed here only so it's not confused for a missing family; it doesn't belong in the table above and doesn't need `EbersMollBJT`/`TrapezoidalCapacitor`.
+
+## Cross-cutting: oversampling
+Every clipping pedal that measured audibly aliased at 1x runs through `OversampledEffect`
+(2x, DS-1 4x); the table, the method and the CPU trade-off are in
+[Oversampling.md](Oversampling.md). A new clipper should be measured the same way before
+deciding its factor.
+
+## Cross-cutting: unity level
+Every registered pedal is trimmed so that all knobs at noon = bypass loudness for a reference
+guitar-like signal -- see [UnityLevel.md](UnityLevel.md). A new pedal needs its trim measured and
+added in `EffectRegistry.cpp` (`PedalUnityLevelTests` fails until it is).

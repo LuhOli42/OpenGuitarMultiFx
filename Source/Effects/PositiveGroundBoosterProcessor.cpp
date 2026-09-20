@@ -116,8 +116,8 @@ void PositiveGroundBoosterProcessor::process (juce::AudioBuffer<float>& buffer)
             // --- Base node Thevenin equivalent: R1 to +supply, R2 to
             // ground, C1's companion model in series with the (mirrored)
             // input signal. ---
-            const double reqC1 = (double) state.c1.getEquivalentResistance();
-            const double histC1 = (double) state.c1.getHistoryVoltage();
+            const double reqC1 = state.c1.getEquivalentResistance();
+            const double histC1 = state.c1.getHistoryVoltage();
             const double gB = 1.0 / r1 + 1.0 / r2 + 1.0 / reqC1;
             const double rthB = 1.0 / gB;
             // C1 has an ideal source (x) IN SERIES with it, unlike C4/C2
@@ -132,8 +132,8 @@ void PositiveGroundBoosterProcessor::process (juce::AudioBuffer<float>& buffer)
 
             // --- Emitter node Thevenin equivalent: R4 || C4's companion
             // model, both to ground. ---
-            const double reqC4 = (double) state.c4.getEquivalentResistance();
-            const double histC4 = (double) state.c4.getHistoryVoltage();
+            const double reqC4 = state.c4.getEquivalentResistance();
+            const double histC4 = state.c4.getHistoryVoltage();
             const double gE = 1.0 / r4 + 1.0 / reqC4;
             const double rthE = 1.0 / gE;
             const double vthE = (histC4 / reqC4) / gE;
@@ -141,8 +141,8 @@ void PositiveGroundBoosterProcessor::process (juce::AudioBuffer<float>& buffer)
             // --- Collector node Thevenin equivalent: R3 (boost pot) to
             // +supply, in parallel with C2's companion model in series
             // with the assumed downstream load resistance, to ground. ---
-            const double reqC2 = (double) state.c2.getEquivalentResistance();
-            const double histC2 = (double) state.c2.getHistoryVoltage();
+            const double reqC2 = state.c2.getEquivalentResistance();
+            const double histC2 = state.c2.getHistoryVoltage();
             const double r3d = (double) juce::jmax (1.0f, r3); // avoid a literal short (R=0) reaching the solver
             const double outputBranchR = reqC2 + (double) outputLoadResistance;
             const double gC = 1.0 / r3d + 1.0 / outputBranchR;
@@ -161,14 +161,14 @@ void PositiveGroundBoosterProcessor::process (juce::AudioBuffer<float>& buffer)
             // Advance each capacitor's history state from this sample's
             // solved node voltages.
             const double vC1 = xMirrored - vb;
-            state.c1.updateState ((float) vC1, (float) ((vC1 - histC1) / reqC1));
+            state.c1.updateState (vC1, ((vC1 - histC1) / reqC1));
 
             const double vC4 = ve;
-            state.c4.updateState ((float) vC4, (float) ((vC4 - histC4) / reqC4));
+            state.c4.updateState (vC4, ((vC4 - histC4) / reqC4));
 
             const double outputBranchCurrent = (vc - histC2) / outputBranchR;
             const double vC2 = outputBranchCurrent * reqC2 + histC2;
-            state.c2.updateState ((float) vC2, (float) outputBranchCurrent);
+            state.c2.updateState (vC2, outputBranchCurrent);
 
             // Output node sits between C2 and the assumed load resistor,
             // referenced to (mirrored) ground -- mirror back to the real

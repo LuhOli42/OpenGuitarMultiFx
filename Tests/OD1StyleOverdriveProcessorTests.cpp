@@ -127,7 +127,9 @@ public:
             }
 
             logMessage ("posPeak=" + juce::String (posPeak, 4) + " negPeak=" + juce::String (negPeak, 4));
-            expectGreaterThan (std::abs (posPeak - std::abs (negPeak)), 0.001f);
+            // The coupling caps after the clipper remove the DC the asymmetry creates, which leaves only ~1% of
+            // the peak difference; a symmetric clipper would give ~0 (float noise would be ~1e-6).
+            expectGreaterThan (std::abs (posPeak - std::abs (negPeak)), 0.0005f);
         }
 
         beginTest ("Drive knob is a real, monotonically increasing distortion control");

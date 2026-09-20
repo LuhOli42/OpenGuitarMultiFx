@@ -8,9 +8,15 @@
 #include "Effects/DynamicCabProcessor.h"
 #include "Effects/NAMProcessor.h"
 #include "Effects/OverdriveProcessor.h"
+#include "Effects/OversampledEffect.h"
+#include "Effects/OutputTrimEffect.h"
 #include "Effects/PositiveGroundBoosterProcessor.h"
 #include "Effects/DS1StyleDistortionProcessor.h"
 #include "Effects/OD1StyleOverdriveProcessor.h"
+#include "Effects/TubeScreamerStyleOverdriveProcessor.h"
+#include "Effects/CentaurStyleOverdriveProcessor.h"
+#include "Effects/BD2StyleOverdriveProcessor.h"
+#include "Effects/HM2StyleDistortionProcessor.h"
 #include "Effects/ReverbProcessor.h"
 #include "Effects/SpringReverbProcessor.h"
 #include "Effects/HallReverbProcessor.h"
@@ -40,18 +46,50 @@
 namespace openguitarmultifx
 {
 
+namespace
+{
+    /** Wraps a clipping pedal so it runs at 2x (order 1) or 4x (order 2) the host rate: what a real circuit's
+        harmonics above Nyquist would otherwise fold back as inharmonic fizz. Factors come from the measurements
+        in docs/circuits/Oversampling.md -- the pedals that are absent from the list (Centaur, Booster, the
+        old Overdrive) were already clean at 1x (< -80 dB) and are not worth the CPU. */
+    template <typename Processor, typename... Args>
+    std::unique_ptr<EffectProcessor> oversampled (int order, Args&&... args)
+    {
+        return std::make_unique<OversampledEffect> (std::make_unique<Processor> (std::forward<Args> (args)...), order);
+    }
+
+    /** Sets a pedal's noon-everything setting to unity gain for the reference signal in PedalUnityLevelTests (an E3
+        with harmonics 1..10 at 1/k amplitude, 0.1 RMS = -20 dBFS): the trims are minus the measured RMS gain there,
+        so the pedals are interchangeable without the amp after them being driven 20 dB harder by one than another.
+        Re-measure (the test prints them) after touching a pedal's circuit. */
+    std::unique_ptr<EffectProcessor> trimmed (std::unique_ptr<EffectProcessor> pedal, float trimDb)
+    {
+        return std::make_unique<OutputTrimEffect> (std::move (pedal), trimDb);
+    }
+}
+
 void registerBuiltInEffects (EffectRegistry& registry)
 {
     registry.registerType ("NoiseGate", [] { return std::make_unique<GateProcessor>(); });
     registry.registerType ("Compressor", [] { return std::make_unique<CompressorProcessor>(); });
-    registry.registerType ("Overdrive", [] { return std::make_unique<OverdriveProcessor>(); });
+    registry.registerType ("Overdrive", [] { return trimmed (std::make_unique<OverdriveProcessor>(), -0.4f); });
 
     // Physically-modelled (Ebers-Moll transistor, not neural) -- see
     // Source/Effects/AGENTS.md's decision log and docs/circuits/
     // PositiveGroundBooster.md for the full circuit-fidelity rationale.
-    registry.registerType ("PositiveGroundBooster", [] { return std::make_unique<PositiveGroundBoosterProcessor>(); });
-    registry.registerType ("DS1StyleDistortion", [] { return std::make_unique<DS1StyleDistortionProcessor>(); });
-    registry.registerType ("OD1StyleOverdrive", [] { return std::make_unique<OD1StyleOverdriveProcessor>(); });
+    registry.registerType ("PositiveGroundBooster", [] { return trimmed (std::make_unique<PositiveGroundBoosterProcessor>(), -3.2f); });
+    registry.registerType ("DS1StyleDistortion", [] { return trimmed (oversampled<DS1StyleDistortionProcessor> (2), 3.05f); });
+    registry.registerType ("OD1StyleOverdrive", [] { return trimmed (oversampled<OD1StyleOverdriveProcessor> (1), 8.2f); });
+
+    // One class, three models (TS808/TS9/TS10 share one circuit, see
+    // docs/circuits/TubeScreamerStyleOverdrive.md).
+    using TSModel = TubeScreamerStyleOverdriveProcessor::Model;
+    registry.registerType ("TS808StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (1, TSModel::ts808), 6.7f); });
+    registry.registerType ("TS9StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (1, TSModel::ts9), 6.5f); });
+    registry.registerType ("HM2StyleDistortion", [] { return trimmed (oversampled<HM2StyleDistortionProcessor> (1), 6.3f); });
+    registry.registerType ("BD2StyleOverdrive", [] { return trimmed (oversampled<BD2StyleOverdriveProcessor> (1), -11.5f); });
+    registry.registerType ("CentaurStyleOverdrive", [] { return trimmed (std::make_unique<CentaurStyleOverdriveProcessor>(), -11.8f); });
+    registry.registerType ("TS10StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (1, TSModel::ts10), 7.2f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

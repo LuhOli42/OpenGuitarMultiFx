@@ -5,11 +5,22 @@
 // main() just needs to trigger the runner.
 int main (int argc, char* argv[])
 {
-    juce::ignoreUnused (argc, argv);
-
     juce::UnitTestRunner runner;
     runner.setPassesAreLogged (false);
-    runner.runAllTests();
+
+    // Optional first argument: only run the suites whose name contains it (the full suite takes minutes).
+    if (argc > 1)
+    {
+        juce::Array<juce::UnitTest*> selected;
+        for (auto* test : juce::UnitTest::getAllTests())
+            if (test->getName().containsIgnoreCase (argv[1]))
+                selected.add (test);
+        runner.runTests (selected);
+    }
+    else
+    {
+        runner.runAllTests();
+    }
 
     int numFailures = 0;
     for (int i = 0; i < runner.getNumResults(); ++i)

@@ -15,6 +15,39 @@ couldn't settle: the op-amp stage's exact feedback topology (see below).
 Display name is **"DS-1-Style Distortion"** — never the bare "DS-1"/"Boss",
 same trademark convention as [`PositiveGroundBooster.md`](./PositiveGroundBooster.md).
 
+## Implementation status: now a netlist on `NodalCircuit`
+
+The processor was **rewritten as a netlist** on [`NodalCircuit`](./NodalCircuitSolver.md);
+everything below describes the *circuit* (still accurate: topology, values,
+reasoning about the op-amp stage), not the old hand-derived Thevenin solver that
+implemented it. Why: the hand-derived version coupled its stages one sample late
+(each stage's output was the next stage's input from the previous sample), and at
+high Drive the following gain multiplied that error until the pedal was chaotic --
+the steady-state output did not repeat with a repeating input (non-periodic error
+-5 dB) and sounded like hiss. Now:
+
+- Two blocks. `pre` = Q1 follower, C2/R4, Q6 JFET (the "buffer"), C3, Q2 with its
+  emitter network, C5+R11 and the ideal op-amp with the R13+C8 gain leg and the
+  Drive pot as feedback. `post` = R14+C9, the clipping diodes (antiparallel, to the
+  VB reference), C10..C12 and the Tone / Level pots, the closed switch, Q3 follower
+  and the 1M load. They are cut at the op-amp output (ideal, cannot be loaded).
+- Same parameter ids (`ds1_drive/tone/level`), same `getDebugBiasPoint()`.
+- Non-periodic error -5 dB -> -322 dB; 0 solver failures; alias metric at 1x/2x/4x
+  -17.8 / -28 / -54.7 dB, hence the registry runs it **4x** oversampled
+  ([Oversampling](./Oversampling.md)).
+- **The op-amp is a saturating one** (TA7136AP on 9 V: output limited to 1.5 ... 7.5 V, see
+  [NodalCircuitSolver.md](./NodalCircuitSolver.md)). At the DS-1's gain (the transistor
+  booster's 35 dB then up to 26 dB more) the op-amp is at a rail for most of every
+  cycle, so what reaches the diodes through R14/C9 is a rail-to-rail square wave, not
+  the tens of volts an ideal op-amp would produce; the difference is in the low end
+  (C9 no longer charges from a huge overdrive) and in the edges.
+- **The clipping diodes now use the emission coefficient N = 1.752** (nVt 45.3 mV, the
+  pair every other pedal here uses). They used to be N = 1, which is not a real diode:
+  with Is = 2.52 nA it clips at ~0.33 V instead of the ~0.6-0.7 V a 1S1588/1N4148 does
+  (ElectroSmash measures 1.4 Vpp after the DS-1's clipper) and has a knee twice as
+  sharp -- harsher, quieter and out of scale with the other pedals. Fixed together with
+  the same mistake in the OD-1.
+
 ## Not modelled: the footswitch/LED sub-circuit
 
 The lower third of the factory schematic (Q4/Q5/Q7... wait, see note below

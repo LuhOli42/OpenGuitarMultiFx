@@ -1,0 +1,80 @@
+#include "EffectRegistry.h"
+
+#include <juce_core/juce_core.h>
+
+#include <cmath>
+
+namespace openguitarmultifx
+{
+
+/**
+    Every circuit-modelled pedal, all knobs at noon, must be at unity loudness for a guitar-like reference signal
+    (see OutputTrimEffect for why). If this fails after a change to a pedal's circuit, the message prints the new
+    measured gain: put its negative in the pedal's trim in EffectRegistry.cpp.
+*/
+class PedalUnityLevelTests : public juce::UnitTest
+{
+public:
+    PedalUnityLevelTests() : juce::UnitTest ("PedalUnityLevel", "Effects") {}
+
+    static constexpr double sr = 48000.0;
+
+    /** RMS gain (dB) for E3 with harmonics 1..10 at 1/k amplitude, scaled to 0.1 RMS (-20 dBFS). */
+    static double referenceGainDb (EffectProcessor& p)
+    {
+        const double twoPi = 2.0 * juce::MathConstants<double>::pi, f0 = 164.81, rmsIn = 0.1;
+        double norm = 0.0;
+        for (int k = 1; k <= 10; ++k)
+            norm += 0.5 / (double) (k * k);
+        const double scale = rmsIn / std::sqrt (norm);
+        const int warm = (int) (5.0 * sr), len = (int) (1.0 * sr);
+
+        juce::AudioBuffer<float> buf (1, 64);
+        double sIn = 0.0, sOut = 0.0;
+        for (long long base = 0; base < warm + len; base += 64)
+        {
+            double x[64];
+            for (int i = 0; i < 64; ++i)
+            {
+                double v = 0.0;
+                for (int k = 1; k <= 10; ++k)
+                    v += std::sin (twoPi * f0 * k * (double) (base + i) / sr) / (double) k;
+                x[i] = scale * v;
+                buf.setSample (0, i, (float) x[i]);
+            }
+            p.process (buf);
+            if (base >= warm)
+                for (int i = 0; i < 64; ++i)
+                {
+                    sIn += x[i] * x[i];
+                    sOut += (double) buf.getSample (0, i) * buf.getSample (0, i);
+                }
+        }
+        return 10.0 * std::log10 (sOut / sIn);
+    }
+
+    void runTest() override
+    {
+        EffectRegistry registry;
+        registerBuiltInEffects (registry);
+
+        beginTest ("every pedal at noon is within 1 dB of unity for the reference signal");
+        for (const char* key : { "Overdrive", "PositiveGroundBooster", "OD1StyleOverdrive", "TS808StyleOverdrive", "TS9StyleOverdrive",
+                                 "TS10StyleOverdrive", "CentaurStyleOverdrive", "BD2StyleOverdrive", "DS1StyleDistortion",
+                                 "HM2StyleDistortion" })
+        {
+            auto pedal = registry.create (key);
+            pedal->prepare (sr, 512, 1);
+            for (auto* prm : pedal->getParameters()->getParameters (true))
+                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (prm))
+                    *f = juce::jlimit (f->range.start, f->range.end, 0.5f); // "noon", whatever a pedal's own default is
+            const double gainDb = referenceGainDb (*pedal);
+            logMessage (juce::String (key).paddedRight (' ', 24) + juce::String (gainDb, 2) + " dB");
+            expectWithinAbsoluteError (gainDb, 0.0, 1.0);
+        }
+    }
+};
+
+static PedalUnityLevelTests pedalUnityLevelTests;
+
+} // namespace openguitarmultifx

@@ -137,6 +137,7 @@ private:
     static constexpr float bias1 = supplyVoltage * 0.5f; // R6/R7+R30 divider, see docs -- treated as an ideal fixed rail
 
     static constexpr double diodeSaturationCurrent = 2.52e-9; // 1N4148-class, matches D5/D6/D7's schematic role
+    static constexpr double diodeIdealityFactor = 1.752; // emission coefficient of a real 1N4148/1S1588 (N = 1 would clip at half the real voltage)
     static constexpr double diodeThermalVoltage = 25.85e-3;
 };
 

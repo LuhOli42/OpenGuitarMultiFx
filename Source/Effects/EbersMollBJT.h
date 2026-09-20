@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 
 namespace openguitarmultifx
@@ -80,12 +82,53 @@ namespace openguitarmultifx
 class EbersMollBJT
 {
 public:
+    /** Solves that failed to converge (the caller then holds the previous sample). A diagnostic: a healthy
+        circuit keeps this at zero; a rising count is audible as glitches/hiss. */
+    static inline std::atomic<long long> solveFailures { 0 };
+
     void setParameters (double saturationCurrent, double thermalVoltage, double betaForward, double betaReverse) noexcept
     {
         Is = saturationCurrent;
         Vt = thermalVoltage;
         betaF = betaForward;
         betaR = betaReverse;
+    }
+
+    /** Terminal currents (into each terminal, NPN convention) and their
+        partial derivatives w.r.t. v_be / v_bc at one operating point. The
+        single home of the Ebers-Moll equations: solve() below and any
+        general nodal solver (NodalCircuit.h) both call this, so the device
+        model can't drift between the two. Junction voltages are clamped
+        exactly as documented under "Numerical safety". */
+    struct Operating
+    {
+        double iB, iC, iE;
+        double diB_dvbe, diB_dvbc, diC_dvbe, diC_dvbc, diE_dvbe, diE_dvbc;
+    };
+
+    Operating evaluate (double vb, double ve, double vc) const noexcept
+    {
+        const double vbe = clamp (vb - ve);
+        const double vbc = clamp (vb - vc);
+
+        const double eVbe = std::exp (vbe / Vt);
+        const double eVbc = std::exp (vbc / Vt);
+
+        Operating op;
+        op.iC = Is * (eVbe - eVbc) - (Is / betaR) * (eVbc - 1.0);
+        op.iE = -Is * (eVbe - eVbc) - (Is / betaF) * (eVbe - 1.0);
+        op.iB = (Is / betaF) * (eVbe - 1.0) + (Is / betaR) * (eVbc - 1.0);
+
+        const double dIbe = (Is / Vt) * eVbe; // d(Is*(exp(vbe/Vt)-1))/d(vbe)
+        const double dIbc = (Is / Vt) * eVbc; // d(Is*(exp(vbc/Vt)-1))/d(vbc)
+
+        op.diB_dvbe = dIbe / betaF;
+        op.diB_dvbc = dIbc / betaR;
+        op.diC_dvbe = dIbe;
+        op.diC_dvbc = -dIbc * (1.0 + 1.0 / betaR);
+        op.diE_dvbe = -dIbe * (1.0 + 1.0 / betaF);
+        op.diE_dvbc = dIbc;
+        return op;
     }
 
     /** Solves for (V_B, V_E, V_C) given each terminal's Thevenin-equivalent
@@ -100,7 +143,7 @@ public:
         previous sample's values rather than using a non-converged,
         potentially wild result). */
     bool solve (double rthB, double vthB, double rthE, double vthE, double rthC, double vthC,
-                double& vb, double& ve, double& vc, int maxIterations = 12, double tolerance = 1.0e-9) noexcept
+                double& vb, double& ve, double& vc, int maxIterations = 40, double tolerance = 1.0e-9) noexcept
     {
         vb = vbPrev;
         ve = vePrev;
@@ -108,15 +151,8 @@ public:
 
         for (int iter = 0; iter < maxIterations; ++iter)
         {
-            const double vbe = clamp (vb - ve);
-            const double vbc = clamp (vb - vc);
-
-            const double eVbe = std::exp (vbe / Vt);
-            const double eVbc = std::exp (vbc / Vt);
-
-            const double iC = Is * (eVbe - eVbc) - (Is / betaR) * (eVbc - 1.0);
-            const double iE = -Is * (eVbe - eVbc) - (Is / betaF) * (eVbe - 1.0);
-            const double iB = (Is / betaF) * (eVbe - 1.0) + (Is / betaR) * (eVbc - 1.0);
+            const Operating op = evaluate (vb, ve, vc);
+            const double iB = op.iB, iC = op.iC, iE = op.iE;
 
             const double fB = (vthB - vb) / rthB - iB;
             const double fE = (vthE - ve) / rthE - iE;
@@ -132,19 +168,10 @@ public:
 
             // Partial derivatives of the diode currents w.r.t. the two
             // junction voltages -- see class doc comment for the derivation.
-            const double dIbe = (Is / Vt) * eVbe; // d(Is*(exp(vbe/Vt)-1))/d(vbe)
-            const double dIbc = (Is / Vt) * eVbc; // d(Is*(exp(vbc/Vt)-1))/d(vbc)
+            const double diB_dvbe = op.diB_dvbe, diB_dvbc = op.diB_dvbc;
+            const double diC_dvbe = op.diC_dvbe, diC_dvbc = op.diC_dvbc;
+            const double diE_dvbe = op.diE_dvbe, diE_dvbc = op.diE_dvbc;
 
-            const double diB_dvbe = dIbe / betaF;
-            const double diB_dvbc = dIbc / betaR;
-            const double diC_dvbe = dIbe;
-            const double diC_dvbc = -dIbc * (1.0 + 1.0 / betaR);
-            const double diE_dvbe = -dIbe * (1.0 + 1.0 / betaF);
-            const double diE_dvbc = dIbc;
-
-            // J[row][col], row/col order (B, E, C). F_X = (Vth_X-V_X)/Rth_X - i_X,
-            // v_be = V_B-V_E, v_bc = V_B-V_C, so d(v_be)/dV_B = d(v_bc)/dV_B = 1,
-            // d(v_be)/dV_E = -1, d(v_bc)/dV_C = -1, all other cross terms 0.
             const double J[3][3] = {
                 { -1.0 / rthB - (diB_dvbe + diB_dvbc), diB_dvbe, diB_dvbc },
                 { -(diE_dvbe + diE_dvbc), -1.0 / rthE + diE_dvbe, diE_dvbc },
@@ -156,9 +183,27 @@ public:
             if (! solve3x3 (J, F, delta))
                 break; // singular Jacobian -- bail out to the non-converged fallback below
 
-            vb -= delta[0];
-            ve -= delta[1];
-            vc -= delta[2];
+            // SPICE-style junction limiting, applied as a uniform damping factor so the step keeps its direction.
+            // A plain Newton step on an exponential overshoots by orders of magnitude when the transistor is being
+            // driven hard (a fast transient, a hard clip), then sheds only ~Vt per iteration on the way back:
+            // measured, this ran out of iterations on 3.6% (DS-1) to 23% (booster) of samples, each one a held-value
+            // glitch (the audible hiss). Compressing the step logarithmically converges in a few iterations.
+            double lambda = 1.0;
+            const double vbeOld = vb - ve, vbcOld = vb - vc;
+            const double vbeNew = vbeOld - (delta[0] - delta[1]);
+            const double vbcNew = vbcOld - (delta[0] - delta[2]);
+            const double vcrit = Vt * std::log (Vt / (1.4142135623730951 * Is));
+            const double vbeLim = limitJunction (vbeNew, vbeOld, Vt, vcrit);
+            const double vbcLim = limitJunction (vbcNew, vbcOld, Vt, vcrit);
+            if (vbeLim != vbeNew && vbeNew != vbeOld)
+                lambda = std::min (lambda, (vbeLim - vbeOld) / (vbeNew - vbeOld));
+            if (vbcLim != vbcNew && vbcNew != vbcOld)
+                lambda = std::min (lambda, (vbcLim - vbcOld) / (vbcNew - vbcOld));
+            lambda = std::max (lambda, 1.0e-3);
+
+            vb -= lambda * delta[0];
+            ve -= lambda * delta[1];
+            vc -= lambda * delta[2];
         }
 
         // Didn't converge (or hit a singular Jacobian) -- fall back to the
@@ -166,11 +211,15 @@ public:
         // caller whatever wild intermediate iterate Newton's method was
         // last at. A single dropped update is inaudible; a spurious spike
         // from a bad iterate would not be.
+        solveFailures.fetch_add (1, std::memory_order_relaxed);
         vb = vbPrev;
         ve = vePrev;
         vc = vcPrev;
         return false;
     }
+
+    double saturationCurrentValue() const noexcept { return Is; }
+    double thermalVoltageValue() const noexcept { return Vt; }
 
     void reset (double initialVb, double initialVe, double initialVc) noexcept
     {
@@ -196,6 +245,29 @@ public:
     }
 
 private:
+    /** SPICE's pnjlim: compresses a large forward-voltage Newton step logarithmically. */
+    static double limitJunction (double vnew, double vold, double vt, double vcrit) noexcept
+    {
+        if (vnew > vcrit && std::abs (vnew - vold) > 2.0 * vt)
+        {
+            if (vold > 0.0)
+            {
+                const double arg = (vnew - vold) / vt;
+                vnew = arg > 0.0 ? vold + vt * (2.0 + std::log (arg - 2.0))
+                                 : vold - vt * (2.0 + std::log (2.0 - arg));
+            }
+            else
+                vnew = vt * std::log (vnew / vt);
+        }
+        else if (vnew < 0.0)
+        {
+            const double arg = vold > 0.0 ? -vold - 1.0 : 2.0 * vold - 1.0;
+            if (vnew < arg)
+                vnew = arg;
+        }
+        return vnew;
+    }
+
     static double clamp (double v) noexcept { return v < -1.0 ? -1.0 : (v > 1.0 ? 1.0 : v); }
 
     /** Solves the 3x3 linear system J*x = F for x via Cramer's rule --

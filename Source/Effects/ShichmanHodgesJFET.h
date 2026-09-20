@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cmath>
 
 namespace openguitarmultifx
@@ -56,6 +57,7 @@ namespace openguitarmultifx
 class ShichmanHodgesJFET
 {
 public:
+    static inline std::atomic<long long> solveFailures { 0 }; // see EbersMollBJT::solveFailures
     /** Idss: drain saturation current at Vgs=0 (A). pinchOffVoltage: Vp,
         negative for N-channel (V). channelLengthModulation: lambda (1/V). */
     void setParameters (double idss, double pinchOffVoltage, double channelLengthModulation) noexcept
@@ -113,6 +115,7 @@ public:
             vs -= deltaS;
         }
 
+        solveFailures.fetch_add (1, std::memory_order_relaxed);
         vd = vdPrev;
         vs = vsPrev;
         return false;
@@ -133,9 +136,11 @@ public:
         vs = vsPrev;
     }
 
-private:
     /** Evaluates Id(vg,vd,vs) and its partial derivatives w.r.t. vd/vs,
-        handling the drain/source symmetry (see class doc comment). */
+        handling the drain/source symmetry (see class doc comment). Public
+        so a general nodal solver (NodalCircuit.h) can reuse the one device
+        model; the derivative w.r.t. vg follows from translation invariance
+        (the three partials sum to zero). */
     void evaluate (double vg, double vd, double vs, double& iD, double& diD_dvd, double& diD_dvs) const noexcept
     {
         const double vds = vd - vs;
@@ -196,6 +201,7 @@ private:
         diD_dvs = swapped ? -diEff_dvs : diEff_dvs;
     }
 
+private:
     double Vp = -2.0;
     double beta = 1.0e-3;
     double lambda = 0.02;
