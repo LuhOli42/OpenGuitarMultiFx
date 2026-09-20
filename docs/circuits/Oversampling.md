@@ -60,21 +60,22 @@ guitar in a stereo buffer, noon knobs):
 
 | Pedal | eco | balanced (default) | high |
 |---|---|---|---|
-| DS-1 | 1x 3.5% | 2x 7.0% | 4x 13.3% |
-| BD-2 | 1x 8.1% | 2x 15.8% | 4x 31.6% |
-| HM-2 | 1x 7.8% | 2x 14.6% | 4x 28.0% |
-| TS808/9/10 | 1x 3.0% | 1x 3.1% | 2x 6.4% |
-| OD-1 | 1x 2.5% | 1x 2.5% | 2x 5.1% |
-| Klon | 2.4% (never oversampled) | | |
+| DS-1 | 1x 2.6% | 2x 4.6% | 4x 8.5% |
+| BD-2 | 1x 6.9% | 2x 12.5% | 4x 24% |
+| HM-2 | 1x 6.0% | 2x 9.9% | 4x 19% |
+| TS808/9/10 | 1x 3.1% | 1x 3.0% | 2x 6.5% |
+| OD-1 | 1x 2.6% | 1x 2.5% | 2x 5.4% |
+| Klon | 1.9% (never oversampled) | | |
 
 Alias energy that survives below 5 kHz (a 1.6 kHz tone, worst case; dB re the harmonics):
 DS-1 -26 / -37 / -55 (1x / 2x / 4x), BD-2 -39 / -53 / -63, HM-2 -33 / -48 / -62,
 TS808 -42 / -63 / -95, OD-1 -49 / -70 / -88.
 
 ## Where the cost is, and what is left
-A block costs ~350 cycles before any Newton work (assemble the right-hand side, the sparse
-back-substitution, the capacitor update), and a nonlinear block adds ~1400 more, so the
-floor for a 5-block pedal at 1x is ~8%. Ideas not done: merge the linear blocks that only
+Since the state-space core a linear block costs ~150 cycles and a nonlinear one 1000-2100
+(Newton dominated, per-block table in NodalCircuitSolver.md); 5% of a core at 2x is ~1500
+cycles per oversampled sample for the WHOLE pedal, about one nonlinear block, which is why
+the BD-2 (two big ones) and HM-2 (three) do not fit at 2x. Ideas not done: merge the linear blocks that only
 sit behind an ideal source (BD-2 A/E, HM-2's Color section) into their neighbours or run
 them at the base rate around the oversampled core; replace the BD-2's two discrete gain
 stages (each ~5 ports) by an op-amp macro-model with finite gain and a dominant pole --

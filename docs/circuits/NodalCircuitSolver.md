@@ -21,7 +21,18 @@ N-channel JFETs. The BJT and JFET equations are `EbersMollBJT::evaluate()` and
 `ShichmanHodgesJFET::evaluate()` — one home for each device model, shared
 with the older processors.
 
-## How a sample is solved (the "DK method")
+## How a sample is solved (the "DK method", state-space form since 2026-09-20)
+Everything linear is folded, once per change of a resistance, into dense maps from an
+*excitation* vector E = [capacitor history currents, source voltages, 1] to the port
+voltages (u0 = Hu E), the capacitor voltages (Hv E - Kv i) and, on demand, any node voltage
+(Hx E - W^T i). A sample is then: build E, u0 = Hu E, Newton over the ports, advance the
+capacitors -- no per-sample assembly, factorisation or back-substitution over the node set.
+A knob turn costs one LU plus one back-substitution per excitation, every 16 samples. Each
+saturating-op-amp state has its own map. `voltage(node)` reads the last accepted sample
+(the DC solution until the first sample). Effect: the fixed cost of a purely linear block
+dropped from ~450 to ~150 cycles; nonlinear blocks are dominated by Newton (below).
+
+## How a sample was solved before (kept for the DC path)
 The linear part is LU-factored once and again only when a resistance changes
 (pots are updated at control rate, every 16 samples, smoothed). Each nonlinear
 device exposes a few *ports* (a diode: 1 branch voltage; a BJT or JFET: 2).
@@ -95,6 +106,23 @@ previous solver on 12 renders (6 pedals x 2 gain settings, a decaying three-note
   forever, so the follower's output resistance (1/gm, 74 ohm) stays in that branch.
 - **The DS-1's Q6 JFET is a 333 ohm resistor** (used as a VCR with vgs ~ 0 in the triode
   region; the signal there is < 0.3 V against Vp = -2 V): timbre 0.04 dB.
+
+## Where the cycles go (BD-2, 1x, cycles per input sample; per block: E+u0 / Newton / caps)
+| block | ports | cycles |
+|---|---|---|
+| A, D, E (linear) | 0 | 140-220 each |
+| B (gain stage 1 + tone + clippers) | 6 | ~2100 (Newton 1600) |
+| C (gain stage 2 + tone + level) | 5 | ~1800 (Newton 1300) |
+Newton = initial evaluation ~150, J build ~300, LU ~350, limit/step ~140, verification
+evaluation ~140, node error ~100 per block. No single hot spot; a step below 0.5 mV is
+accepted without the verification evaluation (error <= 3 uV). Things that were tried and
+did not move the number: fast exp (std::exp is 6.5 ns throughput / 16 ns latency, a
+polynomial version is no faster), row-oriented J build and compile-time-sized LU,
+fewer iterations (they are already 1.0-1.4 per sample). The budget for 5% of a core at 2x
+is ~1500 cycles per oversampled sample for the WHOLE pedal, i.e. about one nonlinear block:
+the BD-2 (two of them) and the HM-2 (three, one with five ports) cannot fit it at 2x with a
+generic netlist solver, whatever is tuned; that takes a reduced-order model of their gain
+stages (see docs/circuits/Oversampling.md).
 
 ## Saturating op-amps (`addSaturatingOpAmp`)
 A real op-amp on 9 V runs out of output swing (TA7136AP: "+1.5 V to Vcc - 1.5 V";

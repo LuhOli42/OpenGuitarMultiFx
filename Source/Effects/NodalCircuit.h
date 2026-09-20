@@ -78,6 +78,8 @@ public:
     static inline double defaultTheta = 0.6;
     /** Newton stops when the leftover error, mapped to any node voltage, is below this (V); see solveDevices(). */
     static inline double defaultNodeTolerance = 1.0e-5;
+    /** A Newton step whose largest port change is below this (V) is accepted without evaluating the devices again. */
+    static inline double smallStepAccept = 5.0e-4;
     void setIntegrationTheta (double newTheta) noexcept { theta = newTheta; }
 
     struct BjtParams { double Is, Vt, betaF, betaR; };
@@ -231,7 +233,14 @@ public:
                 opTerms.push_back ({ r, o.plus, o.minus, (int) oi == satOpIndex, o.offset });
         }
         satMode = 0;
-        parked.assign (satOpIndex >= 0 ? 3 : 0, Parked {});
+        if ((int) capacitors.size() > maxCaps || (int) (capacitors.size() + sources.size()) + 1 > maxExcite)
+            return false; // too many capacitors/sources for the folded model
+        models.assign (satOpIndex >= 0 ? 3 : 1, Model {});
+        modelsDirty = true;
+        useX = true;
+        sourceOfNode.assign ((size_t) nodeCount + 1, -1);
+        for (size_t h = 0; h < sources.size(); ++h)
+            sourceOfNode[(size_t) sources[h].node] = (int) h;
 
         x.assign ((size_t) unknownCount, 0.0);
         for (int n = 1; n <= nodeCount; ++n)
@@ -262,8 +271,9 @@ public:
         beDt = 0.0;
         matrixDirty = true;
         satMode = 0;
-        for (auto& p : parked)
-            p.valid = false;
+        modelsDirty = true;
+        useX = true;
+        xPrev = x;
 
         return ok;
     }
@@ -286,132 +296,92 @@ public:
             return;
         r.g = g;
         matrixDirty = true;
-        for (auto& p : parked)
-            p.valid = false;
+        modelsDirty = true;
     }
 
-    /** Advances one sample. Returns false if Newton failed to converge (the
-        previous sample's values are then held for this sample). */
+    /** Advances one sample. Returns false if Newton failed to converge (the previous sample's values are then
+        held for this sample).
+
+        This is the DK method proper. Everything linear in the circuit is folded, once per change of a resistance,
+        into dense maps from an "excitation" vector E = [capacitor history currents, source voltages, 1] to what
+        the sample needs: the no-device port voltages u0 = Hu E, the capacitor voltages, and (on demand) any node
+        voltage. Per sample that is a few small matrix-vector products, Newton over the device ports, and one more
+        product to advance the capacitors -- no per-sample assembly, factorisation or back-substitution over the
+        whole node set. */
     bool solveSample() noexcept
     {
+        if (modelsDirty)
+            invalidateModels();
+
+        const int nv = (int) voltagePorts.size();
+        const int ni = (int) currentPorts.size();
         const double ieqHistoryWeight = (1.0 - theta) / theta;
+        const int ns = (int) capacitors.size(), nsrc = (int) sources.size();
+        const int m = ns + nsrc + 1;
+
+        double E[maxExcite];
+        for (int c = 0; c < ns; ++c)
+        {
+            auto& cap = capacitors[(size_t) c];
+            cap.ieq = cap.g * cap.vPrev + ieqHistoryWeight * cap.iPrev;
+            E[c] = cap.ieq;
+        }
+        for (int h = 0; h < nsrc; ++h)
+            E[ns + h] = sources[(size_t) h].volts;
+        E[m - 1] = 1.0;
+
+        double cur[maxPortsI] = {};
         bool ok = false;
 
         // A saturating op-amp can need up to a few passes (ideal -> held at a rail -> back); everything else, one.
         for (int attempt = 0; attempt < 4; ++attempt)
         {
-            if (matrixDirty)
-                rebuildLinearMatrix (true);
-            if (! luValid)
-                factorAndBuildReducedModel();
-            double* rhs = rhsLinear.data();
-            for (int i = 0; i < unknownCount; ++i)
-                rhs[i] = 0.0;
+            Model& M = ensureModel (satMode);
+            if (! M.valid)
+                break;
 
-            for (const auto& t : knownTerms)
-                rhs[t.row] += t.g * knownVoltage[(size_t) t.knownNode];
-
-            for (auto& c : capacitors)
+            double u0[maxPortsV];
+            for (int j = 0; j < nv; ++j)
             {
-                c.ieq = c.g * c.vPrev + ieqHistoryWeight * c.iPrev;
-                if (c.ia >= 0) rhs[c.ia] += c.ieq;
-                if (c.ib >= 0) rhs[c.ib] -= c.ieq;
+                double v = 0.0;
+                for (int e = 0; e < m; ++e)
+                    v += M.Hu[j][e] * E[e];
+                u0[j] = v;
             }
 
-            for (const auto& o : opTerms)
-                rhs[o.row] = opRhs (o);
-            // No-device response of the linear network.
-            for (int i = 0; i < unknownCount; ++i)
-                xLinear[i] = rhsLinear[(size_t) i];
-            luBackSubstitute (xLinear);
-
-            ok = solveDevices();
+            ok = newtonPorts (u0, M.W, M.K, cur);
             if (! ok || satOpIndex < 0)
                 break;
 
-            const int wanted = wantedSatMode();
+            const int wanted = wantedSatMode (M, E, cur);
             if (wanted == satMode)
                 break;
-            setSatMode (wanted);
+            satMode = wanted;
         }
 
-        if (ok)
+        if (! ok)
+            return false;
+
+        Model& M = models[(size_t) satMode];
+        for (int c = 0; c < ns; ++c)
         {
-            for (auto& c : capacitors)
-            {
-                const double v = voltage (c.a) - voltage (c.b);
-                c.iPrev = c.g * v - c.ieq;
-                c.vPrev = v;
-            }
-            xPrev = x;
-        }
-        else
-        {
-            x = xPrev;
+            auto& cap = capacitors[(size_t) c];
+            double v = 0.0;
+            for (int e = 0; e < m; ++e)
+                v += M.Hv[c][e] * E[e];
+            for (int k = 0; k < ni; ++k)
+                v -= M.Kv[c][k] * cur[k];
+            cap.iPrev = cap.g * v - cap.ieq;
+            cap.vPrev = v;
         }
 
-        return ok;
-    }
-
-    /** Which state the saturating op-amp should be in given the solution just computed in `satMode`: ideal is right
-        while its output is inside the rails; held at a rail is right while (+) - (-) keeps pushing into it. */
-    int wantedSatMode() const noexcept
-    {
-        const auto& o = opAmps[(size_t) satOpIndex];
-        const double vout = voltage (o.out);
-        const double vd = voltage (o.plus) - voltage (o.minus);
-        if (satMode == 0)
-            return vout > satSpec.highRail ? 1 : (vout < satSpec.lowRail ? 2 : 0);
-        if (satMode == 1)
-            return vd < 0.0 ? 0 : 1;
-        return vd > 0.0 ? 0 : 2;
-    }
-
-    void setSatMode (int mode) noexcept
-    {
-        if (mode == satMode)
-            return;
-
-        Parked& leaving = parked[(size_t) satMode];
-        std::memcpy (leaving.lu, lu, sizeof lu);
-        std::memcpy (leaving.pivot, pivot, sizeof pivot);
-        std::memcpy (leaving.lStart, lStart, sizeof lStart);
-        std::memcpy (leaving.lRow, lRow, sizeof lRow);
-        std::memcpy (leaving.uStart, uStart, sizeof uStart);
-        std::memcpy (leaving.uCol, uCol, sizeof uCol);
-        std::memcpy (leaving.lVal, lVal, sizeof lVal);
-        std::memcpy (leaving.uVal, uVal, sizeof uVal);
-        std::memcpy (leaving.invDiag, invDiag, sizeof invDiag);
-        std::memcpy (leaving.W, W, sizeof W);
-        std::memcpy (leaving.K, K, sizeof K);
-        leaving.lCount = lCount;
-        leaving.uCount = uCount;
-        leaving.valid = luValid && ! matrixDirty;
-
-        satMode = mode;
-        const Parked& entering = parked[(size_t) mode];
-        if (entering.valid && ! matrixDirty)
-        {
-            std::memcpy (lu, entering.lu, sizeof lu);
-            std::memcpy (pivot, entering.pivot, sizeof pivot);
-            std::memcpy (lStart, entering.lStart, sizeof lStart);
-            std::memcpy (lRow, entering.lRow, sizeof lRow);
-            std::memcpy (uStart, entering.uStart, sizeof uStart);
-            std::memcpy (uCol, entering.uCol, sizeof uCol);
-            std::memcpy (lVal, entering.lVal, sizeof lVal);
-            std::memcpy (uVal, entering.uVal, sizeof uVal);
-            std::memcpy (invDiag, entering.invDiag, sizeof invDiag);
-            std::memcpy (W, entering.W, sizeof W);
-            std::memcpy (K, entering.K, sizeof K);
-            lCount = entering.lCount;
-            uCount = entering.uCount;
-            luValid = true;
-        }
-        else
-        {
-            matrixDirty = true; // rebuild the matrix (its op-amp row differs) and factor it on demand
-            luValid = false;
-        }
+        for (int e = 0; e < m; ++e)
+            Elast[e] = E[e];
+        for (int k = 0; k < ni; ++k)
+            curLast[k] = cur[k];
+        lastMode = satMode;
+        useX = false;
+        return true;
     }
 
     double voltage (Node node) const noexcept
@@ -419,7 +389,11 @@ public:
         if (node <= 0)
             return 0.0;
         const int i = indexOf[(size_t) node];
-        return i >= 0 ? x[(size_t) i] : knownVoltage[(size_t) node];
+        if (i < 0)
+            return knownVoltage[(size_t) node];
+        if (useX)
+            return x[(size_t) i];
+        return nodeVoltageFrom (node, models[(size_t) lastMode], Elast, curLast);
     }
 
     /** The current a fixed-voltage node (rail/input) delivers into the
@@ -488,26 +462,31 @@ private:
     bool luValid = false;
 
     // -- saturating op-amp (at most one per circuit): 0 ideal, 1 held at the high rail, 2 held at the low rail.
-    // The active mode's factorisation lives in the members above; the others are parked here (valid only until a
-    // resistance changes).
-    struct Parked
-    {
-        double lu[maxUnknowns][maxUnknowns];
-        int pivot[maxUnknowns];
-        int lStart[maxUnknowns + 1], lRow[maxLuEntries], lCount;
-        int uStart[maxUnknowns + 1], uCol[maxLuEntries], uCount;
-        double lVal[maxLuEntries], uVal[maxLuEntries], invDiag[maxUnknowns];
-        double W[16][maxUnknowns];
-        double K[16][16];
-        bool valid = false;
-    };
     int satOpIndex = -1;
     OpAmpSpec satSpec;
     int satMode = 0;
-    std::vector<Parked> parked; // 3 entries when a saturating op-amp exists
 
     static constexpr int maxPortsV = 16;  // independent branch voltages across all devices
     static constexpr int maxPortsI = 16;  // independent device currents across all devices
+    // -- the folded-linear (DK state-space) model, one per saturating-op-amp mode
+    static constexpr int maxCaps = 32;
+    static constexpr int maxExcite = 48; // capacitors + sources + 1
+    struct Model
+    {
+        double Hx[maxUnknowns][maxExcite];   // node voltages      = Hx E - W^T cur
+        double Hu[maxPortsV][maxExcite];     // no-device port voltages u0 = Hu E
+        double Hv[maxCaps][maxExcite];       // capacitor voltages = Hv E - Kv cur
+        double Kv[maxCaps][maxPortsI];
+        double W[maxPortsI][maxUnknowns];    // A^-1 e_k, per current port
+        double K[maxPortsV][maxPortsI];      // port coupling
+        bool valid = false;
+    };
+    std::vector<Model> models;               // 1 entry, or 3 with a saturating op-amp
+    bool modelsDirty = true;
+    bool useX = true;                        // true until the first fast sample: voltage() then reads the DC solution `x`
+    double Elast[maxExcite] = {}, curLast[maxPortsI] = {};
+    int lastMode = 0;
+    std::vector<int> sourceOfNode;           // node -> index into `sources`, or -1
     struct CurrentPort { Node plus, minus; double sign; };
     struct VoltagePort { Node plus, minus; };
     struct DeviceMap { int kind; int v0, i0; int index; int nv, ni; }; // kind: 0 diode, 1 bjt, 2 jfet
@@ -958,6 +937,153 @@ private:
         }
     }
 
+    /** Which state the saturating op-amp should be in given the solution just computed in `satMode`: ideal is right
+        while its output is inside the rails; held at a rail is right while (+) - (-) keeps pushing into it. */
+    int wantedSatMode (const Model& M, const double* E, const double* cur) const noexcept
+    {
+        const auto& o = opAmps[(size_t) satOpIndex];
+        const double vout = nodeVoltageFrom (o.out, M, E, cur);
+        const double vd = nodeVoltageFrom (o.plus, M, E, cur) - nodeVoltageFrom (o.minus, M, E, cur);
+        if (satMode == 0)
+            return vout > satSpec.highRail ? 1 : (vout < satSpec.lowRail ? 2 : 0);
+        if (satMode == 1)
+            return vd < 0.0 ? 0 : 1;
+        return vd > 0.0 ? 0 : 2;
+    }
+
+    void invalidateModels() noexcept
+    {
+        for (auto& mo : models)
+            mo.valid = false;
+        modelsDirty = false;
+    }
+
+    Model& ensureModel (int mode) noexcept
+    {
+        Model& mo = models[(size_t) mode];
+        if (! mo.valid)
+            buildModel (mode);
+        return mo;
+    }
+
+    double nodeVoltageFrom (Node node, const Model& mo, const double* E, const double* cur) const noexcept
+    {
+        if (node <= 0)
+            return 0.0;
+        const int i = indexOf[(size_t) node];
+        if (i < 0)
+            return knownVoltage[(size_t) node];
+        const int m = (int) capacitors.size() + (int) sources.size() + 1;
+        double v = 0.0;
+        for (int e = 0; e < m; ++e)
+            v += mo.Hx[i][e] * E[e];
+        const int ni = (int) currentPorts.size();
+        for (int k = 0; k < ni; ++k)
+            v -= mo.W[k][i] * cur[k];
+        return v;
+    }
+
+    /** Folds the linear network (in op-amp state `mode`) into the dense maps of a Model. Runs when a resistance
+        changed, so a moving knob costs about one LU plus one back-substitution per excitation every 16 samples. */
+    void buildModel (int mode) noexcept
+    {
+        const int savedMode = satMode;
+        satMode = mode;
+        rebuildLinearMatrix (true);
+        luValid = false;
+        factorAndBuildReducedModel();
+        satMode = savedMode;
+        matrixDirty = true; // the members above now belong to `mode`; the DC path rebuilds what it needs
+
+        Model& mo = models[(size_t) mode];
+        mo.valid = false;
+        if (! luValid)
+            return;
+
+        const int n = unknownCount;
+        const int ns = (int) capacitors.size(), nsrc = (int) sources.size();
+        const int m = ns + nsrc + 1;
+        const int ni = (int) currentPorts.size(), nv = (int) voltagePorts.size();
+
+        for (int e = 0; e < m; ++e)
+        {
+            double col[maxUnknowns] = {};
+            if (e < ns)
+            {
+                const auto& c = capacitors[(size_t) e];
+                if (c.ia >= 0) col[c.ia] += 1.0;
+                if (c.ib >= 0) col[c.ib] -= 1.0;
+            }
+            else if (e < ns + nsrc)
+            {
+                const Node sn = sources[(size_t) (e - ns)].node;
+                for (const auto& t : knownTerms)
+                    if (t.knownNode == sn)
+                        col[t.row] += t.g;
+                for (const auto& o : opTerms)
+                {
+                    if (o.saturating && mode != 0)
+                        continue; // held at a rail: the row no longer refers to its inputs
+                    if (o.plus == sn && indexOf[(size_t) o.plus] < 0)
+                        col[o.row] -= 1.0;
+                    if (o.minus == sn && indexOf[(size_t) o.minus] < 0)
+                        col[o.row] += 1.0;
+                }
+            }
+            else
+            {
+                for (const auto& o : opTerms)
+                    col[o.row] += (o.saturating && mode == 1) ? satSpec.highRail
+                                : (o.saturating && mode == 2) ? satSpec.lowRail
+                                                              : o.offset;
+            }
+            luBackSubstitute (col);
+            for (int i = 0; i < n; ++i)
+                mo.Hx[i][e] = col[i];
+        }
+
+        std::memcpy (mo.W, W, sizeof W);
+        std::memcpy (mo.K, K, sizeof K);
+
+        // rowE/rowW of "voltage of a node" as a linear function of E and of the device currents.
+        auto accumulate = [&] (Node node, double sign, double* rowE, double* rowW)
+        {
+            if (node <= 0)
+                return;
+            const int i = indexOf[(size_t) node];
+            if (i >= 0)
+            {
+                for (int e = 0; e < m; ++e)
+                    rowE[e] += sign * mo.Hx[i][e];
+                if (rowW != nullptr)
+                    for (int k = 0; k < ni; ++k)
+                        rowW[k] += sign * W[k][i];
+            }
+            else if (sourceOfNode[(size_t) node] >= 0)
+                rowE[ns + sourceOfNode[(size_t) node]] += sign;
+        };
+
+        for (int j = 0; j < nv; ++j)
+        {
+            double rowE[maxExcite] = {};
+            accumulate (voltagePorts[(size_t) j].plus, 1.0, rowE, nullptr);
+            accumulate (voltagePorts[(size_t) j].minus, -1.0, rowE, nullptr);
+            for (int e = 0; e < m; ++e)
+                mo.Hu[j][e] = rowE[e];
+        }
+        for (int c = 0; c < ns; ++c)
+        {
+            double rowE[maxExcite] = {}, rowW[maxPortsI] = {};
+            accumulate (capacitors[(size_t) c].a, 1.0, rowE, rowW);
+            accumulate (capacitors[(size_t) c].b, -1.0, rowE, rowW);
+            for (int e = 0; e < m; ++e)
+                mo.Hv[c][e] = rowE[e];
+            for (int k = 0; k < ni; ++k)
+                mo.Kv[c][k] = rowW[k];
+        }
+        mo.valid = true;
+    }
+
     void buildPorts()
     {
         currentPorts.clear();
@@ -1114,23 +1240,112 @@ private:
 
     /** Newton-Raphson over the device port voltages, then reconstruct the
         full node vector. */
-    bool solveDevices() noexcept
+    /** Solves J delta = f for the small dense Newton system (last column of J is f), partial pivoting, one
+        reciprocal per pivot. Compile-time sizes 1..8 let the compiler unroll everything; larger systems fall
+        back to the same code with a run-time size. */
+    template <int N>
+    static bool solveFixed (double (&J)[maxPortsV][maxPortsV + 1], double* delta) noexcept
+    {
+        double invPivot[N];
+        for (int col = 0; col < N; ++col)
+        {
+            int best = col;
+            double bestAbs = std::abs (J[col][col]);
+            for (int r = col + 1; r < N; ++r)
+            {
+                const double a = std::abs (J[r][col]);
+                if (a > bestAbs)
+                {
+                    bestAbs = a;
+                    best = r;
+                }
+            }
+            if (bestAbs < 1.0e-30)
+                return false;
+            if (best != col)
+                for (int c = col; c <= N; ++c)
+                    std::swap (J[col][c], J[best][c]);
+            const double inv = 1.0 / J[col][col];
+            invPivot[col] = inv;
+            for (int r = col + 1; r < N; ++r)
+            {
+                const double fct = J[r][col] * inv;
+                for (int c = col + 1; c <= N; ++c)
+                    J[r][c] -= fct * J[col][c];
+            }
+        }
+        for (int r = N - 1; r >= 0; --r)
+        {
+            double sum = J[r][N];
+            for (int c = r + 1; c < N; ++c)
+                sum -= J[r][c] * delta[c];
+            delta[r] = sum * invPivot[r];
+        }
+        return true;
+    }
+
+    static bool solveSmall (double (&J)[maxPortsV][maxPortsV + 1], int n, double* delta) noexcept
+    {
+        switch (n)
+        {
+            case 1: return solveFixed<1> (J, delta);
+            case 2: return solveFixed<2> (J, delta);
+            case 3: return solveFixed<3> (J, delta);
+            case 4: return solveFixed<4> (J, delta);
+            case 5: return solveFixed<5> (J, delta);
+            case 6: return solveFixed<6> (J, delta);
+            case 7: return solveFixed<7> (J, delta);
+            case 8: return solveFixed<8> (J, delta);
+            default: break;
+        }
+        double invPivot[maxPortsV];
+        for (int col = 0; col < n; ++col)
+        {
+            int best = col;
+            double bestAbs = std::abs (J[col][col]);
+            for (int r = col + 1; r < n; ++r)
+            {
+                const double a = std::abs (J[r][col]);
+                if (a > bestAbs) { bestAbs = a; best = r; }
+            }
+            if (bestAbs < 1.0e-30)
+                return false;
+            if (best != col)
+                for (int c = col; c <= n; ++c)
+                    std::swap (J[col][c], J[best][c]);
+            const double inv = 1.0 / J[col][col];
+            invPivot[col] = inv;
+            for (int r = col + 1; r < n; ++r)
+            {
+                const double fct = J[r][col] * inv;
+                for (int c = col + 1; c <= n; ++c)
+                    J[r][c] -= fct * J[col][c];
+            }
+        }
+        for (int r = n - 1; r >= 0; --r)
+        {
+            double sum = J[r][n];
+            for (int c = r + 1; c < n; ++c)
+                sum -= J[r][c] * delta[c];
+            delta[r] = sum * invPivot[r];
+        }
+        return true;
+    }
+
+    /** Newton-Raphson over the device port voltages. `u0` is the no-device response of the ports; `Wm`/`Km` are the
+        node-response and port-coupling matrices of the active mode. Leaves the converged currents in `curOut` (the
+        node vector is x = x_linear - W^T cur) and the port voltages in `uState`. */
+    bool newtonPorts (const double* u0, const double (*Wm)[maxUnknowns], const double (*Km)[maxPortsI], double* curOut) noexcept
     {
         const int nv = (int) voltagePorts.size();
         const int ni = (int) currentPorts.size();
 
         if (nv == 0)
-        {
-            for (int i = 0; i < unknownCount; ++i)
-                x[(size_t) i] = xLinear[i];
             return true;
-        }
 
-        double u0[maxPortsV], u[maxPortsV];
+        double u[maxPortsV];
         for (int j = 0; j < nv; ++j)
         {
-            const auto& vp = voltagePorts[(size_t) j];
-            u0[j] = nodeOf (vp.plus, xLinear) - nodeOf (vp.minus, xLinear);
             u[j] = uState[j];
             if (predictorEnabled)
             {
@@ -1165,64 +1380,41 @@ private:
             double J[maxPortsV][maxPortsV + 1];
             for (int j = 0; j < nv; ++j)
             {
+                const double* Kj = Km[j];
+                double* Jj = J[j];
                 for (int c = 0; c < nv; ++c)
-                    J[j][c] = (j == c) ? 1.0 : 0.0;
+                    Jj[c] = (j == c) ? 1.0 : 0.0;
 
                 double f = u[j] - u0[j];
                 for (int k = 0; k < ni; ++k)
-                    f += K[j][k] * cur[k];
-                J[j][nv] = f;
-            }
+                    f += Kj[k] * cur[k];
+                Jj[nv] = f;
 
-            for (const auto& m : deviceMaps)
-                for (int k = m.i0; k < m.i0 + m.ni; ++k)
-                    for (int c = m.v0; c < m.v0 + m.nv; ++c)
-                    {
-                        const double dk = Dnow[k][c];
-                        for (int j = 0; j < nv; ++j)
-                            J[j][c] += K[j][k] * dk;
-                    }
-            // Solve J * delta = f (small dense system, partial pivoting; one reciprocal per pivot, not a division
-            // per element).
-            double invPivot[maxPortsV];
-            for (int col = 0; col < nv; ++col)
-            {
-                int best = col;
-                double bestAbs = std::abs (J[col][col]);
-                for (int r = col + 1; r < nv; ++r)
+                // J[j][c] += sum_k K[j][k] D[k][c], one device at a time (each has 1 or 2 currents and ports).
+                for (const auto& m : deviceMaps)
                 {
-                    const double a = std::abs (J[r][col]);
-                    if (a > bestAbs)
+                    if (m.ni == 1 && m.nv == 1)
+                        Jj[m.v0] += Kj[m.i0] * Dnow[m.i0][m.v0];
+                    else if (m.ni == 2 && m.nv == 2)
                     {
-                        bestAbs = a;
-                        best = r;
+                        const double k0 = Kj[m.i0], k1 = Kj[m.i0 + 1];
+                        Jj[m.v0] += k0 * Dnow[m.i0][m.v0] + k1 * Dnow[m.i0 + 1][m.v0];
+                        Jj[m.v0 + 1] += k0 * Dnow[m.i0][m.v0 + 1] + k1 * Dnow[m.i0 + 1][m.v0 + 1];
+                    }
+                    else if (m.ni == 2 && m.nv == 1)
+                        Jj[m.v0] += Kj[m.i0] * Dnow[m.i0][m.v0] + Kj[m.i0 + 1] * Dnow[m.i0 + 1][m.v0];
+                    else // 1 current, 2 ports (JFET)
+                    {
+                        const double k0 = Kj[m.i0];
+                        Jj[m.v0] += k0 * Dnow[m.i0][m.v0];
+                        Jj[m.v0 + 1] += k0 * Dnow[m.i0][m.v0 + 1];
                     }
                 }
-                if (bestAbs < 1.0e-30)
-                    return false;
-                if (best != col)
-                    for (int c = col; c <= nv; ++c)
-                        std::swap (J[col][c], J[best][c]);
-                const double inv = 1.0 / J[col][col];
-                invPivot[col] = inv;
-                for (int r = col + 1; r < nv; ++r)
-                {
-                    const double fct = J[r][col] * inv;
-                    if (! (fct < 0.0 || fct > 0.0))
-                        continue;
-                    for (int c = col + 1; c <= nv; ++c)
-                        J[r][c] -= fct * J[col][c];
-                }
             }
-
+            // Solve J * delta = f.
             double delta[maxPortsV];
-            for (int r = nv - 1; r >= 0; --r)
-            {
-                double sum = J[r][nv];
-                for (int c = r + 1; c < nv; ++c)
-                    sum -= J[r][c] * delta[c];
-                delta[r] = sum * invPivot[r];
-            }
+            if (! solveSmall (J, nv, delta))
+                return false;
 
             // Proposed update, with SPICE-style logarithmic limiting on p-n junction ports: an exponential's
             // plain Newton step from a low-current start overshoots by orders of magnitude, then sheds only
@@ -1279,6 +1471,17 @@ private:
                 for (int k = m.i0; k < m.i0 + m.ni; ++k)
                     for (int c = m.v0; c < m.v0 + m.nv; ++c)
                         predictedDelta[k] += Dnow[k][c] * step[c];
+
+            // A step this small leaves an error of ~step^2 / (2 nVt) (<= 3 uV at 0.5 mV): take the linearised currents
+            // and skip the evaluation that would only confirm it (the common case for a converged sample).
+            if (fullStep && ! limited && maxStep <= smallStepAccept)
+            {
+                for (int k = 0; k < ni; ++k)
+                    cur[k] += predictedDelta[k];
+                converged = true;
+                break;
+            }
+
             evaluateDevices (u, curNext, Dnext);
 
             double nodeErrorVec[maxUnknowns];
@@ -1287,7 +1490,7 @@ private:
             for (int k = 0; k < ni; ++k)
             {
                 const double residual = curNext[k] - cur[k] - predictedDelta[k];
-                const double* Wk = W[k];
+                const double* Wk = Wm[k];
                 for (int node = 0; node < unknownCount; ++node)
                     nodeErrorVec[node] += Wk[node] * residual;
             }
@@ -1319,6 +1522,38 @@ private:
             return false;
         }
 
+        for (int k = 0; k < ni; ++k)
+            curOut[k] = cur[k];
+        for (int j = 0; j < nv; ++j)
+        {
+            uStatePrev[j] = uState[j];
+            uState[j] = u[j];
+        }
+        return true;
+    }
+
+    /** DC / relaxation path: node vector from the no-device response `xLinear`. */
+    bool solveDevices() noexcept
+    {
+        const int nv = (int) voltagePorts.size();
+        const int ni = (int) currentPorts.size();
+
+        if (nv == 0)
+        {
+            for (int i = 0; i < unknownCount; ++i)
+                x[(size_t) i] = xLinear[i];
+            return true;
+        }
+
+        double u0[maxPortsV], cur[maxPortsI];
+        for (int j = 0; j < nv; ++j)
+        {
+            const auto& vp = voltagePorts[(size_t) j];
+            u0[j] = nodeOf (vp.plus, xLinear) - nodeOf (vp.minus, xLinear);
+        }
+        if (! newtonPorts (u0, W, K, cur))
+            return false;
+
         // `cur` was evaluated AT the accepted u, so the node vector below is consistent with it.
         for (int i = 0; i < unknownCount; ++i)
         {
@@ -1327,13 +1562,6 @@ private:
                 v -= W[k][i] * cur[k];
             x[(size_t) i] = v;
         }
-
-        for (int j = 0; j < nv; ++j)
-        {
-            uStatePrev[j] = uState[j];
-            uState[j] = u[j];
-        }
-
         return true;
     }
 
