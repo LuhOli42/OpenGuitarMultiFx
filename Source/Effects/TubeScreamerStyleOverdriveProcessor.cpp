@@ -254,6 +254,7 @@ void TubeScreamerStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buf
                 ++solveFailures;
 
             const double op1Out = opAmpPlus + feedbackVoltage;
+            s.debugOp1Out = op1Out;
             const double iC4 = (feedbackVoltage - histC4) / reqC4;
             s.c4.updateState (feedbackVoltage, iC4);
 

@@ -58,6 +58,9 @@ public:
         return { (float) ch.pre.voltage (ch.nB2), (float) ch.pre.voltage (ch.nE2), (float) ch.pre.voltage (ch.nC2) };
     }
 
+    /** Channel 0's op-amp output (after the transistor booster and the Drive stage), for gain verification. */
+    double debugOpAmpOut() const noexcept { return channels[0].pre.voltage (channels[0].nO); }
+
     bool dcConverged() const noexcept { return dcOk; }
     double getSolveFailureRate() const noexcept { return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0; }
 

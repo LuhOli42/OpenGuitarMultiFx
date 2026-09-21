@@ -54,11 +54,16 @@ Two things these numbers say beyond the choice of factors:
 
 (The "Registry" column above is what the registry used before the quality tiers; the tiers below replace it.)
 
-## Quality tiers (registry, `EffectRegistry::setOversamplingQuality` / `OGMFX_QUALITY`)
+## Quality tiers -- chosen in the app: "..." -> Settings -> Rendering quality (Eco / Normal / High)
+**Eco is the default** (the user's choice). The screen calls `EffectRegistry::setOversamplingQuality`,
+saves the choice to `<app data>/OpenGuitarMultiFx/render_quality.txt` and rebuilds the distortion
+pedals already in the chain in place (same position and grid cell, knob values and bypass kept;
+their MIDI Learn bindings are cleared, as for any removed block). "Normal" is the `balanced`
+column below. `OGMFX_QUALITY=eco|normal|high` overrides the saved value (development).
 Chosen per pedal from the table above; CPU is % of one core on the dev PC (48 kHz, mono
 guitar in a stereo buffer, noon knobs):
 
-| Pedal | eco | balanced (default) | high |
+| Pedal | eco (default) | balanced = Normal | high |
 |---|---|---|---|
 | DS-1 | 1x 2.6% | 2x 4.6% | 4x 8.5% |
 | BD-2 | 1x 6.9% | 2x 12.5% | 4x 24% |

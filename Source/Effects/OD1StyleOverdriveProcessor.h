@@ -59,6 +59,9 @@ public:
         return { (float) channels[0].debugQ6Vb, (float) channels[0].debugQ6Ve, (float) supplyVoltage };
     }
 
+    /** Channel 0's clipping op-amp output (the gain stage), for gain verification against the real circuit. */
+    double debugOp1Out() const noexcept { return channels[0].debugOp1Out; }
+
 private:
     /** Per-channel circuit state -- every reactive element's history plus
         every nonlinear device's own Newton-Raphson warm-start point, so
@@ -67,7 +70,8 @@ private:
         same convention every other circuit-modelled processor here uses). */
     struct ChannelState
     {
-        TrapezoidalCapacitor c1, c2;
+        TrapezoidalCapacitor c1, c2, c3;
+        double debugOp1Out = 0.0;
         double debugQ6Vb = 0.0, debugQ6Ve = 0.0; // Q6 is an ideal follower now (see process()); kept for the bias-point test hook
 
         TrapezoidalCapacitor c4; // op-amp 2's feedback treble-cut
@@ -121,6 +125,8 @@ private:
 
     static constexpr float c1Value = 0.047e-6f;
     static constexpr float c2Value = 0.0047e-6f;
+    static constexpr float c3Value = 0.047e-6f;  // gain leg: R6 4.7K + C3 from op-amp 1's inverting pin to BIAS1
+    static constexpr float rGainLeg = 4.7e3f;    // R6
     static constexpr float c4Value = 0.018e-6f;
     static constexpr float c5Value = 1.0e-6f;
     static constexpr float c7Value = 0.047e-6f;

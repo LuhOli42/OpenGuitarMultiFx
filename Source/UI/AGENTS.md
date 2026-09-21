@@ -138,3 +138,6 @@ Block removed → moved into `graveyard` (NOT destroyed) until the old SignalGra
 - Introduce a second top-level settings surface — everything goes through `Tone3000Panel` (the app's one Settings screen despite its filename).
 - Destroy a processor synchronously on removal from the chain — always via `graveyard`.
 - Use a native `juce::DialogWindow`/`DocumentWindow` for anything but `Main.cpp`'s `MainWindow`.
+
+## Rendering quality (2026-09-20)
+The Settings screen ("..." button, `Tone3000Panel`) has a **Rendering quality** row: Eco / Normal / High radio buttons (touch-sized) with a one-line hint. Choosing one calls `MainComponent::applyRenderQuality()`: saves it (`EffectRegistry::saveOversamplingQuality`) and rebuilds the affected pedals in the chain through the graveyard (same discipline as `removeEffect()`), keeping position, grid cell, knob values and bypass. Close is on the title row because the selected block's parameter drawer is drawn over the bottom of the card. Checked in the running app: switching to High moved the CPU label from 3.2% to 10.7% with a DS-1 in the chain.

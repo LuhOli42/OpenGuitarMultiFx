@@ -46,57 +46,39 @@ loading it, and C9's bypass makes it a true AC ground at audio frequencies).
 
 ### 2. Op-amp 1 — the drive/clipping stage (the pedal's whole reason to exist)
 
-**Non-inverting input (pin 5)**: R6\* (4.7K) + C3 (0.047uF) in series to
-BIAS1, with *nothing else* attached to this pin anywhere in the circuit.
-Since an ideal op-amp draws zero input current and this is the pin's
-*only* connection, zero current ever flows through R6\*/C3 — which means,
-provably (not assumed), **pin 5 sits at exactly BIAS1, permanently**;
-R6\*/C3 have no effect on the signal and aren't modelled as dynamic
-elements at all. (\*Renamed `r6OpAmpBias` in code — the schematic reuses
-"R6" for both this and the unrelated 33K BIAS1-divider resistor; real
-designators, disambiguated here to avoid a C++ identifier clash, not a
-schematic error.)
+> **Corrected 2026-09-20 -- this stage was wired as an INVERTING amplifier and it is not.**
+> The earlier reading of the scan put the signal (C2 + R4) on the inverting pin and the
+> R6 4.7K + C3 47 nF branch on the non-inverting pin as an isolated network. The real
+> OD-1 (Aion FX's Corona documentation, a clone of the original quad-op-amp circuit, shows it
+> unambiguously; every write-up of the OD-1/SD-1/TS family says the same) is a
+> **non-inverting** stage: the buffered signal enters the (+) pin through C2 with R4 biasing
+> it to BIAS1, and **R6 (4.7K) + C3 (0.047 uF) is the gain leg from the (-) pin to BIAS1**.
+> With the wrong wiring the stage's gain was -(R5 + Drive) / (C2 at 1 kHz ~ 34K) -- 0 dB at
+> Drive min and 30 dB at max, 15 dB short of the real ~45 dB.
 
-**Inverting input (pin 6)**: held at the same voltage as pin 5 (BIAS1) by
-the op-amp's own negative feedback (ideal virtual-short) — same "pinned
-voltage, current still flows and does the real work" behaviour any
-inverting op-amp stage has. Fed by C2 (from Q6's emitter) with R4 (100K)
-providing the bias-return path to BIAS1.
+**Non-inverting input (+)**: fed by C2 (0.0047 uF, from Q6's emitter; the follower's 74 ohm
+output resistance in series) with R4 (100K) to BIAS1. It draws no current, so its voltage is
+BIAS1 + i(C2) * R4; C2/R4 form a 340 Hz high-pass.
 
-**Feedback network**: R5 (33K) in series with **VR1 (Drive, 1MB linear)**
-wired as a variable resistor (wiper + one end, matching how this pedal
-family typically wires a "gain" pot rather than as a 3-terminal divider),
-forming a 33K–1.033M total feedback resistance from pin 6 to the output
-(pin 7). **D5 (1 diode) in parallel with D6+D7 (2 diodes in series, same
-direction as each other, opposite direction to D5)** bridge directly
-across this same feedback resistance — the textbook "diode(s) in the
-feedback loop" clipping topology, and the specific asymmetric (1-vs-2)
-diode count is what gives the OD-1 its documented "smoother, warmer, less
-edgy" asymmetric clipping character (one polarity clips at approximately
-one silicon diode drop, ~0.6V; the other at approximately two, ~1.2V).
+**Inverting input (-)**: held at the (+) voltage by the op-amp. The **gain leg** R6 (4.7K)
++ C3 (0.047 uF) to BIAS1 draws a current from it, and all of that current must come from the
+output through the feedback network: gain = 1 + Zfeedback / Zleg. That is 1 + 33K / 4.7K =
+8 (18 dB) at Drive min and 1 + 1.033M / 4.7K = 220 (47 dB) at max at high frequency, with the
+47 nF against 4.7K putting the gain's own high-pass corner at 720 Hz (at 1 kHz: 16.5 dB and
+45 dB). Measured: 15.8 dB and 43.8 dB at the op-amp output.
 
-**Why this needs a genuine 1D Newton-Raphson solve, unlike the DS-1's
-closed-form op-amp stage**: the DS-1's op-amp gain stage had a *linear*
-feedback network (a plain resistor divider), so its closed-loop gain has
-an algebraic closed form. Here the feedback element itself is nonlinear
-(the diode pair), so the closed-loop operating point has to be solved
-iteratively — same category of problem as a transistor's KCL, just one
-unknown instead of three. See `AsymmetricDiodePair.h` for why `chowdsp_wdf`'s
-own `DiodePairT` doesn't cover this (it only supports the *symmetric*
-same-diode-count-both-ways case) and why this is new, generically reusable
-infrastructure rather than a one-off hack.
+**Feedback network**: R5 (33K) in series with **VR1 (Drive, 1M; Corona's parts list says
+1MA -- audio taper, approximated as knob^2, like the TS and BD-2 pots; the earlier "1MB
+linear" reading was from the scan)**, from the (-) pin to the output. The diodes bridge
+this feedback network -- the textbook "diodes in the feedback loop" topology. **Two diodes
+clip the positive peak (~1.2 V), one the negative (~0.6 V)** (the SD-1/OD-1 arrangement):
+the asymmetry that gives the OD-1 its "smoother, warmer, less edgy" character.
 
-**The exact equation solved every sample**: with pin 6 pinned at BIAS1
-(call it `v5`), the current flowing INTO pin 6 from the C2/R4 input
-branches is fully determined (`Iin = (Vth_in - v5) / Rth_in`, from the
-usual parallel-Thevenin combine of those two branches). Since the op-amp
-itself draws none of that current, it must all flow back out through the
-feedback network — call `D = v5 - V(pin7)` the voltage across that
-feedback network (linear resistor parallel with the diode pair). Then
-`Iin = D/Rfb + I_diode(D)`, i.e. exactly `AsymmetricDiodePair::solve()`'s
-own residual equation with `rth = Rfb` and `vth = Iin * Rfb` — reused
-directly, unmodified, rather than re-derived. `V(pin7) = v5 - D` once
-solved.
+**The equation solved every sample** (1D Newton-Raphson, `AsymmetricDiodePair`): the current
+through the gain leg is fully determined by the (+) voltage; it must flow through the
+feedback network, `Ileg = D/Rfb + I_diode(D)` with `D = V(out) - V(-)`, i.e.
+`AsymmetricDiodePair::solve()` with `rth = Rfb`, `vth = Ileg * Rfb`; `V(out) = V(+) + D`.
+Same structure as the Tube Screamer's stage.
 
 **Diode orientation** (which half-cycle clips at ~0.6V vs ~1.2V) is a
 flagged interpretation, not a pixel-certain read of the scanned image's

@@ -1,4 +1,6 @@
 #include "Effects/OversampledEffect.h"
+#include "Effects/OutputTrimEffect.h"
+#include "EffectRegistry.h"
 
 #include "Effects/BD2StyleOverdriveProcessor.h"
 #include "Effects/CentaurStyleOverdriveProcessor.h"
@@ -165,6 +167,33 @@ public:
             expectEquals (clipper->prepareCalls, 1);
             wrapped.prepare (44100.0, 512, 1);
             expectEquals (clipper->prepareCalls, 2);
+        }
+
+        beginTest ("the registry builds the distortion pedals according to the rendering quality (eco = no oversampling)");
+        {
+            using Q = EffectRegistry::OversamplingQuality;
+            const auto original = EffectRegistry::getOversamplingQuality();
+            EffectRegistry registry;
+            registerBuiltInEffects (registry);
+            expect (registry.dependsOnOversamplingQuality ("DS1StyleDistortion"));
+            expect (registry.dependsOnOversamplingQuality ("BD2StyleOverdrive"));
+            expect (! registry.dependsOnOversamplingQuality ("CentaurStyleOverdrive"));
+
+            auto orderOf = [&] (const char* key, Q quality) -> int
+            {
+                EffectRegistry::setOversamplingQuality (quality);
+                auto pedal = registry.create (key);
+                auto* trimmed = dynamic_cast<OutputTrimEffect*> (pedal.get());
+                if (trimmed == nullptr)
+                    return -1;
+                return dynamic_cast<OversampledEffect*> (&trimmed->getInner()) != nullptr ? 1 : 0; // wrapped or not
+            };
+            expectEquals (orderOf ("DS1StyleDistortion", Q::eco), 0);
+            expectEquals (orderOf ("DS1StyleDistortion", Q::balanced), 1);
+            expectEquals (orderOf ("DS1StyleDistortion", Q::high), 1);
+            expectEquals (orderOf ("OD1StyleOverdrive", Q::balanced), 0); // the OD-1 only oversamples in High
+            expectEquals (orderOf ("OD1StyleOverdrive", Q::high), 1);
+            EffectRegistry::setOversamplingQuality (original);
         }
 
         beginTest ("name, parameters and accent colour are the inner processor's");

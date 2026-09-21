@@ -30,7 +30,9 @@ OD1StyleOverdriveProcessor::OD1StyleOverdriveProcessor()
 
         // 1 diode forward, 2 in series reverse -- the OD-1's documented
         // asymmetric clipping (see the doc's "Op-amp 1" section).
-        ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage * diodeIdealityFactor, 1.0, 2.0);
+        // Positive swing of the output = forward direction of the feedback network = TWO diodes (clips at ~1.2 V), the
+        // negative swing ONE (~0.6 V): 'two diodes clip the positive peak, one the negative' (the SD-1/OD-1 arrangement).
+        ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage * diodeIdealityFactor, 2.0, 1.0);
     }
 }
 
@@ -53,7 +55,7 @@ void OD1StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
     settledSampleRate = newSampleRate;
 
     smoothedRFeedback.reset (newSampleRate, 0.02);
-    smoothedRFeedback.setCurrentAndTargetValue (r5 + juce::jmax (1.0f, driveMax * drive->get()));
+    smoothedRFeedback.setCurrentAndTargetValue (r5 + juce::jmax (1.0f, driveMax * drive->get() * drive->get()));
     smoothedRTopToWiper.reset (newSampleRate, 0.02);
     smoothedRTopToWiper.setCurrentAndTargetValue (juce::jmax (1.0f, levelMax * (1.0f - level->get())));
 
@@ -61,6 +63,7 @@ void OD1StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
     {
         ch.c1.prepare (newSampleRate, c1Value);
         ch.c2.prepare (newSampleRate, c2Value);
+        ch.c3.prepare (newSampleRate, c3Value);
         ch.c4.prepare (newSampleRate, c4Value);
         ch.c5.prepare (newSampleRate, c5Value);
         ch.c7.prepare (newSampleRate, c7Value);
@@ -102,6 +105,7 @@ void OD1StyleOverdriveProcessor::reset()
     {
         ch.c1.reset();
         ch.c2.reset();
+        ch.c3.reset();
         ch.c4.reset();
         ch.c5.reset();
         ch.c7.reset();
@@ -117,7 +121,7 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), (int) channels.size());
     const int numSamples = buffer.getNumSamples();
 
-    smoothedRFeedback.setTargetValue (r5 + juce::jmax (1.0f, driveMax * drive->get()));
+    smoothedRFeedback.setTargetValue (r5 + juce::jmax (1.0f, driveMax * drive->get() * drive->get()));
     smoothedRTopToWiper.setTargetValue (juce::jmax (1.0f, levelMax * (1.0f - level->get())));
 
     for (int i = 0; i < numSamples; ++i)
@@ -146,20 +150,8 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             const Thevenin baseBiasBranch { r2, bias1 };
             const Thevenin q6Base = combineParallel (baseInputBranch, baseBiasBranch);
 
-            // Op-amp 1's inverting input (pin 6) is pinned at BIAS1 by the
-            // op-amp's own virtual short with pin 5 (which is itself
-            // provably fixed at BIAS1 -- see docs/circuits/
-            // OD1StyleOverdrive.md's "Op-amp 1" section: nothing else
-            // attaches to pin 5, so zero current ever flows through its
-            // R/C branch and it never moves off BIAS1). This is a KNOWN,
-            // constant value, unlike the DS-1's Q1/Q6-JFET coupling --
-            // no delay approximation needed here at all.
-            constexpr double pin6Voltage = (double) bias1;
             const double reqC2 = s.c2.getEquivalentResistance();
             const double histC2 = s.c2.getHistoryVoltage();
-            const Thevenin emitterLocalBranch { r3, 0.0 };
-            const Thevenin emitterToPin6Branch { reqC2, pin6Voltage + histC2 };
-            const Thevenin q6Emitter = combineParallel (emitterLocalBranch, emitterToPin6Branch);
 
             // Q6/Q7 are emitter followers with their collectors on the rail: buffers, nothing that clips. An ideal
             // follower (base draws no current, emitter = base - Vbe) is the same sound without a Newton solve per sample.
@@ -170,26 +162,28 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
 
             const double iC1Actual = (x - histC1 - q6Vb) / (r1 + reqC1);
             s.c1.updateState ((iC1Actual * reqC1 + histC1), iC1Actual);
-            // C2 sits between the follower and op-amp 1's virtual ground. The real follower has an output resistance
-            // (1/gm = 74 ohm at 0.35 mA) in series with it, which is also what damps the trapezoid rule here: an IDEAL
-            // source straight across a capacitor rings at Nyquist forever (hist alternates sign), so keep it.
-            const double iC2 = (q6Ve - pin6Voltage - histC2) / (reqC2 + followerOutputResistance);
+            // ---- Op-amp 1: a NON-INVERTING clipper (corrected 2026-09-20, see the doc). The buffered signal
+            // reaches the (+) pin through C2 with R4 biasing it to BIAS1; the (+) pin draws no current, so its
+            // voltage is BIAS1 + i * R4. The follower's output resistance (1/gm = 74 ohm, in series with C2) is
+            // also what damps the trapezoid rule here -- an IDEAL source straight across a capacitor rings at
+            // Nyquist forever. ----
+            const double iC2 = (q6Ve - (double) bias1 - histC2) / (reqC2 + followerOutputResistance + r4);
+            const double opAmpPlus = (double) bias1 + iC2 * r4;
             s.c2.updateState ((iC2 * reqC2 + histC2), iC2);
 
-            // ---- Op-amp 1: the clipper. Current in from C2+R4 (pin 6 is
-            // KNOWN/fixed, so this is fully determined already), must all
-            // flow back out through the feedback network (R5+Drive pot,
-            // with the asymmetric diode pair bridged across it) -- solved
-            // via AsymmetricDiodePair's own 1D Newton-Raphson. See the
-            // docs file for the full derivation. ----
-            const Thevenin pin6FromC2 { reqC2 + followerOutputResistance, q6Ve - histC2 };
-            const Thevenin pin6FromR4 { r4, bias1 };
-            const Thevenin pin6Input = combineParallel (pin6FromC2, pin6FromR4);
-            const double iInput = (pin6Input.vth - pin6Voltage) / pin6Input.rth;
+            // The virtual short puts the (-) pin at opAmpPlus; that voltage drives a current through the gain
+            // leg R6 + C3 (to BIAS1), and ALL of it must come from the output through the feedback network
+            // (R5 + Drive, with the asymmetric diode pair across it). Gain = 1 + Zfeedback / Zleg: 1 + 33K/4.7K
+            // = 8 (18 dB) at Drive min, ~180 (45 dB) at max, exactly as the SD-1/TS family.
+            const double reqC3 = s.c3.getEquivalentResistance();
+            const double histC3 = s.c3.getHistoryVoltage();
+            const double iLeg = (opAmpPlus - (double) bias1 - histC3) / (reqC3 + rGainLeg);
+            s.c3.updateState ((iLeg * reqC3 + histC3), iLeg);
 
-            double feedbackVoltage; // D = pin6 - op1Out
-            s.clipper.solve (rFeedback, iInput * rFeedback, feedbackVoltage);
-            const double op1Out = pin6Voltage - feedbackVoltage;
+            double feedbackVoltage; // out - (-) pin
+            s.clipper.solve (rFeedback, iLeg * rFeedback, feedbackVoltage);
+            const double op1Out = opAmpPlus + feedbackVoltage;
+            s.debugOp1Out = op1Out;
 
             // ---- Op-amp 2: fixed-gain (unity, inverting), fully linear
             // treble-cut buffer -- closed form, no Newton-Raphson (same

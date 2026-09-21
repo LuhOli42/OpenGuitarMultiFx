@@ -56,6 +56,9 @@ public:
         return { (float) channels[0].debugQ1Vb, (float) channels[0].debugQ1Ve, (float) supplyVoltage };
     }
 
+    /** Channel 0's clipping op-amp output (the gain stage), for gain verification against the real circuit. */
+    double debugOp1Out() const noexcept { return channels[0].debugOp1Out; }
+
     /** Fraction of the failed-to-converge diode solves since prepare() --
         a test hook: the clipper must converge on essentially every sample,
         or the "held previous value" fallback becomes audible. */
@@ -89,6 +92,7 @@ private:
     struct ChannelState
     {
         TrapezoidalCapacitor c1, c2, c3, c4, c5, c6, c7, c8, c9, cWiper;
+        double debugOp1Out = 0.0;
         double debugQ1Vb = 0.0, debugQ1Ve = 0.0; // Q1 is an ideal follower now (see process()); kept for the bias-point test hook
         AsymmetricDiodePair clipper;
     };

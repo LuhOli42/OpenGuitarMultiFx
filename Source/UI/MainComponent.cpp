@@ -880,8 +880,64 @@ void MainComponent::showSettingsPanel()
     auto panel = std::make_unique<Tone3000Panel> (tone3000);
     panel->onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     panel->onPopOverlay  = [this] { overlayHost.popOverlay(); };
+    panel->onQualityChanged = [this] (EffectRegistry::OversamplingQuality q) { applyRenderQuality (q); };
 
     overlayHost.pushOverlay (std::move (panel));
+}
+
+void MainComponent::applyRenderQuality (EffectRegistry::OversamplingQuality quality)
+{
+    EffectRegistry::setOversamplingQuality (quality);
+    EffectRegistry::saveOversamplingQuality();
+
+    // Same discipline as removeEffect(): the old processor is retired (the audio thread may still be running the old
+    // SignalGraph on it), the new one takes its place in the same chain position and grid cell.
+    EffectProcessor* newSelection = nullptr;
+    bool rebuilt = false;
+
+    for (int i = 0; i < (int) chain.size(); ++i)
+    {
+        const auto key = registry.keyForDisplayName (chain[(size_t) i]->getName());
+        if (! registry.dependsOnOversamplingQuality (key))
+            continue;
+
+        auto fresh = registry.create (key);
+        if (fresh == nullptr)
+            continue;
+
+        auto& old = chain[(size_t) i];
+        if (auto state = old->getState())
+            fresh->setState (*state);
+        fresh->setBypassed (old->isBypassed());
+
+        auto* raw = fresh.get();
+        const int slot = blocks[i]->gridSlot;
+        if (selectedProcessor == old.get())
+            newSelection = raw;
+
+        clearMidiBindingsFor (old.get());
+        graveyard.push_back ({ std::move (old), juce::Time::getMillisecondCounter() });
+        chain[(size_t) i] = std::move (fresh);
+
+        auto block = std::make_unique<EffectBlockComponent> (*raw);
+        block->gridSlot = slot;
+        block->onClicked = [this, raw] { selectBlock (selectedProcessor == raw ? nullptr : raw); };
+        block->onDragEnded = [this] (EffectBlockComponent& b) { handleBlockDragEnded (b); };
+        chainContainer.addAndMakeVisible (*block);
+        blocks.set (i, block.release()); // deletes the old block component; its processor is alive in the graveyard
+        rebuilt = true;
+    }
+
+    if (! rebuilt)
+        return;
+
+    if (newSelection != nullptr)
+        selectBlock (newSelection);
+    else if (selectedProcessor != nullptr)
+        selectBlock (selectedProcessor); // keeps the highlight on the untouched selection
+
+    rebuildSignalGraph();
+    layoutChain();
 }
 
 void MainComponent::showPolyphonicTuner()

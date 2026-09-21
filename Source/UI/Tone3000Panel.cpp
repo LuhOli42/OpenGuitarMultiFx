@@ -11,6 +11,34 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
     addAndMakeVisible (titleLabel);
     titleLabel.setFont (juce::Font (23.0f, juce::Font::bold));
 
+    addAndMakeVisible (qualitySectionLabel);
+    qualitySectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
+    qualitySectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+
+    using Q = EffectRegistry::OversamplingQuality;
+    const struct { juce::TextButton* button; Q quality; } choices[] = { { &ecoButton, Q::eco }, { &normalButton, Q::balanced }, { &highButton, Q::high } };
+    for (const auto& c : choices)
+    {
+        addAndMakeVisible (*c.button);
+        c.button->setClickingTogglesState (true);
+        c.button->setRadioGroupId (4711);
+        c.button->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5c56));
+        c.button->setToggleState (EffectRegistry::getOversamplingQuality() == c.quality, juce::dontSendNotification);
+        c.button->onClick = [this, q = c.quality]
+        {
+            if (EffectRegistry::getOversamplingQuality() == q)
+                return;
+            if (onQualityChanged)
+                onQualityChanged (q);
+            refreshQualityHint();
+        };
+    }
+
+    addAndMakeVisible (qualityHintLabel);
+    qualityHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    qualityHintLabel.setFont (juce::Font (14.0f));
+    refreshQualityHint();
+
     addAndMakeVisible (tone3000SectionLabel);
     tone3000SectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     tone3000SectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
@@ -41,7 +69,26 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
     refreshLoginState();
-    setSize (720, 520); // clamped by OverlayHost to fit the app window -- this is the "whole screen" settings surface
+    setSize (720, 560); // clamped by OverlayHost to fit the app window -- this is the "whole screen" settings surface
+}
+
+void Tone3000Panel::refreshQualityHint()
+{
+    switch (EffectRegistry::getOversamplingQuality())
+    {
+        case EffectRegistry::OversamplingQuality::eco:
+            qualityHintLabel.setText ("Eco: lightest on the CPU. The distortion pedals do not oversample, so the hardest "
+                                      "clippers (DS-1, HM-2, BD-2) can sound a little fizzy.", juce::dontSendNotification);
+            break;
+        case EffectRegistry::OversamplingQuality::balanced:
+            qualityHintLabel.setText ("Normal: the DS-1, BD-2 and HM-2 run at 2x oversampling (about twice the CPU of Eco "
+                                      "on those pedals) for a cleaner top end.", juce::dontSendNotification);
+            break;
+        case EffectRegistry::OversamplingQuality::high:
+            qualityHintLabel.setText ("High: the most oversampling the measurements say is worth it (4x on the DS-1, "
+                                      "BD-2, HM-2; 2x on the Tube Screamers and OD-1). Heaviest on the CPU.", juce::dontSendNotification);
+            break;
+    }
 }
 
 void Tone3000Panel::refreshLoginState()
@@ -153,8 +200,24 @@ void Tone3000Panel::resized()
 {
     auto area = getLocalBounds().reduced (16);
 
-    titleLabel.setBounds (area.removeFromTop (32));
+    // Close sits on the title row: the parameter drawer of a selected block is drawn OVER the bottom of this card,
+    // which used to hide a bottom-right Close button.
+    auto titleRow = area.removeFromTop (touch::minTapTarget);
+    closeButton.setBounds (titleRow.removeFromRight (100));
+    titleLabel.setBounds (titleRow);
     area.removeFromTop (10);
+
+    qualitySectionLabel.setBounds (area.removeFromTop (20));
+    area.removeFromTop (6);
+    auto qualityRow = area.removeFromTop (touch::minTapTarget);
+    ecoButton.setBounds (qualityRow.removeFromLeft (120));
+    qualityRow.removeFromLeft (8);
+    normalButton.setBounds (qualityRow.removeFromLeft (120));
+    qualityRow.removeFromLeft (8);
+    highButton.setBounds (qualityRow.removeFromLeft (120));
+    area.removeFromTop (6);
+    qualityHintLabel.setBounds (area.removeFromTop (50));
+    area.removeFromTop (14);
 
     tone3000SectionLabel.setBounds (area.removeFromTop (20));
     area.removeFromTop (6);
@@ -173,7 +236,6 @@ void Tone3000Panel::resized()
     area.removeFromTop (10);
     statusLabel.setBounds (area.removeFromTop (44));
 
-    closeButton.setBounds (area.removeFromBottom (touch::minTapTarget).removeFromRight (100));
 }
 
 void Tone3000Panel::paint (juce::Graphics& g)

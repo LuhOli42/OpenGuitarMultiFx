@@ -85,6 +85,10 @@ private:
     void layoutChain();
     void showAddEffectMenu (int targetGridSlot = -1);
     void showSettingsPanel();
+
+    /** Applies (and saves) a rendering quality: the distortion pedals already in the chain are rebuilt at the new
+        oversampling, keeping their knob values and bypass state. */
+    void applyRenderQuality (EffectRegistry::OversamplingQuality quality);
     void showPresetsPanel();
     void showPolyphonicTuner();
     std::unique_ptr<juce::XmlElement> buildPresetXml() const;

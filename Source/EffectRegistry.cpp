@@ -79,12 +79,32 @@ namespace
 
 namespace
 {
+    juce::File qualityFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("OpenGuitarMultiFx").getChildFile ("render_quality.txt");
+    }
+
+    /** "eco" / "normal" (also "balanced") / "high"; anything else (or an empty string) is not a choice. */
+    bool parseQuality (const juce::String& text, EffectRegistry::OversamplingQuality& out)
+    {
+        using Q = EffectRegistry::OversamplingQuality;
+        const auto t = text.trim().toLowerCase();
+        if (t == "eco") { out = Q::eco; return true; }
+        if (t == "normal" || t == "balanced") { out = Q::balanced; return true; }
+        if (t == "high") { out = Q::high; return true; }
+        return false;
+    }
+
     std::atomic<int>& qualityStorage()
     {
         static std::atomic<int> value = [] {
-            const juce::String env = juce::SystemStats::getEnvironmentVariable ("OGMFX_QUALITY", {}).toLowerCase();
             using Q = EffectRegistry::OversamplingQuality;
-            return (int) (env == "eco" ? Q::eco : (env == "high" ? Q::high : Q::balanced));
+            Q q = Q::eco; // eco unless the user chose otherwise
+            if (qualityFile().existsAsFile())
+                parseQuality (qualityFile().loadFileAsString(), q);
+            parseQuality (juce::SystemStats::getEnvironmentVariable ("OGMFX_QUALITY", {}), q); // development override
+            return (int) q;
         }();
         return value;
     }
@@ -92,6 +112,15 @@ namespace
 
 void EffectRegistry::setOversamplingQuality (OversamplingQuality quality) noexcept { qualityStorage().store ((int) quality); }
 EffectRegistry::OversamplingQuality EffectRegistry::getOversamplingQuality() noexcept { return (OversamplingQuality) qualityStorage().load(); }
+
+void EffectRegistry::saveOversamplingQuality()
+{
+    const char* names[] = { "eco", "normal", "high" };
+    qualityFile().getParentDirectory().createDirectory();
+    qualityFile().replaceWithText (names[(int) getOversamplingQuality()]);
+}
+
+bool EffectRegistry::dependsOnOversamplingQuality (const juce::String& key) const { return qualityDependentKeys.count (key) > 0; }
 
 void registerBuiltInEffects (EffectRegistry& registry)
 {
@@ -103,17 +132,24 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // Source/Effects/AGENTS.md's decision log and docs/circuits/
     // PositiveGroundBooster.md for the full circuit-fidelity rationale.
     registry.registerType ("PositiveGroundBooster", [] { return trimmed (std::make_unique<PositiveGroundBoosterProcessor>(), -3.2f); });
+    registry.markQualityDependent ("DS1StyleDistortion");
     registry.registerType ("DS1StyleDistortion", [] { return trimmed (oversampled<DS1StyleDistortionProcessor> (Orders { 0, 1, 2 }), 2.87f); });
-    registry.registerType ("OD1StyleOverdrive", [] { return trimmed (oversampled<OD1StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 8.11f); });
+    registry.markQualityDependent ("OD1StyleOverdrive");
+    registry.registerType ("OD1StyleOverdrive", [] { return trimmed (oversampled<OD1StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 0.79f); });
 
     // One class, three models (TS808/TS9/TS10 share one circuit, see
     // docs/circuits/TubeScreamerStyleOverdrive.md).
     using TSModel = TubeScreamerStyleOverdriveProcessor::Model;
+    registry.markQualityDependent ("TS808StyleOverdrive");
     registry.registerType ("TS808StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts808), 6.27f); });
+    registry.markQualityDependent ("TS9StyleOverdrive");
     registry.registerType ("TS9StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts9), 6.22f); });
+    registry.markQualityDependent ("HM2StyleDistortion");
     registry.registerType ("HM2StyleDistortion", [] { return trimmed (oversampled<HM2StyleDistortionProcessor> (Orders { 0, 1, 2 }), 6.3f); });
+    registry.markQualityDependent ("BD2StyleOverdrive");
     registry.registerType ("BD2StyleOverdrive", [] { return trimmed (oversampled<BD2StyleOverdriveProcessor> (Orders { 0, 1, 2 }), -10.66f); });
     registry.registerType ("CentaurStyleOverdrive", [] { return trimmed (std::make_unique<CentaurStyleOverdriveProcessor>(), -11.8f); });
+    registry.markQualityDependent ("TS10StyleOverdrive");
     registry.registerType ("TS10StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 6.9f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded

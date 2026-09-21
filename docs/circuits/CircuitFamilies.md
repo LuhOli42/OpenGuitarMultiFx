@@ -59,7 +59,7 @@ followers, same as every other family here.
 
 | Circuit | Processor | Devices | Notes |
 |---|---|---|---|
-| [OD-1-Style Overdrive](OD1StyleOverdrive.md) | `OD1StyleOverdriveProcessor` | 2x NPN, 2 ideal op-amps, one ASYMMETRIC diode pair (1 diode one way, 2 in series the other) | Op-amp 1 = the clipper (diodes across a Drive-pot-controlled feedback resistance); op-amp 2 = fixed-gain (unity) treble-cut buffer, fully linear/closed-form; only 2 real controls (Drive, Level) — no Tone stage, unlike the DS-1 |
+| [OD-1-Style Overdrive](OD1StyleOverdrive.md) | `OD1StyleOverdriveProcessor` | 2x NPN, 2 ideal op-amps (stage 1 NON-inverting, corrected 2026-09-20), one ASYMMETRIC diode pair (1 diode one way, 2 in series the other) | Op-amp 1 = the clipper (diodes across a Drive-pot-controlled feedback resistance); op-amp 2 = fixed-gain (unity) treble-cut buffer, fully linear/closed-form; only 2 real controls (Drive, Level) — no Tone stage, unlike the DS-1 |
 | [TS808 / TS9 / TS10-Style Overdrive](TubeScreamerStyleOverdrive.md) | `TubeScreamerStyleOverdriveProcessor` (one class, 3 registered models) | 2x NPN, 2 ideal op-amps, one SYMMETRIC diode pair (1 each way) + a 51 pF cap across it | Op-amp 1 = the non-inverting clipper (diodes + C4 across a Drive-controlled feedback resistance, 1D Newton-Raphson via `AsymmetricDiodePair` with 1/1 diodes); op-amp 2 = closed-form linear tone stage (passive lowpass + pot-controlled shunt); 3 controls (Drive, Tone, Level). TS808/TS9 differ only in two output resistors; the TS10 is modelled from a real schematic (higher Q1 bias, a 220 ohm before the op-amp bias node, extra coupling cap + JFET-bias loading after Level) |
 
 **Symmetric pairs (Tube Screamer family) reuse `AsymmetricDiodePair` with
