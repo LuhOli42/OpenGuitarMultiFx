@@ -31,6 +31,8 @@ ShimmerReverbProcessor::ShimmerReverbProcessor()
 
 void ShimmerReverbProcessor::prepare (double sampleRate, int, int)
 {
+    for (auto& m : wetMatch)
+        m.prepare (sampleRate, 0.8f);
     currentSampleRate = sampleRate;
 
     static constexpr float combTuningsMs[numCombs] = { 1116.0f / 44.1f, 1277.0f / 44.1f, 1422.0f / 44.1f, 1557.0f / 44.1f };
@@ -57,6 +59,8 @@ void ShimmerReverbProcessor::prepare (double sampleRate, int, int)
 
 void ShimmerReverbProcessor::reset()
 {
+    for (auto& m : wetMatch)
+        m.reset();
     for (auto& bank : combs)
         for (auto& c : bank)
             c.clear();
@@ -116,9 +120,13 @@ void ShimmerReverbProcessor::process (juce::AudioBuffer<float>& buffer)
             for (auto& a : allpassBank)
                 diffused = a.process (diffused);
 
-            data[i] = input * (1.0f - wet) + diffused * wet;
+            wetMatch[(size_t) ch].accumulate (input, diffused);
+            data[i] = input * (1.0f - wet) + diffused * wet * wetMatch[(size_t) ch].gain();
         }
     }
+
+    for (int ch = 0; ch < numChannels; ++ch)
+        wetMatch[(size_t) ch].endBlock (numSamples, 1);
 }
 
 void ShimmerReverbProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const

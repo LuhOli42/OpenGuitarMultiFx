@@ -3,6 +3,30 @@
 Display name **"BD-2-Style Overdrive"**. Runs on
 [`NodalCircuit`](./NodalCircuitSolver.md) — transistor level.
 
+## Reduced-order gain stages (2026-09-21): 7.4% -> 2.6% of a core
+The two discrete gain stages (JFET pair + PNP + Miller cap, ~5 Newton ports each) are macro-models by default
+(`BD2StyleOverdriveProcessor::reducedOrder`; `false` builds the transistor-level netlist, which the equivalence tests
+keep as the reference): a finite-gain op-amp (`NodalCircuit::addFiniteGainOpAmp`, including a common-mode term for the
+JFET pair with its 4.7k tail) -> a pole (R*C) -> a saturating follower (`addSaturatingOpAmp`, the output swing) -> the
+2.2k collector load in series with the node. Nothing in those two blocks is a Newton device any more; the clipper
+diodes are the only port left.
+* **How the constants were found.** Open loop of the transistor-level stage measured at 192 kHz with the feedback broken
+  (`Tests/ReductionProbe.cpp`, `REDUCTION_PROBE=1`): DC gain 244 (into 80k) = 251 unloaded, poles at 15.1 kHz (stage 1) and
+  7.6 kHz (stage 2). Then fitted by coordinate search against the WHOLE pedal's closed-loop small-signal response, full vs
+  macro, 4 Gain settings x 6 frequencies (cost 19 -> 1.8 dB^2 summed, rms 0.27 dB): gain x1.11, poles x0.72 / x0.65 (the
+  closed loop loads the stage more than the 80k), common mode 0.0228 (a CMRR of ~22: the input is common-mode too, since the
+  feedback holds the other gate at the same voltage). Output rails 0.05 / 8.0 V on the Thevenin source (fitted on chord
+  band shapes at Gain 0.15-0.9).
+* **Verification** (`Tests/ReducedOrderEquivalenceTests.cpp`, macro vs transistor-level, a decaying chord at 3 input levels x
+  3 Gain x 2 Tone): level within 0.27 dB, octave-band shape (bands holding more than -30 dB of the signal) within 0.81 dB,
+  small-signal response within 0.76 dB (60 Hz - 8 kHz, every Gain), stage-1 gain min 13.7x / max 98.9x (13.9 / 97.7 in the
+  full model). Bands 40-60 dB below the signal differ by up to 8 dB (harder knee than the class-A stage); not audible.
+* **Known difference**: a single-sample full-scale spike at Gain max comes out +3.4 dB louder than in the full model (peak 0.39 vs 0.27), and a 2 Hz
+  square wave at Gain max up to +0.3 dB: the macro has no limiting on the input pair (its differential drive is linear until the output
+  clips). Real guitar signals are band-limited and never do this; a digital source upstream could.
+* What is not reproduced: the soft, exponential knee of the class-A output stage (the macro clips harder), and the
+  input pair's own limiting when the loop is open.
+
 ## Cost simplification (2026-09-20)
 The three emitter/source followers (Q3 input buffer, Q7 gyrator buffer, Q1 output buffer)
 are ideal followers, the tail-pair JFETs with their drain on the rail (Q11, Q13) are

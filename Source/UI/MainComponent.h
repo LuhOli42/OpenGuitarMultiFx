@@ -9,7 +9,6 @@
 #include "PresetBadge.h"
 #include "../EffectRegistry.h"
 #include "../Engine/AudioEngine.h"
-#include "../Engine/TuningProfile.h"
 #include "../Presets/PresetManager.h"
 #include "../Tone3000/Tone3000Manager.h"
 
@@ -90,7 +89,7 @@ private:
         oversampling, keeping their knob values and bypass state. */
     void applyRenderQuality (EffectRegistry::OversamplingQuality quality);
     void showPresetsPanel();
-    void showPolyphonicTuner();
+    void showTuner();
     std::unique_ptr<juce::XmlElement> buildPresetXml() const;
     void applyPresetXml (const juce::XmlElement& xml);
     /** Saves under `name`, reusing its existing number if `name` is already a
@@ -273,12 +272,6 @@ private:
     // Tuner/BPM-tap-tempo/IN-OUT-meters bar, always pinned at the bottom --
     // see FooterBar.h. Visual placeholder only until Phase 5.
     FooterBar footerBar;
-
-    // What AudioEngine's PolyphonicPitchDetector is currently built for --
-    // loaded from disk at startup (tunings::loadSavedTuning()), kept here
-    // so showPolyphonicTuner() has something to hand the overlay without
-    // asking AudioEngine to reconstruct a TuningProfile from its bands.
-    TuningProfile currentTuning;
 
     ParameterPanel parameterPanel;
     PresetManager presets { getPresetsDirectory() };

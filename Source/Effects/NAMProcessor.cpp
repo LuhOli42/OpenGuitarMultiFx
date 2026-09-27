@@ -22,6 +22,15 @@ NAMProcessor::NAMProcessor (juce::String chainRoleName)
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "nam", name, "|", std::move (input), std::move (output));
 
+    // Page 2 of an amplifier: a behavioural supply sag (see SagEmulator.h). A pedal has no supply to droop.
+    if (! isPedalRole())
+    {
+        auto sagParam = std::make_unique<juce::AudioParameterFloat> (
+            "nam_sag", "Sag", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f);
+        sagAmount = sagParam.get();
+        parameters->addChild (std::make_unique<juce::AudioProcessorParameterGroup> ("nam_page2", "Page 2", "|", std::move (sagParam)));
+    }
+
     startTimer (100); // sweeps modelSlot -- see DeferredReclaimer
 }
 
@@ -56,6 +65,7 @@ void NAMProcessor::prepare (double newSampleRate, int maxBlockSize, int)
 
     inputScratch.assign ((size_t) maxBlockSize, 0.0f);
     outputScratch.assign ((size_t) maxBlockSize, 0.0f);
+    sag.prepare (newSampleRate);
 
     // A sample-rate/block-size change invalidates an already-Reset() model.
     // Reloading builds a fresh instance and swaps it in atomically, rather
@@ -89,6 +99,9 @@ void NAMProcessor::process (juce::AudioBuffer<float>& buffer)
     float* inPtrs[1] = { inputScratch.data() };
     float* outPtrs[1] = { outputScratch.data() };
     model->process (inPtrs, outPtrs, numSamples);
+
+    if (sagAmount != nullptr)
+        sag.process (outputScratch.data(), numSamples, sagAmount->get());
 
     // outputScratch * outGain is identical for every output channel -- scale
     // once into itself, then copy, instead of redoing the multiply per channel.

@@ -1,6 +1,8 @@
 #pragma once
+
 #include "EbersMollBJT.h"
 #include "ShichmanHodgesJFET.h"
+#include "TubeModels.h"
 
 #include <algorithm>
 #include <cmath>
@@ -66,7 +68,7 @@ namespace openguitarmultifx
 class NodalCircuit
 {
 public:
-    static constexpr int maxUnknowns = 24;
+    static constexpr int maxUnknowns = 32;
 
     using Node = int;
     static constexpr Node ground = 0;
@@ -80,9 +82,91 @@ public:
     static inline double defaultNodeTolerance = 1.0e-5;
     /** A Newton step whose largest port change is below this (V) is accepted without evaluating the devices again. */
     static inline double smallStepAccept = 5.0e-4;
+    /** Deadline mode. When a real-time caller sees that a block is running out of its time budget it switches the remaining samples to bounded work:
+        each sample then does at most `maxIterations` Newton iterations from the predicted start (and at most 10 + 20 in the two rescue attempts for a
+        singular sample), and if it has not converged the last iterate stands. The cost of a sample is bounded by construction, at the price of
+        an inexact sample in a passage that was already too hard to afford. 0 = off, the general solver. */
+    void setDeadlineMode (int maxIterations) noexcept { deadlineIterations = maxIterations; }
+    bool isDeadlineMode() const noexcept { return deadlineIterations > 0; }
+    long long getDeadlineSamples() const noexcept { return deadlineSamples; }
+    /** The circuit's memory and nothing else: capacitor and inductor state, the Newton warm-start history, the last excitation. Saving and restoring it
+        is a few hundred bytes and touches no parameter, so it does NOT invalidate the reduced model (a full copy of the circuit from a "rest" snapshot
+        also restores the resistances the knobs had at prepare(), and re-applying the knobs then rebuilds the model: milliseconds, on the audio thread, in the
+        block that is already in trouble). Used to recover from a lost operating point. */
+    struct DynamicState
+    {
+        static constexpr int maxPentodeSlots = 8;
+        double capV[32] {}, capI[32] {}, capIeq[32] {};
+        double uState[16] {}, uPrev[16] {}, uPrev2[16] {};
+        double Elast[48] {}, curLast[16] {};
+        double pentodeVgk[maxPentodeSlots] {}, pentodeVpk[maxPentodeSlots] {};
+        int satMode = 0, lastMode = 0;
+        bool valid = false;
+    };
+    void saveDynamicState (DynamicState& d) const noexcept
+    {
+        for (size_t c = 0; c < capacitors.size() && c < 32; ++c)
+        {
+            d.capV[c] = capacitors[c].vPrev;
+            d.capI[c] = capacitors[c].iPrev;
+            d.capIeq[c] = capacitors[c].ieq;
+        }
+        for (int j = 0; j < maxPortsV; ++j)
+        {
+            d.uState[j] = uState[j];
+            d.uPrev[j] = uStatePrev[j];
+            d.uPrev2[j] = uStatePrev2[j];
+        }
+        for (int e = 0; e < maxExcite; ++e)
+            d.Elast[e] = Elast[e];
+        for (int k = 0; k < maxPortsI; ++k)
+            d.curLast[k] = curLast[k];
+        for (size_t q = 0; q < pentodes.size() && q < (size_t) DynamicState::maxPentodeSlots; ++q)
+        {
+            d.pentodeVgk[q] = pentodes[q].lastVgk;
+            d.pentodeVpk[q] = pentodes[q].lastVpk;
+        }
+        d.satMode = satMode;
+        d.lastMode = lastMode;
+        d.valid = true;
+    }
+    void restoreDynamicState (const DynamicState& d) noexcept
+    {
+        if (! d.valid)
+            return;
+        for (size_t c = 0; c < capacitors.size() && c < 32; ++c)
+        {
+            capacitors[c].vPrev = d.capV[c];
+            capacitors[c].iPrev = d.capI[c];
+            capacitors[c].ieq = d.capIeq[c];
+        }
+        for (int j = 0; j < maxPortsV; ++j)
+        {
+            uState[j] = d.uState[j];
+            uStatePrev[j] = d.uPrev[j];
+            uStatePrev2[j] = d.uPrev2[j];
+        }
+        for (int e = 0; e < maxExcite; ++e)
+            Elast[e] = d.Elast[e];
+        for (int k = 0; k < maxPortsI; ++k)
+            curLast[k] = d.curLast[k];
+        for (size_t q = 0; q < pentodes.size() && q < (size_t) DynamicState::maxPentodeSlots; ++q)
+        {
+            pentodes[q].lastVgk = d.pentodeVgk[q];
+            pentodes[q].lastVpk = d.pentodeVpk[q];
+        }
+        satMode = d.satMode;
+        lastMode = d.lastMode;
+        consecutiveFailures = 0;
+    }
+    static inline double portResidualAccept = 30.0; // volts: the largest port-equation error a converged point may carry (garbage is hundreds; a real point is micro-volts)
     void setIntegrationTheta (double newTheta) noexcept { theta = newTheta; }
 
-    struct BjtParams { double Is, Vt, betaF, betaR; };
+    /** `tauF` (forward transit time, 1 / 2 pi fT), `cje` and `cjc` (junction capacitances, F) add the transistor's own
+        bandwidth: a base-emitter capacitance cje + tauF * gm (gm at the DC operating point) and a base-collector one (the Miller
+        capacitor). Zero = the ideal, infinite-bandwidth Ebers-Moll model. A germanium fuzz transistor has fT of a few hundred kHz
+        to 1 MHz (a beta corner at 5-15 kHz): leaving that out makes a modelled fuzz far brighter than the real one. */
+    struct BjtParams { double Is, Vt, betaF, betaR; double tauF = 0.0, cje = 0.0, cjc = 0.0; };
     struct JfetParams { double idss, pinchOff, lambda; };
 
     // ---- Construction (allocates; never call from the audio thread) ----
@@ -120,6 +204,54 @@ public:
     /** Ideal op-amp: drives `out` so that V(inPlus) == V(inMinus). */
     void addOpAmp (Node inPlus, Node inMinus, Node out) { opAmps.push_back ({ inPlus, inMinus, out, 0.0 }); }
 
+    /** Op-amp with a finite DC gain: V(out) = gain * (V(plus) - V(minus) - offset), still a constraint row (no extra
+        unknown, the output stays an ideal source). For the macro-model of a discrete op-amp whose open-loop gain is
+        a few hundred, where the ideal one would overstate the closed-loop gain by 40%. Combine with an RC and an
+        addSaturatingOpAmp() follower for its dominant pole and its output swing. */
+    void addFiniteGainOpAmp (Node inPlus, Node inMinus, Node out, double gain, double offset = 0.0, double commonMode = 0.0)
+    {
+        opAmps.push_back ({ inPlus, inMinus, out, offset, 1.0 / gain, commonMode });
+    }
+
+    /** A real op-amp as a macro-model: finite DC gain, a dominant pole set by the gain-bandwidth product, an output
+        resistance and an output swing that saturates against the rails. Built from addFiniteGainOpAmp() -> R*C ->
+        addSaturatingOpAmp() follower -> a series resistor into `out`; the block can hold only ONE (the saturating
+        follower), as addSaturatingOpAmp() says. The gain-bandwidth product is what sets a hard-driven stage's treble (a
+        741 at a gain of 200 has 5 kHz of bandwidth).
+
+        The integrator node (after the R*C) is clamped by a diode to each rail. Without that, a hard-driven stage winds it
+        up: the error between the inputs is ~1 V while the output sits on a rail, times an open-loop gain of 200 000, and
+        an integrator with a 5 Hz pole takes hundreds of microseconds to unwind when the input reverses -- the clipped
+        output came out a quarter of a cycle late (measured: 560 us at 440 Hz). A real op-amp's internal node is limited
+        by its own output stage; the two diodes limit it to ~0.6 V beyond the rails. Cost: two Newton ports.
+
+        Not modelled: slew rate (0.5 V/us of a 741, 13 V/us of a TL072 -- ten volts per sample at 48 kHz; the LM308 of
+        a RAT, at 0.3 V/us, is the one where it starts to matter), input-pair limiting, offset. */
+    struct OpAmpMacro
+    {
+        double dcGain = 2.0e5;      // open-loop gain at DC
+        double gainBandwidth = 1.0e6; // Hz
+        double outputOhms = 75.0;
+        double lowRail = 1.5, highRail = 7.5; // output swing (V): ~1.5 V short of each rail of a 9 V supply
+        double commonMode = 0.0;    // (1+cm) V+ - (1-cm) V- (see addFiniteGainOpAmp)
+        double offset = 0.0;        // input-referred offset (V): out = gain * (V+ - V- - offset)
+    };
+
+    void addOpAmpMacro (Node inPlus, Node inMinus, Node out, const OpAmpMacro& m)
+    {
+        const Node amp = addNode(), px = addNode(), ob = addNode(), hi = addNode(), lo = addNode();
+        const double pole = m.gainBandwidth / m.dcGain;
+        addFiniteGainOpAmp (inPlus, inMinus, amp, m.dcGain, m.offset, m.commonMode);
+        addResistor (amp, px, 1.0e6);
+        addCapacitor (px, ground, 1.0 / (2.0 * 3.14159265358979323846 * 1.0e6 * pole));
+        addSource (hi, m.highRail);
+        addSource (lo, m.lowRail);
+        addDiode (px, hi, 1.0e-9, 25.85e-3);
+        addDiode (lo, px, 1.0e-9, 25.85e-3);
+        addSaturatingOpAmp (px, ob, ob, { m.lowRail, m.highRail });
+        addResistor (ob, out, m.outputOhms);
+    }
+
     /** Emitter/source follower without the transistor: `out` = `in` - `drop` exactly, `in` draws no current. For a
         follower whose collector sits on a rail and whose job is to buffer (unity gain 0.95-0.99 in the real part, and
         nothing that clips) this is the same sound with no Newton port at all; the DC level shift is kept so the
@@ -150,14 +282,38 @@ public:
         opAmps.push_back ({ inPlus, inMinus, out, 0.0 });
     }
 
-    void addDiode (Node anode, Node cathode, double saturationCurrent, double nTimesVt)
+    /** `tauF` (forward transit time, s): the diode's own diffusion capacitance while it is conducting, Cd = tauF *
+        (dId/dVd), on top of a small fixed junction capacitance floor. Zero = the ideal, infinite-bandwidth Shockley
+        diode this project used everywhere before 2026-09-27. A small-signal switching diode's Cd is negligible at
+        the current a low-gain stage draws, but not at the peak current a hard clipper actually pushes through it --
+        see docs/circuits/ClipperRealism.md. Same mechanism as BjtParams::tauF/cje, one home (bjtDynamics's sibling,
+        diodeDynamics), so the two device families cannot drift apart. */
+    void addDiode (Node anode, Node cathode, double saturationCurrent, double nTimesVt, double tauF = 0.0)
     {
         diodes.push_back ({ anode, cathode, saturationCurrent, nTimesVt });
+        if (tauF > 0.0)
+            diodeDynamics.push_back ({ (int) diodes.size() - 1, addCapacitor (anode, cathode, 2.0e-12), tauF });
     }
 
     void addBjt (Node collector, Node base, Node emitter, bool pnp, const BjtParams& p)
     {
         Bjt q { collector, base, emitter, pnp, {} };
+        q.model.setParameters (p.Is, p.Vt, p.betaF, p.betaR);
+        bjts.push_back (q);
+        if (p.tauF > 0.0 || p.cje > 0.0)
+            bjtDynamics.push_back ({ (int) bjts.size() - 1, addCapacitor (base, emitter, p.cje + 1.0e-12), p.tauF, p.cje });
+        if (p.cjc > 0.0)
+            addCapacitor (base, collector, p.cjc);
+    }
+
+    /** A transistor as a ONE-port device (vbe only) whose collector current saturates smoothly at `saturationCurrent`
+        (the load line's limit, (rail - Vce(sat)) / (collector + emitter resistance)): the collector junction, which
+        would take a second Newton port, only ever matters as the point where a stage runs out of collector current, and
+        for a stage with a resistive load that point is known. Base current stays iC/beta of the UNSATURATED current
+        (no extra base current when the real transistor saturates); check that against the full model where it is used. */
+    void addBjtSaturating (Node collector, Node base, Node emitter, bool pnp, const BjtParams& p, double saturationCurrent)
+    {
+        Bjt q { collector, base, emitter, pnp, {}, saturationCurrent };
         q.model.setParameters (p.Is, p.Vt, p.betaF, p.betaR);
         bjts.push_back (q);
     }
@@ -171,6 +327,120 @@ public:
         j.model.setParameters (p.idss, p.pinchOff, p.lambda);
         jfets.push_back (j);
     }
+
+
+    /** Triode (Koren plate current + Dempwolf grid current): two ports, vgk and vpk. */
+    void addTriode (Node plate, Node grid, Node cathode, const KorenTriode::Parameters& p = {})
+    {
+        Triode t { plate, grid, cathode, {} };
+        t.model.setParameters (p);
+        triodes.push_back (t);
+    }
+
+    /** Beam tetrode / pentode with the screen NOT a circuit node: `screenVolts` is supplied by the caller and can be
+        changed per sample with setPentodeScreen() (supply sag, the drop across the screen resistor). Two ports, vgk
+        and vpk. Returns a handle. */
+    int addPentode (Node plate, Node grid, Node cathode, const KorenPentode::Parameters& p, double screenVolts)
+    {
+        Pentode t { plate, grid, cathode, {}, screenVolts, 0.0 };
+        t.model.setParameters (p);
+        t.vg2Pow = t.model.screenFactor (screenVolts);
+        pentodes.push_back (t);
+        return (int) pentodes.size() - 1;
+    }
+
+    void setPentodeScreen (int handle, double volts) noexcept
+    {
+        auto& t = pentodes[(size_t) handle];
+        t.vg2 = volts;
+        t.vg2Pow = t.model.screenFactor (volts);
+    }
+
+    /** Plate and screen current of a pentode at the last solved sample, from the converged port currents (cheap: no
+        model evaluation beyond one arctan). */
+    void pentodeCurrents (int handle, double& ip, double& ig2) const noexcept
+    {
+        const auto& t = pentodes[(size_t) handle];
+        const auto& q = t.model.parameters();
+        ip = curLast[t.portI0];
+        const double f = 1.0 + q.lambda * (t.lastVpk - q.vRef);
+        const double at = std::atan (t.lastVpk / q.kvb);
+        ig2 = at * f > 1.0e-6 ? ip * q.kg1 / (2.0 * q.kg2 * at * f) : 0.0;
+    }
+
+    /** Plate current of a pentode at the last solved operating point. */
+    double pentodePlateCurrent (int handle) const noexcept
+    {
+        const auto& t = pentodes[(size_t) handle];
+        return t.model.evaluate (t.lastVgk, t.lastVpk, t.vg2).ip;
+    }
+
+    /** Screen current of a pentode at the last solved operating point. */
+    double pentodeScreenCurrent (int handle) const noexcept
+    {
+        const auto& t = pentodes[(size_t) handle];
+        return t.model.evaluate (t.lastVgk, 100.0, t.vg2).ig2;
+    }
+
+    /** Group of magnetically coupled windings. `windings[i]` is the node pair (a, b) winding i sits between (current
+        flows a -> b); `inductance` is the row-major n x n matrix of self (diagonal) and mutual inductances in henries.
+        The winding resistances are separate resistors. Each winding is one entry of the capacitors' folded state.
+        Returns the index of the first winding's state (so the currents can be read with windingCurrent()). */
+    int addCoupledInductors (const std::vector<std::pair<Node, Node>>& windings, const std::vector<double>& inductance)
+    {
+        const int n = (int) windings.size();
+        InductorGroup grp;
+        grp.first = (int) capacitors.size();
+        grp.n = n;
+        grp.inverse = invertMatrix (inductance, n);
+        for (int i = 0; i < n; ++i)
+        {
+            Cap c { windings[(size_t) i].first, windings[(size_t) i].second, 0.0, 0.0, 0.0, 0.0, 0.0, -1, -1 };
+            c.group = (int) inductorGroups.size();
+            capacitors.push_back (c);
+        }
+        inductorGroups.push_back (grp);
+        return grp.first;
+    }
+
+    /** Changes a capacitor's value while running (no allocation). The stored charge is kept as a voltage, so a change
+        while signal is flowing clicks a little: meant for rare switch-like controls (a speaker selector). */
+    void setCapacitance (int handle, double farads) noexcept
+    {
+        auto& c = capacitors[(size_t) handle];
+        c.farads = farads;
+        c.g = farads * sampleRate / theta;
+        matrixDirty = true;
+        modelsDirty = true;
+    }
+
+    /** The inverse of an inductance matrix, for setInductorInverse() -- computed off the audio thread. */
+    static std::vector<double> inverseInductance (const std::vector<double>& inductance, int n) { return invertMatrix (inductance, n); }
+
+    /** Replaces a coupled-inductor group's inverse inductance (same size as when it was added); allocation-free. */
+    void setInductorInverse (int firstState, const std::vector<double>& inverse) noexcept
+    {
+        for (auto& grp : inductorGroups)
+            if (grp.first == firstState && grp.inverse.size() == inverse.size())
+            {
+                std::copy (inverse.begin(), inverse.end(), grp.inverse.begin());
+                matrixDirty = true;
+                modelsDirty = true;
+                return;
+            }
+    }
+
+    /** Current through winding `state` (as returned by addCoupledInductors, plus the winding's position). */
+    double windingCurrent (int state) const noexcept { return capacitors[(size_t) state].iPrev; }
+
+    /** A source that injects `amps` into `node` (a load draws a negative value); the node stays an unknown.
+        Returns a handle for setCurrentSource(). */
+    int addCurrentSource (Node node, double amps = 0.0)
+    {
+        sources.push_back ({ node, amps, true });
+        return (int) sources.size() - 1;
+    }
+    void setCurrentSource (int handle, double amps) noexcept { sources[(size_t) handle].volts = amps; }
 
     /** Optional starting point for the DC solve (defaults to 0 V). */
     void setInitialGuess (Node node, double volts)
@@ -195,6 +465,8 @@ public:
         known[0] = true;
         for (const auto& s : sources)
         {
+            if (s.current)
+                continue;
             known[(size_t) s.node] = true;
             knownVoltage[(size_t) s.node] = s.volts;
         }
@@ -207,7 +479,7 @@ public:
 
         if (unknownCount > maxUnknowns)
             return false; // netlist too large for one block -- split it, see the class doc
-        if ((int) (diodes.size() + 2 * bjts.size() + 2 * jfets.size()) > maxPortsV)
+        if ((int) (diodes.size() + 2 * bjts.size() + 2 * jfets.size() + 2 * triodes.size() + 2 * pentodes.size()) > maxPortsV)
             return false; // too many nonlinear devices for one block
 
         isOpAmpRow.assign ((size_t) unknownCount, false);
@@ -230,7 +502,7 @@ public:
             const auto& o = opAmps[oi];
             const int r = indexOf[(size_t) o.out];
             if (r >= 0)
-                opTerms.push_back ({ r, o.plus, o.minus, (int) oi == satOpIndex, o.offset });
+                opTerms.push_back ({ r, o.plus, o.minus, (int) oi == satOpIndex, o.offset, o.cm });
         }
         satMode = 0;
         if ((int) capacitors.size() > maxCaps || (int) (capacitors.size() + sources.size()) + 1 > maxExcite)
@@ -240,7 +512,8 @@ public:
         useX = true;
         sourceOfNode.assign ((size_t) nodeCount + 1, -1);
         for (size_t h = 0; h < sources.size(); ++h)
-            sourceOfNode[(size_t) sources[h].node] = (int) h;
+            if (! sources[h].current)
+                sourceOfNode[(size_t) sources[h].node] = (int) h;
 
         x.assign ((size_t) unknownCount, 0.0);
         for (int n = 1; n <= nodeCount; ++n)
@@ -262,11 +535,30 @@ public:
             ok = solveDc();
         }
 
+        // The transistors' base-emitter capacitances follow their DC gm (diffusion capacitance = tauF * gm).
+        for (const auto& d : bjtDynamics)
+        {
+            const auto& q = bjts[(size_t) d.bjt];
+            const double sign = q.pnp ? -1.0 : 1.0;
+            const auto op = q.model.evaluate (sign * voltage (q.b), sign * voltage (q.e), sign * voltage (q.c));
+            capacitors[(size_t) d.capBe].farads = d.cje + d.tauF * std::abs (op.diC_dvbe);
+        }
+
+        // Same mechanism, for diodes: Cd = tauF * dId/dVd = tauF * Is/nVt * exp(Vd/nVt) while forward biased.
+        for (const auto& d : diodeDynamics)
+        {
+            const auto& dio = diodes[(size_t) d.diode];
+            const double vd = voltage (dio.a) - voltage (dio.k);
+            const double gd = dio.Is / dio.nVt * std::exp (std::clamp (vd / dio.nVt, -40.0, 40.0));
+            capacitors[(size_t) d.cap].farads = 2.0e-12 + d.tauF * gd;
+        }
+
         for (auto& c : capacitors)
         {
             c.g = c.farads * sampleRate / theta;
             c.vPrev = voltage (c.a) - voltage (c.b);
-            c.iPrev = 0.0;
+            if (c.group < 0)
+                c.iPrev = 0.0;
         }
         beDt = 0.0;
         matrixDirty = true;
@@ -284,7 +576,7 @@ public:
     {
         sources[(size_t) handle].volts = volts;
         const auto n = (size_t) sources[(size_t) handle].node;
-        if (n < knownVoltage.size()) // before prepare() only the stored value matters
+        if (n < knownVoltage.size() && ! sources[(size_t) handle].current) // before prepare() only the stored value matters
             knownVoltage[n] = volts;
     }
 
@@ -326,6 +618,15 @@ public:
             cap.ieq = cap.g * cap.vPrev + ieqHistoryWeight * cap.iPrev;
             E[c] = cap.ieq;
         }
+        for (const auto& grp : inductorGroups)
+            for (int i = 0; i < grp.n; ++i)
+            {
+                double hist = capacitors[(size_t) (grp.first + i)].iPrev;
+                for (int j = 0; j < grp.n; ++j)
+                    hist += ieqHistoryWeight * inductorConductance (grp, i, j) * capacitors[(size_t) (grp.first + j)].vPrev;
+                capacitors[(size_t) (grp.first + i)].ieq = -hist;
+                E[grp.first + i] = -hist;
+            }
         for (int h = 0; h < nsrc; ++h)
             E[ns + h] = sources[(size_t) h].volts;
         E[m - 1] = 1.0;
@@ -374,7 +675,21 @@ public:
             cap.iPrev = cap.g * v - cap.ieq;
             cap.vPrev = v;
         }
+        for (const auto& grp : inductorGroups)
+            for (int i = 0; i < grp.n; ++i)
+            {
+                double amps = -capacitors[(size_t) (grp.first + i)].ieq;
+                for (int j = 0; j < grp.n; ++j)
+                    amps += inductorConductance (grp, i, j) * capacitors[(size_t) (grp.first + j)].vPrev;
+                capacitors[(size_t) (grp.first + i)].iPrev = amps;
+            }
 
+        for (const auto& dm : deviceMaps)
+            if (dm.kind == 8)
+                {
+                pentodes[(size_t) dm.index].lastVgk = uState[dm.v0];
+                pentodes[(size_t) dm.index].lastVpk = uState[dm.v0 + 1];
+            }
         for (int e = 0; e < m; ++e)
             Elast[e] = E[e];
         for (int k = 0; k < ni; ++k)
@@ -403,15 +718,20 @@ public:
 
     /** Newton iterations per solved sample so far (diagnostic). */
     double averageIterations() const noexcept { return samplesSolved > 0 ? (double) iterationsTotal / (double) samplesSolved : 0.0; }
+    /** Iterations the last solveSample() actually took (diagnostic: finding where a rare expensive sample's cost really goes). */
+    int lastIterations() const noexcept { return iterationsThisSolve; }
 
 private:
     struct Res { Node a, b; double g; };
-    struct Cap { Node a, b; double farads, g, vPrev, iPrev, ieq; int ia = -1, ib = -1; };
-    struct Src { Node node; double volts; };
-    struct Op { Node plus, minus, out; double offset; }; // V(plus) - V(minus) = offset
+    struct Cap { Node a, b; double farads, g, vPrev, iPrev, ieq; int ia = -1, ib = -1; int group = -1; };
+    struct InductorGroup { int first = 0, n = 0; std::vector<double> inverse; }; // inverse inductance matrix, row-major
+    struct Src { Node node; double volts; bool current = false; };
+    struct Op { Node plus, minus, out; double offset; double invGain = 0.0, cm = 0.0; }; // (1+cm) V(plus) - (1-cm) V(minus) - invGain V(out) = offset
     struct Dio { Node a, k; double Is, nVt; };
-    struct Bjt { Node c, b, e; bool pnp; EbersMollBJT model; };
+    struct Bjt { Node c, b, e; bool pnp; EbersMollBJT model; double iSat = 0.0; };
     struct Jfet { Node d, g, s; ShichmanHodgesJFET model; double assumedVds = 0.0; };
+    struct Triode { Node p, g, k; KorenTriode model; };
+    struct Pentode { Node p, g, k; KorenPentode model; double vg2 = 0.0, vg2Pow = 0.0; double lastVgk = 0.0, lastVpk = 0.0; int portI0 = 0; };
 
     // -- element storage --
     std::vector<Res> resistors;
@@ -419,8 +739,15 @@ private:
     std::vector<Src> sources;
     std::vector<Op> opAmps;
     std::vector<Dio> diodes;
+    struct BjtDynamics { int bjt; int capBe; double tauF, cje; };
+    std::vector<BjtDynamics> bjtDynamics;
+    struct DiodeDynamics { int diode; int cap; double tauF; };
+    std::vector<DiodeDynamics> diodeDynamics;
     std::vector<Bjt> bjts;
     std::vector<Jfet> jfets;
+    std::vector<Triode> triodes;
+    std::vector<Pentode> pentodes;
+    std::vector<InductorGroup> inductorGroups;
     std::vector<std::pair<int, int>> diodePairs; // built by buildPorts(): indices of the two antiparallel diodes
     std::vector<double> guess;
 
@@ -444,12 +771,17 @@ private:
     bool matrixDirty = true;
     bool dcMode = false;
     long long iterationsTotal = 0, samplesSolved = 0;
+    int iterationsThisSolve = 0;
+    int deadlineIterations = 0;                  // see setDeadlineMode()
+    long long deadlineSamples = 0;               // samples solved in deadline mode
+    int consecutiveFailures = 0;                 // see newtonPorts(): stops the fallback modes burning time in a runaway
+    static constexpr int failureStreakBeforeGivingUp = 2;
     double theta = defaultTheta;
     double beDt = 0.0; // > 0 only during the pseudo-transient DC relaxation (backward Euler with this step)
 
     struct KnownTerm { int row; Node knownNode; double g; };
     std::vector<KnownTerm> knownTerms; // g * V(known) added to rhs rows, for elements touching a rail/input
-    struct OpTerm { int row; Node plus, minus; bool saturating; double offset; };
+    struct OpTerm { int row; Node plus, minus; bool saturating; double offset; double cm = 0.0; };
     std::vector<OpTerm> opTerms;
 
     // -- reduced (DK-method) transient solver state --
@@ -497,11 +829,13 @@ private:
     double K[maxPortsV][maxPortsI] {};         // P_j . W_k
     double uState[maxPortsV] {};               // last converged port voltages (Newton warm start)
     double uStatePrev[maxPortsV] {};           // the one before (for the linear-extrapolation predictor)
+    double uStatePrev2[maxPortsV] {};          // and the one before that (quadratic predictor for the tube ports)
     double nodeTolerance = defaultNodeTolerance;             // Newton stops when the leftover node error is below this (V)
     static inline double predictWeight = 1.0;
     static inline bool predictorEnabled = true;
     struct JunctionInfo { bool isJunction; double vt, vcrit; bool pair = false; double vt2 = 0.0, vcrit2 = 0.0; }; // pair: antiparallel diodes, forward limits on both sides
     JunctionInfo junction[maxPortsV] {};       // per voltage port: p-n junction limiting data (SPICE pnjlim)
+    double portLimit[maxPortsV] {};            // largest Newton step (V) a port may take in one iteration (1 V; a tube's plate 40 V)
     double xLinear[maxUnknowns] {};
 #ifdef NODAL_DEBUG
     double dbgTrace[100][12] {};
@@ -569,7 +903,7 @@ private:
             return satSpec.lowRail;
         const double kp = (o.plus > 0 && indexOf[(size_t) o.plus] < 0) ? knownVoltage[(size_t) o.plus] : 0.0;
         const double km = (o.minus > 0 && indexOf[(size_t) o.minus] < 0) ? knownVoltage[(size_t) o.minus] : 0.0;
-        return o.offset - (kp - km);
+        return o.offset - ((1.0 + o.cm) * kp - (1.0 - o.cm) * km);
     }
 
     void constraintRhs (const Op& o, double* rhs) const noexcept
@@ -579,7 +913,114 @@ private:
             return;
         const double kp = (o.plus > 0 && indexOf[(size_t) o.plus] < 0) ? knownVoltage[(size_t) o.plus] : 0.0;
         const double km = (o.minus > 0 && indexOf[(size_t) o.minus] < 0) ? knownVoltage[(size_t) o.minus] : 0.0;
-        rhs[r] = o.offset - (kp - km);
+        rhs[r] = o.offset - ((1.0 + o.cm) * kp - (1.0 - o.cm) * km);
+    }
+
+
+    // ---------------------------------------------------------------- inductors
+
+    /** Conductance-like coefficient of the trapezoidal (or, during the DC relaxation, backward-Euler) companion model
+        of a coupled-inductor group: i = G v + history, G = h * L^-1 with h = theta / fs (or the BE step). */
+    /** During the DC solution a winding is a wire: a stiff conductance whose current is the winding's DC current. */
+    static constexpr double inductorShortG = 1.0e4;
+
+    double inductorConductance (const InductorGroup& grp, int i, int j) const noexcept
+    {
+        const double h = beDt > 0.0 ? beDt : theta / sampleRate;
+        return h * grp.inverse[(size_t) (i * grp.n + j)];
+    }
+
+    static std::vector<double> invertMatrix (const std::vector<double>& m, int n)
+    {
+        std::vector<double> a = m, inv ((size_t) n * (size_t) n, 0.0);
+        for (int i = 0; i < n; ++i)
+            inv[(size_t) (i * n + i)] = 1.0;
+        for (int col = 0; col < n; ++col)
+        {
+            int best = col;
+            for (int r = col + 1; r < n; ++r)
+                if (std::abs (a[(size_t) (r * n + col)]) > std::abs (a[(size_t) (best * n + col)]))
+                    best = r;
+            for (int c = 0; c < n; ++c)
+            {
+                std::swap (a[(size_t) (col * n + c)], a[(size_t) (best * n + c)]);
+                std::swap (inv[(size_t) (col * n + c)], inv[(size_t) (best * n + c)]);
+            }
+            const double d = 1.0 / a[(size_t) (col * n + col)];
+            for (int c = 0; c < n; ++c)
+            {
+                a[(size_t) (col * n + c)] *= d;
+                inv[(size_t) (col * n + c)] *= d;
+            }
+            for (int r = 0; r < n; ++r)
+            {
+                if (r == col)
+                    continue;
+                const double f = a[(size_t) (r * n + col)];
+                for (int c = 0; c < n; ++c)
+                {
+                    a[(size_t) (r * n + c)] -= f * a[(size_t) (col * n + c)];
+                    inv[(size_t) (r * n + c)] -= f * inv[(size_t) (col * n + c)];
+                }
+            }
+        }
+        return inv;
+    }
+
+    void stampInductors (bool includeCaps) noexcept
+    {
+        double dummy[maxUnknowns] {};
+        for (const auto& grp : inductorGroups)
+            for (int i = 0; i < grp.n; ++i)
+            {
+                const auto& wi = capacitors[(size_t) (grp.first + i)];
+                if (! includeCaps || beDt > 0.0)
+                {
+                    stampConductance (wi.a, wi.b, inductorShortG, linearMatrix); // DC: a winding is a wire
+                    continue;
+                }
+                for (int j = 0; j < grp.n; ++j)
+                {
+                    const auto& wj = capacitors[(size_t) (grp.first + j)];
+                    const double g = inductorConductance (grp, i, j);
+                    addCoeff (wi.a, wj.a, g, linearMatrix, dummy);
+                    addCoeff (wi.a, wj.b, -g, linearMatrix, dummy);
+                    addCoeff (wi.b, wj.a, -g, linearMatrix, dummy);
+                    addCoeff (wi.b, wj.b, g, linearMatrix, dummy);
+                }
+            }
+    }
+
+    void registerInductorKnownTerms (bool includeCaps)
+    {
+        auto add = [this] (Node row, Node col, double coeff)
+        {
+            const int r = row <= 0 ? -1 : indexOf[(size_t) row];
+            if (r < 0 || isOpAmpRow[(size_t) r])
+                return;
+            if (col > 0 && indexOf[(size_t) col] < 0)
+                knownTerms.push_back ({ r, col, -coeff });
+        };
+        for (const auto& grp : inductorGroups)
+            for (int i = 0; i < grp.n; ++i)
+            {
+                const auto& wi = capacitors[(size_t) (grp.first + i)];
+                if (! includeCaps || beDt > 0.0)
+                {
+                    add (wi.a, wi.b, -inductorShortG);
+                    add (wi.b, wi.a, -inductorShortG);
+                    continue;
+                }
+                for (int j = 0; j < grp.n; ++j)
+                {
+                    const auto& wj = capacitors[(size_t) (grp.first + j)];
+                    const double g = inductorConductance (grp, i, j);
+                    add (wi.a, wj.a, g);
+                    add (wi.a, wj.b, -g);
+                    add (wi.b, wj.a, -g);
+                    add (wi.b, wj.b, g);
+                }
+            }
     }
 
     void rebuildLinearMatrix (bool includeCaps) noexcept
@@ -593,7 +1034,9 @@ private:
 
         if (includeCaps)
             for (const auto& c : capacitors)
-                stampConductance (c.a, c.b, c.g, linearMatrix);
+                if (c.group < 0)
+                    stampConductance (c.a, c.b, c.g, linearMatrix);
+        stampInductors (includeCaps);
 
         // gmin from every unknown node to ground keeps nodes that only
         // connect through capacitors (or float in DC) well-posed.
@@ -614,8 +1057,9 @@ private:
                 linearMatrix[r][r] = 1.0; // held at a rail: V(out) = rail, the constraint is dropped
                 continue;
             }
-            if (ip >= 0) linearMatrix[r][ip] += 1.0;
-            if (im >= 0) linearMatrix[r][im] -= 1.0;
+            if (ip >= 0) linearMatrix[r][ip] += 1.0 + o.cm;
+            if (im >= 0) linearMatrix[r][im] -= 1.0 - o.cm;
+            linearMatrix[r][r] -= o.invGain;
         }
 
         knownTerms.clear();
@@ -632,7 +1076,9 @@ private:
             addKnown (r.a, r.b, r.g);
         if (includeCaps)
             for (const auto& c : capacitors)
-                addKnown (c.a, c.b, c.g);
+                if (c.group < 0)
+                    addKnown (c.a, c.b, c.g);
+        registerInductorKnownTerms (includeCaps);
 
         matrixDirty = false;
         matrixHasCaps = includeCaps;
@@ -719,9 +1165,34 @@ private:
             stampDevice<3> (nodes, i0, J, v0);
         }
 
+        // Tubes (terminal order p, g, k; the cathode current is the sum of plate and grid currents).
+        auto stampTube = [&] (Node p, Node g, Node k, double ip, double dip_dvgk, double dip_dvpk, double ig, double dig_dvgk)
+        {
+            const double vp = vAt (p, xv), vg = vAt (g, xv), vk = vAt (k, xv);
+            // d/dvp = d/dvpk, d/dvg = d/dvgk, d/dvk = -(both)
+            const double J[3][3] = {
+                { dip_dvpk, dip_dvgk, -dip_dvpk - dip_dvgk },
+                { 0.0, dig_dvgk, -dig_dvgk },
+                { -dip_dvpk, -dip_dvgk - dig_dvgk, dip_dvpk + dip_dvgk + dig_dvgk }
+            };
+            const double i0[3] = { ip, ig, -ip - ig };
+            const Node nodes[3] = { p, g, k };
+            const double v0[3] = { vp, vg, vk };
+            stampDevice<3> (nodes, i0, J, v0);
+        };
+        for (auto& t : triodes)
+        {
+            const auto op = t.model.evaluate (vAt (t.g, xv) - vAt (t.k, xv), vAt (t.p, xv) - vAt (t.k, xv));
+            stampTube (t.p, t.g, t.k, op.ip, op.dip_dvgk, op.dip_dvpk, op.ig, op.dig_dvgk);
+        }
+        for (auto& t : pentodes)
+        {
+            const auto op = t.model.evaluate (vAt (t.g, xv) - vAt (t.k, xv), vAt (t.p, xv) - vAt (t.k, xv), t.vg2);
+            stampTube (t.p, t.g, t.k, op.ip, op.dip_dvgk, op.dip_dvpk, op.ig, op.dig_dvgk);
+        }
     }
 
-    bool hasNonlinear() const noexcept { return ! diodes.empty() || ! bjts.empty() || ! jfets.empty(); }
+    bool hasNonlinear() const noexcept { return ! diodes.empty() || ! bjts.empty() || ! jfets.empty() || ! triodes.empty() || ! pentodes.empty(); }
 
     // ---------------------------------------------------------------- solve
 
@@ -1017,6 +1488,16 @@ private:
             else if (e < ns + nsrc)
             {
                 const Node sn = sources[(size_t) (e - ns)].node;
+                if (sources[(size_t) (e - ns)].current)
+                {
+                    const int r = indexOf[(size_t) sn];
+                    if (r >= 0 && ! isOpAmpRow[(size_t) r])
+                        col[r] += 1.0;
+                    luBackSubstitute (col);
+                    for (int i = 0; i < n; ++i)
+                        mo.Hx[i][e] = col[i];
+                    continue;
+                }
                 for (const auto& t : knownTerms)
                     if (t.knownNode == sn)
                         col[t.row] += t.g;
@@ -1025,9 +1506,9 @@ private:
                     if (o.saturating && mode != 0)
                         continue; // held at a rail: the row no longer refers to its inputs
                     if (o.plus == sn && indexOf[(size_t) o.plus] < 0)
-                        col[o.row] -= 1.0;
+                        col[o.row] -= 1.0 + o.cm;
                     if (o.minus == sn && indexOf[(size_t) o.minus] < 0)
-                        col[o.row] += 1.0;
+                        col[o.row] += 1.0 - o.cm;
                 }
             }
             else
@@ -1091,6 +1572,8 @@ private:
         deviceMaps.clear();
         for (auto& j : junction)
             j = { false, 0.0, 0.0 };
+        for (auto& l : portLimit)
+            l = 1.0;
         diodePairs.clear();
 
         auto addJunction = [this] (double Is, double vt)
@@ -1140,7 +1623,7 @@ private:
 
             // An emitter follower (or any transistor whose collector sits on a fixed rail) never forward-biases its
             // collector junction, whose current is ~1e-15 A: it is a one-port device (vbe). Same answer, one port fewer.
-            const bool collectorFixed = q.c <= 0 || indexOf[(size_t) q.c] < 0;
+            const bool collectorFixed = q.iSat > 0.0 || q.c <= 0 || indexOf[(size_t) q.c] < 0;
             if (collectorFixed)
             {
                 deviceMaps.push_back ({ 4, (int) voltagePorts.size(), (int) currentPorts.size(), (int) i, 1, 2 });
@@ -1199,6 +1682,29 @@ private:
             voltagePorts.push_back ({ j.d, j.s }); // vds
             currentPorts.push_back ({ j.d, j.s, 1.0 }); // iD
         }
+
+        // Tubes: ports vgk and vpk, currents ip (plate -> cathode) and ig (grid -> cathode). The plate port swings
+        // by tens of volts per sample in a power stage, so its Newton step may be far larger than a junction's.
+        auto addTube = [this] (int kind, size_t index, Node p, Node g, Node k)
+        {
+            if (kind == 8)
+                pentodes[index].portI0 = (int) currentPorts.size();
+            deviceMaps.push_back ({ kind, (int) voltagePorts.size(), (int) currentPorts.size(), (int) index, 2, 2 });
+            const size_t vp = voltagePorts.size();
+            voltagePorts.push_back ({ g, k });
+            voltagePorts.push_back ({ p, k });
+            if (vp + 1 < (size_t) maxPortsV)
+            {
+                portLimit[vp] = 10.0; // grid current is a power law above the knee, not an exponential: no overshoot to fear
+                portLimit[vp + 1] = 40.0;
+            }
+            currentPorts.push_back ({ p, k, 1.0 });
+            currentPorts.push_back ({ g, k, 1.0 });
+        };
+        for (size_t i = 0; i < triodes.size(); ++i)
+            addTube (7, i, triodes[i].p, triodes[i].g, triodes[i].k);
+        for (size_t i = 0; i < pentodes.size(); ++i)
+            addTube (8, i, pentodes[i].p, pentodes[i].g, pentodes[i].k);
 
     }
 
@@ -1335,7 +1841,52 @@ private:
     /** Newton-Raphson over the device port voltages. `u0` is the no-device response of the ports; `Wm`/`Km` are the
         node-response and port-coupling matrices of the active mode. Leaves the converged currents in `curOut` (the
         node vector is x = x_linear - W^T cur) and the port voltages in `uState`. */
+    /** Newton over the ports, with fallbacks: the predicted start first (cheap, almost always right), then, if that
+        fails, the last converged point without extrapolation, then that with small steps. A hard-driven tube stage
+        can make the extrapolation overshoot into a region the iteration cannot come back from. */
     bool newtonPorts (const double* u0, const double (*Wm)[maxUnknowns], const double (*Km)[maxPortsI], double* curOut) noexcept
+    {
+        if (deadlineIterations > 0)
+        {
+            ++deadlineSamples;
+            if (newtonPortsFrom (u0, Wm, Km, curOut, 0) || newtonPortsFrom (u0, Wm, Km, curOut, 1) || newtonPortsFrom (u0, Wm, Km, curOut, 2))
+                return true;
+            return false;
+        }
+        if (newtonPortsFrom (u0, Wm, Km, curOut, 0))
+        {
+            consecutiveFailures = 0;
+            return true;
+        }
+
+        ++consecutiveFailures;
+        const bool streakRunaway = consecutiveFailures > failureStreakBeforeGivingUp;
+
+        // Mode 1 (retry from the last converged point, full-size steps) only rescues an OCCASIONAL sample whose
+        // predicted start was bad. Once several samples in a row have failed it rescues nothing -- it just burns 100
+        // more iterations per sample, on the audio thread, exactly when the circuit is being driven hardest. Measured
+        // on a distortion pedal at full gain into the Bassman: a burst of ~48 failing samples cost 13 ms in one 2.67 ms
+        // block (a dropout, and a CPU meter reading ~500%). Skipped once the failures are consecutive.
+        if (! streakRunaway && newtonPortsFrom (u0, Wm, Km, curOut, 1))
+        {
+            consecutiveFailures = 0;
+            return true;
+        }
+
+        // Mode 2 (last resort, quarter steps) is tried EVEN IN A STREAK, unlike mode 1 above: its own iteration budget
+        // is now evidence-gated (see the stall check inside newtonPortsFrom), so a genuinely stuck sample still bails
+        // out in about the same time as before, but a sample that is merely FAR from its last converged state -- which
+        // is exactly what a sustained streak under extreme, sustained drive is -- gets the room it actually needs to
+        // finish the walk instead of being refused a try at all. See docs/circuits/Bassman5F6A.md.
+        if (newtonPortsFrom (u0, Wm, Km, curOut, 2))
+        {
+            consecutiveFailures = 0;
+            return true;
+        }
+        return false;
+    }
+
+    bool newtonPortsFrom (const double* u0, const double (*Wm)[maxUnknowns], const double (*Km)[maxPortsI], double* curOut, int mode) noexcept
     {
         const int nv = (int) voltagePorts.size();
         const int ni = (int) currentPorts.size();
@@ -1343,11 +1894,12 @@ private:
         if (nv == 0)
             return true;
 
+        const double limitScale = mode == 2 ? 0.25 : 1.0;
         double u[maxPortsV];
         for (int j = 0; j < nv; ++j)
         {
             u[j] = uState[j];
-            if (predictorEnabled)
+            if (predictorEnabled && mode == 0)
             {
                 // Warm start along the port voltage's recent trajectory; a junction is held to the same
                 // logarithmic limit the Newton steps obey, so a fast edge cannot throw the start into an
@@ -1362,6 +1914,7 @@ private:
             }
         }
 
+        iterationsThisSolve = 0;
         double cur[maxPortsI], curNext[maxPortsI];
         bool converged = false;
         double previousStep = 1.0e9;
@@ -1371,13 +1924,55 @@ private:
         ++samplesSolved;
         evaluateDevices (u, cur, Dnow);
 
-        for (int iter = 0; iter < 100 && ! converged; ++iter)
+        // mode 2 (the last-resort quarter-step fallback) gets a much larger SAFETY ceiling, but only ever USES it when
+        // the extra iterations are provably not wasted: past the original 100, every 100 iterations checks whether the
+        // pre-limit Newton step (maxStepThisSolve below) has shrunk by at least 2%, and gives up the moment it hasn't.
+        //
+        // Why: a sample whose forcing changed by hundreds of volts in one 20 us step (measured on the Bassman driven by
+        // Volume Normal/Bright and Power Drive all at once, `docs/circuits/Bassman5F6A.md`) makes Newton's per-port step
+        // limiter (10 V grid / 40 V plate, a quarter of that in mode 2) the bottleneck, not the algorithm: a logged trace
+        // showed it creeping toward the true answer at a small, fixed volts/iteration and simply running out of
+        // iterations before arriving -- not diverging. Raising the cap without a shrink check would let a genuinely
+        // stuck/oscillating block burn the full extra budget for nothing, the exact CPU problem this project has fixed
+        // twice already this session -- the check is what keeps this safe and free for every OTHER circuit (a normal
+        // sample converges in single digits of iterations, long before 100, so `iter` never even reaches it; a future
+        // high-gain amp model is protected by the same evidence-based rule, no per-pedal tuning).
+        //
+        // Verified partial fix, not a full one: combined with the tube-model gradient fix below (KorenTriode/
+        // KorenPentode/GridCurrent), the single-channel extreme case (Bassman Input = Normal, every preamp control
+        // maxed) improved from ~15-20 recoveries in 30 s to ~6-9. The most extreme corner (Input = Jumped, doubling
+        // the preamp drive, ALSO with every control maxed) still fails: a trace showed Newton making real, sustained
+        // progress for several hundred iterations and then the proposed (pre-limit) step suddenly spiking by orders of
+        // magnitude at one specific iteration, while the actual (limited) port voltages stayed physically reasonable --
+        // a transient ill-conditioned Jacobian, not a runaway state. Left open rather than tuned further under time
+        // pressure; see docs/circuits/Bassman5F6A.md's "still bugging" section for the exact numbers and next steps.
+        // mode 2's ceiling was 900 until 2026-09-27: on the Super Lead (TS808 into the amp, hot picking), a rare sample making
+        // real but slow progress burned most of that budget, and enough of those in one block made the block itself run at up
+        // to ~2.8x its own real-time duration (measured with PresetChainBench) -- a genuine worst-case CPU spike, the thing a
+        // real-time guard was tried and REMOVED for (see SuperLeadStyleAmplifierProcessor.h). Cut to 300 (still two stall
+        // checks' worth of room past the first 100, so a genuinely-converging-but-slow sample keeps its evidence-gated
+        // chance): past 300, recover()'s now-cheap, now-RECENT known-good restore (see the "known-good" DynamicState comment
+        // in each amp's Channel struct) is a better outcome for one rare sample than a block-wide time spike.
+        const int hardIterationCeiling = deadlineIterations > 0 ? (mode == 0 ? deadlineIterations : (mode == 1 ? 10 : 20))
+                                                               : (mode == 2 ? 300 : 100);
+        double progressCheckpoint = 1.0e300;
+        double maxStepThisSolve = 0.0; // this iteration's pre-limit Newton step, for the stall check above
+
+        for (int iter = 0; iter < hardIterationCeiling && ! converged; ++iter)
         {
+            if (mode == 2 && iter >= 100 && (iter % 100) == 0)
+            {
+                if (maxStepThisSolve >= progressCheckpoint * 0.98)
+                    break; // stalled, not just slow -- let the caller's own fallback/recovery handle it as before
+                progressCheckpoint = maxStepThisSolve;
+            }
             ++iterationsTotal;
+            iterationsThisSolve = iter + 1;
 
             // J = I + K * D, exploiting that D is block-diagonal (each device
             // couples only its own currents to its own port voltages).
             double J[maxPortsV][maxPortsV + 1];
+            double meritOld = 0.0; // largest port-equation error at the current point
             for (int j = 0; j < nv; ++j)
             {
                 const double* Kj = Km[j];
@@ -1389,6 +1984,7 @@ private:
                 for (int k = 0; k < ni; ++k)
                     f += Kj[k] * cur[k];
                 Jj[nv] = f;
+                meritOld = std::max (meritOld, std::abs (f));
 
                 // J[j][c] += sum_k K[j][k] D[k][c], one device at a time (each has 1 or 2 currents and ports).
                 for (const auto& m : deviceMaps)
@@ -1412,6 +2008,20 @@ private:
                 }
             }
             // Solve J * delta = f.
+            //
+            // Tried and reverted: Levenberg-Marquardt diagonal damping as a rare last-resort retry when the raw
+            // solution implied a step >500x a port's physical limit (found by tracing the Bassman power stage under
+            // extreme sustained drive to a genuinely near-singular local Jacobian). Gating it to mode 2 past its
+            // first 200 iterations -- the only region the pathology was ever observed in -- still regressed the
+            // realistic single-channel case (BassmanHotInputProbe/BASSMAN_INPUT=0: 8 -> 15 recoveries) while only
+            // partially helping the extreme corner (167 -> 134). An ordinary, otherwise-fine mode-2 sample can
+            // apparently still pass through that same region on its way to converging; damping the linear system
+            // there changes which direction the step takes and knocks some of those off their working trajectory.
+            // Two independent attempts at patching this at the linear-algebra level (this one, and the earlier
+            // reverted per-port step clamp) have now each destabilized the well-converging case while only
+            // partially fixing the target one -- see docs/circuits/Bassman5F6A.md for why the next attempt should
+            // target the tube model's own derivative (the actual source of the near-zero Jacobian diagonal)
+            // instead of patching the Newton solve around it.
             double delta[maxPortsV];
             if (! solveSmall (J, nv, delta))
                 return false;
@@ -1419,12 +2029,19 @@ private:
             // Proposed update, with SPICE-style logarithmic limiting on p-n junction ports: an exponential's
             // plain Newton step from a low-current start overshoots by orders of magnitude, then sheds only
             // ~Vt per iteration on the way back.
-            double proposed[maxPortsV];
+            double proposed[maxPortsV], rawStep[maxPortsV];
             bool limited = false;
             double maxStep = 0.0;
+            // The fraction of its Newton step that the forward-junction limiter let through, at its smallest over all
+            // ports. Junctions coupled through the network (the two clamp diodes of an op-amp macro-model: u_a + u_b is a
+            // constant of the circuit) have to move by the same fraction, or the one that is not being limited runs away
+            // on its own (its reverse-bias step limit, ~2 |v|, grows every iteration) and drags the limited one to a
+            // standstill through the common step scale below: the solve then fails, and a failed solve freezes the circuit.
+            double forwardFraction = 1.0;
             for (int j = 0; j < nv; ++j)
             {
                 double unew = u[j] - delta[j];
+                rawStep[j] = unew - u[j];
                 if (junction[j].pair)
                 {
                     // Antiparallel pair: the forward limit of whichever diode is (about to be) conducting.
@@ -1439,21 +2056,35 @@ private:
                 {
                     const double limitedValue = limitJunction (unew, u[j], junction[j].vt, junction[j].vcrit);
                     if (limitedValue != unew)
+                    {
                         limited = true;
+                        if (rawStep[j] > 1.0e-9 && limitedValue > u[j])
+                            forwardFraction = std::min (forwardFraction, (limitedValue - u[j]) / rawStep[j]);
+                    }
                     unew = limitedValue;
                 }
                 proposed[j] = unew;
-                maxStep = std::max (maxStep, std::abs (unew - u[j]));
             }
 
-            const bool fullStep = maxStep <= 1.0;
-            const double scale = fullStep ? 1.0 : 1.0 / maxStep;
+            double maxRatio = 0.0;
+            for (int j = 0; j < nv; ++j)
+            {
+                if (forwardFraction < 1.0 && junction[j].isJunction && ! junction[j].pair && rawStep[j] < 0.0
+                    && std::abs (forwardFraction * rawStep[j]) < std::abs (proposed[j] - u[j]))
+                    proposed[j] = u[j] + forwardFraction * rawStep[j];
+                maxStep = std::max (maxStep, std::abs (proposed[j] - u[j]));
+                maxRatio = std::max (maxRatio, std::abs (proposed[j] - u[j]) / (portLimit[j] * limitScale));
+            }
+
+            const bool fullStep = maxRatio <= 1.0;
+            const double scale = fullStep ? 1.0 : 1.0 / maxRatio;
             double step[maxPortsV];
             for (int j = 0; j < nv; ++j)
             {
                 step[j] = scale * (proposed[j] - u[j]);
                 u[j] += step[j];
             }
+            maxStepThisSolve = maxStep;
 
 #ifdef NODAL_DEBUG
             dbgTrace[iter % 100][0] = maxStep;
@@ -1484,6 +2115,42 @@ private:
 
             evaluateDevices (u, curNext, Dnext);
 
+            // Safeguard for hard-driven tubes: a Newton step that makes the residual (the port equations' error)
+            // larger is halved until it does not (bounded); the plain step is kept whenever it already improves.
+            {
+                auto meritAt = [&] (const double* curEval)
+                {
+                    double worst = 0.0;
+                    for (int j = 0; j < nv; ++j)
+                    {
+                        double f = u[j] - u0[j];
+                        for (int k = 0; k < ni; ++k)
+                            f += Km[j][k] * curEval[k];
+                        worst = std::max (worst, std::abs (f));
+                    }
+                    return worst;
+                };
+
+                // Only for tube circuits: a diode's exponential makes the residual rise before it falls, and damping
+                // those steps costs the solver more than it saves.
+                const bool safeguard = ! triodes.empty() || ! pentodes.empty();
+                double meritNew = safeguard ? meritAt (curNext) : 0.0;
+                for (int back = 0; safeguard && back < 8 && meritNew > meritOld && meritNew > 1.0e-4; ++back)
+                {
+                    for (int j = 0; j < nv; ++j)
+                    {
+                        step[j] *= 0.5;
+                        u[j] -= step[j];
+                    }
+                    maxStep *= 0.5;
+                    evaluateDevices (u, curNext, Dnext);
+                    meritNew = meritAt (curNext);
+                    limited = true; // the linearised prediction no longer applies to this point
+                    for (int k = 0; k < ni; ++k)
+                        predictedDelta[k] = curNext[k] - cur[k];
+                }
+            }
+
             double nodeErrorVec[maxUnknowns];
             for (int node = 0; node < unknownCount; ++node)
                 nodeErrorVec[node] = 0.0;
@@ -1501,13 +2168,30 @@ private:
             // Accept the new point (with the currents evaluated AT it, so the reconstruction below is consistent
             // with it) when the leftover is below tolerance; or, at the noise floor, when steps have stopped shrinking.
             if (nodeError < nodeTolerance || (fullStep && ! limited && iter > 3 && maxStep < 1.0e-4 && maxStep > 0.9 * previousStep))
-                converged = true;
+            {
+                // Never accept a point whose port equations are still far from balanced. The "steps stopped shrinking" branch above (and a
+                // small nodeError on a device whose current is enormous but insensitive, like a plate arcing at 6 kV) can pass a state
+                // that is not a solution of the circuit: the Super Lead's power block landed there and printed 1000 V plates one sample
+                // after a hard flip (docs/circuits/SuperLead1959.md). A real solution has u = u0 - K cur to well within a volt.
+                double worstPortError = 0.0;
+                for (int j = 0; j < nv; ++j)
+                {
+                    double f = u[j] - u0[j];
+                    for (int k = 0; k < ni; ++k)
+                        f += Km[j][k] * curNext[k];
+                    worstPortError = std::max (worstPortError, std::abs (f) / (1.0 + 1.0e-3 * std::abs (u[j])));
+                }
+                converged = worstPortError < portResidualAccept;
+            }
             previousStep = maxStep;
 
             for (int k = 0; k < ni; ++k)
                 cur[k] = curNext[k];
             std::swap (Dnow, Dnext);
         }
+
+        if (! converged && deadlineIterations > 0 && mode == 0 && iterationsThisSolve >= deadlineIterations)
+            converged = true; // deadline: the last iterate stands (see setDeadlineMode())
 
         if (! converged)
         {
@@ -1526,6 +2210,7 @@ private:
             curOut[k] = cur[k];
         for (int j = 0; j < nv; ++j)
         {
+            uStatePrev2[j] = uStatePrev[j];
             uStatePrev[j] = uState[j];
             uState[j] = u[j];
         }
@@ -1627,9 +2312,17 @@ private:
                 const auto& q = bjts[(size_t) m.index];
                 // vbc pinned far reverse: its exponential is ~1e-85 and drops out.
                 const auto op = q.model.evaluate (u[m.v0], 0.0, u[m.v0] + 5.0);
-                cur[m.i0] = op.iC;
+                double ic = op.iC, dic = op.diC_dvbe;
+                if (q.iSat > 0.0 && ic > 0.0)
+                {
+                    // smooth limit ic / (1 + (ic/S)^4)^(1/4): the knee of a stage running out of collector current
+                    const double r = ic / q.iSat, r2 = r * r, a = 1.0 + r2 * r2, root = std::sqrt (std::sqrt (a));
+                    dic *= (1.0 / root) * (1.0 - r2 * r2 / a);
+                    ic /= root;
+                }
+                cur[m.i0] = ic;
                 cur[m.i0 + 1] = op.iB;
-                D[m.i0][m.v0] = op.diC_dvbe;
+                D[m.i0][m.v0] = dic;
                 D[m.i0 + 1][m.v0] = op.diB_dvbe;
             }
             else if (m.kind == 6)
@@ -1639,6 +2332,27 @@ private:
                 j.model.evaluate (u[m.v0], j.assumedVds, 0.0, iD, dD, dS);
                 cur[m.i0] = iD;
                 D[m.i0][m.v0] = -dD - dS; // d/dvgs
+            }
+            else if (m.kind == 7)
+            {
+                const auto op = triodes[(size_t) m.index].model.evaluate (u[m.v0], u[m.v0 + 1]);
+                cur[m.i0] = op.ip;
+                cur[m.i0 + 1] = op.ig;
+                D[m.i0][m.v0] = op.dip_dvgk;
+                D[m.i0][m.v0 + 1] = op.dip_dvpk;
+                D[m.i0 + 1][m.v0] = op.dig_dvgk;
+                D[m.i0 + 1][m.v0 + 1] = 0.0;
+            }
+            else if (m.kind == 8)
+            {
+                const auto& t = pentodes[(size_t) m.index];
+                const auto op = t.model.evaluate (u[m.v0], u[m.v0 + 1], t.vg2, t.vg2Pow);
+                cur[m.i0] = op.ip;
+                cur[m.i0 + 1] = op.ig;
+                D[m.i0][m.v0] = op.dip_dvgk;
+                D[m.i0][m.v0 + 1] = op.dip_dvpk;
+                D[m.i0 + 1][m.v0] = op.dig_dvgk;
+                D[m.i0 + 1][m.v0 + 1] = 0.0;
             }
             else if (m.kind == 5)
             {
@@ -1680,7 +2394,7 @@ private:
 
         xPrev = x;
         for (int j = 0; j < maxPortsV; ++j)
-            uState[j] = uStatePrev[j] = 0.0;
+            uState[j] = uStatePrev[j] = uStatePrev2[j] = 0.0;
 
         // The operating point is computed once, so it gets the tight tolerance the per-sample loop cannot afford.
         struct ToleranceScope
@@ -1708,16 +2422,19 @@ private:
                 return false;
             if (step == 0)
                 for (size_t j = 0; j < voltagePorts.size(); ++j)
-                    uState[j] = uStatePrev[j] = voltage (voltagePorts[j].plus) - voltage (voltagePorts[j].minus);
+                    uState[j] = uStatePrev[j] = uStatePrev2[j] = voltage (voltagePorts[j].plus) - voltage (voltagePorts[j].minus);
 
             double* rhs = rhsLinear.data();
             for (int i = 0; i < unknownCount; ++i)
                 rhs[i] = 0.0;
             for (const auto& t : knownTerms)
                 rhs[t.row] += t.g * knownVoltage[(size_t) t.knownNode];
+            for (const auto& src : sources)
+                if (src.current && indexOf[(size_t) src.node] >= 0)
+                    rhs[indexOf[(size_t) src.node]] += src.volts;
             for (auto& c : capacitors)
             {
-                c.ieq = c.g * c.vPrev;
+                c.ieq = c.group >= 0 ? 0.0 : c.g * c.vPrev;
                 if (c.ia >= 0) rhs[c.ia] += c.ieq;
                 if (c.ib >= 0) rhs[c.ib] -= c.ieq;
             }
@@ -1744,6 +2461,9 @@ private:
 
             for (auto& c : capacitors)
                 c.vPrev = voltage (c.a) - voltage (c.b);
+            for (const auto& grp : inductorGroups)
+                for (int i = 0; i < grp.n; ++i)
+                    capacitors[(size_t) (grp.first + i)].iPrev = inductorShortG * capacitors[(size_t) (grp.first + i)].vPrev;
 
             lastChange = change;
             dt = std::min (dt * 1.6, 1.0);
@@ -1795,7 +2515,7 @@ private:
         rebuildLinearMatrix (true);
         factorAndBuildReducedModel();
         for (size_t j = 0; j < voltagePorts.size(); ++j)
-            uState[j] = uStatePrev[j] = voltage (voltagePorts[j].plus) - voltage (voltagePorts[j].minus);
+            uState[j] = uStatePrev[j] = uStatePrev2[j] = voltage (voltagePorts[j].plus) - voltage (voltagePorts[j].minus);
         return ok;
     }
 };

@@ -7,12 +7,8 @@ namespace openguitarmultifx
 
 FooterBar::FooterBar()
 {
-    addAndMakeVisible (tunerNoteLabel);
-    tunerNoteLabel.setFont (juce::Font (34.0f, juce::Font::bold));
-    tunerNoteLabel.setJustificationType (juce::Justification::centred);
-    // So a tap anywhere in the tuner zone reaches FooterBar::mouseUp(), not
-    // just the gauge area the label doesn't cover -- see onTunerTapped.
-    tunerNoteLabel.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (tunerButton);
+    tunerButton.onClick = [this] { if (onTunerTapped) onTunerTapped(); };
 
     addAndMakeVisible (bpmValueLabel);
     bpmValueLabel.setFont (juce::Font (28.0f, juce::Font::bold));
@@ -27,7 +23,6 @@ FooterBar::FooterBar()
     tapButton.onClick = [this] { tapTempo(); };
 
     setLevels (0.0f, 0.0f);
-    setTuning ("--", 0.0f);
 }
 
 void FooterBar::tapTempo()
@@ -72,33 +67,12 @@ void FooterBar::setLevels (float inLevelIn, float outLevelIn)
     repaint();
 }
 
-void FooterBar::setTuning (const juce::String& note, float deviation)
-{
-    tunerNoteLabel.setText (note, juce::dontSendNotification);
-    tuningDeviation = juce::jlimit (-1.0f, 1.0f, deviation);
-    hasDetectedNote = note != "--";
-    repaint();
-}
-
-void FooterBar::mouseUp (const juce::MouseEvent& event)
-{
-    if (tunerZoneBounds.contains (event.getPosition()) && onTunerTapped)
-        onTunerTapped();
-}
-
 void FooterBar::resized()
 {
     auto area = getLocalBounds().reduced (16, 10);
 
-    // Tuner zone: note letter, then the horizontal gauge bar filling the
-    // rest of the zone's width -- both per user request 2026-09-10 ("o
-    // tuner tem q ser uma barrinha horizontal com a letra que é a
-    // afinacao").
-    auto tunerZone = area.removeFromLeft (260);
-    tunerZoneBounds = tunerZone;
-    tunerNoteLabel.setBounds (tunerZone.removeFromLeft (56));
-    tunerZone.removeFromLeft (10);
-    tunerGaugeBounds = tunerZone.withSizeKeepingCentre (tunerZone.getWidth(), 16).toFloat();
+    // TUNER button where the live note letter and gauge used to be -- see the header for why they are gone.
+    tunerButton.setBounds (area.removeFromLeft (150).withSizeKeepingCentre (150, 52));
 
     area.removeFromLeft (16);
 
@@ -125,29 +99,8 @@ void FooterBar::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white.withAlpha (0.08f));
     g.drawLine (0.0f, 0.0f, (float) getWidth(), 0.0f, 1.0f);
 
-    drawTunerGauge (g, tunerGaugeBounds);
     drawHorizontalMeter (g, inMeterBounds, inLevel, "In");
     drawHorizontalMeter (g, outMeterBounds, outLevel, "Out");
-}
-
-void FooterBar::drawTunerGauge (juce::Graphics& g, juce::Rectangle<float> bounds) const
-{
-    g.setColour (juce::Colour (0xff2a2a2a));
-    g.fillRoundedRectangle (bounds, bounds.getHeight() * 0.5f);
-
-    // Centre tick -- "in tune" reference point.
-    const float centreX = bounds.getCentreX();
-    g.setColour (juce::Colours::white.withAlpha (0.3f));
-    g.drawLine (centreX, bounds.getY() - 3.0f, centreX, bounds.getBottom() + 3.0f, 2.0f);
-
-    // Needle -- deviation -1..1 mapped across the gauge's width. Sits
-    // dead-centre with the neutral accent colour when no pitch is
-    // detected -- green here would misleadingly read as "in tune" for
-    // silence, not "nothing to tune".
-    const float needleX = centreX + tuningDeviation * bounds.getWidth() * 0.5f;
-    const bool inTune = hasDetectedNote && std::abs (tuningDeviation) < 0.05f;
-    g.setColour (inTune ? juce::Colours::limegreen : OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
-    g.fillEllipse (needleX - 8.0f, bounds.getCentreY() - 8.0f, 16.0f, 16.0f);
 }
 
 void FooterBar::drawHorizontalMeter (juce::Graphics& g, juce::Rectangle<float> bounds, float level, const juce::String& label) const

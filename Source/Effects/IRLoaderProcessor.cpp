@@ -37,10 +37,14 @@ void IRLoaderProcessor::loadImpulseResponse (const juce::File& irFile)
         conv->prepare (spec);
     }
 
+    // A guitar cabinet's impulse response is over within ~100 ms; what follows in a captured file is a noise floor
+    // and room that no one hears, and convolving it is most of the cost (a 4 s file cost 18% of a core, the first
+    // 150 ms about a tenth of that). A reverb IS its tail, so only the Cab role is capped.
+    const int maxSamples = isReverbRole() || sampleRate <= 0.0 ? 0 : (int) (0.15 * sampleRate);
     conv->loadImpulseResponse (irFile,
                                 juce::dsp::Convolution::Stereo::yes,
                                 juce::dsp::Convolution::Trim::yes,
-                                0, // 0 -- use the whole file
+                                (size_t) maxSamples, // 0 -- use the whole file
                                 juce::dsp::Convolution::Normalise::yes);
 
     lastLoadedFile = irFile;
@@ -62,6 +66,11 @@ void IRLoaderProcessor::prepare (double newSampleRate, int maxBlockSize, int num
     preparedNumChannels = juce::jmax (1, numChannels);
 
     dryScratch.setSize (preparedNumChannels, maxBlockSize, false, false, true);
+
+    // JUCE normalises a loaded IR to 0.125 / sqrt (sum of squares), i.e. an energy gain of -18 dB: a "Reverb" wet path is 18 dB
+    // under the dry until this brings it back (the starting value; WetLevelMatcher then follows the actual IR and signal).
+    for (auto& m : wetMatch)
+        m.prepare (sampleRate, 1.0f / 0.125f);
 
     // Same reasoning as NAMProcessor::prepare(): a sample-rate/block-size
     // change invalidates an already-prepared Convolution, so reloading
@@ -87,7 +96,8 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
 
     const int numSamples = buffer.getNumSamples();
     const float mix = mixParam->get();
-    const bool needsDryBlend = mix < 0.999f;
+    const bool matchWet = isReverbRole(); // a Cab keeps its own level; a reverb's wet is level-matched to the dry
+    const bool needsDryBlend = mix < 0.999f || matchWet;
 
     if (needsDryBlend)
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
@@ -97,7 +107,22 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
     juce::dsp::ProcessContextReplacing<float> context (block);
     conv->process (context);
 
-    if (needsDryBlend)
+    if (matchWet)
+    {
+        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+        {
+            auto* data = buffer.getWritePointer (ch);
+            const auto* dry = dryScratch.getReadPointer (ch);
+            for (int i = 0; i < numSamples; ++i)
+            {
+                wetMatch[(size_t) ch].accumulate (dry[i], data[i]);
+                data[i] = dry[i] * (1.0f - mix) + data[i] * mix * wetMatch[(size_t) ch].gain();
+            }
+        }
+        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+            wetMatch[(size_t) ch].endBlock (numSamples, 1);
+    }
+    else if (needsDryBlend)
     {
         buffer.applyGain (mix);
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)

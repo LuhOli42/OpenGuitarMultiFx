@@ -30,18 +30,27 @@ class PitchDetector
 {
 public:
     /** Control thread (called from AudioEngine::audioDeviceAboutToStart()).
-        Defaults match this class's original fixed range/threshold (the
-        mono tuner's exact prior behaviour, unchanged). PolyphonicPitchDetector
-        passes tighter, band-specific values instead: a shared 70-1200Hz
-        range can't even find several extended-range/bass strings (B0/E1/
-        F#1/A1/B1 all fall under 70Hz), and a fixed silence threshold tuned
-        for a full-band signal reads a bandpass-filtered band's much
-        quieter signal as silence far too often. */
-    void prepare (double sampleRateToUse, float minFrequencyHz = 70.0f, float maxFrequencyHz = 1200.0f,
-                  float silenceThreshold = 0.01f);
 
-    /** Audio thread. Never allocates -- all buffers are sized in prepare(). */
+        The default range covers **every string of every instrument this app tunes**, down to a 5-string bass's B0
+        (30.87 Hz): the old 70 Hz floor could not find B0, E1, F#1, A1 or B1 at all -- the lag the search reaches never
+        gets that long -- which is why low notes did not register (user report, 2026-09-21). It is affordable now only
+        because the analysis runs on the control thread; see analyse(). */
+    void prepare (double sampleRateToUse, float minFrequencyHz = 28.0f, float maxFrequencyHz = 1400.0f,
+                  float silenceThreshold = 0.002f);
+
+    /** Audio thread. Writes the samples into the ring buffer and nothing else -- O(numSamples), no analysis.
+
+        YIN's own pass is O(window x tauMax), which at a 28 Hz floor is ~6 million operations: it used to run from here,
+        landing entirely inside ONE audio block (measured 0.7 ms of a 2.67 ms budget at the old 70 Hz floor, ~4 ms at
+        this one) whenever the periodic trigger came round. That is unbounded work on the audio thread; it belongs on the
+        control thread, which is what analyse() is for. */
     void pushSamples (const float* data, int numSamples) noexcept;
+
+    /** Control thread, at whatever rate the UI polls (the app's 20 Hz timer). Runs the analysis over the most recent
+        window of what pushSamples() has written. Safe against the audio thread without a lock: the ring holds several
+        windows plus 4096 samples of slack (85 ms at 48 kHz) and this reads BEHIND the write position, so the producer
+        cannot lap the reader between two calls -- the same generous-margin reasoning as DeferredReclaimer's sweep. */
+    void analyse() noexcept;
 
     /** Safe to read from any thread. 0 means "no clear pitch" (silence or noise). */
     float getDetectedFrequencyHz() const noexcept { return detectedFrequencyHz.load (std::memory_order_relaxed); }
@@ -50,7 +59,12 @@ private:
     void runAnalysis() noexcept;
 
     static constexpr float yinThreshold = 0.15f; // standard YIN absolute threshold
-    static constexpr double updateRateHz = 15.0; // plenty responsive for a tuner display
+
+    /** Once a note IS being tracked, keep tracking it this much further down before calling it silence. A plucked note
+        decays continuously, so a single level gate makes the display drop the note while it is still clearly audible
+        (user report 2026-09-22, "se o som diminuir ele para de captar mesmo ainda tendo som"); every hardware tuner
+        holds on the way down instead. YIN's own confidence test still has to pass, so this cannot invent a note. */
+    static constexpr float releaseThresholdRatio = 0.25f;
 
     float minFreqHz = 70.0f;
     float maxFreqHz = 1200.0f;
@@ -61,12 +75,11 @@ private:
     int windowSize = 0;
     int tauMin = 0;
     int tauMax = 0;
-    int writePos = 0;
-    int samplesSinceAnalysis = 0;
-    int analysisIntervalSamples = 0;
+    std::atomic<int> writePos { 0 }; // written by the audio thread, read by analyse() on the control thread
     double sampleRate = 0.0;
 
     std::atomic<float> detectedFrequencyHz { 0.0f };
+    bool wasTracking = false; // control thread only: which side of the hysteresis we are on
 };
 
 } // namespace openguitarmultifx

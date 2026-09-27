@@ -58,6 +58,9 @@ ParameterPanel::ParameterPanel()
     addAndMakeVisible (searchTone3000Button);
     searchTone3000Button.onClick = [this] { openTone3000Search(); };
 
+    addChildComponent (pageButton);
+    pageButton.onClick = [this] { showPage ((currentPage + 1) % juce::jmax (1, pageCount)); };
+
     addAndMakeVisible (removeButton);
     removeButton.onClick = [this] { if (current != nullptr && onRemoveRequested) onRemoveRequested (current); };
 
@@ -110,7 +113,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
 {
     for (auto& row : sliders)
     {
-        knobGridHost.removeChildComponent (row.slider.get());
+        knobGridHost.removeChildComponent (row.widget());
         knobGridHost.removeChildComponent (row.label.get());
         if (row.syncToggle != nullptr)
             knobGridHost.removeChildComponent (row.syncToggle.get());
@@ -129,6 +132,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
         browseInstalledButton.setVisible (false);
         searchTone3000Button.setVisible (false);
         removeButton.setVisible (false);
+        pageButton.setVisible (false);
         knobViewport.setVisible (false);
         resized();
         return;
@@ -157,14 +161,21 @@ void ParameterPanel::rebuildForCurrentProcessor()
     for (auto* b : { &browseInstalledButton, &searchTone3000Button, &removeButton })
         b->setColour (OpenGuitarMultiFxLookAndFeel::accentColourId, accent);
 
-    if (auto* group = current->getParameters())
+    const auto pages = current->getParameterPages();
+    pageCount = (int) pages.size();
+    currentPage = 0;
+    pageButton.setVisible (pageCount > 1);
+    pageButton.setButtonText ("Page 2 >");
+    pageButton.setColour (OpenGuitarMultiFxLookAndFeel::accentColourId, accent);
+
     {
-        for (auto* p : group->getParameters (true))
+        for (int pageIndex = 0; pageIndex < pageCount; ++pageIndex)
         {
-            if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*> (p))
+            for (auto* floatParam : pages[(size_t) pageIndex])
             {
                 SliderRow row;
                 row.param = floatParam;
+                row.page = pageIndex;
                 row.slider = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
                                                                juce::Slider::TextBoxBelow);
                 row.slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 90, 26);
@@ -180,12 +191,45 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 const auto range = floatParam->getNormalisableRange();
                 row.slider->setRange (range.start, range.end, range.interval > 0.0f ? range.interval : 0.01);
                 row.slider->setValue (floatParam->get(), juce::dontSendNotification);
+                const bool isSelector = range.interval >= 1.0f && (range.end - range.start) / range.interval <= 8.0f; // 4/8/16 ohm, Normal/Jumped/Bright...
+                if (isSelector)
+                {
+                    row.slider->setNumDecimalPlacesToDisplay (0);
+                    row.slider->textFromValueFunction = [floatParam] (double v)
+                    {
+                        return static_cast<juce::AudioProcessorParameter*> (floatParam)->getText (floatParam->convertTo0to1 ((float) v), 32);
+                    };
+                    row.slider->updateText();
+                }
 
                 auto* rawSlider = row.slider.get();
                 row.slider->onValueChange = [floatParam, rawSlider]
                 {
                     *floatParam = (float) rawSlider->getValue();
                 };
+
+                if (isSelector)
+                {
+                    // A real multi-position switch instead of a knob that happens to snap to a few steps (user
+                    // request 2026-09-22). Options in ascending param-value order; onChange writes through the
+                    // (hidden, never-shown) slider above, reusing its existing param-write lambda.
+                    row.selector = std::make_unique<SelectorSwitch>();
+                    juce::StringArray options;
+                    const int steps = (int) std::lround ((range.end - range.start) / range.interval) + 1;
+                    for (int step = 0; step < steps; ++step)
+                    {
+                        const float v = range.start + (float) step * range.interval;
+                        options.add (static_cast<juce::AudioProcessorParameter*> (floatParam)->getText (floatParam->convertTo0to1 (v), 32));
+                    }
+                    row.selector->setOptions (options);
+                    row.selector->setAccentColour (accent);
+                    row.selector->setSelectedIndex ((int) std::lround ((floatParam->get() - range.start) / range.interval), juce::dontSendNotification);
+                    const double selectorStart = (double) range.start, selectorInterval = (double) range.interval;
+                    row.selector->onChange = [rawSlider, selectorStart, selectorInterval] (int index)
+                    {
+                        rawSlider->setValue (selectorStart + (double) index * selectorInterval);
+                    };
+                }
 
                 for (auto& binding : current->getTempoSyncBindings())
                 {
@@ -200,12 +244,13 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 }
 
                 knobGridHost.addAndMakeVisible (*row.label);
-                knobGridHost.addAndMakeVisible (*row.slider);
+                knobGridHost.addAndMakeVisible (*row.widget());
                 sliders.push_back (std::move (row));
             }
         }
     }
 
+    showPage (0);
     refresh();
     resized();
 
@@ -397,6 +442,32 @@ void ParameterPanel::openTone3000SearchForSlot (int slot)
         onPushOverlay (std::move (dialog));
 }
 
+std::vector<size_t> ParameterPanel::visibleSliders() const
+{
+    std::vector<size_t> shown;
+    for (size_t i = 0; i < sliders.size(); ++i)
+        if (sliders[i].page == currentPage)
+            shown.push_back (i);
+    return shown;
+}
+
+void ParameterPanel::showPage (int page)
+{
+    currentPage = juce::jlimit (0, juce::jmax (0, pageCount - 1), page);
+    for (auto& row : sliders)
+    {
+        const bool shown = row.page == currentPage;
+        row.widget()->setVisible (shown);
+        row.label->setVisible (shown);
+        if (row.syncToggle != nullptr)
+            row.syncToggle->setVisible (shown);
+    }
+    pageButton.setButtonText (currentPage == 0 ? "Page 2 >" : "< Page 1");
+    resized();
+    if (onPreferredHeightChanged)
+        onPreferredHeightChanged();
+}
+
 int ParameterPanel::getPreferredContentHeight (int availableWidth) const
 {
     if (current == nullptr)
@@ -419,12 +490,13 @@ int ParameterPanel::getPreferredContentHeight (int availableWidth) const
     // Per VISUAL row, not a flat rows*knobCellHeight -- a row containing
     // even one tempo-syncable knob needs the extra syncToggleHeight, and
     // different visual rows can mix syncable and non-syncable knobs.
-    for (size_t start = 0; start < sliders.size(); start += (size_t) columns)
+    const auto shown = visibleSliders();
+    for (size_t start = 0; start < shown.size(); start += (size_t) columns)
     {
-        const size_t end = juce::jmin (sliders.size(), start + (size_t) columns);
+        const size_t end = juce::jmin (shown.size(), start + (size_t) columns);
         int rowHeight = knobCellHeight;
-        for (size_t idx = start; idx < end; ++idx)
-            if (sliders[idx].syncToggle != nullptr)
+        for (size_t k = start; k < end; ++k)
+            if (sliders[shown[k]].syncToggle != nullptr)
                 rowHeight = juce::jmax (rowHeight, knobCellHeight + syncToggleHeight);
         height += rowHeight;
     }
@@ -454,6 +526,11 @@ void ParameterPanel::resized()
     }
     top.removeFromRight (6);
     bypassToggle.setBounds (top.removeFromRight (110));
+    if (pageButton.isVisible())
+    {
+        top.removeFromRight (6);
+        pageButton.setBounds (top.removeFromRight (120));
+    }
     titleLabel.setBounds (top);
 
     // Gap before the accent band -- without it the header buttons sat flush
@@ -479,24 +556,25 @@ void ParameterPanel::resized()
 
     int y = 0;
 
-    for (size_t start = 0; start < sliders.size(); start += (size_t) columns)
+    const auto shown = visibleSliders();
+    for (size_t start = 0; start < shown.size(); start += (size_t) columns)
     {
-        const size_t end = juce::jmin (sliders.size(), start + (size_t) columns);
+        const size_t end = juce::jmin (shown.size(), start + (size_t) columns);
 
         // This visual row's height is the max over whichever knobs land in
         // it -- see getPreferredContentHeight()'s matching comment on why
         // this can't just be a flat knobCellHeight per row.
         int rowHeight = knobCellHeight;
-        for (size_t idx = start; idx < end; ++idx)
-            if (sliders[idx].syncToggle != nullptr)
+        for (size_t k = start; k < end; ++k)
+            if (sliders[shown[k]].syncToggle != nullptr)
                 rowHeight = juce::jmax (rowHeight, knobCellHeight + syncToggleHeight);
 
         int x = 0;
-        for (size_t idx = start; idx < end; ++idx)
+        for (size_t k = start; k < end; ++k)
         {
-            auto& row = sliders[idx];
+            auto& row = sliders[shown[k]];
             row.label->setBounds (x, y, knobCellWidth, 22);
-            row.slider->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter + 28);
+            row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter + 28);
             if (row.syncToggle != nullptr)
                 row.syncToggle->setBounds (x + (knobCellWidth - 72) / 2, y + 22 + knobDiameter + 28, 72, syncToggleHeight);
             x += knobCellWidth;

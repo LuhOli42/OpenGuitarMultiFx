@@ -71,3 +71,16 @@ target_include_directories(nam_core PUBLIC
 target_link_libraries(nam_core PUBLIC Eigen3::Eigen)
 target_compile_definitions(nam_core PUBLIC NAM_SAMPLE_FLOAT)
 target_compile_features(nam_core PUBLIC cxx_std_17)
+
+# Speed: NAM's convolutions are Eigen matrix products; with the default x86-64 baseline (SSE2, no FMA) they run at a
+# fraction of what this machine can do. OGMFX_NATIVE_TUNING builds nam_core for the CPU that compiles it (AVX2/FMA here,
+# NEON on the target board) with fast-math (NAM has no NaN/Inf handling to lose). It makes the binary machine-specific:
+# turn it off (-DOGMFX_NATIVE_TUNING=OFF) for a build that must run elsewhere.
+option(OGMFX_NATIVE_TUNING "Tune nam_core for the build machine's CPU" ON)
+if(OGMFX_NATIVE_TUNING AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+    target_compile_options(nam_core PRIVATE -mcpu=native -ffast-math)
+  else()
+    target_compile_options(nam_core PRIVATE -march=native -ffast-math)
+  endif()
+endif()

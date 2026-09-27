@@ -12,17 +12,56 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PresetManagerTests.cpp
   GateProcessorTests.cpp
   CompressorProcessorTests.cpp
-  OverdriveProcessorTests.cpp
   PositiveGroundBoosterProcessorTests.cpp
   DS1StyleDistortionProcessorTests.cpp
   OD1StyleOverdriveProcessorTests.cpp
   TubeScreamerStyleOverdriveProcessorTests.cpp
   NodalCircuitTests.cpp
+  TubeCircuitTests.cpp
+  ReductionProbe.cpp
+  ReducedOrderEquivalenceTests.cpp
+  EffectCostBench.cpp
+  SagEmulatorTests.cpp
+  BassmanStyleAmplifierProcessorTests.cpp
+  SuperLeadStyleAmplifierProcessorTests.cpp
+  PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
+  BigMuffStyleFuzzProcessorTests.cpp
+  DT1StyleDistortionProcessorTests.cpp
+  ODR1StyleOverdriveProcessorTests.cpp
+  OverdriverStyleOverdriveProcessorTests.cpp
+  EPStyleBoosterProcessorTests.cpp
+  TubeDriverStyleOverdriveProcessorTests.cpp
+  MetalZoneStyleDistortionProcessorTests.cpp
+  FuzzFaceStyleFuzzProcessorTests.cpp
+  ToneBenderStyleFuzzProcessorTests.cpp
   HM2StyleDistortionProcessorTests.cpp
+  OpAmpClipperDistortionProcessorTests.cpp
+  GuvnorStyleDistortionProcessorTests.cpp
+  BluesBreakerStyleOverdriveProcessorTests.cpp
+  RatStyleDistortionProcessorTests.cpp
+  GE7StyleEqualizerProcessorTests.cpp
+  ParametricEQProcessorTests.cpp
+  RingModProcessorTests.cpp
+  NoiseGateTests.cpp
+  DynaCompStyleCompressorProcessorTests.cpp
+  SqueezerStyleCompressorProcessorTests.cpp
+  StudioCompressorTests.cpp
+  CrunchBoxStyleDistortionProcessorTests.cpp
+  ZendriveStyleOverdriveProcessorTests.cpp
+  OCDStyleOverdriveProcessorTests.cpp
+  PedalDeathProbe.cpp
+  ChainSpikeBench.cpp
+  CallbackOverheadBench.cpp
+  PitchDetectorRangeTests.cpp
+  AmpDynamicsBench.cpp
+  RePrepareTransparencyTests.cpp
   OversampledEffectTests.cpp
   PedalUnityLevelTests.cpp
+  PedalDiagnostics.cpp
+  NamPedalCompare.cpp
+  MixLawTests.cpp
   NAMProcessorTests.cpp
   DelayProcessorTests.cpp
   TapeDelayProcessorTests.cpp
@@ -54,20 +93,46 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/EffectRegistry.cpp
   ../Source/Engine/SignalGraph.cpp
   ../Source/Engine/PitchDetector.cpp
-  ../Source/Engine/PolyphonicPitchDetector.cpp
-  ../Source/Engine/TuningSettings.cpp
   ../Source/Engine/ParameterManager.cpp
   ../Source/Presets/PresetManager.cpp
   ../Source/Effects/GateProcessor.cpp
   ../Source/Effects/CompressorProcessor.cpp
-  ../Source/Effects/OverdriveProcessor.cpp
   ../Source/Effects/PositiveGroundBoosterProcessor.cpp
   ../Source/Effects/DS1StyleDistortionProcessor.cpp
   ../Source/Effects/OD1StyleOverdriveProcessor.cpp
   ../Source/Effects/TubeScreamerStyleOverdriveProcessor.cpp
   ../Source/Effects/CentaurStyleOverdriveProcessor.cpp
   ../Source/Effects/BD2StyleOverdriveProcessor.cpp
+  ../Source/Effects/BigMuffStyleFuzzProcessor.cpp
+  ../Source/Effects/DT1StyleDistortionProcessor.cpp
+  ../Source/Effects/ODR1StyleOverdriveProcessor.cpp
+  ../Source/Effects/OverdriverStyleOverdriveProcessor.cpp
+  ../Source/Effects/EPStyleBoosterProcessor.cpp
+  ../Source/Effects/TubeDriverStyleOverdriveProcessor.cpp
+  ../Source/Effects/MetalZoneStyleDistortionProcessor.cpp
+  ../Source/Effects/FuzzFaceStyleFuzzProcessor.cpp
+  ../Source/Effects/ToneBenderStyleFuzzProcessor.cpp
   ../Source/Effects/HM2StyleDistortionProcessor.cpp
+  ../Source/Effects/OpAmpClipperDistortionProcessor.cpp
+  ../Source/Effects/GuvnorStyleDistortionProcessor.cpp
+  ../Source/Effects/BluesBreakerStyleOverdriveProcessor.cpp
+  ../Source/Effects/RatStyleDistortionProcessor.cpp
+  ../Source/Effects/GE7StyleEqualizerProcessor.cpp
+  ../Source/Effects/ParametricEQProcessor.cpp
+  ../Source/Effects/RingModProcessor.cpp
+  ../Source/Effects/DS201StyleNoiseGateProcessor.cpp
+  ../Source/Effects/NS2StyleNoiseSuppressorProcessor.cpp
+  ../Source/Effects/DynaCompStyleCompressorProcessor.cpp
+  ../Source/Effects/SqueezerStyleCompressorProcessor.cpp
+  ../Source/Effects/Dbx160StyleCompressorProcessor.cpp
+  ../Source/Effects/GSeriesStyleBusCompressorProcessor.cpp
+  ../Source/Effects/Urei1176StyleCompressorProcessor.cpp
+  ../Source/Effects/La2aStyleCompressorProcessor.cpp
+  ../Source/Effects/CrunchBoxStyleDistortionProcessor.cpp
+  ../Source/Effects/ZendriveStyleOverdriveProcessor.cpp
+  ../Source/Effects/OCDStyleOverdriveProcessor.cpp
+  ../Source/Effects/BassmanStyleAmplifierProcessor.cpp
+  ../Source/Effects/SuperLeadStyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp

@@ -26,6 +26,8 @@ SpringReverbProcessor::SpringReverbProcessor()
 
 void SpringReverbProcessor::prepare (double sampleRate, int, int)
 {
+    for (auto& m : wetMatch)
+        m.prepare (sampleRate, 0.83f);
     currentSampleRate = sampleRate;
 
     // Three ascending allpass delays per channel -- the classic Schroeder
@@ -49,6 +51,8 @@ void SpringReverbProcessor::prepare (double sampleRate, int, int)
 
 void SpringReverbProcessor::reset()
 {
+    for (auto& m : wetMatch)
+        m.reset();
     for (auto& channelStages : allpass)
         for (auto& stage : channelStages)
             stage.clear();
@@ -91,9 +95,13 @@ void SpringReverbProcessor::process (juce::AudioBuffer<float>& buffer)
             if (++c.pos >= (int) c.buffer.size())
                 c.pos = 0;
 
-            data[i] = input * (1.0f - wet) + bufferOut * wet;
+            wetMatch[(size_t) ch].accumulate (input, bufferOut);
+            data[i] = input * (1.0f - wet) + bufferOut * wet * wetMatch[(size_t) ch].gain();
         }
     }
+
+    for (int ch = 0; ch < numChannels; ++ch)
+        wetMatch[(size_t) ch].endBlock (numSamples, 1);
 }
 
 void SpringReverbProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const

@@ -17,13 +17,12 @@ namespace openguitarmultifx
     directly on the bar -- both per follow-up user correction the same day
     (originally vertical bars/no gauge).
 
-    The tuner and IN/OUT meters are fed real audio (Phase 5): setLevels()
-    from `AudioEngine::getInputLevel()`/`getOutputLevel()` (peak per
-    block), setTuning() from a YIN pitch estimate
-    (`Source/Engine/PitchDetector.h`) converted to a note name + cents
-    deviation by `MainComponent`'s timer -- see its `timerCallback()`.
-    This class itself still knows nothing about audio; it only draws
-    whatever numbers it's given, same as before.
+The IN/OUT meters are fed real audio: setLevels() from
+    `AudioEngine::getInputLevel()`/`getOutputLevel()` (peak per block).
+    The tuner is a BUTTON here rather than a live readout -- the pitch
+    analysis only runs while the tuner page is open, so a gauge in the
+    footer would be permanently dead. This class knows nothing about
+    audio; it only draws whatever numbers it's given.
 
     Tap-tempo is real too, and self-contained here -- unlike the tuner/
     meters, it needs no audio thread involvement at all, just wall-clock
@@ -42,43 +41,34 @@ public:
 
     void resized() override;
     void paint (juce::Graphics& g) override;
-    void mouseUp (const juce::MouseEvent& event) override;
 
     /** 0-1 peak level for the IN/OUT meter bars. */
     void setLevels (float inLevel, float outLevel);
 
-    /** Note name text ("--" for no detected pitch) + gauge needle position
-        (-1 flat .. 0 in tune .. +1 sharp, already clamped by the caller). */
-    void setTuning (const juce::String& note, float deviation);
-
     /** Current tap-tempo estimate. For future tempo-synced effects -- nothing reads this yet. */
     double getBpm() const noexcept { return bpm; }
 
-    /** Tapping anywhere in the tuner zone (note letter + gauge) opens the
-        polyphonic tuner overlay -- per user request ("seria legal abrir a
-        tela de tuner, se clickarmos no afinador"). */
+    /** The TUNER button opens the tuner page. It replaced a live note letter + gauge that used to sit here: the pitch
+        analysis only runs while that page is open now (AudioEngine::setTunerActive(), for the CPU it costs), so a footer
+        readout would be permanently dead. User request 2026-09-22, "coloca um botao pra ativar o afinador em baixo". */
     std::function<void()> onTunerTapped;
 
 private:
     void tapTempo();
-    juce::Label tunerNoteLabel { {}, "--" };
+    juce::TextButton tunerButton { "TUNER" };
     juce::Label bpmValueLabel { {}, "120" };
     juce::Label bpmUnitLabel { {}, "BPM" };
     juce::TextButton tapButton { "TAP" };
 
     float inLevel = 0.0f, outLevel = 0.0f;
-    float tuningDeviation = 0.0f;
-    bool hasDetectedNote = false;
 
     double bpm = 120.0;
     double lastTapMs = 0.0;
     std::vector<double> recentTapIntervalsMs;
 
-    juce::Rectangle<float> tunerGaugeBounds, inMeterBounds, outMeterBounds;
-    juce::Rectangle<int> tunerZoneBounds; // wider hit-test zone for onTunerTapped -- see resized()
+    juce::Rectangle<float> inMeterBounds, outMeterBounds;
 
     void drawHorizontalMeter (juce::Graphics& g, juce::Rectangle<float> bounds, float level, const juce::String& label) const;
-    void drawTunerGauge (juce::Graphics& g, juce::Rectangle<float> bounds) const;
 };
 
 } // namespace openguitarmultifx

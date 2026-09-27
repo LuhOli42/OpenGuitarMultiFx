@@ -1,4 +1,5 @@
 #include "CentaurStyleOverdriveProcessor.h"
+#include "PotTaper.h"
 #include "DualMono.h"
 #include "IconKit.h"
 
@@ -94,8 +95,8 @@ void CentaurStyleOverdriveProcessor::buildChannel (Channel& ch, double /*sr*/)
         // Germanium clipper after the gain stage: C9 -> R13 -> antiparallel diodes to GND.
         c.addCapacitor (o1, c9o, 1.0e-6);       // C9
         c.addResistor (c9o, d, 1.0e3);          // R13
-        c.addDiode (d, gnd, geIs, geNVt);       // D2
-        c.addDiode (gnd, d, geIs, geNVt);       // D3
+        c.addDiode (d, gnd, geIs, geNVt, 2.0e-9);       // D2
+        c.addDiode (gnd, d, geIs, geNVt, 2.0e-9);       // D3
         c.addCapacitor (d, p, 1.0e-6);          // C10
 
         // Feed-forward network 1: R7 + C16 low-pass, then R19 into the summing node.
@@ -171,8 +172,8 @@ void CentaurStyleOverdriveProcessor::buildChannel (Channel& ch, double /*sr*/)
 
 void CentaurStyleOverdriveProcessor::updatePots (double gainKnob, double trebleKnob, double levelKnob)
 {
-    // Gain: audio taper approximated as knob^2, both gangs turn together; f = pin1 -> wiper fraction.
-    const double f = gainKnob * gainKnob;
+    // Gain: audio taper (pots::audio, 15% at half rotation), both gangs turn together; f = pin1 -> wiper fraction.
+    const double f = pots::audio (gainKnob);
     const double rPin1 = juce::jmax (0.5, gainPot * f);
     const double rPin3 = juce::jmax (0.5, gainPot * (1.0 - f));
 

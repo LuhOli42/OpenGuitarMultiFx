@@ -2,7 +2,6 @@
 
 #include "DeferredReclaimer.h"
 #include "PitchDetector.h"
-#include "PolyphonicPitchDetector.h"
 #include "SignalGraph.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -38,8 +37,14 @@ public:
     /** Control thread. The engine takes ownership of the graph. */
     void setSignalGraph (std::unique_ptr<SignalGraph> newGraph);
 
-    /** Safe to read from any thread (it's just telemetry). */
-    double getCurrentCpuUsage() const noexcept { return lastCpuUsage.load (std::memory_order_relaxed); }
+    /** Safe to read from any thread (it's just telemetry). The AVERAGE share of the block budget over the last ~0.5 s --
+        "how loaded am I". */
+    double getCurrentCpuUsage() const noexcept { return averageCpuUsage.load (std::memory_order_relaxed); }
+
+    /** The WORST block of the last ~1 s. This is the number that decides whether audio drops out (one block over 100% is
+        a dropout) and it is normally well above the average -- showing only this one reads as "the CPU is jumping around"
+        when nothing is wrong, and showing only the average hides a real dropout. The UI shows both. */
+    double getPeakCpuUsage() const noexcept { return peakCpuUsage.load (std::memory_order_relaxed); }
 
     /** Safe to read from any thread. Peak level (0-1) of the selected input
         channel, and of the post-graph signal actually about to reach the
@@ -51,17 +56,35 @@ public:
         (silence or noise) -- for FooterBar's tuner gauge. */
     float getDetectedFrequencyHz() const noexcept { return pitchDetector.getDetectedFrequencyHz(); }
 
-    /** For the polyphonic tuner overlay -- see PolyphonicPitchDetector.h.
-        Fed the exact same input tap as the mono pitchDetector above, just
-        split into per-string bands. Control thread; safe from any thread. */
-    void setTuningProfile (const TuningProfile& tuning) { polyphonicPitchDetector.setTuning (tuning); }
-    int getTuningStringCount() const noexcept { return polyphonicPitchDetector.getNumStrings(); }
-    PolyphonicPitchDetector::StringReading getTuningStringReading (int stringIndex) const noexcept
+    /** Input sensitivity, in dB, applied to the signal before the chain (and reflected in the IN meter). This is the
+        gain-staging knob between an interface and the models: every circuit here reads a sample of 1.0 as one VOLT at its
+        input jack, because that is what the schematics are in. A guitar gives roughly 0.05-0.3 V, so an interface whose
+        own gain lands the guitar near full scale drives every model several times harder than the real pedal or amp would
+        ever see -- which is heard as "it is always saturated, playing softer does not clean up". Control thread. */
+    void setInputGainDb (float db) noexcept
     {
-        return polyphonicPitchDetector.getReading (stringIndex);
+        inputGainDb.store (db, std::memory_order_relaxed);
+        inputGainLinear.store (juce::Decibels::decibelsToGain (db), std::memory_order_relaxed);
     }
+    float getInputGainDb() const noexcept { return inputGainDb.load (std::memory_order_relaxed); }
+
+    /** Control thread. Turns the tuner's pitch analysis on and off. It is OFF by default and only runs while the tuner is
+        on screen: YIN's full pass is O(window x maxLag) and fires periodically, so it lands entirely in ONE audio block --
+        measured 0.71 ms (mono) + 2.28 ms (6 strings) in a single 2.67 ms block, i.e. over budget on its own, before any
+        effect runs, and independent of what is in the chain. That was the "CPU 50-80% no matter how many pedals" the user
+        reported on 2026-09-21. */
+    void setTunerActive (bool shouldBeActive) noexcept { tunerActive.store (shouldBeActive, std::memory_order_relaxed); }
+    bool isTunerActive() const noexcept { return tunerActive.load (std::memory_order_relaxed); }
 
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
+
+    /** Sample rates the OPEN device supports (empty when no device is open) and the one it is running at (0 when stopped). Control thread. */
+    juce::Array<double> getAvailableSampleRates() const;
+    double getCurrentSampleRate() const noexcept { return sampleRate.load (std::memory_order_relaxed); }
+
+    /** Control thread. Restarts the device at `newRate` (audio is interrupted for a moment), re-prepares the running graph for it, and
+        remembers the choice for the next launch. Returns an empty string on success, otherwise why it failed (the previous rate is restored). */
+    juce::String setSampleRate (double newRate);
 
     // -- Input/output routing -----------------------------------------
     // Both are plain atomics read once per block on the audio thread and
@@ -102,17 +125,29 @@ private:
 
     void timerCallback() override;
 
+    /** Audio thread. Runs the current graph; when a new one has just been published (a block was moved, added, removed, a
+        row re-routed) the old graph plays one more moment with a short fade-out and the new one fades in, instead of
+        switching the signal path between two samples. */
+    void processGraph (juce::AudioBuffer<float>& buffer, int numSamples);
+
     juce::AudioDeviceManager deviceManager;
     DeferredReclaimer<SignalGraph> graphSlot;
 
     std::atomic<double> sampleRate { 0.0 };
     std::atomic<int> blockSize { 0 };
-    std::atomic<double> lastCpuUsage { 0.0 };
+    std::atomic<double> averageCpuUsage { 0.0 }, peakCpuUsage { 0.0 };
     std::atomic<float> lastInputLevel { 0.0f };
     std::atomic<float> lastOutputLevel { 0.0f };
     PitchDetector pitchDetector;
-    PolyphonicPitchDetector polyphonicPitchDetector;
 
+    // Audio thread only (reset in audioDeviceAboutToStart, before the callback runs): the graph swap's fade.
+    SignalGraph* activeGraph = nullptr;      // the graph the previous block ran
+    SignalGraph* fadingOutGraph = nullptr;   // a retired graph still playing its fade-out (kept alive by graphSlot's margin)
+    int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0, fadeInSamplesLeft = 0, fadeInSamplesTotal = 0;
+    juce::int64 lastCallbackTicks = 0;
+
+    std::atomic<bool> tunerActive { false }; // see setTunerActive()
+    std::atomic<float> inputGainDb { 0.0f }, inputGainLinear { 1.0f }; // see setInputGainDb()
     std::atomic<int> selectedInputChannel { 0 };
     std::atomic<int> selectedOutputPairStart { 0 };
 };

@@ -131,7 +131,6 @@ OpenGuitarMultiFx/
 │   │   ├── EffectProcessor.h            # abstract base class for every processor
 │   │   ├── GateProcessor.{h,cpp}
 │   │   ├── CompressorProcessor.{h,cpp}
-│   │   ├── OverdriveProcessor.{h,cpp}
 │   │   ├── DistortionProcessor.{h,cpp}
 │   │   ├── FuzzProcessor.{h,cpp}
 │   │   ├── EQProcessor.{h,cpp}
@@ -245,6 +244,19 @@ Authentication via OAuth 2.0 + PKCE (public `client_id` + server-side secret key
 | 8 | Footswitches, physical MIDI, expression pedal | Cubie A7S |
 | 9 | Custom hardware (PCB, chassis, power supply, EMI/EMC) | Custom PCB |
 | 10 | Optimization and live-use validation (soak test, cyclictest, real shows) | Final product |
+
+**Backlog, not tied to a phase** (agreed with the user 2026-09-20):
+
+- **Lane-parallel `SignalGraph` (multi-core).** Lanes (rows) that do not depend on each other run on worker threads and join at the merge; a serial chain cannot be parallelised without a block of latency per stage (1-3 ms each, over the <10 ms budget), so only genuinely parallel lanes benefit. Needs fixed worker threads with a short spin/park wait inside the audio path, i.e. a change to the realtime boundary's allowed primitives -- **Ask First** per `CLAUDE.md`; design it and get approval before coding. Motivation: the netlist distortion pedals cost 2.5-25% of a core each.
+- **Fender Bassman 5F6-A amplifier model: DONE 2026-09-21** (`docs/circuits/Bassman5F6A.md`, "Bassman-Style Amplifier"). Costs 14-24% of a core at 1x (3x the pedals' 5% target): the follow-ups are channel-variant preambs, a cheaper Newton for tube blocks, and the lane-parallel `SignalGraph` above.
+- **More circuit-modelled pedals (requested by the user 2026-09-21; display names follow "<Original>-Style <Category>"):**
+  1. *Op-amp + diode clippers*, which need a shared building block first -- an op-amp macro-model with **finite gain-bandwidth and slew-rate limiting** (the LM308 with its 30 pF compensation IS the RAT's sound; `addFiniteGainOpAmp` + pole + saturating follower from the BD-2 work covers gain/GBW/swing, slew needs a new element): ProCo RAT (original, RAT 2 and Turbo RAT), DOD Overdrive 250, MXR Distortion+, MI Audio Crunch Box, Marshall Guv'nor, Nobels ODR-1, Boss Metal Zone (MT-2; multi-stage + semi-parametric mid, the heavy one), Marshall Blues Breaker (schematic to find).
+  2. *Other clipping topologies* (schematics to find and classify first): Fulltone OCD (as far as recalled it clips with MOSFETs -- a square-law device like the JFET model, to confirm), Hermida Zendrive.
+  3. *Transistor stages*: Big Muff Pi and the Sovtek Big Muff (four BJT stages, two diode-clipped, passive tone stack; ~HM-2 cost, the versions differ in values/transistors), Colorsound Overdrive, EP Booster (the Echoplex preamp as a clean/colouring boost; a small transistor stage, closest to the existing Rangemaster-style booster).
+  4. *Tube*: Chandler Tube Driver (a 12AX7 run at a starved plate voltage; the Koren model must be validated at ~20 V, unlike the amp's).
+  **Done so far (2026-09-21, the user asked for batches of ~5 pedals):** MXR Distortion+, DOD 250, Marshall Guv'nor, Marshall Blues Breaker, ProCo RAT (original) -- all on `NodalCircuit::addOpAmpMacro` (with rail clamps against integrator windup; docs in `docs/circuits/`). **Still open:** the slew / input-pair-limited transconductor (RAT's LM308), RAT 2 / Turbo RAT (schematics in the collection), Nobels ODR-1 (full schematic found and partly traced: two 4558s, gyrator Spectrum control, JFET buffers), MI Audio Crunch Box (no readable schematic found yet), Metal Zone, OCD, Zendrive, Big Muffs (schematics in the collection), Colorsound, EP Booster, Chandler Tube Driver. Schematic source that worked: `github.com/yuvadm/guitar-effects-schematics` (raw files, readable by eye with `pdftoppm` for PDFs).
+  Each one: find the schematic and cross-check against a second source, per-circuit doc in `docs/circuits/`, gain audit against published figures, equivalence checks against any reduced model (edge/spike/gate tests included), and a listen by the user before a reduced model becomes the default.
+- **BD-2 / HM-2 below 5% of a core:** reduced-order models of their gain stages (see `docs/circuits/NodalCircuitSolver.md`, "Where the cycles go").
 
 The UI is designed for touch from Phase 1 onward — not because the screen physically exists yet, but because the Audio Engine already exposes state through a lock-free queue from the very first commit. This avoids rewriting the realtime boundary once Phase 7 arrives.
 

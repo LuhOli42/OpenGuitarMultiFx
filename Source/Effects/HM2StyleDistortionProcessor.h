@@ -39,6 +39,13 @@ namespace openguitarmultifx
 class HM2StyleDistortionProcessor : public EffectProcessor
 {
 public:
+    /** Q6 and Q7 as one-port transistors with a smooth collector-current limit instead of two-port Ebers-Moll (see
+        NodalCircuit::addBjtSaturating). **Default false**: it measures 18% cheaper and matches level (0.86 dB) and octave-band
+        shape (1.15 dB) on chords and a real DI, but the user heard a volume "pop" at high gain, and the only place the two
+        differ is hard edges (peaks up to +1 dB on a square wave / gated input), so the full netlist stays the default.
+        Kept for the equivalence tests. */
+    static inline bool reducedOrder = false;
+
     HM2StyleDistortionProcessor();
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;

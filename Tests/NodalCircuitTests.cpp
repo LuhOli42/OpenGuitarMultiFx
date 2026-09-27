@@ -1,4 +1,5 @@
 #include "Effects/BD2StyleOverdriveProcessor.h"
+#include "Effects/PotTaper.h"
 #include "Effects/CentaurStyleOverdriveProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
 #include "Effects/NodalCircuit.h"
@@ -234,7 +235,7 @@ public:
             c.addCapacitor (ne, np, 1.0e-6);    c.addResistor (np, bias, 10.0e3);
             c.addOpAmp (np, nm, o1);
             c.addCapacitor (nm, nc3, 0.047e-6); c.addResistor (nc3, gnd, 4.7e3);
-            c.addResistor (nm, nf, 51.0e3);     c.addResistor (nf, o1, 500.0e3 * drive * drive);
+            c.addResistor (nm, nf, 51.0e3);     c.addResistor (nf, o1, 500.0e3 * pots::audio (drive));
             c.addCapacitor (nm, o1, 51.0e-12);
             c.addDiode (nm, o1, Is, nVt);       c.addDiode (o1, nm, Is, nVt);
             c.addResistor (o1, nA, 1.0e3);      c.addCapacitor (nA, gnd, 0.22e-6);   c.addResistor (nA, bias, 10.0e3);
@@ -242,8 +243,8 @@ public:
             c.addResistor (nA, nW, 20.0e3 * tone);        c.addResistor (nW, nB, 20.0e3 * (1.0 - tone));
             c.addResistor (nW, nw6, 220.0);     c.addCapacitor (nw6, gnd, 0.22e-6);
             c.addCapacitor (o2, n7, 1.0e-6);    c.addResistor (n7, nt, 1.0e3);
-            c.addResistor (nt, nlw, 100.0e3 * (1.0 - level * level));
-            c.addResistor (nlw, gnd, 100.0e3 * level * level);
+            c.addResistor (nt, nlw, 100.0e3 * (1.0 - pots::audio (level)));
+            c.addResistor (nlw, gnd, 100.0e3 * pots::audio (level));
             c.addResistor (nlw, nsw, 100.0);    c.addCapacitor (nsw, nqb, 0.1e-6);   c.addResistor (nqb, bias, 510.0e3);
             c.addFollower (nqb, nqe, 0.62); c.addResistor (nqe, gnd, 10.0e3);
             c.addResistor (nqe, nc9, 100.0);    c.addCapacitor (nc9, out, 10.0e-6);

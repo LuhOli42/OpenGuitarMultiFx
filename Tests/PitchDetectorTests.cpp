@@ -29,6 +29,7 @@ public:
             detector.pushSamples (block.data(), thisBlock);
             remaining -= thisBlock;
         }
+        detector.analyse(); // the analysis runs on the control thread now -- see PitchDetector::analyse()
     }
 
     void runTest() override
@@ -41,6 +42,7 @@ public:
             std::vector<float> silence ((size_t) 128, 0.0f);
             for (int block = 0; block < 100; ++block)
                 detector.pushSamples (silence.data(), (int) silence.size());
+            detector.analyse();
 
             expectWithinAbsoluteError (detector.getDetectedFrequencyHz(), 0.0f, 1.0e-6f);
         }

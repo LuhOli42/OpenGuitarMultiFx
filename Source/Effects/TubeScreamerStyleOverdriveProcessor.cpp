@@ -1,4 +1,5 @@
 #include "TubeScreamerStyleOverdriveProcessor.h"
+#include "PotTaper.h"
 #include "IconKit.h"
 #include "TheveninCombine.h"
 
@@ -84,11 +85,11 @@ void TubeScreamerStyleOverdriveProcessor::prepare (double newSampleRate, int, in
     solveFailures = 0;
 
     smoothedRDrive.reset (newSampleRate, 0.02);
-    smoothedRDrive.setCurrentAndTargetValue (juce::jmax (1.0f, driveMax * drive->get() * drive->get()));
+    smoothedRDrive.setCurrentAndTargetValue (juce::jmax (1.0f, driveMax * (float) pots::audio (drive->get())));
     smoothedRToneWiperToPlus.reset (newSampleRate, 0.02);
     smoothedRToneWiperToPlus.setCurrentAndTargetValue (juce::jmax (1.0f, toneMax * tone->get()));
     smoothedRLevelWiperToBottom.reset (newSampleRate, 0.02);
-    smoothedRLevelWiperToBottom.setCurrentAndTargetValue (juce::jmax (1.0f, levelMax * level->get() * level->get()));
+    smoothedRLevelWiperToBottom.setCurrentAndTargetValue (juce::jmax (1.0f, levelMax * (float) pots::audio (level->get())));
 
     for (auto& ch : channels)
     {
@@ -160,9 +161,9 @@ void TubeScreamerStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buf
     const int numChannels = juce::jmin (buffer.getNumChannels(), (int) channels.size());
     const int numSamples = buffer.getNumSamples();
 
-    smoothedRDrive.setTargetValue (juce::jmax (1.0f, driveMax * drive->get() * drive->get()));
+    smoothedRDrive.setTargetValue (juce::jmax (1.0f, driveMax * (float) pots::audio (drive->get())));
     smoothedRToneWiperToPlus.setTargetValue (juce::jmax (1.0f, toneMax * tone->get()));
-    smoothedRLevelWiperToBottom.setTargetValue (juce::jmax (1.0f, levelMax * level->get() * level->get()));
+    smoothedRLevelWiperToBottom.setTargetValue (juce::jmax (1.0f, levelMax * (float) pots::audio (level->get())));
 
     const double rOut = 1.0 / (1.0 / (double) spec.outputShuntResistance + 1.0 / (double) outputLoadResistance);
     const double rSeriesOut = (double) spec.outputSeriesResistance;

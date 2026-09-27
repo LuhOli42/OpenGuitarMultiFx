@@ -1,16 +1,32 @@
 #include "Effects/OversampledEffect.h"
+#include "Effects/PickupLoadEffect.h"
 #include "Effects/OutputTrimEffect.h"
 #include "EffectRegistry.h"
 
 #include "Effects/BD2StyleOverdriveProcessor.h"
 #include "Effects/CentaurStyleOverdriveProcessor.h"
 #include "Effects/DS1StyleDistortionProcessor.h"
+#include "Effects/BigMuffStyleFuzzProcessor.h"
+#include "Effects/DT1StyleDistortionProcessor.h"
+#include "Effects/ODR1StyleOverdriveProcessor.h"
+#include "Effects/OverdriverStyleOverdriveProcessor.h"
+#include "Effects/EPStyleBoosterProcessor.h"
+#include "Effects/TubeDriverStyleOverdriveProcessor.h"
+#include "Effects/MetalZoneStyleDistortionProcessor.h"
+#include "Effects/RatStyleDistortionProcessor.h"
+#include "Effects/CrunchBoxStyleDistortionProcessor.h"
+#include "Effects/ZendriveStyleOverdriveProcessor.h"
+#include "Effects/OCDStyleOverdriveProcessor.h"
+#include "Effects/FuzzFaceStyleFuzzProcessor.h"
+#include "Effects/ToneBenderStyleFuzzProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
 #include "Effects/TubeScreamerStyleOverdriveProcessor.h"
 
 #include <juce_core/juce_core.h>
 
 #include <cmath>
+#include <functional>
+#include <cstdlib>
 #include <vector>
 
 namespace openguitarmultifx
@@ -186,9 +202,16 @@ public:
                 auto* trimmed = dynamic_cast<OutputTrimEffect*> (pedal.get());
                 if (trimmed == nullptr)
                     return -1;
-                return dynamic_cast<OversampledEffect*> (&trimmed->getInner()) != nullptr ? 1 : 0; // wrapped or not
+                // Since 2026-09-27 every drive/distortion/fuzz pedal also carries a PickupLoadEffect (the guitar's own
+                // R + L reacting with this pedal's input impedance, EffectRegistry.cpp): OversampledEffect is one level
+                // further in now, wrapped INSIDE it, not directly inside OutputTrimEffect.
+                EffectProcessor* inner = &trimmed->getInner();
+                if (auto* pickup = dynamic_cast<PickupLoadEffect*> (inner))
+                    inner = &pickup->getInner();
+                return dynamic_cast<OversampledEffect*> (inner) != nullptr ? 1 : 0; // wrapped or not
             };
-            expectEquals (orderOf ("DS1StyleDistortion", Q::eco), 0);
+            expectEquals (orderOf ("DS1StyleDistortion", Q::eco), 1);  // since 2026-09-26 the hardest clippers are 2x even in Eco (docs/circuits/HarshnessDiagnosis.md)
+            expectEquals (orderOf ("BD2StyleOverdrive", Q::eco), 1);   // since 2026-09-27 every hard-clipping pedal that measurably aliased at 1x is 2x even in Eco
             expectEquals (orderOf ("DS1StyleDistortion", Q::balanced), 1);
             expectEquals (orderOf ("DS1StyleDistortion", Q::high), 1);
             expectEquals (orderOf ("OD1StyleOverdrive", Q::balanced), 0); // the OD-1 only oversamples in High
@@ -246,6 +269,53 @@ public:
             }
         }
 
+        if (std::getenv ("PEDAL_ALIAS") != nullptr)
+        {
+            // Dev only: non-harmonic/harmonic energy at 1x/2x/4x/8x for the pedals listed here, to pick a pedal's
+            // oversampling tiers from data (docs/circuits/Oversampling.md). Add a row when a new clipper is built.
+            using Make = std::function<std::unique_ptr<EffectProcessor>()>;
+            const std::vector<std::pair<const char*, Make>> pedals {
+                { "Big Muff USA", [] { return std::make_unique<BigMuffStyleFuzzProcessor> (BigMuffStyleFuzzProcessor::Model::usV3); } },
+                { "Big Muff Russian", [] { return std::make_unique<BigMuffStyleFuzzProcessor> (BigMuffStyleFuzzProcessor::Model::russianGreen); } },
+                { "Fuzz Face Ge", [] { return std::make_unique<FuzzFaceStyleFuzzProcessor> (FuzzFaceStyleFuzzProcessor::Model::germanium); } },
+                { "Fuzz Face Si", [] { return std::make_unique<FuzzFaceStyleFuzzProcessor> (FuzzFaceStyleFuzzProcessor::Model::silicon); } },
+                { "Tone Bender Ge", [] { return std::make_unique<ToneBenderStyleFuzzProcessor> (ToneBenderStyleFuzzProcessor::Model::germanium); } },
+                { "Tone Bender Si", [] { return std::make_unique<ToneBenderStyleFuzzProcessor> (ToneBenderStyleFuzzProcessor::Model::silicon); } },
+                { "DT-1", [] { return std::make_unique<DT1StyleDistortionProcessor>(); } },
+                { "ODR-1", [] { return std::make_unique<ODR1StyleOverdriveProcessor>(); } },
+                { "Overdriver", [] { return std::make_unique<OverdriverStyleOverdriveProcessor>(); } },
+                { "EP Booster", [] { return std::make_unique<EPStyleBoosterProcessor>(); } },
+                { "Tube Driver", [] { return std::make_unique<TubeDriverStyleOverdriveProcessor>(); } },
+                { "Metal Zone", [] { return std::make_unique<MetalZoneStyleDistortionProcessor>(); } },
+                { "RAT (original)", [] { return std::make_unique<RatStyleDistortionProcessor> (RatStyleDistortionProcessor::Model::original); } },
+                { "RAT 2", [] { return std::make_unique<RatStyleDistortionProcessor> (RatStyleDistortionProcessor::Model::rat2); } },
+                { "Turbo RAT", [] { return std::make_unique<RatStyleDistortionProcessor> (RatStyleDistortionProcessor::Model::turbo); } },
+                { "Crunch Box", [] { return std::make_unique<CrunchBoxStyleDistortionProcessor>(); } },
+                { "Zendrive", [] { return std::make_unique<ZendriveStyleOverdriveProcessor>(); } },
+                { "OCD", [] { return std::make_unique<OCDStyleOverdriveProcessor>(); } },
+            };
+            beginTest ("alias measurement (dev only, PEDAL_ALIAS=1)");
+            const juce::String only = juce::SystemStats::getEnvironmentVariable ("PEDAL_ALIAS_ONLY", {});
+            for (const auto& [name, make] : pedals)
+            {
+                if (only.isNotEmpty() && ! juce::String (name).containsIgnoreCase (only))
+                    continue;
+                for (int order : { 0, 1, 2, 3 })
+                {
+                    std::unique_ptr<EffectProcessor> chain = make();
+                    setKnobs (*chain, 0.7f);
+                    for (auto* prm : chain->getParameters()->getParameters (true)) // a selector at 0.7 would snap to its last position
+                        if (prm->getName (32) == "Clipping")
+                            dynamic_cast<juce::AudioParameterFloat&> (*prm) = 0.0f;
+                    if (order > 0)
+                        chain = std::make_unique<OversampledEffect> (std::move (chain), order);
+                    chain->prepare (sr, 512, 1);
+                    logMessage (juce::String (name) + ", " + juce::String (1 << order) + "x: non-harmonic/harmonic = "
+                                + juce::String (aliasDb (render (*chain, 0.5)), 1) + " dB");
+                }
+            }
+        }
+
         beginTest ("circuit pedals are steady-state clean: no solver glitches, no noise floor (output repeats exactly with the input)");
         {
             struct Case { const char* name; std::unique_ptr<EffectProcessor> proc; };
@@ -255,6 +325,18 @@ public:
                 { "Centaur", std::make_unique<CentaurStyleOverdriveProcessor>() },
                 { "BD-2", std::make_unique<BD2StyleOverdriveProcessor>() },
                 { "HM-2", std::make_unique<HM2StyleDistortionProcessor>() },
+                { "Big Muff (USA)", std::make_unique<BigMuffStyleFuzzProcessor> (BigMuffStyleFuzzProcessor::Model::usV3) },
+                { "Big Muff (Russian)", std::make_unique<BigMuffStyleFuzzProcessor> (BigMuffStyleFuzzProcessor::Model::russianGreen) },
+                { "Fuzz Face (germanium)", std::make_unique<FuzzFaceStyleFuzzProcessor> (FuzzFaceStyleFuzzProcessor::Model::germanium) },
+                { "Fuzz Face (silicon)", std::make_unique<FuzzFaceStyleFuzzProcessor> (FuzzFaceStyleFuzzProcessor::Model::silicon) },
+                { "Tone Bender (germanium)", std::make_unique<ToneBenderStyleFuzzProcessor> (ToneBenderStyleFuzzProcessor::Model::germanium) },
+                { "Tone Bender (silicon)", std::make_unique<ToneBenderStyleFuzzProcessor> (ToneBenderStyleFuzzProcessor::Model::silicon) },
+                { "DT-1", std::make_unique<DT1StyleDistortionProcessor>() },
+                { "ODR-1", std::make_unique<ODR1StyleOverdriveProcessor>() },
+                { "Overdriver", std::make_unique<OverdriverStyleOverdriveProcessor>() },
+                { "EP Booster", std::make_unique<EPStyleBoosterProcessor>() },
+                { "Tube Driver", std::make_unique<TubeDriverStyleOverdriveProcessor>() },
+                { "Metal Zone", std::make_unique<MetalZoneStyleDistortionProcessor>() },
             };
             for (auto& c : cases)
             {

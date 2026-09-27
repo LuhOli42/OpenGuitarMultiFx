@@ -26,6 +26,8 @@ PlateReverbProcessor::PlateReverbProcessor()
 
 void PlateReverbProcessor::prepare (double sampleRate, int, int)
 {
+    for (auto& m : wetMatch)
+        m.prepare (sampleRate, 0.18f);
     currentSampleRate = sampleRate;
 
     // Short, Dattorro-style input diffusion -- fast and dense, the
@@ -50,6 +52,8 @@ void PlateReverbProcessor::prepare (double sampleRate, int, int)
 
 void PlateReverbProcessor::reset()
 {
+    for (auto& m : wetMatch)
+        m.reset();
     for (auto& channelStages : diffuser)
         for (auto& stage : channelStages)
             stage.clear();
@@ -115,9 +119,13 @@ void PlateReverbProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             const float wetSample = ch == 0 ? outA : outB;
             const float input = channelData[(size_t) ch][i];
-            channelData[(size_t) ch][i] = input * (1.0f - wet) + wetSample * wet;
+            wetMatch[(size_t) ch].accumulate (input, wetSample);
+            channelData[(size_t) ch][i] = input * (1.0f - wet) + wetSample * wet * wetMatch[(size_t) ch].gain();
         }
     }
+
+    for (int ch = 0; ch < numChannels; ++ch)
+        wetMatch[(size_t) ch].endBlock (numSamples, 1);
 }
 
 void PlateReverbProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const

@@ -63,7 +63,7 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
     {
         lane.buffer.setSize (numChannels, maxBlockSize, false, true, true);
         for (auto* p : lane.processors)
-            p->prepare (sampleRate, maxBlockSize, numChannels);
+            p->prepareIfNeeded (sampleRate, maxBlockSize, numChannels);
     }
 }
 

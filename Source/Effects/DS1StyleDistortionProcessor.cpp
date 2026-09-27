@@ -123,8 +123,8 @@ void DS1StyleDistortionProcessor::buildChannel (Channel& ch)
         // R14 + C9 into the clipper node; anti-parallel diode pair to the bias rail.
         c.addResistor (o, x9, 2.2e3);                 // R14
         c.addCapacitor (x9, n0, 0.47e-6);             // C9
-        c.addDiode (n0, nvb, diodeIs, diodeNVt);      // D4
-        c.addDiode (nvb, n0, diodeIs, diodeNVt);      // D5
+        c.addDiode (n0, nvb, diodeIs, diodeNVt, 4.0e-9);      // D4
+        c.addDiode (nvb, n0, diodeIs, diodeNVt, 4.0e-9);      // D5
 
         // Big Muff-style Tone network (a genuine bridged network, not a ladder).
         c.addCapacitor (n0, nvb, 0.01e-6);            // C10
@@ -293,9 +293,9 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
 
 void DS1StyleDistortionProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    // The sheet lists "Distortion" as its own distinct glyph, but it still isn't saved in the repo (see
-    // docs/icons/AGENT-icon-notes.md), so this reuses the overdrive icon as a placeholder.
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::overdrive_svg, IconData::overdrive_svgSize);
+    // Distortion glyph (Assets/Icons/distortion.svg): the overdrive wave with flat, hard-clipped tops and steeper sides -- between the
+    // overdrive's rounded one and the (future) fuzz's square one. See docs/icons/AGENT-icon-notes.md.
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::distortion_svg, IconData::distortion_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

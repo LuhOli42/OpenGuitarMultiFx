@@ -59,15 +59,15 @@ public:
         registerBuiltInEffects (registry);
 
         beginTest ("every pedal at noon is within 1 dB of unity for the reference signal");
-        for (const char* key : { "Overdrive", "PositiveGroundBooster", "OD1StyleOverdrive", "TS808StyleOverdrive", "TS9StyleOverdrive",
+        for (const char* key : { "PositiveGroundBooster", "OD1StyleOverdrive", "TS808StyleOverdrive", "TS9StyleOverdrive",
                                  "TS10StyleOverdrive", "CentaurStyleOverdrive", "BD2StyleOverdrive", "DS1StyleDistortion",
-                                 "HM2StyleDistortion" })
+                                 "HM2StyleDistortion", "DistortionPlusStyleDistortion", "DOD250StyleOverdrive", "GuvnorStyleDistortion", "BluesBreakerStyleOverdrive", "RatStyleDistortion", "RAT2StyleDistortion", "TurboRatStyleDistortion", "CrunchBoxStyleDistortion", "ZendriveStyleOverdrive", "OCDStyleOverdrive", "DT1StyleDistortion", "ODR1StyleOverdrive", "OverdriverStyleOverdrive", "EPStyleBooster", "TubeDriverStyleOverdrive", "MetalZoneStyleDistortion", "BigMuffStyleFuzz", "RussianBigMuffStyleFuzz", "SovtekBigMuffStyleFuzz", "FuzzFaceStyleFuzz", "SiliconFuzzFaceStyleFuzz", "ToneBenderStyleFuzz", "SiliconToneBenderStyleFuzz", "BassmanStyleAmplifier", "SuperLeadStyleAmplifier", "GE7StyleEqualizer", "DynaCompStyleCompressor", "RossStyleCompressor", "SqueezerStyleCompressor" })
         {
             auto pedal = registry.create (key);
             pedal->prepare (sr, 512, 1);
-            for (auto* prm : pedal->getParameters()->getParameters (true))
-                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (prm))
-                    *f = juce::jlimit (f->range.start, f->range.end, 0.5f); // "noon", whatever a pedal's own default is
+            const auto pages = pedal->getParameterPages();
+            for (auto* f : pages[0]) // page 1 only: an amp's page 2 (bias, speaker...) stays at its defaults
+                *f = juce::jlimit (f->range.start, f->range.end, 0.5f); // "noon", whatever a pedal's own default is
             const double gainDb = referenceGainDb (*pedal);
             logMessage (juce::String (key).paddedRight (' ', 24) + juce::String (gainDb, 2) + " dB");
             expectWithinAbsoluteError (gainDb, 0.0, 1.0);

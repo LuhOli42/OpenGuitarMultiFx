@@ -121,7 +121,8 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
                 wetSum += delayed;
             }
 
-            data[i] = input * (1.0f - wet) + (wetSum * 0.5f) * wet;
+            // 1/sqrt (2), not 1/2: two decorrelated copies add in energy (Mix = 1 was -3.9 dB against the dry signal with 0.5)
+            data[i] = input * (1.0f - wet) + (wetSum * 0.70710678f) * wet;
         }
 
         for (auto& tap : taps)

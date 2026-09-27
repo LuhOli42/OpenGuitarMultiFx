@@ -1,4 +1,5 @@
 #include "OD1StyleOverdriveProcessor.h"
+#include "PotTaper.h"
 #include "IconKit.h"
 #include "TheveninCombine.h"
 
@@ -55,7 +56,7 @@ void OD1StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
     settledSampleRate = newSampleRate;
 
     smoothedRFeedback.reset (newSampleRate, 0.02);
-    smoothedRFeedback.setCurrentAndTargetValue (r5 + juce::jmax (1.0f, driveMax * drive->get() * drive->get()));
+    smoothedRFeedback.setCurrentAndTargetValue (r5 + juce::jmax (1.0f, driveMax * (float) pots::audio (drive->get())));
     smoothedRTopToWiper.reset (newSampleRate, 0.02);
     smoothedRTopToWiper.setCurrentAndTargetValue (juce::jmax (1.0f, levelMax * (1.0f - level->get())));
 
@@ -121,7 +122,7 @@ void OD1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), (int) channels.size());
     const int numSamples = buffer.getNumSamples();
 
-    smoothedRFeedback.setTargetValue (r5 + juce::jmax (1.0f, driveMax * drive->get() * drive->get()));
+    smoothedRFeedback.setTargetValue (r5 + juce::jmax (1.0f, driveMax * (float) pots::audio (drive->get())));
     smoothedRTopToWiper.setTargetValue (juce::jmax (1.0f, levelMax * (1.0f - level->get())));
 
     for (int i = 0; i < numSamples; ++i)

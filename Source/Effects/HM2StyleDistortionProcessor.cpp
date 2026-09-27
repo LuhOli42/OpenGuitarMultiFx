@@ -23,6 +23,14 @@ namespace
     constexpr double geIs = 200.0e-9;
     constexpr double geNVt = 1.3 * 25.85e-3;
 
+    // Collector-current limits of the two gain transistors (NodalCircuit::addBjtSaturating). Starting point: the load
+    // line, (rail - Vce(sat)) / (collector + emitter resistance) -- Q6: 8 V rail, 10K, 22 ohm; Q7: emitter 7.9 V through
+    // 120 ohm, collector into 10K || 68K to 4.5 V (0.58 V behind 8.7K). FITTED against the two-port transistors (level
+    // and octave-band shape of a chord, 3 Dist x 2 High x 3 input levels): Q6's x2.0 (the stage also feeds the DIST
+    // branch and Q7's bias network, so it can carry more than the load line of its own 10K alone), Q7's x0.8.
+    constexpr double q6SaturationCurrent = 2.0 * (8.0 - 0.2) / (10.0e3 + 22.0);
+    constexpr double q7SaturationCurrent = 0.8 * (7.9 - 0.2 - 0.58) / (8.72e3 + 120.0);
+
     constexpr double distPotMax = 250.0e3;
     constexpr double tonePotMax = 10.0e3;
     constexpr double levelPotMax = 10.0e3;
@@ -86,7 +94,10 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addResistor (b6, gnd, 100.0e3);
         c.addResistor (b6, c6, 470.0e3);
         c.addCapacitor (b6, c6, 10.0e-12);
-        c.addBjt (c6, b6, e6, false, npn2SC2240);
+        if (reducedOrder)
+            c.addBjtSaturating (c6, b6, e6, false, npn2SC2240, q6SaturationCurrent);
+        else
+            c.addBjt (c6, b6, e6, false, npn2SC2240);
         c.addResistor (e6, gnd, 22.0);
         c.addResistor (v9f, c6, 10.0e3);
 
@@ -95,7 +106,10 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addResistor (x3, b7, 22.0e3);
         c.addResistor (v9f, b7, 100.0e3);
         c.addResistor (v9f, e7, 120.0);
-        c.addBjt (c7, b7, e7, true, pnp2SA970);
+        if (reducedOrder)
+            c.addBjtSaturating (c7, b7, e7, true, pnp2SA970, q7SaturationCurrent);
+        else
+            c.addBjt (c7, b7, e7, true, pnp2SA970);
         c.addResistor (b7, c7, 470.0e3);
         c.addCapacitor (b7, c7, 10.0e-12);
         c.addResistor (c7, gnd, 10.0e3);
@@ -117,8 +131,8 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addOpAmp (c7, n6, o1);
         c.addResistor (n6, o1, 220.0e3);
         c.addCapacitor (n6, o1, 10.0e-12);
-        c.addDiode (n6, o1, siIs, siNVt);         // 1 diode: conducts when (-) is above the output
-        c.addDiode (o1, n6, siIs, 2.0 * siNVt);   // 2 in series the other way = one diode with twice nVt (exact)
+        c.addDiode (n6, o1, siIs, siNVt, 4.0e-9); // 1 diode: conducts when (-) is above the output
+        c.addDiode (o1, n6, siIs, 2.0 * siNVt, 4.0e-9);   // 2 in series the other way = one diode with twice nVt (exact)
 
         ch.nC7 = c7;
         ch.nN6 = n6;
@@ -144,11 +158,11 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
 
         c.addCapacitor (o1, na1, 1.0e-6);
         c.addResistor (na1, nx1, 10.0e3);
-        c.addDiode (nx1, nx2, geIs, geNVt);       // germanium pair, in series with the signal
-        c.addDiode (nx2, nx1, geIs, geNVt);
+        c.addDiode (nx1, nx2, geIs, geNVt, 2.0e-9);       // germanium pair, in series with the signal
+        c.addDiode (nx2, nx1, geIs, geNVt, 2.0e-9);
         c.addResistor (nx2, ny, 10.0e3);
-        c.addDiode (ny, gnd, siIs, siNVt);        // silicon pair to ground
-        c.addDiode (gnd, ny, siIs, siNVt);
+        c.addDiode (ny, gnd, siIs, siNVt, 4.0e-9);        // silicon pair to ground
+        c.addDiode (gnd, ny, siIs, siNVt, 4.0e-9);
         c.addCapacitor (ny, gnd, 1.0e-9);
         c.addCapacitor (ny, np, 1.0e-6);
         c.addResistor (np, nv45, 68.0e3);
@@ -380,9 +394,9 @@ void HM2StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
 
 void HM2StyleDistortionProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    // The DS-1-Style Distortion's placeholder glyph is the overdrive icon (the sheet's "Distortion" glyph is
-    // not saved in the repo -- see docs/icons/AGENT-icon-notes.md); reuse it here for the same reason.
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::overdrive_svg, IconData::overdrive_svgSize);
+    // Distortion glyph (Assets/Icons/distortion.svg): the overdrive wave with flat, hard-clipped tops and steeper sides -- between the
+    // overdrive's rounded one and the (future) fuzz's square one. See docs/icons/AGENT-icon-notes.md.
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::distortion_svg, IconData::distortion_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

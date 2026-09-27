@@ -39,6 +39,13 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
     qualityHintLabel.setFont (juce::Font (14.0f));
     refreshQualityHint();
 
+    addAndMakeVisible (rateSectionLabel);
+    rateSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
+    rateSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible (rateHintLabel);
+    rateHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    rateHintLabel.setFont (juce::Font (14.0f));
+
     addAndMakeVisible (tone3000SectionLabel);
     tone3000SectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     tone3000SectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
@@ -69,7 +76,47 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
     refreshLoginState();
-    setSize (720, 560); // clamped by OverlayHost to fit the app window -- this is the "whole screen" settings surface
+    setSize (720, 640); // clamped by OverlayHost to fit the app window -- this is the "whole screen" settings surface
+}
+
+void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double current)
+{
+    rateButtons.clear();
+    rateValues.clear();
+    currentRate = current;
+
+    // The device may list many rates; a guitar processor only wants the usual ones.
+    for (double r : rates)
+        if (r == 44100.0 || r == 48000.0 || r == 88200.0 || r == 96000.0)
+            rateValues.add (r);
+
+    for (double r : rateValues)
+    {
+        auto* b = rateButtons.add (new juce::TextButton (juce::String (r / 1000.0, r == 44100.0 || r == 88200.0 ? 1 : 0) + " kHz"));
+        addAndMakeVisible (b);
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (4712);
+        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5c56));
+        b->setToggleState (std::abs (r - current) < 0.5, juce::dontSendNotification);
+        b->onClick = [this, r, b]
+        {
+            if (! onSampleRateChanged)
+                return;
+            const auto err = onSampleRateChanged (r);
+            rateHintLabel.setText (err.isEmpty() ? "Audio restarted at " + juce::String (r / 1000.0, 1) + " kHz. The pedals are re-prepared for it; "
+                                                       "higher rates cost proportionally more CPU."
+                                                 : "Could not switch: " + err, juce::dontSendNotification);
+            if (err.isEmpty())
+                currentRate = r;
+            else
+                for (int i = 0; i < rateButtons.size(); ++i)
+                    rateButtons[i]->setToggleState (std::abs (rateValues[i] - currentRate) < 0.5, juce::dontSendNotification);
+        };
+    }
+
+    rateHintLabel.setText (rateValues.isEmpty() ? "No audio device is open." : "The rate the audio device runs at (48 kHz is the default). Changing it restarts audio.",
+                           juce::dontSendNotification);
+    resized();
 }
 
 void Tone3000Panel::refreshQualityHint()
@@ -217,6 +264,18 @@ void Tone3000Panel::resized()
     highButton.setBounds (qualityRow.removeFromLeft (120));
     area.removeFromTop (6);
     qualityHintLabel.setBounds (area.removeFromTop (50));
+    area.removeFromTop (14);
+
+    rateSectionLabel.setBounds (area.removeFromTop (20));
+    area.removeFromTop (6);
+    auto rateRow = area.removeFromTop (touch::minTapTarget);
+    for (auto* b : rateButtons)
+    {
+        b->setBounds (rateRow.removeFromLeft (120));
+        rateRow.removeFromLeft (8);
+    }
+    area.removeFromTop (6);
+    rateHintLabel.setBounds (area.removeFromTop (34));
     area.removeFromTop (14);
 
     tone3000SectionLabel.setBounds (area.removeFromTop (20));

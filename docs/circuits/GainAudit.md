@@ -14,6 +14,11 @@ so instead of guessing.
 | **Rangemaster-style booster** | Gv = gm Rc = 0.008 x 10K = 80 = 38 dB, high-pass 2.6 kHz ([ElectroSmash](https://electrosmash.mas-effects.com/dallas-rangemaster.html)) | 34.8 dB at 8 kHz at max, 29.7 dB at 1 kHz, corner ~2-3 kHz | 3 dB below; the transistor's bias current (hence gm) is an assumption in both |
 | **OD-1** | Non-inverting stage 1 + (33K + Drive 1M)/Zleg, Zleg = R6 4.7K + C3 0.047 uF: 16.5 dB (min) to ~45 dB (max) at 1 kHz (same family as the SD-1's 47 dB at high frequency); Drive is 1MA per Aion FX's Corona parts list | **Was wrong**: wired as an inverting stage (0 dB to 30 dB). Fixed: 15.8 / 24.3 / 33.4 / 39.4 / 43.8 dB | **Fixed today**, see OD1StyleOverdrive.md |
 | **HM-2** | No published gain figure found. Documented: the DIST pot does nothing from 9 to 3 o'clock; Ge diodes are a 0.3 V coring gate; Low / High gyrators at ~87 Hz and ~960 / 1280 Hz | Q6+Q7 44.5 dB; IC1B adds 14.7 dB (1 + 220K/47K with DIST max); DIST flat from 0.25 to 0.75 knob; Ge gate present; Low +-19 dB at 90 Hz, High +-21.5 dB at 1 kHz | Structure and behaviour agree with the documented ones; the absolute gain and the EQ range are **not verified** against a source |
+| **Distortion+** | Gain 1 + 1M/(4.7K + RV1): max 213 (46.5 dB), min quoted 1.5 (3.5 dB; its own formula gives 1.995); 741 GBW 1 MHz; clip 700-800 mVpp; C3 corner 720 Hz at max gain ([ElectroSmash](https://electrosmash.mas-effects.com/mxr-distortion-plus-analysis.html)) | Matches the closed form (input filters, 741 pole, C3 leg) within 0.1 dB at 100 Hz - 1 kHz for 4 Distortion settings; max gain at 1 kHz 187x (45.4 dB); clip +-0.367 V = 0.73 Vpp (Is fitted to this) | **Matches** except the published min gain (arithmetic used) and the clip level (fitted, not independent) |
+| **DOD 250** | Same circuit as the Distortion+ with 500K reverse-log Gain, 25 pF across the 1M, 1N4148 pair, 100K Level (General Guitar Gadgets schematic); no published gain figures found | Matches its closed form within 0.1 dB at 100 Hz - 1 kHz (2.9 / 8.4 / 39.5 / 177x at 1 kHz for knob 0 / .5 / .8 / 1); clip +-0.53 V | Consistent with the schematic; nothing published to compare the sound with |
+| **Guv'nor** | Stage 1 max 46.45x (33.3 dB); stage 2 -68x (36 dB) per ElectroSmash's text; clip 1.8-2 V with red LEDs; C3/R3 corner 723 Hz; C2 low-pass 13.2 kHz at max | Stage 1 1.0 / 19.2 / 37.6x at 1 kHz (formula-exact incl. TL072 and C2), max 46x at high frequency; **stage 2 is 6.2x at minimum Gain, 68x at maximum, not a fixed 68x**: the drawing feeds it through the rest of the Gain pot; LED clip 1.797 V | Stage 1 **matches**; stage 2 differs from the text and follows the drawing; the tone stack is not verified (graphs only) |
+| **Blues Breaker** | No published gain figures found (the 1992 schematic; Aion FX describes a lower-drive first version with 27K/33K and a later 3k3/4k7) | Stage 1 1.0 / 2.8 / 4.8x at 1 kHz, stage 2 2.0-21x (formula-exact); stage-2 swing limited to ~1 V by the diodes; total up to ~30 dB | Consistent with "a subtle pedal, warm at low drive, a little fuzzy at high gain"; nothing quantitative to compare |
+| **RAT** | Gain up to 1 + 150K/47 ohm-ish ~ 3600 (71 dB); op-amp GBW ~1 MHz with the 30 pF (LM308 datasheet); filter 475 Hz - 32 kHz (community docs, not re-checked) | Stage gain formula-exact within 0.25 dB (474x at 100 Hz, 1237x (62 dB) at 1 kHz, 230x at 4 kHz at the maximum); filter 5 kHz/200 Hz ratio 4.06 -> 0.45; diode clip 0.62 V | Matches the schematic; **slew rate not modelled** (documented) |
 
 Output level (the maximum a pedal can deliver) has a published figure only for the DS-1; the
 others are not verified.
@@ -34,3 +39,12 @@ knob 0 / .25 / .5 / .75 / 1. Checked against what is published or documented:
 
 Not checkable: no measured large-signal figures were found for the Klon, HM-2, DS-1 or OD-1
 beyond the descriptions above.
+
+## Bassman-Style Amplifier (2026-09-21)
+Audited against Kuehnel's published stage gains, its open-loop transfer curve and its supply-sag response, at the
+same operating conditions; table in [Bassman5F6A.md](./Bassman5F6A.md). Summary: V1 -30.1 (published -32.2), V2A
+-21.4 (-20.7), phase inverter +2 dB (Koren 12AX7 gm), power stage third harmonic 5.5% at full swing (5%), sag -54 V
+(-57 V), output 52-54 W (~45-50 W). The power tube's Koren parameters were **fitted** to the published curve
+because the standard 6L6GC set gave 0.8% third harmonic where the amp has 5%: a gain audit on a stage's numbers alone
+would have passed it (its gain at full drive was right); the shape of the transfer curve is what carries the
+Bassman's character.

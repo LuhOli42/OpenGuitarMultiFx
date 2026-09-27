@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "SagEmulator.h"
 #include "../Engine/DeferredReclaimer.h"
 
 #include <NAM/dsp.h>
@@ -90,6 +91,8 @@ private:
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* inputGainDb = nullptr;
     juce::AudioParameterFloat* outputGainDb = nullptr;
+    juce::AudioParameterFloat* sagAmount = nullptr; // page 2, amps only
+    SagEmulator sag;
 
     DeferredReclaimer<nam::DSP> modelSlot;
     std::filesystem::path lastLoadedPath;

@@ -49,7 +49,7 @@ void DynamicCabProcessor::loadImpulseResponse (const juce::File& irFile, int slo
     conv->loadImpulseResponse (irFile,
                                 juce::dsp::Convolution::Stereo::yes,
                                 juce::dsp::Convolution::Trim::yes,
-                                0, // 0 -- use the whole file
+                                (size_t) (sampleRate > 0.0 ? (int) (0.15 * sampleRate) : 0), // a cab IR is over within ~100 ms (see IRLoaderProcessor)
                                 juce::dsp::Convolution::Normalise::yes);
 
     if (slot == 0)

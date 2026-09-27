@@ -1,6 +1,9 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "WetLevelMatcher.h"
+
+#include <array>
 
 #include <juce_dsp/juce_dsp.h>
 
@@ -40,6 +43,8 @@ private:
     juce::AudioParameterFloat* width = nullptr;
 
     juce::dsp::Reverb reverb;
+    juce::AudioBuffer<float> dryScratch;
+    std::array<WetLevelMatcher, 2> wetMatch; // keeps Mix = 1 as loud as the dry signal (docs/circuits/MixLaw.md)
 };
 
 } // namespace openguitarmultifx

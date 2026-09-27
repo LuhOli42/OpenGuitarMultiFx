@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Effects/EffectProcessor.h"
+#include "SelectorSwitch.h"
 #include "../Tone3000/Tone3000Manager.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -57,6 +58,9 @@ public:
 
     std::function<void (EffectProcessor*)> onRemoveRequested;
 
+    /** The knob page changed, so the height the drawer wants may have changed with it. */
+    std::function<void()> onPreferredHeightChanged;
+
     /** Wired by MainComponent to OverlayHost::pushOverlay/popOverlay -- see
         AGENT.md's UI/UX Design Philosophy. Both the installed-models list
         and the TONE3000 search go through these instead of opening a
@@ -80,6 +84,8 @@ private:
     void openTone3000Search();
     void openTone3000SearchForSlot (int slot);
     void showMidiLearnMenu (juce::AudioParameterFloat* param);
+    void showPage (int page);
+    std::vector<size_t> visibleSliders() const;
     void cycleTempoSync (juce::AudioParameterFloat* param);
 
     EffectProcessor* current = nullptr;
@@ -91,6 +97,9 @@ private:
     juce::TextButton browseInstalledButton { "Browse installed..." };
     juce::TextButton searchTone3000Button { "Search TONE3000..." };
     juce::TextButton removeButton { "Remove" };
+    /** Only shown for an effect with more than one page of knobs (EffectProcessor::getParameterPages()). */
+    juce::TextButton pageButton { "Page 2 >" };
+    int currentPage = 0, pageCount = 1;
 
     /** A knob's parameter name label, long-pressable to reach MIDI Learn --
         completely invisible until pressed and held, per explicit user
@@ -119,9 +128,19 @@ private:
 
     struct SliderRow
     {
+        /** The value/param model, ALWAYS built and wired exactly as before (setRange/setValue/onValueChange) --
+            for a discrete-selector param (see `selector` below) it is never added to the component tree or shown;
+            it exists purely so every existing param-write/param-read path keeps working unchanged. */
         std::unique_ptr<juce::Slider> slider;
+
+        /** Non-null for a param with a handful of discrete, labelled steps (4/8/16 ohm, Normal/Jumped/Bright) --
+            shown INSTEAD of `slider` (see widget()), a real multi-position switch rather than a knob that happens
+            to snap. Its onChange writes through `slider->setValue()`, reusing the same param-write lambda. */
+        std::unique_ptr<SelectorSwitch> selector;
+
         std::unique_ptr<LongPressLabel> label;
         juce::AudioParameterFloat* param = nullptr;
+        int page = 0;
 
         /** Only non-null for a param the processor registered via
             registerTempoSyncParam() -- an always-visible small inline "ms"/
@@ -131,6 +150,12 @@ private:
             cycles ms -> 1/32 -> ... -> 1/1 -> ms, matching how a physical
             multi-position selector switch steps -- no popup needed. */
         std::unique_ptr<juce::TextButton> syncToggle;
+
+        /** The Component actually shown/laid out for this row: the switch if there is one, else the slider. */
+        juce::Component* widget() const noexcept
+        {
+            return selector != nullptr ? static_cast<juce::Component*> (selector.get()) : static_cast<juce::Component*> (slider.get());
+        }
     };
     std::vector<SliderRow> sliders;
 

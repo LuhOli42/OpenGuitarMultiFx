@@ -41,6 +41,24 @@ public:
     virtual ~EffectProcessor() = default;
 
     virtual void prepare (double sampleRate, int maxBlockSize, int numChannels) = 0;
+
+    /** prepare(), unless this processor is already prepared with exactly these arguments. SignalGraph::prepare() uses it:
+        every change to the chain (moving, adding or removing ONE block) builds a new graph and prepares all of it, including
+        the processors that are playing right now, and a prepare() clears delay lines, reverb tails, filter and envelope
+        state -- an audible pop on every block the user did not even touch (`Tests/RePrepareTransparencyTests.cpp` lists
+        the ones that did it). Control thread only. */
+    bool prepareIfNeeded (double sampleRate, int maxBlockSize, int numChannels)
+    {
+        if (isPrepared && preparedRate == sampleRate && preparedBlockSize == maxBlockSize && preparedChannels == numChannels)
+            return false;
+
+        prepare (sampleRate, maxBlockSize, numChannels);
+        isPrepared = true;
+        preparedRate = sampleRate;
+        preparedBlockSize = maxBlockSize;
+        preparedChannels = numChannels;
+        return true;
+    }
     virtual void process (juce::AudioBuffer<float>& buffer) = 0;
     virtual void reset() = 0;
 
@@ -48,6 +66,34 @@ public:
     bool isBypassed() const noexcept { return bypassed.load (std::memory_order_relaxed); }
 
     virtual juce::AudioProcessorParameterGroup* getParameters() = 0;
+
+    /** The editor's pages of knobs. Page 0 is the float parameters that are direct children of getParameters(); every
+        sub-group of it is a further page (its float parameters, in order). Almost every effect has one page; the
+        amplifiers keep their "second page" controls (power drive, bias, ...) in a sub-group. All of them stay in
+        getParameters(true), so presets, MIDI Learn and automation see every parameter regardless of the page. */
+    std::vector<std::vector<juce::AudioParameterFloat*>> getParameterPages()
+    {
+        std::vector<std::vector<juce::AudioParameterFloat*>> pages (1);
+        if (auto* group = getParameters())
+            for (auto* node : *group)
+            {
+                if (auto* param = node->getParameter())
+                {
+                    if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param))
+                        pages[0].push_back (f);
+                }
+                else if (auto* sub = node->getGroup())
+                {
+                    std::vector<juce::AudioParameterFloat*> page;
+                    for (auto* p : sub->getParameters (true))
+                        if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+                            page.push_back (f);
+                    if (! page.empty())
+                        pages.push_back (std::move (page));
+                }
+            }
+        return pages;
+    }
 
     /**
         Default implementation: walks getParameters() and serializes every
@@ -191,6 +237,10 @@ private:
 
     std::atomic<bool> bypassed { false };
     std::vector<TempoSyncBinding> tempoSyncBindings;
+
+    bool isPrepared = false; // control thread only, see prepareIfNeeded()
+    double preparedRate = 0.0;
+    int preparedBlockSize = 0, preparedChannels = 0;
 };
 
 } // namespace openguitarmultifx

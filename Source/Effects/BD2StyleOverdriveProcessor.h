@@ -39,6 +39,11 @@ namespace openguitarmultifx
 class BD2StyleOverdriveProcessor : public EffectProcessor
 {
 public:
+    /** The two gain stages as macro-models of their discrete op-amps (finite gain, one pole, output swing) instead of
+        transistor by transistor. Default true; false builds the full transistor-level netlist (the reference the
+        equivalence tests compare against). Read by prepare(). See docs/circuits/BD2StyleOverdrive.md. */
+    static inline bool reducedOrder = true;
+
     BD2StyleOverdriveProcessor();
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;

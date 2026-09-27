@@ -62,6 +62,19 @@ The two series diodes of the "2 in series the other way" branch are one
 `addDiode` with twice the thermal voltage (identical diodes in series with nothing
 on the middle node are exactly that), which drops a node and a Newton port.
 
+## Cost simplification, second pass (2026-09-21) -- NOT the default: rejected after the user heard a pop
+Q6 and Q7 are one-port transistors with a smooth collector-current limit (`NodalCircuit::addBjtSaturating`,
+`HM2StyleDistortionProcessor::reducedOrder`; `false` = the two-port Ebers-Moll netlist, kept as the reference): the collector
+junction, which needs a second Newton port, only matters as the point where a stage runs out of collector current, and
+for a stage with a resistive load that is known. Limit = the load line, fitted (Q6 x2.0, Q7 x0.8) so that a decaying chord
+at 3 Dist x 2 High x 3 input levels keeps its level within 0.86 dB and its octave-band shape (bands above -30 dB) within
+1.15 dB. That is the limit of this idea: a macro-model like the BD-2's does not exist here because the two stages are
+self-biased common-emitter stages that saturate as part of the sound, not op-amps with a feedback loop. Block 1 went from
+5 ports to 3 (6.6% -> 5.4% of a core). **It is not the default (`reducedOrder = false`).** The user heard a volume "pop" at high gain
+right after it went in. It could not be reproduced with chords, a real DI, gated input, note on/off, knob moves and silence (envelopes
+within 0.5 dB), but the two variants differ on hard edges: peaks up to +1 dB on a 2 Hz square wave and on a gated sine. The 1.2% of a
+core is not worth an audible risk; the option stays for the equivalence tests.
+
 ## Cost simplification (2026-09-20)
 Q1 (the input JFET source follower) is an ideal follower with its DC level shift (-0.96 V);
 timbre within 0.13 dB of the full model. Q6/Q7 (the self-biased stages that clip), the

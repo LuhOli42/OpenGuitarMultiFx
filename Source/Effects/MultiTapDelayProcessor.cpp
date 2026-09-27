@@ -70,7 +70,9 @@ void MultiTapDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     // Normalised so the taps' combined level never exceeds unity even
     // though all 4 are audible together -- otherwise a hot input would
     // clip as soon as every tap lines up at once.
-    constexpr float totalTapLevel = tapLevels[0] + tapLevels[1] + tapLevels[2] + tapLevels[3];
+    // Normalised by the square root of the taps' summed energy (sqrt (1 + 0.5625 + 0.3025 + 0.16) = 1.423), not by their sum (2.7):
+    // four decorrelated copies add in energy, so dividing by the sum left Mix = 1 at -5.4 dB against the dry signal (MixLawTests).
+    constexpr float totalTapLevel = 1.4230249f;
 
     for (int i = 0; i < numSamples; ++i)
     {

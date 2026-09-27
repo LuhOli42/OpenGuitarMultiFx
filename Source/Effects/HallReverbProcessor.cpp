@@ -31,6 +31,8 @@ HallReverbProcessor::HallReverbProcessor()
 
 void HallReverbProcessor::prepare (double sampleRate, int, int)
 {
+    for (auto& m : wetMatch)
+        m.prepare (sampleRate, 0.31f);
     currentSampleRate = sampleRate;
 
     // Classic Freeverb comb/allpass tunings (ms at 44.1kHz, scaled to the
@@ -67,6 +69,8 @@ void HallReverbProcessor::prepare (double sampleRate, int, int)
 
 void HallReverbProcessor::reset()
 {
+    for (auto& m : wetMatch)
+        m.reset();
     for (auto& bank : combs)
         for (auto& c : bank)
             c.clear();
@@ -117,9 +121,13 @@ void HallReverbProcessor::process (juce::AudioBuffer<float>& buffer)
             for (auto& a : allpassBank)
                 diffused = a.process (diffused);
 
-            data[i] = input * (1.0f - wet) + diffused * wet;
+            wetMatch[(size_t) ch].accumulate (input, diffused);
+            data[i] = input * (1.0f - wet) + diffused * wet * wetMatch[(size_t) ch].gain();
         }
     }
+
+    for (int ch = 0; ch < numChannels; ++ch)
+        wetMatch[(size_t) ch].endBlock (numSamples, 1);
 }
 
 void HallReverbProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const

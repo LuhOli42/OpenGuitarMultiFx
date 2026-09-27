@@ -7,16 +7,47 @@
 #include "Effects/IRLoaderProcessor.h"
 #include "Effects/DynamicCabProcessor.h"
 #include "Effects/NAMProcessor.h"
-#include "Effects/OverdriveProcessor.h"
 #include "Effects/OversampledEffect.h"
 #include <atomic>
 #include "Effects/OutputTrimEffect.h"
+#include "Effects/PickupLoadEffect.h"
+#include "Effects/SlewRateLimitEffect.h"
+#include "Effects/TransistorBandwidthEffect.h"
 #include "Effects/PositiveGroundBoosterProcessor.h"
 #include "Effects/DS1StyleDistortionProcessor.h"
 #include "Effects/OD1StyleOverdriveProcessor.h"
 #include "Effects/TubeScreamerStyleOverdriveProcessor.h"
 #include "Effects/CentaurStyleOverdriveProcessor.h"
 #include "Effects/BD2StyleOverdriveProcessor.h"
+#include "Effects/BassmanStyleAmplifierProcessor.h"
+#include "Effects/SuperLeadStyleAmplifierProcessor.h"
+#include "Effects/BluesBreakerStyleOverdriveProcessor.h"
+#include "Effects/GuvnorStyleDistortionProcessor.h"
+#include "Effects/OpAmpClipperDistortionProcessor.h"
+#include "Effects/RatStyleDistortionProcessor.h"
+#include "Effects/GE7StyleEqualizerProcessor.h"
+#include "Effects/ParametricEQProcessor.h"
+#include "Effects/RingModProcessor.h"
+#include "Effects/DS201StyleNoiseGateProcessor.h"
+#include "Effects/NS2StyleNoiseSuppressorProcessor.h"
+#include "Effects/DynaCompStyleCompressorProcessor.h"
+#include "Effects/SqueezerStyleCompressorProcessor.h"
+#include "Effects/Dbx160StyleCompressorProcessor.h"
+#include "Effects/GSeriesStyleBusCompressorProcessor.h"
+#include "Effects/Urei1176StyleCompressorProcessor.h"
+#include "Effects/La2aStyleCompressorProcessor.h"
+#include "Effects/CrunchBoxStyleDistortionProcessor.h"
+#include "Effects/ZendriveStyleOverdriveProcessor.h"
+#include "Effects/OCDStyleOverdriveProcessor.h"
+#include "Effects/BigMuffStyleFuzzProcessor.h"
+#include "Effects/DT1StyleDistortionProcessor.h"
+#include "Effects/ODR1StyleOverdriveProcessor.h"
+#include "Effects/OverdriverStyleOverdriveProcessor.h"
+#include "Effects/EPStyleBoosterProcessor.h"
+#include "Effects/TubeDriverStyleOverdriveProcessor.h"
+#include "Effects/MetalZoneStyleDistortionProcessor.h"
+#include "Effects/FuzzFaceStyleFuzzProcessor.h"
+#include "Effects/ToneBenderStyleFuzzProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
 #include "Effects/ReverbProcessor.h"
 #include "Effects/SpringReverbProcessor.h"
@@ -67,10 +98,36 @@ namespace
         return std::make_unique<OversampledEffect> (std::move (processor), order);
     }
 
+    /** Same as oversampled<>(), plus the real op-amp's own slew rate (SlewRateLimitEffect, docs/circuits/HarshnessDiagnosis.md):
+        applied to the raw processor BEFORE the oversampling wrap, so it runs at the oversampled rate -- the physically
+        correct one to slew-limit at. `slewVoltsPerUs` is the chip's datasheet spec (a hard-clipping op-amp pedal's edges
+        cannot move faster than this in reality; an ideal solver's could). */
+    template <typename Processor, typename... Args>
+    std::unique_ptr<EffectProcessor> oversampledSlew (Orders orders, double slewVoltsPerUs, Args&&... args)
+    {
+        using Q = EffectRegistry::OversamplingQuality;
+        const auto quality = EffectRegistry::getOversamplingQuality();
+        const int order = quality == Q::eco ? orders.eco : (quality == Q::high ? orders.high : orders.balanced);
+        std::unique_ptr<EffectProcessor> processor = std::make_unique<Processor> (std::forward<Args> (args)...);
+        processor = std::make_unique<SlewRateLimitEffect> (std::move (processor), slewVoltsPerUs);
+        if (order <= 0)
+            return processor;
+        return std::make_unique<OversampledEffect> (std::move (processor), order);
+    }
+
     /** Sets a pedal's noon-everything setting to unity gain for the reference signal in PedalUnityLevelTests (an E3
         with harmonics 1..10 at 1/k amplitude, 0.1 RMS = -20 dBFS): the trims are minus the measured RMS gain there,
         so the pedals are interchangeable without the amp after them being driven 20 dB harder by one than another.
         Re-measure (the test prints them) after touching a pedal's circuit. */
+    /** The guitar's pickup (R + L) and a standard cable (shunt C) reacting with THIS pedal's own input impedance --
+        docs/circuits/PickupLoading.md. Universal: every real guitar rig has this in front of whatever pedal it feeds,
+        so every drive/distortion/fuzz pedal is wrapped with its own (documented where the schematic gives it, else a
+        representative estimate for the topology -- see the call sites). */
+    std::unique_ptr<EffectProcessor> pickupLoaded (std::unique_ptr<EffectProcessor> pedal, double inputImpedanceOhms)
+    {
+        return std::make_unique<PickupLoadEffect> (std::move (pedal), inputImpedanceOhms);
+    }
+
     std::unique_ptr<EffectProcessor> trimmed (std::unique_ptr<EffectProcessor> pedal, float trimDb)
     {
         return std::make_unique<OutputTrimEffect> (std::move (pedal), trimDb);
@@ -126,31 +183,118 @@ void registerBuiltInEffects (EffectRegistry& registry)
 {
     registry.registerType ("NoiseGate", [] { return std::make_unique<GateProcessor>(); });
     registry.registerType ("Compressor", [] { return std::make_unique<CompressorProcessor>(); });
-    registry.registerType ("Overdrive", [] { return trimmed (std::make_unique<OverdriveProcessor>(), -0.4f); });
 
     // Physically-modelled (Ebers-Moll transistor, not neural) -- see
     // Source/Effects/AGENTS.md's decision log and docs/circuits/
     // PositiveGroundBooster.md for the full circuit-fidelity rationale.
-    registry.registerType ("PositiveGroundBooster", [] { return trimmed (std::make_unique<PositiveGroundBoosterProcessor>(), -3.2f); });
+    // The real circuit's transistor is the only treble limit it has (docs/circuits/PositiveGroundBooster.md: no
+    // collector/Miller capacitor in the schematic); the hand-derived companion-model solve has no capacitance there
+    // at all (infinite bandwidth), which measured an unbounded, ever-rising gain with frequency instead of the real
+    // germanium transistor's own fT settling it -- docs/circuits/HarshnessDiagnosis.md. 6 kHz is an estimate.
+    registry.registerType ("PositiveGroundBooster", [] { return trimmed (pickupLoaded (std::make_unique<TransistorBandwidthEffect> (std::make_unique<PositiveGroundBoosterProcessor>(), 6000.0), 470000.0), -3.2f); });
+    // DS-1, HM-2 and the RAT / RAT 2 hard-clip so hard that at 1x they leave -23 .. -33 dB of in-band non-harmonic energy on a 1.1 kHz note
+    // (docs/circuits/HarshnessDiagnosis.md): their Eco tier is 2x, not 1x.
     registry.markQualityDependent ("DS1StyleDistortion");
-    registry.registerType ("DS1StyleDistortion", [] { return trimmed (oversampled<DS1StyleDistortionProcessor> (Orders { 0, 1, 2 }), 2.87f); });
+    registry.registerType ("DS1StyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<DS1StyleDistortionProcessor> (Orders { 1, 2, 3 }, 0.6), 470000.0), 2.87f); });
     registry.markQualityDependent ("OD1StyleOverdrive");
-    registry.registerType ("OD1StyleOverdrive", [] { return trimmed (oversampled<OD1StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 0.79f); });
+    registry.registerType ("OD1StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<OD1StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 1000000.0), 1.18f); });
 
     // One class, three models (TS808/TS9/TS10 share one circuit, see
     // docs/circuits/TubeScreamerStyleOverdrive.md).
     using TSModel = TubeScreamerStyleOverdriveProcessor::Model;
     registry.markQualityDependent ("TS808StyleOverdrive");
-    registry.registerType ("TS808StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts808), 6.27f); });
+    registry.registerType ("TS808StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts808), 500000.0), 10.88f); });
     registry.markQualityDependent ("TS9StyleOverdrive");
-    registry.registerType ("TS9StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts9), 6.22f); });
+    registry.registerType ("TS9StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts9), 500000.0), 10.84f); });
+    // One class, two models (USA V3 and the Russian green one share one circuit, see
+    // docs/circuits/BigMuffStyleFuzz.md).
+    using MuffModel = BigMuffStyleFuzzProcessor::Model;
+    registry.markQualityDependent ("BigMuffStyleFuzz");
+    registry.registerType ("BigMuffStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<BigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }, MuffModel::usV3), 65000.0), -5.42f); });
+    registry.markQualityDependent ("SovtekBigMuffStyleFuzz");
+    registry.registerType ("SovtekBigMuffStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<BigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }, MuffModel::sovtekFirstEdition), 65000.0), -9.72f); });
+    registry.markQualityDependent ("RussianBigMuffStyleFuzz");
+    registry.registerType ("RussianBigMuffStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<BigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }, MuffModel::russianGreen), 65000.0), -9.71f); });
+    using FFModel = FuzzFaceStyleFuzzProcessor::Model;
+    registry.markQualityDependent ("FuzzFaceStyleFuzz");
+    registry.registerType ("FuzzFaceStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<FuzzFaceStyleFuzzProcessor> (Orders { 1, 1, 2 }, FFModel::germanium), 15000.0), 13.40f); });
+    registry.markQualityDependent ("SiliconFuzzFaceStyleFuzz");
+    registry.registerType ("SiliconFuzzFaceStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<FuzzFaceStyleFuzzProcessor> (Orders { 1, 1, 2 }, FFModel::silicon), 15000.0), 19.93f); });
+    using TBModel = ToneBenderStyleFuzzProcessor::Model;
+    registry.markQualityDependent ("ToneBenderStyleFuzz");
+    registry.registerType ("ToneBenderStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<ToneBenderStyleFuzzProcessor> (Orders { 1, 2, 3 }, TBModel::germanium), 8000.0), 6.14f); });
+    registry.markQualityDependent ("SiliconToneBenderStyleFuzz");
+    registry.registerType ("SiliconToneBenderStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<ToneBenderStyleFuzzProcessor> (Orders { 1, 2, 3 }, TBModel::silicon), 8000.0), 1.29f); });
+    registry.markQualityDependent ("OverdriverStyleOverdrive");
+    registry.registerType ("OverdriverStyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<OverdriverStyleOverdriveProcessor> (Orders { 1, 1, 2 }), 1000000.0), -12.73f); });
+    registry.markQualityDependent ("MetalZoneStyleDistortion");
+    registry.registerType ("MetalZoneStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<MetalZoneStyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 2.23f); });
+    registry.markQualityDependent ("TubeDriverStyleOverdrive");
+    registry.registerType ("TubeDriverStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<TubeDriverStyleOverdriveProcessor> (Orders { 1, 1, 2 }, 13.0), 1000000.0), 4.01f); });
+    registry.markQualityDependent ("EPStyleBooster");
+    // Same missing treble limit as the Rangemaster-style booster above (docs/circuits/EPStyleBooster.md's own
+    // netlist has no collector/output shunt capacitor either): 7 kHz is an estimate.
+    registry.registerType ("EPStyleBooster", [] { return trimmed (pickupLoaded (std::make_unique<TransistorBandwidthEffect> (oversampled<EPStyleBoosterProcessor> (Orders { 0, 1, 1 }), 7000.0), 1000000.0), -18.11f); });
+    registry.markQualityDependent ("ODR1StyleOverdrive");
+    registry.registerType ("ODR1StyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<ODR1StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), -1.77f); });
+    registry.markQualityDependent ("DT1StyleDistortion");
+    registry.registerType ("DT1StyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<DT1StyleDistortionProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), 10.17f); });
     registry.markQualityDependent ("HM2StyleDistortion");
-    registry.registerType ("HM2StyleDistortion", [] { return trimmed (oversampled<HM2StyleDistortionProcessor> (Orders { 0, 1, 2 }), 6.3f); });
+    registry.registerType ("HM2StyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<HM2StyleDistortionProcessor> (Orders { 1, 2, 2 }, 2.0), 470000.0), 6.3f); });
+    using ClipModel = OpAmpClipperDistortionProcessor::Model;
+    registry.markQualityDependent ("DistortionPlusStyleDistortion");
+    registry.registerType ("DistortionPlusStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<OpAmpClipperDistortionProcessor> (Orders { 0, 0, 1 }, 0.5, ClipModel::distortionPlus), 1000000.0), 8.95f); });
+    registry.markQualityDependent ("DOD250StyleOverdrive");
+    registry.registerType ("DOD250StyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<OpAmpClipperDistortionProcessor> (Orders { 0, 0, 1 }, 0.5, ClipModel::dod250), 1000000.0), 4.02f); });
+    registry.markQualityDependent ("GuvnorStyleDistortion");
+    registry.registerType ("GuvnorStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<GuvnorStyleDistortionProcessor> (Orders { 0, 0, 1 }, 13.0), 1000000.0), 4.43f); });
+    registry.markQualityDependent ("BluesBreakerStyleOverdrive");
+    registry.registerType ("BluesBreakerStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<BluesBreakerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, 13.0), 1000000.0), 9.95f); });
+    registry.markQualityDependent ("RatStyleDistortion");
+    registry.registerType ("RatStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<RatStyleDistortionProcessor> (Orders { 1, 2, 3 }, 0.3), 1000000.0), 1.17f); });
+    // The RAT 2 and the Turbo RAT share the RAT's class (docs/circuits/RatStyleDistortion.md, "Versions"); trims are
+    // set from PedalUnityLevelTests' printout.
+    using RatModel = RatStyleDistortionProcessor::Model;
+    registry.markQualityDependent ("RAT2StyleDistortion");
+    registry.registerType ("RAT2StyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<RatStyleDistortionProcessor> (Orders { 1, 2, 3 }, 0.3, RatModel::rat2), 1000000.0), 1.25f); });
+    registry.markQualityDependent ("TurboRatStyleDistortion");
+    registry.registerType ("TurboRatStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<RatStyleDistortionProcessor> (Orders { 1, 1, 2 }, 0.17, RatModel::turbo), 1000000.0), -7.85f); });
+    // Linear circuit (no clipping stage worth oversampling): a graphic equaliser from the manufacturer's diagram.
+    registry.registerType ("GE7StyleEqualizer", [] { return trimmed (std::make_unique<GE7StyleEqualizerProcessor>(), 0.65f); }); // its own -0.65 dB at flat, trimmed to unity
+    registry.registerType ("ParametricEQ", [] { return std::make_unique<ParametricEQProcessor>(); });
+    registry.registerType ("DS201StyleNoiseGate", [] { return std::make_unique<DS201StyleNoiseGateProcessor>(); });
+    registry.registerType ("NS2StyleNoiseSuppressor", [] { return std::make_unique<NS2StyleNoiseSuppressorProcessor>(); });
+    // OTA compressors (docs/circuits/DynaCompStyleCompressor.md): the OTA's tanh is soft and the levels are small: no oversampling.
+    using CompModel = DynaCompStyleCompressorProcessor::Model;
+    registry.registerType ("DynaCompStyleCompressor", [] { return trimmed (std::make_unique<DynaCompStyleCompressorProcessor> (CompModel::dynaComp), -2.21f); });
+    // Studio compressors (behavioural, calibrated to the manuals): docs/circuits/StudioCompressors.md
+    registry.registerType ("Dbx160StyleCompressor", [] { return std::make_unique<Dbx160StyleCompressorProcessor>(); });
+    registry.registerType ("GSeriesStyleBusCompressor", [] { return std::make_unique<GSeriesStyleBusCompressorProcessor>(); });
+    registry.registerType ("Urei1176StyleCompressor", [] { return std::make_unique<Urei1176StyleCompressorProcessor>(); });
+    registry.registerType ("La2aStyleCompressor", [] { return std::make_unique<La2aStyleCompressorProcessor>(); });
+    registry.registerType ("SqueezerStyleCompressor", [] { return trimmed (std::make_unique<SqueezerStyleCompressorProcessor>(), 3.86f); });
+    registry.registerType ("RossStyleCompressor", [] { return trimmed (std::make_unique<DynaCompStyleCompressorProcessor> (CompModel::ross), -0.55f); });
+    // The diode bridge's harmonics fall only 20 dB per octave (Parker): oversampled like the clipping pedals (tiers set from the alias measurement).
+    registry.markQualityDependent ("RingMod");
+    registry.registerType ("RingMod", [] { return oversampled<RingModProcessor> (Orders { 1, 2, 3 }); });
+    registry.markQualityDependent ("CrunchBoxStyleDistortion");
+    registry.registerType ("CrunchBoxStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<CrunchBoxStyleDistortionProcessor> (Orders { 1, 1, 2 }, 7.0), 1000000.0), -14.25f); });
+    registry.markQualityDependent ("ZendriveStyleOverdrive");
+    registry.registerType ("ZendriveStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<ZendriveStyleOverdriveProcessor> (Orders { 0, 0, 1 }, 20.0), 1000000.0), -10.14f); });
+    registry.markQualityDependent ("OCDStyleOverdrive");
+    registry.registerType ("OCDStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<OCDStyleOverdriveProcessor> (Orders { 1, 1, 2 }, 13.0), 1000000.0), -14.37f); });
     registry.markQualityDependent ("BD2StyleOverdrive");
-    registry.registerType ("BD2StyleOverdrive", [] { return trimmed (oversampled<BD2StyleOverdriveProcessor> (Orders { 0, 1, 2 }), -10.66f); });
-    registry.registerType ("CentaurStyleOverdrive", [] { return trimmed (std::make_unique<CentaurStyleOverdriveProcessor>(), -11.8f); });
+    registry.registerType ("BD2StyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<BD2StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 2.0), 1000000.0), -4.42f); });
+    registry.registerType ("CentaurStyleOverdrive", [] { return trimmed (pickupLoaded (std::make_unique<CentaurStyleOverdriveProcessor>(), 1000000.0), -12.09f); });
     registry.markQualityDependent ("TS10StyleOverdrive");
-    registry.registerType ("TS10StyleOverdrive", [] { return trimmed (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 6.9f); });
+    registry.registerType ("TS10StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 500000.0), 11.34f); });
+
+    // A full tube amplifier modelled from its schematic (docs/circuits/Bassman5F6A.md): 8 tubes, an output transformer,
+    // global feedback and a sagging supply. Quality tiers: 1x, 1x, 2x (the tubes' clipping is soft; see the doc).
+    registry.markQualityDependent ("SuperLeadStyleAmplifier");
+    registry.registerType ("SuperLeadStyleAmplifier", [] { return trimmed (oversampled<SuperLeadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -15.83f); });
+    registry.markQualityDependent ("BassmanStyleAmplifier");
+    registry.registerType ("BassmanStyleAmplifier", [] { return trimmed (oversampled<BassmanStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -13.94f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

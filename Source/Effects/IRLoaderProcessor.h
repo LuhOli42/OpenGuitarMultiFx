@@ -1,6 +1,9 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "WetLevelMatcher.h"
+
+#include <array>
 #include "../Engine/DeferredReclaimer.h"
 
 #include <juce_dsp/juce_dsp.h>
@@ -89,6 +92,7 @@ private:
 
     // Pre-allocated in prepare() for the dry/wet mix -- process() must never allocate.
     juce::AudioBuffer<float> dryScratch;
+    std::array<WetLevelMatcher, 2> wetMatch; // reverb role only: keeps Mix = 1 as loud as the dry signal (docs/circuits/MixLaw.md)
 };
 
 } // namespace openguitarmultifx

@@ -34,6 +34,8 @@ GatedReverbProcessor::GatedReverbProcessor()
 
 void GatedReverbProcessor::prepare (double sampleRate, int, int)
 {
+    for (auto& m : wetMatch)
+        m.prepare (sampleRate, 0.63f);
     currentSampleRate = sampleRate;
 
     // Short, Room-scale tunings, not Hall's ~25-35ms set -- a real gated
@@ -76,6 +78,8 @@ void GatedReverbProcessor::prepare (double sampleRate, int, int)
 
 void GatedReverbProcessor::reset()
 {
+    for (auto& m : wetMatch)
+        m.reset();
     for (auto& bank : combs)
         for (auto& c : bank)
             c.clear();
@@ -153,9 +157,13 @@ void GatedReverbProcessor::process (juce::AudioBuffer<float>& buffer)
             for (auto& a : allpassBank)
                 diffused = a.process (diffused);
 
-            data[i] = input * (1.0f - wet) + (diffused * gateGain) * wet;
+            wetMatch[(size_t) ch].accumulate (input, diffused * gateGain);
+            data[i] = input * (1.0f - wet) + (diffused * gateGain) * wet * wetMatch[(size_t) ch].gain();
         }
     }
+
+    for (int ch = 0; ch < numChannels; ++ch)
+        wetMatch[(size_t) ch].endBlock (numSamples, 1);
 }
 
 void GatedReverbProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const

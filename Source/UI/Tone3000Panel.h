@@ -44,6 +44,12 @@ public:
     /** The user picked a rendering quality: the host applies it (rebuilding the affected pedals) and saves it. */
     std::function<void (EffectRegistry::OversamplingQuality)> onQualityChanged;
 
+    /** The rates the audio device offers and the one it runs at; the host calls this right after building the panel. */
+    void showSampleRates (const juce::Array<double>& rates, double current);
+
+    /** The user picked a sample rate: the host restarts the device at it and returns an error message (empty on success). */
+    std::function<juce::String (double)> onSampleRateChanged;
+
 private:
     void refreshLoginState();
     void doLogin();
@@ -59,6 +65,11 @@ private:
     juce::TextButton ecoButton { "Eco" }, normalButton { "Normal" }, highButton { "High" };
     juce::Label qualityHintLabel;
     void refreshQualityHint();
+    juce::Label rateSectionLabel { {}, "Sample rate" };
+    juce::OwnedArray<juce::TextButton> rateButtons;
+    juce::Array<double> rateValues;
+    double currentRate = 0.0;
+    juce::Label rateHintLabel;
     juce::Label tone3000SectionLabel { {}, "TONE3000 account" };
 
     juce::Label clientIdLabel { {}, "client_id" };

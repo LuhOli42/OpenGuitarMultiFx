@@ -36,6 +36,9 @@ temporary probe.)
 | TS808 (TS9/TS10 same) | -41.2 | -62.4 | -94.0 | 6 / 13 / 25 | 2x |
 | BD-2 | -36.6 | -51.6 | -63.5 | 17 / 29 / 57 | 2x |
 | HM-2 | -45.1 | -62.7 | -71.7 | 16 / 28 / 53 | 2x |
+| Big Muff (USA / Russian) | -21.1 / -26.1 | -41.0 / -46.3 | -47.1 / -69.0 | 7.3 / - / - | 1x / 2x / 4x (eco / normal / high) |
+| Fuzz Face (Ge / Si) | -16.7 / -15.4 | -27.0 / -25.4 | -46.3 / -44.1 | 2.4 / - / - | 1x / 2x / 4x |
+| Tone Bender Mk II (Ge / Si) | **-15.5 / -14.9** | -22.2 / -20.4 | -28.6 / -26.9 (8x: -35.1 / -35.2) | 4.2 / - / - | **1x / 4x / 8x** (2x skipped: it buys only ~7 dB) |
 | Centaur | -81.0 | -88.4 | -94.5 | 5 / 9 / 19 | none |
 | Booster | < -100 | | | 3 | none |
 | Overdrive (old) | < -130 | | | ~0 | none |
@@ -72,6 +75,10 @@ guitar in a stereo buffer, noon knobs):
 | OD-1 | 1x 2.6% | 1x 2.5% | 2x 5.4% |
 | Klon | 1.9% (never oversampled) | | |
 
+| Bassman-Style Amplifier | 1x 14-24% | 1x 14-24% | 2x ~28-48% (estimated: not measured, 2x is twice the work) |
+Its tubes clip softly and the preamp is not a diode clipper, so unlike the DS-1 nothing measurable is gained at 2x for
+normal playing; "High" exists for a hard-driven top end. Cost details in [Bassman5F6A.md](./Bassman5F6A.md).
+
 Alias energy that survives below 5 kHz (a 1.6 kHz tone, worst case; dB re the harmonics):
 DS-1 -26 / -37 / -55 (1x / 2x / 4x), BD-2 -39 / -53 / -63, HM-2 -33 / -48 / -62,
 TS808 -42 / -63 / -95, OD-1 -49 / -70 / -88.
@@ -86,3 +93,23 @@ them at the base rate around the oversampled core; replace the BD-2's two discre
 stages (each ~5 ports) by an op-amp macro-model with finite gain and a dominant pole --
 needs the open-loop response fitted and the asymmetric class-A saturation checked.
 Do not "fix" CPU by removing oversampling from a pedal without checking the table.
+
+## Fuzz pedals (2026-09-23): hard clipping is the expensive case
+The Big Muff, Fuzz Face and Tone Bender rows above show the pattern that matters for the high-gain models to come.
+The two that clip *softly* (Big Muff diodes in the feedback path, Fuzz Face with no clipper at all) gain ~20 dB from
+1x to 2x. The Tone Bender, with ~70 dB of gain, clips into almost a square wave whose harmonics fall as 1/n and gains
+only 6-7 dB per doubling: -28.6 dB at 4x is what the DS-1 has at 2x. Its tiers skip 2x for that reason. Expect the
+same from any future high-gain amp or fuzz: the Newton solve stays cheap (1.3 iterations/sample here), and the
+oversampling factor it needs is what sets the cost.
+
+## New pedals (2026-09-26): non-harmonic / harmonic at 1x / 2x / 4x / 8x (dev alias measurement, knobs at 0.7)
+| Pedal | 1x | 2x | 4x | 8x | tiers chosen (eco / normal / high) | CPU at 1x |
+|---|---|---|---|---|---|---|
+| RAT (original) | -25.6 | -32.3 | -44.8 | -69.9 | 1x / 2x / 4x | 1.9% |
+| RAT 2 | -25.9 | -33.0 | -45.0 | -70.7 | 1x / 2x / 4x | 1.9% |
+| Turbo RAT (LEDs, OP07) | -34.9 | -42.2 | -58.3 | -79.9 | 1x / 2x / 4x | 1.9% |
+| Crunch Box | -23.3 | -38.7 | -57.6 | -67.9 | 1x / 2x / 4x | 4.3% |
+| Zendrive | -40.2 | -54.0 | -74.8 | -96.3 | 1x / 1x / 2x | 2.8% |
+| OCD (MOSFET mode) | -25.1 | -40.6 | -62.0 | -75.6 | 1x / 2x / 4x | 5.3% |
+The Zendrive's clipper sits in the feedback of a stage with modest gain (x1 .. x500 with the diodes limiting at ~1 V), so like the Tube Screamers it
+is clean at 1x. The Crunch Box (x6700 into LEDs), the OCD (hard clipper between two gain stages) and the RATs follow the DS-1 / BD-2 pattern.

@@ -1,4 +1,5 @@
 #include "BD2StyleOverdriveProcessor.h"
+#include "PotTaper.h"
 #include "DualMono.h"
 #include "IconKit.h"
 
@@ -21,6 +22,20 @@ namespace
     constexpr double siIs = 2.52e-9;
     constexpr double siNVt = 1.752 * 25.85e-3;
 
+    // Macro-model of the discrete gain stages. Starting point: the transistor-level stage's open loop measured at 192 kHz
+    // with the feedback broken (DC gain 244 into 80k = 251 unloaded; poles at 15.1 kHz / 7.6 kHz; output = a source
+    // behind the 2.2k collector load, DC 4.16 V). Then FITTED (a coordinate search on the closed-loop small-signal
+    // response of the whole pedal, full vs macro, 4 Gain settings x 6 frequencies, rms error 0.27 dB): gain x1.11,
+    // poles x0.72 / x0.65 (the closed loop sees a heavier load than the 80k of the open-loop measurement, which moves
+    // the pole), and a common-mode term of 0.0228 = a CMRR of ~22 (the JFET pair with a 4.7k resistor tail: the input
+    // signal is common-mode too, since the feedback holds the other gate at the same voltage).
+    constexpr double macroGain = 251.0 * 1.112;
+    constexpr double macroDc = 4.16;
+    constexpr double macroPole1 = 15.1e3 * 0.722, macroPole2 = 7.6e3 * 0.652;
+    constexpr double macroCommonMode = 0.0228;
+    // Output swing of the Thevenin source behind the collector load (the collector itself clips at ~7.6 V into the
+    // 20-70k the feedback and tone network present; 8.0 is what the large-signal fit chose over 0.05..8.0).
+    constexpr double macroLowRail = 0.05, macroHighRail = 8.0;
     constexpr double switchOnResistance = 100.0; // JFET bypass switches in the effect path, "on"
     constexpr double gainPotMax = 250.0e3;       // VR1A/B 250KA rheostats
     constexpr double tonePotMax = 10.0e3;        // VR2 10KB
@@ -87,7 +102,7 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
     {
         auto& c = ch.b;
         const auto v8 = c.addNode(), v4 = c.addNode(), g10 = c.addNode();
-        const auto d10 = c.addNode(), s10 = c.addNode(), g11 = c.addNode(), c9 = c.addNode();
+        const auto d10 = reducedOrder ? 0 : c.addNode(), s10 = reducedOrder ? 0 : c.addNode(), g11 = c.addNode(), c9 = c.addNode();
         const auto nfb = c.addNode(), n22 = c.addNode();
         const auto t1 = c.addNode(), t2 = c.addNode(), t3 = c.addNode(), n26 = c.addNode();
         const auto g14 = c.addNode();
@@ -95,13 +110,28 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addSource (v4, vb);
         ch.srcG10 = c.addSource (g10, vb);
 
-        c.addJfet (d10, g10, s10, jfet2SK184);    // Q10
-        c.addResistor (v8, d10, 2.2e3);           // R28
-        c.addResistor (s10, gnd, 4.7e3);          // R30 (tail)
-        c.addJfet (v8, g11, s10, jfet2SK184, 5.0); // Q11 (drain straight to the rail: always saturated, vds ~ 5 V)
-        c.addBjt (c9, d10, v8, true, pnp2SA1335); // Q9 2SA1335R PNP
-        c.addCapacitor (d10, c9, 47.0e-12);       // C21 (Miller)
-        c.addResistor (c9, gnd, 2.2e3);           // R32
+        if (reducedOrder)
+        {
+            // Q9/Q10/Q11 as a macro op-amp: (+) g10, (-) g11 -> finite gain -> one pole (R*C) -> saturating follower
+            // -> the collector load (R32) in series with c9.
+            const auto amp = c.addNode(), px = c.addNode(), ob = c.addNode();
+            c.addFiniteGainOpAmp (g10, g11, amp, macroGain, (1.0 + macroCommonMode) * vb - (1.0 - macroCommonMode) * macroDc - macroDc / macroGain, macroCommonMode);
+            c.addResistor (amp, px, 1.0e3);
+            c.addCapacitor (px, gnd, 1.0 / (2.0 * juce::MathConstants<double>::pi * 1.0e3 * macroPole1));
+            c.addSaturatingOpAmp (px, ob, ob, { macroLowRail, macroHighRail });
+            c.addResistor (ob, c9, 2.2e3);        // R32 (the collector load: the stage's output impedance)
+            c.setInitialGuess (amp, macroDc); c.setInitialGuess (px, macroDc); c.setInitialGuess (ob, macroDc);
+        }
+        else
+        {
+            c.addJfet (d10, g10, s10, jfet2SK184);    // Q10
+            c.addResistor (v8, d10, 2.2e3);           // R28
+            c.addResistor (s10, gnd, 4.7e3);          // R30 (tail)
+            c.addJfet (v8, g11, s10, jfet2SK184, 5.0); // Q11 (drain straight to the rail: always saturated, vds ~ 5 V)
+            c.addBjt (c9, d10, v8, true, pnp2SA1335); // Q9 2SA1335R PNP
+            c.addCapacitor (d10, c9, 47.0e-12);       // C21 (Miller)
+            c.addResistor (c9, gnd, 2.2e3);           // R32
+        }
         c.addResistor (g11, n22, 1.5e3);          // R31
         c.addCapacitor (n22, gnd, 0.15e-6);       // C22
         c.addCapacitor (g11, c9, 47.0e-12);       // C23
@@ -120,8 +150,8 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
         // Clippers: two diodes in series each way (D7+D8 to clip positive, D9+D10 for negative). Two identical
         // diodes in series with nothing on the middle node are EXACTLY one diode with twice nVt (same current,
         // twice the voltage per e-fold), which drops a node and a Newton port per pair.
-        c.addDiode (t2, gnd, siIs, 2.0 * siNVt);  // D7 + D8
-        c.addDiode (gnd, t2, siIs, 2.0 * siNVt);  // D10 + D9
+        c.addDiode (t2, gnd, siIs, 2.0 * siNVt, 4.0e-9);  // D7 + D8
+        c.addDiode (gnd, t2, siIs, 2.0 * siNVt, 4.0e-9);  // D10 + D9
 
         c.addCapacitor (t2, g14, 0.0022e-6);      // C27
         c.addResistor (g14, v4, 1.0e6);           // R35
@@ -142,20 +172,33 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
     {
         auto& c = ch.c;
         const auto v8 = c.addNode(), v4 = c.addNode(), g14 = c.addNode();
-        const auto d14 = c.addNode(), s14 = c.addNode(), g13 = c.addNode(), s2 = c.addNode();
+        const auto d14 = reducedOrder ? 0 : c.addNode(), s14 = reducedOrder ? 0 : c.addNode(), g13 = c.addNode(), s2 = c.addNode();
         const auto nfb2 = c.addNode(), n24 = c.addNode(), lp = c.addNode();
         const auto nT3 = c.addNode(), nW = c.addNode(), nB = c.addNode(), nLW = c.addNode(), nP = c.addNode();
         c.addSource (v8, vcc);
         c.addSource (v4, vb);
         ch.srcG14 = c.addSource (g14, vb);
 
-        c.addJfet (d14, g14, s14, jfet2SK184);    // Q14
-        c.addResistor (v8, d14, 2.2e3);           // R33
-        c.addResistor (s14, gnd, 4.7e3);          // R36 (tail)
-        c.addJfet (v8, g13, s14, jfet2SK184, 5.0); // Q13 (drain on the rail)
-        c.addBjt (s2, d14, v8, true, pnp2SA1335); // Q12 2SA1335R PNP
-        c.addCapacitor (d14, s2, 100.0e-12);      // C20 (Miller)
-        c.addResistor (s2, gnd, 2.2e3);           // R25
+        if (reducedOrder)
+        {
+            const auto amp = c.addNode(), px = c.addNode(), ob = c.addNode();
+            c.addFiniteGainOpAmp (g14, g13, amp, macroGain, (1.0 + macroCommonMode) * vb - (1.0 - macroCommonMode) * macroDc - macroDc / macroGain, macroCommonMode);
+            c.addResistor (amp, px, 1.0e3);
+            c.addCapacitor (px, gnd, 1.0 / (2.0 * juce::MathConstants<double>::pi * 1.0e3 * macroPole2));
+            c.addSaturatingOpAmp (px, ob, ob, { macroLowRail, macroHighRail });
+            c.addResistor (ob, s2, 2.2e3);        // R25
+            c.setInitialGuess (amp, macroDc); c.setInitialGuess (px, macroDc); c.setInitialGuess (ob, macroDc);
+        }
+        else
+        {
+            c.addJfet (d14, g14, s14, jfet2SK184);    // Q14
+            c.addResistor (v8, d14, 2.2e3);           // R33
+            c.addResistor (s14, gnd, 4.7e3);          // R36 (tail)
+            c.addJfet (v8, g13, s14, jfet2SK184, 5.0); // Q13 (drain on the rail)
+            c.addBjt (s2, d14, v8, true, pnp2SA1335); // Q12 2SA1335R PNP
+            c.addCapacitor (d14, s2, 100.0e-12);      // C20 (Miller)
+            c.addResistor (s2, gnd, 2.2e3);           // R25
+        }
         c.addResistor (g13, n24, 2.2e3);          // R34
         c.addCapacitor (n24, gnd, 1.0e-6);        // C24
         c.addCapacitor (g13, s2, 100.0e-12);      // C25
@@ -249,15 +292,15 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
 void BD2StyleOverdriveProcessor::updatePots (double gainKnob, double toneKnob, double levelKnob)
 {
     // Gain: VR1A/B are 250KA rheostats (wiper tied to one end); more resistance in the feedback = more gain.
-    // Audio taper approximated as knob^2 (same documented stand-in as the other log pots).
-    const double rGain = juce::jmax (1.0, gainPotMax * gainKnob * gainKnob);
+    // VR1A/B 250KA: a real audio taper (pots::audio), not the knob^2 stand-in this used to use.
+    const double rGain = juce::jmax (1.0, gainPotMax * pots::audio (gainKnob));
 
     // Tone: 10KB linear. Wiper at pin 3 (C100 side) = brightest.
     const double tTop = juce::jmax (1.0, tonePotMax * (1.0 - toneKnob));
     const double tBottom = juce::jmax (1.0, tonePotMax * toneKnob);
 
     // Level: 100KA, wiper to ground segment = audio-taper attenuation.
-    const double lBottom = juce::jmax (1.0, levelPotMax * levelKnob * levelKnob);
+    const double lBottom = juce::jmax (1.0, levelPotMax * pots::audio (levelKnob));
     const double lTop = juce::jmax (1.0, levelPotMax - lBottom);
 
     for (auto& ch : channels)

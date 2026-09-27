@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "WetLevelMatcher.h"
 #include "EnvelopeFollower.h"
 
 #include <array>
@@ -93,6 +94,7 @@ private:
     juce::AudioParameterFloat* decay = nullptr;
     juce::AudioParameterFloat* holdMs = nullptr;
     juce::AudioParameterFloat* mix = nullptr;
+    std::array<WetLevelMatcher, 2> wetMatch; // keeps Mix = 1 as loud as the dry signal (docs/circuits/MixLaw.md)
 
     static constexpr int numCombs = 4;
     static constexpr int numAllpassStages = 2;

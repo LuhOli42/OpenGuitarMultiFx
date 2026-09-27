@@ -1,11 +1,11 @@
 #include "MainComponent.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
-#include "PolyphonicTunerOverlay.h"
+#include "TunerOverlay.h"
+#include "../Engine/InputGainSettings.h"
 #include "PresetListDialog.h"
 #include "Tone3000Panel.h"
 #include "TouchSizing.h"
-#include "../Engine/TuningSettings.h"
 
 #include <algorithm>
 #include <cmath>
@@ -50,22 +50,33 @@ namespace
     // app-visible text in English) -- the icon doc keeps the original PT
     // labels since that's what the actual reference sheet uses, but
     // nothing user-facing in the running app should be in Portuguese.
-    const juce::StringArray categoryOrder { "Amplifiers", "Dynamics", "Drive", "Modulation",
+    const juce::StringArray categoryOrder { "Modeled Amps", "Neural", "Cabs", "Dynamics", "Overdrive", "Distortion", "Fuzz", "Modulation",
                                              "Delay", "Reverb", "Filter/FX", "Utility" };
 
     juce::String categoryForDisplayName (const juce::String& displayName)
     {
-        if (displayName == "Noise Gate" || displayName == "Compressor")
+        // "<Original>-Style Compressor / Noise Gate / Noise Suppressor" (pedals and studio units) sit with the plain ones.
+        if (displayName == "Noise Gate" || displayName == "Compressor" || displayName.endsWith (" Compressor")
+            || displayName.endsWith (" Noise Gate") || displayName.endsWith (" Noise Suppressor"))
             return "Dynamics";
-        if (displayName == "Overdrive" || displayName == "Rangemaster-Style Booster"
-            || displayName == "DS-1-Style Distortion" || displayName == "OD-1-Style Overdrive"
-            || displayName == "TS808-Style Overdrive" || displayName == "TS9-Style Overdrive"
-            || displayName == "TS10-Style Overdrive" || displayName == "Centaur-Style Overdrive"
-            || displayName == "BD-2-Style Overdrive" || displayName == "HM-2-Style Distortion")
-            return "Drive";
-        if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab"
-            || displayName == "Neural Pedal" || displayName == "Cab" || displayName == "Dynamic Cab")
-            return "Amplifiers";
+        // Named after what the pedal is sold as: "...-Style Distortion" (DS-1, HM-2, Distortion+, Guv'nor, RAT) against
+        // "...-Style Overdrive" (Tube Screamers, OD-1, Centaur, BD-2, DOD 250, Blues Breaker) and the booster -- so a new
+        // pedal lands in the right submenu by its display name alone.
+        if (displayName.endsWith (" Distortion"))
+            return "Distortion";
+        // Fuzz is its own category, not a louder Distortion: a Big Muff clips in the feedback of its gain stages
+        // rather than shunting a gained signal to ground, and players look for it under that name.
+        if (displayName.endsWith (" Fuzz"))
+            return "Fuzz";
+        if (displayName.endsWith (" Overdrive") || displayName == "Rangemaster-Style Booster" || displayName == "EP-Style Booster")
+            return "Overdrive";
+        // Circuit-modelled amplifiers (component-level, from a schematic) are kept apart from the neural captures.
+        if (displayName == "Bassman-Style Amplifier" || displayName == "Super Lead-Style Amplifier")
+            return "Modeled Amps";
+        if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")
+            return "Neural";
+        if (displayName == "Cab" || displayName == "Dynamic Cab")
+            return "Cabs";
         if (displayName == "Reverb" || displayName == "Ambient" || displayName == "Spring" || displayName == "Hall"
             || displayName == "Plate" || displayName == "Room" || displayName == "Shimmer" || displayName == "Gated")
             return "Reverb";
@@ -77,31 +88,12 @@ namespace
             || displayName == "Flanger" || displayName == "Phaser" || displayName == "Rotary"
             || displayName == "Uni-Vibe" || displayName == "Pitch Mod")
             return "Modulation";
-        if (displayName == "Pitch Shift" || displayName == "Octaver" || displayName == "Harmonizer")
+        if (displayName == "Pitch Shift" || displayName == "Octaver" || displayName == "Harmonizer"
+            || displayName == "Parametric EQ" || displayName == "Ring Mod" || displayName.endsWith (" Equalizer"))
             return "Filter/FX";
         return "Other"; // shouldn't normally happen -- a new effect type that hasn't been categorised yet
     }
 
-    const juce::StringArray noteNames { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-
-    /** Standard equal-temperament conversion, A4 = 440Hz. Returns the
-        nearest note name and how far off it is in cents (-50..+50) --
-        used to feed FooterBar's tuner gauge from PitchDetector's raw
-        frequency estimate. `hz <= 0` (PitchDetector's "no clear pitch"
-        sentinel) returns {"--", 0}. */
-    std::pair<juce::String, float> frequencyToNoteAndCents (float hz)
-    {
-        if (hz <= 0.0f)
-            return { "--", 0.0f };
-
-        const float midiNote = 69.0f + 12.0f * std::log2 (hz / 440.0f);
-        const int nearestNote = (int) std::round (midiNote);
-        const float cents = (midiNote - (float) nearestNote) * 100.0f;
-
-        const int octave = nearestNote / 12 - 1;
-        const int noteIndex = ((nearestNote % 12) + 12) % 12;
-        return { noteNames[noteIndex] + juce::String (octave), cents };
-    }
 }
 
 MainComponent::MainComponent()
@@ -173,6 +165,7 @@ MainComponent::MainComponent()
     };
 
     parameterPanel.onRemoveRequested = [this] (EffectProcessor* p) { removeEffect (p); };
+    parameterPanel.onPreferredHeightChanged = [this] { resized(); };
     parameterPanel.setModelsDirectory (getModelsDirectory());
     parameterPanel.setTone3000Manager (tone3000);
     parameterPanel.onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
@@ -206,18 +199,14 @@ MainComponent::MainComponent()
     addAndMakeVisible (parameterPanel);
 
     addAndMakeVisible (footerBar);
-    footerBar.onTunerTapped = [this] { showPolyphonicTuner(); };
+    footerBar.onTunerTapped = [this] { showTuner(); };
 
     if (! audioEngine.start())
         titleLabel.setText ("Audio device failed to open", juce::dontSendNotification);
 
-    // Remembered across launches (tunings::saveTuning()) -- a tuning
-    // describes the instrument physically plugged in, not a sound, so it
-    // isn't part of any guitar preset. Applied here regardless of whether
-    // audioEngine.start() actually got a device -- PolyphonicPitchDetector
-    // just holds it as pending until prepare() knows the sample rate.
-    currentTuning = tunings::loadSavedTuning();
-    audioEngine.setTuningProfile (currentTuning);
+    // Remembered across launches -- the interface's gain staging, like the tuning before it, describes the hardware
+    // plugged in rather than a sound, so it is not part of any guitar preset. See AudioEngine::setInputGainDb().
+    audioEngine.setInputGainDb (inputgain::loadSavedGainDb());
 
     // Row 0 starts wired device-in -> device-out so the app still makes
     // sound out of the box; rows 1-3 start unrouted, showing a "+" at both
@@ -450,7 +439,21 @@ void MainComponent::showRowInputMenu (int row)
     // there's no realistic input count anywhere near that.
     constexpr int feederItemBase = 1000;
 
+    // Input sensitivity lives here because this is the tile that says where the signal comes from, and the setting is
+    // about that signal's level -- see AudioEngine::setInputGainDb(). IDs 2000+ so they miss both other ranges.
+    constexpr int gainItemBase = 2000;
+    juce::PopupMenu gainMenu;
+    const float currentGainDb = audioEngine.getInputGainDb();
+    for (int i = 0; i < 11; ++i)
+    {
+        const float db = -24.0f + 3.0f * (float) i; // -24 .. +6 dB in 3 dB steps
+        gainMenu.addItem (gainItemBase + i, (db > 0.0f ? "+" : "") + juce::String (db, 0) + " dB", true,
+                          std::abs (db - currentGainDb) < 0.01f);
+    }
+
     juce::PopupMenu menu;
+    menu.addSubMenu ("Input gain", gainMenu);
+    menu.addSeparator();
     if (feeders.empty())
         menu.addItem (1, "Not connected", true, rowRouting[(size_t) row].inputChannel < 0);
     else
@@ -466,6 +469,14 @@ void MainComponent::showRowInputMenu (int row)
         {
             if (result <= 0)
                 return;
+
+            if (result >= gainItemBase)
+            {
+                const float db = -24.0f + 3.0f * (float) (result - gainItemBase);
+                audioEngine.setInputGainDb (db);
+                inputgain::saveGainDb (db);
+                return;
+            }
 
             if (result >= feederItemBase)
             {
@@ -881,6 +892,8 @@ void MainComponent::showSettingsPanel()
     panel->onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     panel->onPopOverlay  = [this] { overlayHost.popOverlay(); };
     panel->onQualityChanged = [this] (EffectRegistry::OversamplingQuality q) { applyRenderQuality (q); };
+    panel->onSampleRateChanged = [this] (double rate) { return audioEngine.setSampleRate (rate); };
+    panel->showSampleRates (audioEngine.getAvailableSampleRates(), audioEngine.getCurrentSampleRate());
 
     overlayHost.pushOverlay (std::move (panel));
 }
@@ -940,20 +953,16 @@ void MainComponent::applyRenderQuality (EffectRegistry::OversamplingQuality qual
     layoutChain();
 }
 
-void MainComponent::showPolyphonicTuner()
+void MainComponent::showTuner()
 {
-    auto overlay = std::make_unique<PolyphonicTunerOverlay> (currentTuning);
-
-    overlay->getReading = [this] (int stringIndex) { return audioEngine.getTuningStringReading (stringIndex); };
-
-    overlay->onTuningChanged = [this] (const TuningProfile& tuning)
-    {
-        currentTuning = tuning;
-        audioEngine.setTuningProfile (tuning);
-        tunings::saveTuning (tuning);
-    };
-
+    auto overlay = std::make_unique<TunerOverlay>();
+    overlay->getFrequencyHz = [this] { return audioEngine.getDetectedFrequencyHz(); };
     overlay->onPopOverlay = [this] { overlayHost.popOverlay(); };
+
+    // The pitch analysis only runs while this overlay is up (AudioEngine::setTunerActive()): YIN's pass is the most
+    // expensive single thing the app does per unit of audio, and nothing reads it otherwise.
+    audioEngine.setTunerActive (true);
+    overlay->onDestroyed = [this] { audioEngine.setTunerActive (false); };
 
     overlayHost.pushOverlay (std::move (overlay));
 }
@@ -1256,12 +1265,13 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 
 void MainComponent::timerCallback()
 {
-    cpuLabel.setText ("CPU " + juce::String (audioEngine.getCurrentCpuUsage() * 100.0, 1) + "%",
+    // Average and worst-block, not one number: see AudioEngine::getPeakCpuUsage().
+    // roundToInt, not String(double, 0): JUCE reads 0 decimal places as "shortest representation" and prints every digit.
+    cpuLabel.setText ("CPU " + juce::String (juce::roundToInt (audioEngine.getCurrentCpuUsage() * 100.0)) + "%  peak "
+                          + juce::String (juce::roundToInt (audioEngine.getPeakCpuUsage() * 100.0)) + "%",
                        juce::dontSendNotification);
 
     footerBar.setLevels (audioEngine.getInputLevel(), audioEngine.getOutputLevel());
-    const auto [noteName, cents] = frequencyToNoteAndCents (audioEngine.getDetectedFrequencyHz());
-    footerBar.setTuning (noteName, cents / 50.0f); // +/-50 cents maps to the gauge's full deflection
 
     // BPM-synced time parameters (ms/BPM-subdivision toggle -- see
     // EffectProcessor::updateTempoSyncedParams()) recomputed here, at the
@@ -1296,7 +1306,8 @@ void MainComponent::resized()
     // topBarHeight's comment) -- cpuLabel/settingsButton/quickSaveButton
     // don't need to be that tall themselves, just centred within it.
     auto top = area.removeFromTop (topBarHeight);
-    cpuLabel.setBounds (top.removeFromRight (70).withSizeKeepingCentre (70, 20));
+    // 150, not 70: it carries the average AND the worst-block peak now (see timerCallback()).
+    cpuLabel.setBounds (top.removeFromRight (150).withSizeKeepingCentre (150, 20));
     settingsButton.setBounds (top.removeFromRight (touch::minTapTarget)
                                    .withSizeKeepingCentre (touch::minTapTarget, touch::minTapTarget));
     top.removeFromRight (8);

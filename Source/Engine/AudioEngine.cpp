@@ -1,10 +1,30 @@
 #include "AudioEngine.h"
 
+#include <cmath>
+
 namespace openguitarmultifx
 {
 
 namespace
 {
+    juce::File sampleRateFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("OpenGuitarMultiFx").getChildFile ("sample_rate.txt");
+    }
+
+    double loadSampleRatePreference()
+    {
+        const auto f = sampleRateFile();
+        return f.existsAsFile() ? f.loadFileAsString().trim().getDoubleValue() : 0.0;
+    }
+
+    void saveSampleRatePreference (double rate)
+    {
+        sampleRateFile().getParentDirectory().createDirectory();
+        sampleRateFile().replaceWithText (juce::String (rate, 0));
+    }
+
     // A defensive ceiling, not a real one: on this dev machine, PipeWire
     // already holds the real audio interface open exclusively (confirmed
     // live -- see AGENT.md), so JUCE's ALSA backend can only reach it
@@ -126,6 +146,24 @@ bool AudioEngine::start()
         }
     }
 
+    // The rate: the user's saved choice, otherwise 48 kHz (the project's default and what an interface / PipeWire normally runs at) when the
+    // device offers it -- JUCE's own default picked 44.1 kHz on the UR44, which then resampled against a 48 kHz graph.
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+    {
+        const auto wanted = loadSampleRatePreference();
+        const auto rates = device->getAvailableSampleRates();
+        const double target = wanted > 0.0 ? wanted : 48000.0;
+        if (rates.contains (target) && std::abs (device->getCurrentSampleRate() - target) > 0.5)
+        {
+            juce::AudioDeviceManager::AudioDeviceSetup setup;
+            deviceManager.getAudioDeviceSetup (setup);
+            setup.sampleRate = target;
+            const auto err = deviceManager.setAudioDeviceSetup (setup, true);
+            if (err.isNotEmpty())
+                juce::Logger::writeToLog ("AudioEngine: could not open the device at " + juce::String (target) + " Hz -- " + err);
+        }
+    }
+
     if (auto* device = deviceManager.getCurrentAudioDevice())
         juce::Logger::writeToLog ("AudioEngine: using \"" + device->getName() + "\" -- "
                                    + juce::String (device->getInputChannelNames().size()) + " input(s), "
@@ -134,6 +172,48 @@ bool AudioEngine::start()
     deviceManager.addAudioCallback (this);
     startTimer (100); // DeferredReclaimer sweep at 10Hz -- comfortably above the 500ms safety margin
     return true;
+}
+
+juce::Array<double> AudioEngine::getAvailableSampleRates() const
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        return device->getAvailableSampleRates();
+    return {};
+}
+
+juce::String AudioEngine::setSampleRate (double newRate)
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (device == nullptr)
+        return "no audio device is open";
+    if (std::abs (device->getCurrentSampleRate() - newRate) < 0.5)
+    {
+        saveSampleRatePreference (newRate);
+        return {};
+    }
+
+    juce::AudioDeviceManager::AudioDeviceSetup previous, setup;
+    deviceManager.getAudioDeviceSetup (previous);
+    setup = previous;
+    setup.sampleRate = newRate;
+
+    // Take the callback off first: the running graph's processors are re-prepared for the new rate in audioDeviceAboutToStart, which must
+    // not overlap a block being processed with the old state.
+    deviceManager.removeAudioCallback (this);
+    auto err = deviceManager.setAudioDeviceSetup (setup, true);
+    if (err.isNotEmpty())
+    {
+        juce::Logger::writeToLog ("AudioEngine: could not switch to " + juce::String (newRate) + " Hz -- " + err + " -- restoring the previous rate");
+        const auto restoreErr = deviceManager.setAudioDeviceSetup (previous, true);
+        if (restoreErr.isNotEmpty())
+            juce::Logger::writeToLog ("AudioEngine: failed to restore the previous rate too -- " + restoreErr);
+    }
+    else
+    {
+        saveSampleRatePreference (newRate);
+    }
+    deviceManager.addAudioCallback (this);
+    return err;
 }
 
 void AudioEngine::stop()
@@ -155,12 +235,89 @@ void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph)
     graphSlot.publish (std::move (newGraph));
 }
 
+namespace
+{
+    /** Multiplies the block by a linear ramp: gain(i) = from + (to - from) * i / numSamples ... clamped to [0, 1]. */
+    void applyRamp (juce::AudioBuffer<float>& buffer, int numSamples, double startGain, double gainPerSample) noexcept
+    {
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        {
+            auto* data = buffer.getWritePointer (ch);
+            double gain = startGain;
+            for (int i = 0; i < numSamples; ++i, gain += gainPerSample)
+                data[i] *= (float) juce::jlimit (0.0, 1.0, gain);
+        }
+    }
+}
+
+void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples)
+{
+    auto* graph = graphSlot.currentRaw();
+    const auto now = juce::Time::getHighResolutionTicks();
+
+    if (graph != activeGraph)
+    {
+        // The old graph is still alive: DeferredReclaimer frees a retired graph 500 ms after it was retired, and it was
+        // retired after the previous callback -- so it is safe to run once more as long as that callback was recent.
+        const bool oldStillSafe = activeGraph != nullptr
+                                  && juce::Time::highResolutionTicksToSeconds (now - lastCallbackTicks) < 0.1;
+        const double rate = sampleRate.load (std::memory_order_relaxed);
+
+        if (oldStillSafe && fadingOutGraph == nullptr && rate > 0.0)
+        {
+            fadingOutGraph = activeGraph;
+            fadeOutSamplesTotal = fadeOutSamplesLeft = juce::jmax (numSamples, (int) (0.004 * rate));
+            fadeInSamplesTotal = juce::jmax (1, (int) (0.010 * rate));
+        }
+        activeGraph = graph;
+    }
+    lastCallbackTicks = now;
+
+    if (fadingOutGraph != nullptr)
+    {
+        fadingOutGraph->process (buffer);
+        const int n = juce::jmin (numSamples, fadeOutSamplesLeft);
+        const double step = -1.0 / (double) fadeOutSamplesTotal;
+        applyRamp (buffer, n, (double) fadeOutSamplesLeft / (double) fadeOutSamplesTotal, step);
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            if (n < numSamples)
+                juce::FloatVectorOperations::clear (buffer.getWritePointer (ch) + n, numSamples - n);
+
+        fadeOutSamplesLeft -= n;
+        if (fadeOutSamplesLeft <= 0)
+        {
+            fadingOutGraph = nullptr;
+            fadeInSamplesLeft = fadeInSamplesTotal;
+        }
+        return;
+    }
+
+    if (graph != nullptr)
+        graph->process (buffer);
+
+    if (fadeInSamplesLeft > 0)
+    {
+        const int n = juce::jmin (numSamples, fadeInSamplesLeft);
+        const double step = 1.0 / (double) fadeInSamplesTotal;
+        applyRamp (buffer, n, 1.0 - (double) fadeInSamplesLeft / (double) fadeInSamplesTotal, step);
+        fadeInSamplesLeft -= n;
+    }
+}
+
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
+    activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
+    fadingOutGraph = nullptr;
+    fadeOutSamplesLeft = fadeInSamplesLeft = 0;
+
     sampleRate.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
     blockSize.store (device->getCurrentBufferSizeSamples(), std::memory_order_relaxed);
     pitchDetector.prepare (device->getCurrentSampleRate());
-    polyphonicPitchDetector.prepare (device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
+
+    // The graph that is already published was prepared for whatever rate the device ran at before (a rate change, a re-opened device);
+    // the callback is not running yet, so preparing it here is safe. A processor whose rate did not change ignores the call.
+    if (auto* graph = graphSlot.currentRaw())
+        graph->prepare (device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples(), 2);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -173,6 +330,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
                                                      float* const* outputChannelData, int numOutputChannels,
                                                      int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
+    // Flush denormals to zero for everything the audio thread runs (reverb tails, filter and NAM states decaying
+    // toward silence): a denormal float costs 50-150x a normal one on x86, and a chain whose input goes quiet is
+    // exactly when they appear.
+    const juce::ScopedNoDenormals noDenormals;
+
     const auto startTicks = juce::Time::getHighResolutionTicks();
 
     // An empty graph means total bypass: copy the selected input channel to
@@ -188,10 +350,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 
     if (in != nullptr)
     {
-        pitchDetector.pushSamples (in, numSamples);
-        polyphonicPitchDetector.pushSamples (in, numSamples);
+        // Only while the tuner is on screen -- see setTunerActive(). This is now just a ring-buffer write; the analysis
+        // itself runs on the control thread (timerCallback -> PitchDetector::analyse()).
+        if (tunerActive.load (std::memory_order_relaxed))
+            pitchDetector.pushSamples (in, numSamples);
+        // Metered AFTER the input gain below (the IN meter is a gain-staging tool: it has to show what the chain is
+        // actually being fed, which is what decides how hard every model is driven).
         const auto range = juce::FloatVectorOperations::findMinAndMax (in, numSamples);
-        lastInputLevel.store (juce::jmax (std::abs (range.getStart()), std::abs (range.getEnd())),
+        lastInputLevel.store (juce::jmax (std::abs (range.getStart()), std::abs (range.getEnd()))
+                                  * inputGainLinear.load (std::memory_order_relaxed),
                                std::memory_order_relaxed);
     }
     else
@@ -211,8 +378,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 
     juce::AudioBuffer<float> buffer (outputChannelData, numOutputChannels, numSamples);
 
-    if (auto* graph = graphSlot.currentRaw())
-        graph->process (buffer);
+    // Input sensitivity (see setInputGainDb()): applied to what the chain sees, not to the dry passthrough path -- the
+    // buffer IS the chain's input at this point.
+    const float inputGain = inputGainLinear.load (std::memory_order_relaxed);
+    if (! juce::approximatelyEqual (inputGain, 1.0f))
+        buffer.applyGain (inputGain);
+
+    processGraph (buffer, numSamples);
 
     // Peak across every channel the graph actually produced -- what's
     // about to reach the device, before the pair-silencing below decides
@@ -243,13 +415,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     const auto sr = sampleRate.load (std::memory_order_relaxed);
     const auto blockSeconds = numSamples / (sr > 0.0 ? sr : 48000.0);
 
-    lastCpuUsage.store (blockSeconds > 0.0 ? elapsedSeconds / blockSeconds : 0.0,
-                         std::memory_order_relaxed);
+    // Two numbers, because they answer different questions and the raw per-block ratio answers neither on its own (it
+    // swings too much to read): an average over ~0.5 s for "how loaded am I", and a peak hold over ~1 s for "did any
+    // single block come close to dropping out" -- one block over 100% IS a dropout.
+    const double instant = blockSeconds > 0.0 ? elapsedSeconds / blockSeconds : 0.0;
+    const double averageCoeff = 1.0 - std::exp (-blockSeconds / 0.5);
+    const double previousAverage = averageCpuUsage.load (std::memory_order_relaxed);
+    averageCpuUsage.store (previousAverage + averageCoeff * (instant - previousAverage), std::memory_order_relaxed);
+
+    const double peakDecay = std::exp (-blockSeconds / 1.0);
+    const double previousPeak = peakCpuUsage.load (std::memory_order_relaxed);
+    peakCpuUsage.store (juce::jmax (instant, previousPeak * peakDecay), std::memory_order_relaxed);
 }
 
 void AudioEngine::timerCallback()
 {
     graphSlot.sweep();
+
+    // YIN's O(window x tauMax) pass, on the control thread where unbounded work is allowed -- see PitchDetector::analyse().
+    if (tunerActive.load (std::memory_order_relaxed))
+        pitchDetector.analyse();
 }
 
 juce::StringArray AudioEngine::getAvailableInputChannelNames() const
