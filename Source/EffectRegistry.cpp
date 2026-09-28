@@ -22,6 +22,7 @@
 #include "Effects/BassmanStyleAmplifierProcessor.h"
 #include "Effects/SuperLeadStyleAmplifierProcessor.h"
 #include "Effects/TwinReverbStyleAmplifierProcessor.h"
+#include "Effects/DeluxeReverbStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -311,6 +312,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     TwinReverbStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("TwinReverbStyleAmplifier");
     registry.registerType ("TwinReverbStyleAmplifier", [] { return trimmed (oversampled<TwinReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 4.24f); });
+    // docs/circuits/DeluxeReverbAB763.md. reducedOrder calibrated (DR_POWERCAL) and verified (level tracks the reference
+    // within 0.00-0.02 dB, PedalUnityLevelTests passing) -- shipped as the default, same as the Super Lead/Bassman/Twin
+    // Reverb. Trim placeholder pending PedalUnityLevelTests measurement.
+    DeluxeReverbStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DeluxeReverbStyleAmplifier");
+    registry.registerType ("DeluxeReverbStyleAmplifier", [] { return trimmed (oversampled<DeluxeReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.0f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

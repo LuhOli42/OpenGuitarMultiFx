@@ -71,7 +71,8 @@ namespace
         if (displayName.endsWith (" Overdrive") || displayName == "Rangemaster-Style Booster" || displayName == "EP-Style Booster")
             return "Overdrive";
         // Circuit-modelled amplifiers (component-level, from a schematic) are kept apart from the neural captures.
-        if (displayName == "Bassman-Style Amplifier" || displayName == "Super Lead-Style Amplifier" || displayName == "Twin Reverb-Style Amplifier")
+        if (displayName == "Bassman-Style Amplifier" || displayName == "Super Lead-Style Amplifier" || displayName == "Twin Reverb-Style Amplifier"
+            || displayName == "Deluxe Reverb-Style Amplifier")
             return "Modeled Amps";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")
             return "Neural";
