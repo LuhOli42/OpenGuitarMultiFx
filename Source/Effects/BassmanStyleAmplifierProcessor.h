@@ -46,6 +46,23 @@ public:
     /** Amplifier output (speaker-terminal volts) is scaled by this to get a signal level. */
     static constexpr double outputScale = 1.0 / 40.0; // 8 ohm secondary: 2x the volts of the original 2 ohm one for the same power
 
+    // ---- reduced-order power stage (2026-09-27) ----
+    // Same mechanism as SuperLeadStyleAmplifierProcessor (see that header's own note for the full reasoning, the
+    // calibration methodology and the found/fixed speaker-level bug): the phase inverter, power tubes, output transformer,
+    // global feedback and physical speaker are replaced by a fitted, constant-cost curve; the tone stack stays real and
+    // always solved. Default false here so every OTHER test in BassmanStyleAmplifierProcessorTests.cpp keeps working
+    // unchanged; EffectRegistry.cpp turns it on centrally for the real app. docs/circuits/Bassman5F6A.md has the
+    // calibration data and verified numbers.
+    static inline bool reducedOrder = false;
+    static constexpr double bmGain0 = 8.23;  // closed-loop small-signal gain, toneStackOut -> speaker, at the nominal rail
+    static constexpr double bmYmax = 0.092;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
+    static constexpr double bmKneeN = 6.0;
+    // Same reasoning as SuperLeadStyleAmplifierProcessor's own note: the removed PI/power tubes/OT/feedback loop have a
+    // real frequency response beyond the tone stack that a flat memoryless curve lacks -- restored approximately with a
+    // high-shelf cut, fitted against the full reference model's own measured gain at several frequencies (see the .cpp).
+    static constexpr double bmShelfHz = 70.0;
+    static constexpr double bmShelfHfGain = 0.53; // ~-5.5 dB above the shelf   // knee sharpness of the saturating curve (fitted, see the .cpp)
+
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
     enum class Probe { mixNode, brightPlate, gainStagePlate, followerOut, toneStackOut, phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB,
@@ -109,6 +126,9 @@ private:
         double screenDropA = 0.0, screenDropB = 0.0;
         double vScreen = 450.0;
 
+        // reducedOrder only: behavioural power stage state (see behavioralPowerStage())
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, srcVoc = 0;
         NodalCircuit::Node sA = 0, sB = 0, sC = 0, sD = 0;
@@ -136,6 +156,8 @@ private:
     bool resistiveLoadForced = false;
     double feedbackOverride = 0.0; // test hook: > 0 replaces the feedback resistor (Tube Feel no longer sets it)
     void updateSupply (Channel& ch) const;
+    /** reducedOrder only: see SuperLeadStyleAmplifierProcessor::behavioralPowerStage() for the mechanism. */
+    double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
 
     std::array<Channel, 2> channels;
 

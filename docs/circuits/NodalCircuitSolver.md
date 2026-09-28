@@ -434,5 +434,8 @@ this amp) -- a genuine 3x reduction in the absolute worst-case cost any single s
 own "hot pedal into ONE channel / Bright" test, i.e. some of that tail genuinely needs more than 100 iterations to reach a sane answer, and capping it there traded real correctness for a bound
 this solver doesn't need. **300 is the number verified safe; don't lower it again without the same kind of full-suite evidence, and don't raise it back toward 900 without a documented reason.**
 
-This bounds the absolute worst SINGLE SAMPLE, but does not bound a whole BLOCK: a block containing several samples each costing, say, 50-100 iterations still adds up, and that is the source of
-the Super Lead's own remaining worst-block spikes (see `docs/circuits/SuperLead1959.md`'s CPU section) -- there is no known fix for that which doesn't reintroduce the guard's own problem above.
+This bounds the absolute worst SINGLE SAMPLE, but does not bound a whole BLOCK: a block containing several samples each costing, say, 50-100 iterations still adds up, and that was the source of the
+Super Lead's own remaining worst-block spikes. **Superseded for the Super Lead** by a reduced-order (behavioural) power stage that removes the Newton solve from the power section entirely --
+see `docs/circuits/SuperLead1959.md`'s "Reduced-order (behavioural) power stage" section. This 300-ceiling fix stays load-bearing for every OTHER processor on this solver (and for the Super Lead's
+own reference/non-default netlist), and is the right first move before reaching for a behavioural replacement -- it is cheap, evidence-based, and has zero fidelity cost, whereas a behavioural
+power stage is a real, user-approved exception to circuit fidelity and should only be reached for once a genuine worst-case block spike remains after this kind of solver-level fix.

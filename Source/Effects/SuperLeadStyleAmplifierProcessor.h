@@ -59,10 +59,22 @@ public:
     // after `toneStackOut` -- phase inverter, power tubes, transformer, negative feedback, Presence, the physical speaker
     // load -- is replaced by `behavioralPowerStage()`. Full detail, the calibration sweep, and known gaps (Presence and the
     // speaker's own resonance are NOT reproduced by this path yet): docs/circuits/SuperLead1959.md.
-    static inline bool reducedOrder = true; // TEMP 2026-09-27: on for the user to listen against the TS808+Super Lead preset; revert to false if it doesn't pass a listen
+    // Default false here so every OTHER test in this file (internal probes: bias, phase inverter, feedback, THD, speaker
+    // resonance -- none of which exist once reducedOrder builds the tone-stack-only circuit) keeps working unchanged; the
+    // shipped app turns this on centrally in EffectRegistry.cpp's factory, not here. User listened (2026-09-27) to the
+    // TS808+Super Lead preset with this on and approved it as the real default.
+    static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 9.5;   // closed-loop small-signal gain, toneStackOut -> speaker, at the nominal rail
     static constexpr double bmYmax = 0.198;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
     static constexpr double bmKneeN = 6.0;   // knee sharpness of the saturating curve (fitted, see the .cpp)
+    // The removed phase inverter / power tubes / output transformer / feedback loop have their OWN frequency response
+    // beyond the tone stack (Miller capacitances, OT bandwidth, the loop's own frequency-dependent gain) -- a real,
+    // measured effect (2026-09-27, found by PedalUnityLevelTests failing at "noon"): the full reference model's
+    // small-signal gain is ~2-4 dB lower from 500 Hz-1.65 kHz than at 100 Hz. A flat memoryless curve has none of this, so
+    // a high-shelf cut restores it approximately (not exactly -- the real curve dips more than a single shelf can match,
+    // see the .cpp for the measured points). Fitted, not guessed: see behavioralPowerStage()'s own comment.
+    static constexpr double bmShelfHz = 90.0;
+    static constexpr double bmShelfHfGain = 0.55; // ~-5.2 dB above the shelf
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -135,7 +147,7 @@ private:
 
         // reducedOrder only: behavioural power stage state (see behavioralPowerStage()); bmRail is set to the real
         // nominal rail in prepare().
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, srcVoc = 0;

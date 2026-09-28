@@ -117,13 +117,54 @@ real-time budget, the REST of that block solved at a hard `deadlineIterations`-i
   need 100-199, and 31 hit the old 900 ceiling's neighbourhood outright. Cutting to 300 bounds that tail's absolute worst case 3x with **zero regressions on the full test suite** (every processor,
   not just this amp). A further cut to 100 WAS tried and reverted: it turned 0 recoveries into 84 on the "hot pedal into ONE channel / Bright" test -- some of that tail genuinely needs more than
   100 iterations to converge, so 100 traded correctness for a CPU bound this circuit doesn't actually need. 300 is the number to keep unless new evidence says otherwise.
-* **What this leaves unresolved**: even with all of the above, `PresetChainBench` on the user's own TS808-into-Super-Lead preset still shows the power block occasionally costing up to ~250-280% of
-  a block's real-time budget for a single rare block (p99 is 55-71%; this is a genuine tail, not routine cost). That block is NOT failing/recovering (0 sanity rejects on the worst blocks measured) --
-  it is many individually-expensive-but-correctly-converging samples landing in the same 128-sample window. There is no known way to cap that further without either (a) truncating a sample's Newton
-  solve before it converges (proven, above, to cause audible corruption) or (b) a structural change to the amp itself that lowers the AVERAGE/WORST cost of the power stage's own math -- the
-  half-rate preamp, sleep-on-silence, and reduced-order/behavioural power stage ideas discussed with the user, none built yet.
+* **What this left unresolved at the time**: even with all of the above, `PresetChainBench` on the user's own TS808-into-Super-Lead preset still showed the power block occasionally costing up to
+  ~250-280% of a block's real-time budget for a single rare block. That block was not failing/recovering -- it was many individually-expensive-but-correctly-converging samples landing in the same
+  128-sample window. **Superseded by the behavioural power stage below**, which removes the Newton solve (and so the tail) from the power stage entirely.
+
+## Reduced-order (behavioural) power stage -- the shipped default (2026-09-27)
+User, after the above still left an unbounded worst-case block: "eu acho q o q devemos fazer e garantir q o amp seja 20% de processamento e ele n suba... n quero q durante o show ele do nada tenha
+um pico de carga de cpu"; then, once told the honest cause was intrinsic to solving an implicit nonlinear network (variable Newton iteration count is not this project's bug, every SPICE-like solver
+has it), explicitly accepted trading circuit fidelity for a fixed-cost model in the power stage specifically ("exceção consciente"), same category of exception as `HM2StyleDistortion.md`'s
+reducedOrder but a much larger cut. **`SuperLeadStyleAmplifierProcessor::reducedOrder`** (class default `false` -- every other test in `Tests/SuperLeadStyleAmplifierProcessorTests.cpp` assumes the
+full topology; **turned on for the real app in `EffectRegistry.cpp`'s factory**, after the user listened to it against their own TS808+Super Lead preset and approved it):
+* **What stays real, unconditionally**: the preamp (both triodes, the mixing node, the cathode follower) and the **tone stack** (Treble/Middle/Bass) -- a genuine linear circuit either way, so it
+  costs nothing extra to keep solving exactly. `toneStackOut` is the boundary.
+* **What is replaced**: everything from the tone stack's output onward -- the phase inverter, the two EL34 pentode pairs, the output transformer, the global negative feedback loop, and the
+  physical speaker RLC network. `behavioralPowerStage()` computes the speaker-equivalent voltage directly in C++: a saturating curve `y = bmYmax * u / (1 + u^bmKneeN)^(1/bmKneeN)` (u = drive / knee,
+  knee scales with the current rail) plus a slow envelope-follower-driven sag lookup (a real 20-point table, not a fitted shape -- the sag curve's rise was too irregular to fit cleanly), replacing
+  the coupled tube/transformer network with a fixed handful of multiplies and one `pow()` -- genuinely CONSTANT cost, no Newton iteration to have a bad day.
+* **Root cause, found before building this**: opening the global feedback loop on the FULL reference model did NOT remove the expensive tail (it got slightly worse) -- ruling out the phase
+  inverter/feedback coupling and pointing at the power pentodes' own device dynamics under extreme drive as the actual source (consistent with `NodalCircuitSolver.md`'s "near-singular-Jacobian
+  corner", a previously-flagged, not-fully-resolved lead in this exact area).
+* **How the calibration was done** (`SL_POWERCAL` in the test file): the full reference model, driven with a slow settled sine at 20 levels from deep small-signal to full saturation, Power Drive at
+  max, recording (`toneStackOut` peak, `speaker` peak/rms, plate rail) once the supply reached ITS OWN quasi-equilibrium at each level -- so supply sag is captured as real measured data, not assumed.
+  One point is a direct cross-check: at drive_pk 6.238 V, the model's own 40.99 V rms speaker output is EXACTLY the doc's earlier "105 W at 3.3% THD" figure (40.99^2 / 16 = 105.0 W).
+* **Fitted constants**: `bmGain0 = 9.5` (closed-loop small-signal gain), `bmYmax = 0.198` (peak output as a fraction of the rail at full saturation), `bmKneeN = 6` (knee sharpness) -- found by hand
+  against the normalized (drive/rail, output/rail) calibration curve, not guessed; residual under ~2% (~0.2 dB) everywhere checked.
+* **Verified** (`Tests/SuperLeadStyleAmplifierProcessorTests.cpp`, permanent, not dev-only): level tracks the reference within **0.04-0.16 dB** across the whole swept range (small-signal to full
+  clip) -- better than the BD-2 macro's own 0.27-0.81 dB precedent. Worst-block cost on the same hot-pedal stress that used to hit 68%/280%: **13.7-15.8% worst block** (was up to 280%), average
+  **7.7-8.2%** (was ~21-24%). Zero failures, zero recoveries, by construction -- mathematically impossible, since there is no Newton solve left in the power stage to fail.
+* **Real bug found and fixed by the user listening (2026-09-27)**: the Speaker (4/8/16 ohm) level-matching factor (`speakerGain`, a `z^-0.8` law) was originally FITTED to cancel a real physical
+  level difference that exists in the full reference netlist's mismatched-tap model (verified: 48.3/51.7/49.1 V rms full-drive there, within ~1 dB). reducedOrder has no such physical mismatch left
+  to cancel (the calibration doesn't vary with speaker choice at all) -- applying the SAME compensation factor there made 4 ohm ~9.6 dB louder than 16 ohm instead of matching them, the "salto de
+  volume enorme" the user reported. Fixed: `speakerGain = 1.0` unconditionally in reducedOrder mode. Now bit-identical across all three settings (permanent regression test).
+* **Known, documented gaps in this mode** (none of these existed before reducedOrder; a future pass could close them the same fitted-from-real-data way): Presence has no effect; Bias and Tube Feel
+  have no effect (they only ever moved nodes that no longer exist); the speaker's own resonance/HF lift is not reproduced (level still matches across 4/8/16, tone doesn't change with the choice).
+* **Second real gap found and fixed (2026-09-27, via `PedalUnityLevelTests`)**: the flat curve above has no frequency response of its own, but the real PI/OT/feedback loop it replaces does (Miller
+  capacitances, the transformer's bandwidth, the loop's own frequency-dependent gain) -- measured directly against the reference at 100/165/500/1000/1650 Hz: gain is ~2-4 dB LOWER from 500 Hz-1.65 kHz
+  than at 100 Hz there, while the flat curve is (by construction) identical at every frequency. Fixed approximately with a one-pole high-shelf cut on `behavioralPowerStage()`'s output
+  (`bmShelfHz = 90`, `bmShelfHfGain = 0.55`, ~-5.2 dB above the shelf): a single shelf cannot reproduce the reference's actual shape (which dips through the mid-band and partially recovers by
+  1.65 kHz -- more like a scoop than a monotonic rolloff), so real residual error remains at individual frequencies (measured: 100 Hz ~0.4 dB high, 165 Hz close, 500 Hz-1 kHz ~0.5-1.7 dB off, 1.65
+  kHz ~2.9 dB low) -- closing this further needs a proper multi-band fit, not attempted yet.
+* **Third finding, NOT a reducedOrder bug**: chasing the remaining gap in `PedalUnityLevelTests` (still ~3 dB after the shelf) found the test's generic "every page-1 knob at 0.5 (noon)" loop was
+  landing the 3-way discrete Input selector (Normal/Jumped/Bright) on an ambiguous exact-midpoint rounding boundary (resolves to Jumped, not the documented default Normal) -- fixed in
+  `Tests/PedalUnityLevelTests.cpp` to leave any stepped parameter (`range.interval >= 1`) at its own default instead. That same investigation also found the Super Lead's own registry trim had
+  drifted out of calibration BEFORE any of this reducedOrder work (an earlier, unrelated fix earlier this session moved the reference's own small-signal gain ~2.76 dB): re-measured `-15.83f` ->
+  `-18.99f` in `EffectRegistry.cpp`. **Verified**: `PedalUnityLevelTests` now passes at 0.00 dB (was 6.35 dB before any of these three fixes).
+* This is the pattern to reuse for every future amp/heavy pedal on this solver, not a one-off: calibrate a fitted curve AND a shelf for the discarded stage's frequency response from the REAL
+  reference model's own measured behaviour (never a guessed shape), keep the linear parts (tone stacks, filters) solving exactly since they cost nothing extra, verify level/cost with a permanent
+  test AND `PedalUnityLevelTests` before it ships as the class default, and get an actual listen before flipping the registry-level switch.
 
 ## Cost
-Preamp ~1.3 Newton iterations per sample, power block ~2.3. **~20-29% of a core playing** depending on how hard it's driven (soft picking through a 6x-boosted 3 V pedal), p99 worst-block
-55-71%, and a rare single block can reach ~250-280% (see above) -- there is currently no hard ceiling on that tail that doesn't cost real audio quality. Orders {0, 0, 1} (2x only at High), as the
-Bassman. Unity trim -15.83 dB.
+Preamp ~1.3 Newton iterations per sample, power block ~2.3 in the (still available, reference) full netlist -- **~20-29% of a core** there, worst block up to ~280% (see above). **The shipped
+default (reducedOrder) is ~7.7-8.2% average, ~13.7-15.8% worst block, zero failures.** Orders {0, 0, 1} (2x only at High), as the Bassman. Unity trim -15.83 dB.

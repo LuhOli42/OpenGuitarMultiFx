@@ -67,7 +67,14 @@ public:
             pedal->prepare (sr, 512, 1);
             const auto pages = pedal->getParameterPages();
             for (auto* f : pages[0]) // page 1 only: an amp's page 2 (bias, speaker...) stays at its defaults
+            {
+                // A stepped selector (interval >= 1, e.g. an amp's Input: Normal/Jumped/Bright) has no real "noon" -- the
+                // exact numeric midpoint lands on an ambiguous rounding boundary between two switch positions, not a
+                // physical half-way point a real knob would have. Leave those at their own default instead of forcing 0.5.
+                if (f->range.interval >= 1.0f)
+                    continue;
                 *f = juce::jlimit (f->range.start, f->range.end, 0.5f); // "noon", whatever a pedal's own default is
+            }
             const double gainDb = referenceGainDb (*pedal);
             logMessage (juce::String (key).paddedRight (' ', 24) + juce::String (gainDb, 2) + " dB");
             expectWithinAbsoluteError (gainDb, 0.0, 1.0);

@@ -291,8 +291,18 @@ void registerBuiltInEffects (EffectRegistry& registry)
 
     // A full tube amplifier modelled from its schematic (docs/circuits/Bassman5F6A.md): 8 tubes, an output transformer,
     // global feedback and a sagging supply. Quality tiers: 1x, 1x, 2x (the tubes' clipping is soft; see the doc).
+    // Behavioural power stage (docs/circuits/SuperLead1959.md, "reduced-order power stage"): the class defaults to the full
+    // reference netlist (every OTHER test in SuperLeadStyleAmplifierProcessorTests.cpp assumes that topology) -- turned on
+    // HERE, once, for the real app only, after the user listened to it against the TS808+Super Lead preset and approved it.
+    SuperLeadStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SuperLeadStyleAmplifier");
-    registry.registerType ("SuperLeadStyleAmplifier", [] { return trimmed (oversampled<SuperLeadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -15.83f); });
+    // -18.99f (was -15.83f): re-measured 2026-09-27 via PedalUnityLevelTests -- the reference's own raw gain had drifted
+    // ~2.76 dB since -15.83 was last calibrated (unrelated to reducedOrder, likely an earlier fix this session), and
+    // reducedOrder itself adds another ~0.4 dB on top (see docs/circuits/SuperLead1959.md).
+    registry.registerType ("SuperLeadStyleAmplifier", [] { return trimmed (oversampled<SuperLeadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -18.99f); });
+    // Behavioural power stage (docs/circuits/Bassman5F6A.md, "reduced-order power stage"): same reasoning and the same
+    // 2026-09-27 user approval as the Super Lead's own switch just above.
+    BassmanStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("BassmanStyleAmplifier");
     registry.registerType ("BassmanStyleAmplifier", [] { return trimmed (oversampled<BassmanStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -13.94f); });
 

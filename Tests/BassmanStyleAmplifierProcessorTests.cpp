@@ -130,6 +130,259 @@ public:
 
     void runTest() override
     {
+        BassmanStyleAmplifierProcessor::reducedOrder = false;
+
+        if (juce::SystemStats::getEnvironmentVariable ("BM_POWERCAL", {}).isNotEmpty())
+        {
+            // Calibration sweep for a behavioural power stage (2026-09-27), same methodology as the Super Lead's
+            // SL_POWERCAL: drive the full reference model with a slow settled sine at a range of levels, let the supply
+            // reach its own quasi-equilibrium at each one, and print (toneStackOut peak, speaker peak/rms, plate rail).
+            beginTest ("power-stage calibration sweep (dev only)");
+            BassmanStyleAmplifierProcessor amp;
+            setParam (amp, "bm_input", 0.0f);
+            setParam (amp, "bm_vol_normal", 0.8f);
+            setParam (amp, "bm_treble", 0.5f);
+            setParam (amp, "bm_middle", 0.5f);
+            setParam (amp, "bm_bass", 0.5f);
+            setParam (amp, "bm_power", 1.0f);
+            amp.prepare (sr, 128, 2);
+            const double twoPi = 2.0 * juce::MathConstants<double>::pi;
+            for (double level : { 2.0e-5, 5.0e-5, 1.0e-4, 2.0e-4, 4.0e-4, 7.0e-4, 1.0e-3, 1.5e-3, 2.0e-3, 3.0e-3, 4.0e-3, 5.5e-3, 7.0e-3, 9.0e-3, 0.012, 0.016, 0.02, 0.03, 0.05, 0.08, 0.12, 0.18, 0.28, 0.4 })
+            {
+                const long long total = (long long) (1.5 * sr);
+                const long long measureFrom = total - (long long) (0.1 * sr);
+                double drivePeak = 0.0, outPeak = 0.0, outSumSq = 0.0;
+                long long n2 = 0;
+                juce::AudioBuffer<float> one (2, 1);
+                for (long long n = 0; n < total; ++n)
+                {
+                    const float v = (float) (level * std::sin (twoPi * 100.0 * (double) n / sr));
+                    one.setSample (0, 0, v);
+                    one.setSample (1, 0, v);
+                    amp.process (one);
+                    if (n >= measureFrom)
+                    {
+                        drivePeak = juce::jmax (drivePeak, std::abs (amp.debugVoltage (P::toneStackOut)));
+                        const double y = amp.debugVoltage (P::speaker);
+                        outPeak = juce::jmax (outPeak, std::abs (y));
+                        outSumSq += y * y;
+                        ++n2;
+                    }
+                }
+                logMessage ("powercal drive_pk=" + juce::String (drivePeak, 6) + " out_pk=" + juce::String (outPeak, 4)
+                            + " out_rms=" + juce::String (std::sqrt (outSumSq / (double) juce::jmax (1LL, n2)), 4) + " rail="
+                            + juce::String (amp.railPlates(), 2) + " fails=" + juce::String (amp.getSolveFailureRate(), 6));
+            }
+        }
+
+        if (juce::SystemStats::getEnvironmentVariable ("BM_NOON_DIAG", {}).isNotEmpty())
+        {
+            // Same diagnostic as SuperLeadStyleAmplifierProcessorTests' SL_NOON_DIAG: cross-check PedalUnityLevelTests'
+            // own methodology (via the real registry factory) against raw ref/red gain to separate "reducedOrder's own
+            // incremental error" from "the reference's own gain drifted since the trim was last calibrated".
+            beginTest ("noon knobs diagnostic (dev only)");
+            const auto gainAt = [] (bool reduced)
+            {
+                BassmanStyleAmplifierProcessor::reducedOrder = reduced;
+                BassmanStyleAmplifierProcessor amp;
+                const auto pages = amp.getParameterPages();
+                for (auto* f : pages[0])
+                    if (f->range.interval < 1.0f)
+                        *f = juce::jlimit (f->range.start, f->range.end, 0.5f);
+                amp.prepare (sr, 512, 1);
+                const double twoPi = 2.0 * juce::MathConstants<double>::pi, f0 = 164.81, rmsIn = 0.1;
+                double norm = 0.0;
+                for (int k = 1; k <= 10; ++k) norm += 0.5 / (double) (k * k);
+                const double scale = rmsIn / std::sqrt (norm);
+                const int warm = (int) (5.0 * sr), len = (int) (1.0 * sr);
+                juce::AudioBuffer<float> buf (1, 64);
+                double sIn = 0.0, sOut = 0.0;
+                for (long long base = 0; base < warm + len; base += 64)
+                {
+                    double x[64];
+                    for (int i = 0; i < 64; ++i)
+                    {
+                        double v = 0.0;
+                        for (int k = 1; k <= 10; ++k) v += std::sin (twoPi * f0 * k * (double) (base + i) / sr) / (double) k;
+                        x[i] = scale * v;
+                        buf.setSample (0, i, (float) x[i]);
+                    }
+                    amp.process (buf);
+                    if (base >= warm)
+                        for (int i = 0; i < 64; ++i) { sIn += x[i] * x[i]; sOut += (double) buf.getSample (0, i) * buf.getSample (0, i); }
+                }
+                return 10.0 * std::log10 (sOut / sIn);
+            };
+            logMessage ("ref (raw): " + juce::String (gainAt (false), 2) + " dB");
+            logMessage ("red (raw): " + juce::String (gainAt (true), 2) + " dB");
+            for (double freq : { 100.0, 165.0, 500.0, 1000.0, 1650.0 })
+            {
+                const auto pureToneGainAt = [&] (bool reduced)
+                {
+                    BassmanStyleAmplifierProcessor::reducedOrder = reduced;
+                    BassmanStyleAmplifierProcessor amp;
+                    setParam (amp, "bm_input", 0.0f);
+                    setParam (amp, "bm_vol_normal", 0.5f);
+                    setParam (amp, "bm_power", 1.0f);
+                    amp.prepare (sr, 512, 1);
+                    const double twoPi = 2.0 * juce::MathConstants<double>::pi, rmsIn = 0.1;
+                    const int warm = (int) (5.0 * sr), len = (int) (1.0 * sr);
+                    juce::AudioBuffer<float> buf (1, 64);
+                    double sIn = 0.0, sOut = 0.0;
+                    for (long long base = 0; base < warm + len; base += 64)
+                    {
+                        double x[64];
+                        for (int i = 0; i < 64; ++i)
+                        {
+                            x[i] = rmsIn * std::sqrt (2.0) * std::sin (twoPi * freq * (double) (base + i) / sr);
+                            buf.setSample (0, i, (float) x[i]);
+                        }
+                        amp.process (buf);
+                        if (base >= warm)
+                            for (int i = 0; i < 64; ++i) { sIn += x[i] * x[i]; sOut += (double) buf.getSample (0, i) * buf.getSample (0, i); }
+                    }
+                    return 10.0 * std::log10 (sOut / sIn);
+                };
+                logMessage ("pure tone " + juce::String (freq, 0) + " Hz: ref " + juce::String (pureToneGainAt (false), 2)
+                            + " dB, red " + juce::String (pureToneGainAt (true), 2) + " dB");
+            }
+            BassmanStyleAmplifierProcessor::reducedOrder = false;
+        }
+
+        {
+            // Permanent regression test for behavioralPowerStage() (2026-09-27, the shipped default -- EffectRegistry.cpp
+            // turns it on for the real app): drives BOTH a reference (full netlist) and a reducedOrder amp with the SAME
+            // signal, asserting level tracks the reference within 1.5 dB (the sag curve's saturation region has a bit more
+            // residual error here than the Super Lead's -- see docs/circuits/Bassman5F6A.md), and reducedOrder has zero
+            // failures/recoveries by construction (no Newton solve left to have a bad day).
+            beginTest ("reducedOrder power stage tracks the reference (level, and zero failures by construction)");
+            BassmanStyleAmplifierProcessor::reducedOrder = false;
+            BassmanStyleAmplifierProcessor ref;
+            setParam (ref, "bm_input", 0.0f);
+            setParam (ref, "bm_vol_normal", 0.8f);
+            setParam (ref, "bm_power", 1.0f);
+            ref.prepare (sr, 128, 2);
+            BassmanStyleAmplifierProcessor::reducedOrder = true;
+            BassmanStyleAmplifierProcessor red;
+            setParam (red, "bm_input", 0.0f);
+            setParam (red, "bm_vol_normal", 0.8f);
+            setParam (red, "bm_power", 1.0f);
+            red.prepare (sr, 128, 2);
+
+            const double twoPi = 2.0 * juce::MathConstants<double>::pi;
+            for (double level : { 5.0e-4, 2.0e-3, 6.0e-3, 0.012, 0.02, 0.05, 0.1, 0.2 })
+            {
+                const long long total = (long long) (1.5 * sr);
+                const long long measureFrom = total - (long long) (0.1 * sr);
+                double refOutSumSq = 0.0, redOutSumSq = 0.0;
+                long long n2 = 0;
+                juce::AudioBuffer<float> one (2, 1);
+                for (long long n = 0; n < total; ++n)
+                {
+                    const float v = (float) (level * std::sin (twoPi * 100.0 * (double) n / sr));
+                    one.setSample (0, 0, v);
+                    one.setSample (1, 0, v);
+                    ref.process (one);
+                    if (n >= measureFrom)
+                    {
+                        const double y = ref.debugVoltage (P::speaker);
+                        refOutSumSq += y * y;
+                        ++n2;
+                    }
+                }
+                n2 = 0;
+                for (long long n = 0; n < total; ++n)
+                {
+                    const float v = (float) (level * std::sin (twoPi * 100.0 * (double) n / sr));
+                    one.setSample (0, 0, v);
+                    one.setSample (1, 0, v);
+                    red.process (one);
+                    if (n >= measureFrom)
+                    {
+                        const double y = red.debugVoltage (P::speaker);
+                        redOutSumSq += y * y;
+                        ++n2;
+                    }
+                }
+                const double refRms = std::sqrt (refOutSumSq / (double) juce::jmax (1LL, n2));
+                const double redRms = std::sqrt (redOutSumSq / (double) juce::jmax (1LL, n2));
+                const double dB = 20.0 * std::log10 (juce::jmax (1.0e-9, redRms) / juce::jmax (1.0e-9, refRms));
+                logMessage ("level " + juce::String (level, 4) + ": ref " + juce::String (refRms, 3) + " Vrms vs reduced " + juce::String (redRms, 3)
+                            + " Vrms, diff " + juce::String (dB, 2) + " dB, reduced fails " + juce::String (red.getSolveFailureRate(), 6) + ", recov " + juce::String (red.debugRecoveries()));
+                expectLessThan (std::abs (dB), 1.5);
+                expectLessThan (red.getSolveFailureRate(), 1.0e-6);
+                expect (red.debugRecoveries() == 0);
+            }
+            BassmanStyleAmplifierProcessor::reducedOrder = false;
+        }
+
+        {
+            // Worst-block cost, reducedOrder vs the same hot-pedal stress the reference model was measured against
+            // (docs/circuits/Bassman5F6A.md: reference worst blocks reach several ms / hundreds of iterations there).
+            beginTest ("reducedOrder: worst-block cost under the same hot-pedal stress (dev metric, logged not asserted on the reference)");
+            BassmanStyleAmplifierProcessor::reducedOrder = true;
+            BassmanStyleAmplifierProcessor amp;
+            amp.prepare (sr, 128, 2);
+            juce::AudioBuffer<float> buf (2, 128);
+            juce::Random rnd (7);
+            double f0 = 110.0, level = 1.0, phase = 0.0;
+            long long n = 0;
+            double seconds = 0.0, worstPct = 0.0;
+            for (int b = 0; b < (int) (10.0 * sr / 128); ++b)
+            {
+                for (int i = 0; i < 128; ++i, ++n)
+                {
+                    if (n % (long long) (0.5 * sr) == 0) { f0 = 82.0 * std::pow (2.0, rnd.nextDouble() * 2.5); level = 0.5 + 2.5 * rnd.nextDouble(); }
+                    phase += 2.0 * juce::MathConstants<double>::pi * f0 / sr;
+                    const float v = (float) (level * std::tanh (8.0 * std::sin (phase)));
+                    buf.setSample (0, i, v);
+                    buf.setSample (1, i, v);
+                }
+                const auto t0 = juce::Time::getHighResolutionTicks();
+                amp.process (buf);
+                const double blockSeconds = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0);
+                seconds += blockSeconds;
+                worstPct = juce::jmax (worstPct, 100.0 * blockSeconds / (128.0 / sr));
+            }
+            logMessage ("reducedOrder: " + juce::String (100.0 * seconds / 10.0, 2) + " % avg, worst block " + juce::String (worstPct, 1)
+                        + " %, failures " + juce::String (amp.getSolveFailureRate(), 6) + ", recoveries " + juce::String (amp.debugRecoveries()));
+            expect (amp.getSolveFailureRate() == 0.0);
+            expect (amp.debugRecoveries() == 0);
+            BassmanStyleAmplifierProcessor::reducedOrder = false;
+        }
+
+        {
+            beginTest ("reducedOrder: 4 / 8 / 16 ohm sound equally loud (the shipped default has no physical speaker to mismatch)");
+            BassmanStyleAmplifierProcessor::reducedOrder = true;
+            const auto rmsAt = [] (float speaker)
+            {
+                BassmanStyleAmplifierProcessor amp;
+                setParam (amp, "bm_input", 0.0f);
+                setParam (amp, "bm_vol_normal", 0.8f);
+                setParam (amp, "bm_speaker", speaker);
+                amp.prepare (sr, 128, 2);
+                juce::AudioBuffer<float> one (2, 1);
+                const double twoPi = 2.0 * juce::MathConstants<double>::pi;
+                double sumSq = 0.0;
+                long long n2 = 0;
+                const long long total = (long long) (0.7 * sr), measureFrom = total - (long long) (0.1 * sr);
+                for (long long n = 0; n < total; ++n)
+                {
+                    const float v = (float) (0.02 * std::sin (twoPi * 200.0 * (double) n / sr));
+                    one.setSample (0, 0, v);
+                    one.setSample (1, 0, v);
+                    amp.process (one);
+                    if (n >= measureFrom) { const double y = amp.debugVoltage (P::speaker); sumSq += y * y; ++n2; }
+                }
+                return std::sqrt (sumSq / (double) juce::jmax (1LL, n2));
+            };
+            const double r4 = rmsAt (0.0f), r8 = rmsAt (1.0f), r16 = rmsAt (2.0f);
+            logMessage ("reducedOrder speaker volts at 4 / 8 / 16 ohm: " + juce::String (r4, 2) + " / " + juce::String (r8, 2) + " / " + juce::String (r16, 2) + " V rms");
+            expectLessThan (std::abs (20.0 * std::log10 (r4 / r8)), 0.1);
+            expectLessThan (std::abs (20.0 * std::log10 (r16 / r8)), 0.1);
+            BassmanStyleAmplifierProcessor::reducedOrder = false;
+        }
+
         beginTest ("operating points match the schematic (its voltages are +-20%)");
         {
             BassmanStyleAmplifierProcessor amp;

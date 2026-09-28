@@ -346,6 +346,50 @@ Not done (backlog): channel-variant preamps (skip V1B/V1A while its volume is 0 
 fewer port), block-Gauss-Seidel between phase inverter and output stage, running the preamp at a lower
 rate, and the lane-parallel `SignalGraph` on the roadmap.
 
+## Reduced-order (behavioural) power stage -- the shipped default (2026-09-27)
+Same mechanism, same user-approved exception to circuit fidelity, and the same reasoning as the Super Lead's own reduced-order
+power stage (`docs/circuits/SuperLead1959.md`, "Reduced-order (behavioural) power stage" -- read that section first, this one
+only covers what's specific to the Bassman). **`BassmanStyleAmplifierProcessor::reducedOrder`** (class default `false`; turned
+on for the real app in `EffectRegistry.cpp`'s factory).
+* **What stays real**: the preamp and the tone stack (Treble/Bass/Mid), unconditionally, same boundary as the Super Lead
+  (`toneStackOut`).
+* **What is replaced**: the phase inverter, the two 5881 pentode pairs, the output transformer, the global feedback loop and
+  the physical speaker RLC network -- `behavioralPowerStage()`, the same saturating-curve-plus-sag-table-plus-shelf shape as
+  the Super Lead's, but with its OWN fitted constants (a different circuit: 5881s not EL34s, a different transformer ratio,
+  a different global feedback amount) -- reusing the Super Lead's numbers would have been wrong, not just imprecise.
+* **Calibration** (`BM_POWERCAL` in the test file, same methodology as the Super Lead's `SL_POWERCAL`): 24 points from deep
+  small-signal to full saturation, Power Drive at max, Volume Normal at 0.8, Input Normal, matched 8 ohm speaker, settled 1.5 s
+  per level. The absolute output plateaus cleanly around 37.5-37.7 V peak once the rail has sagged into the 410-430 V range.
+* **Fitted constants**: `bmGain0 = 8.23` (small-signal gain), `bmYmax = 0.092` (peak output as a fraction of the sagged
+  rail), `bmKneeN = 6` (same knee sharpness as the Super Lead -- both amps' saturation shape matched this exponent well).
+* **High-shelf cut** (`bmShelfHz = 70`, `bmShelfHfGain = 0.53`, ~-5.5 dB above the shelf): same real cause as the Super
+  Lead's own shelf -- the removed PI/OT/feedback stage has its own frequency response beyond the tone stack that a flat
+  memoryless curve lacks. Measured directly (pure tones at 100/165/500/1000/1650 Hz against the reference): the reference's
+  own small-signal gain swings ~6.9 dB across that range (17.46 dB at 100 Hz down to 10.60 dB at 500 Hz) -- MORE frequency-
+  dependent than the Super Lead's circuit -- so a single shelf leaves more residual error here than there (100 Hz reads
+  ~1.7 dB low, 1000-1650 Hz ~1-2 dB low) even though the "noon" test (dominated by the fundamental and low harmonics) is
+  well within tolerance.
+* **Verified**: `PedalUnityLevelTests` (all page-1 knobs at 0.5, Volume Normal 0.8's own defaults notwithstanding since that
+  test overrides them) passes at **0.74 dB** (was 4.90 dB before the shelf). `Tests/BassmanStyleAmplifierProcessorTests.cpp`'s
+  own permanent regression test: level tracks the reference within 0.01-0.33 dB across a 5.0e-4 to 0.2 V sweep (a much
+  tighter fit than the unity test's harmonically-rich signal, since that sweep is closer to the 100 Hz calibration
+  frequency). Worst-block cost under the same hot-pedal stress the reference model was measured against: **6.15% avg,
+  10.7% worst block, zero failures/recoveries** (reference: 17.7% avg with real spikes possible). Zero failures/recoveries
+  by construction -- there is no Newton solve left in the power stage.
+* **Real bug found and fixed alongside the Super Lead's identical one (2026-09-27)**: the Speaker (4/8/16 ohm) `speakerGain`
+  compensation (a `z^-0.8` law, fitted to cancel a real physical mismatch effect that only exists in the full reference
+  netlist) is now `1.0` unconditionally in reducedOrder mode -- applying the reference's factor here would have made 4 ohm
+  louder than 16 instead of matching them (verified: bit-identical volts across 4/8/16 now).
+* **Known, documented gaps**: same list as the Super Lead's -- Presence, Bias and Tube Feel have no effect; the speaker's
+  own resonance/HF lift isn't reproduced (level still matches across 4/8/16, tone doesn't change with the choice).
+* **A pre-existing, unrelated finding from the same investigation**: `PedalUnityLevelTests`' generic "every page-1 knob at
+  0.5 (noon)" loop was landing a 3-way discrete selector (Input: Normal/Jumped/Bright) on an ambiguous exact-midpoint
+  rounding boundary, not a real physical "half-way" point a knob would have (a real switch has no such position) --
+  fixed in `Tests/PedalUnityLevelTests.cpp` to leave any stepped parameter (`range.interval >= 1`) at its own default
+  instead of forcing it to the numeric midpoint. Also found while chasing this: the Super Lead's OWN trim (`-15.83f`) had
+  drifted ~2.76 dB out of calibration from an earlier, unrelated fix earlier this same session -- re-measured to `-18.99f`.
+  The Bassman's trim (`-13.94f`) was still exact.
+
 ## Not modelled / known differences
 * Output transformer: core saturation, real leakage/inductance (typical values); the speaker is a generic
   guitar speaker (one set of Re / Le / resonance scaled to 4 / 8 / 16 ohm, not a specific driver). A cabinet after

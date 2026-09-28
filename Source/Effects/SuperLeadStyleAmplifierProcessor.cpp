@@ -492,9 +492,14 @@ void SuperLeadStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
     }
     appliedSpeaker = k.speaker;
-    // A lighter load gives more volts and a heavier one fewer; the digital level follows the load's nominal impedance so that switching
-    // 4 / 8 / 16 ohm changes the sound, not the loudness (the Bassman's law, measured there as full-drive volts ~ z^0.83).
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
+    // A lighter load gives more volts and a heavier one fewer; this compensates so 4 / 8 / 16 ohm changes the sound, not the
+    // loudness (the Bassman's law, measured there as full-drive volts ~ z^0.83) -- verified on the FULL reference netlist
+    // (48.3 / 51.7 / 49.1 V rms full-drive, within ~1 dB). reducedOrder has no physical speaker impedance left to
+    // compensate for (behavioralPowerStage()'s calibration doesn't vary with speaker choice) -- applying this same z^-0.8
+    // factor there was a real bug found by the user (2026-09-27): with nothing left to cancel, it just made 4 ohm ~9.6 dB
+    // louder than 16 ohm instead of matching them. reducedOrder keeps the three settings equally loud until the speaker's
+    // own tonal difference is modelled behaviourally too (a documented gap, see the header's note).
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
 }
 
 void SuperLeadStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -589,7 +594,14 @@ double SuperLeadStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, doub
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double u = absDrive / juce::jmax (1.0e-9, k);
     const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    ch.bmOutput = std::copysign (y * ch.bmRail, toneVoltage);
+    const double raw = std::copysign (y * ch.bmRail, toneVoltage);
+
+    // High-shelf cut for the frequency response the removed stages used to provide (see the header's own comment):
+    // ch.bmToneState is a one-pole lowpass of the curve's raw output; blending it back in at bmShelfHfGain leaves DC/LF
+    // at unity and cuts everything above the shelf frequency.
+    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
+    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
     return ch.bmOutput;
 }
 
@@ -767,6 +779,7 @@ void SuperLeadStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmRail = railPlatesNominal;
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
+        ch.bmToneState = 0.0;
     }
     updatePots (lastKnobs);
 

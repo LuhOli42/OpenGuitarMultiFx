@@ -29,6 +29,33 @@ namespace
     constexpr double preampNodeCurrent = 0.006;         // the 10k drop to +325 V
     constexpr double screenResistor = 470.0;
 
+    // ---- reduced-order power stage (2026-09-27): calibration data, BM_POWERCAL in the test file ----
+    // Plate rail vs. the post-tone-stack drive PEAK, measured on the full reference model with a slow (settled) sine at
+    // each level so the supply reaches its own quasi-equilibrium (Power Drive at max, Volume Normal at 0.8, matched 8 ohm
+    // speaker, Input Normal). Same methodology as the Super Lead's own SL_POWERCAL (docs/circuits/SuperLead1959.md).
+    constexpr int bmSagPoints = 24;
+    constexpr double bmSagDrive[bmSagPoints] = { 0.002991, 0.007467, 0.014933, 0.029867, 0.059735, 0.104539, 0.149344, 0.224025,
+                                                  0.298710, 0.448100, 0.597503, 0.821642, 1.045798, 1.344706, 1.793071, 2.390669,
+                                                  2.987568, 4.463159, 7.051008, 10.582891, 15.200820, 21.200175, 27.414895, 32.667039 };
+    constexpr double bmSagRail[bmSagPoints] = { 451.91, 451.90, 451.90, 451.90, 451.88, 451.86, 451.84, 451.78,
+                                                 451.72, 451.56, 451.36, 450.98, 450.51, 449.75, 448.31, 445.94,
+                                                 443.11, 435.16, 431.17, 420.08, 413.63, 410.52, 408.40, 406.95 };
+
+    /** Piecewise-linear lookup through the real measured points above (see SuperLeadStyleAmplifierProcessor's own
+        sagRailLookup() for why this is a table, not a fitted shape). */
+    double sagRailLookup (double drivePeak) noexcept
+    {
+        if (drivePeak <= bmSagDrive[0])
+            return bmSagRail[0];
+        if (drivePeak >= bmSagDrive[bmSagPoints - 1])
+            return bmSagRail[bmSagPoints - 1];
+        int i = 0;
+        while (i < bmSagPoints - 2 && bmSagDrive[i + 1] < drivePeak)
+            ++i;
+        const double t = (drivePeak - bmSagDrive[i]) / (bmSagDrive[i + 1] - bmSagDrive[i]);
+        return bmSagRail[i] + t * (bmSagRail[i + 1] - bmSagRail[i]);
+    }
+
     // ---- tubes ----
     KorenTriode::Parameters triode12AX7()
     {
@@ -270,15 +297,13 @@ void BassmanStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pBrightPlate = b.brightPlate;
     }
 
-    // ================================================================ tone stack, phase inverter, power amp
+    // ================================================================ tone stack (ALWAYS built and solved: a real linear
+    // circuit either way, so it costs nothing extra in reducedOrder mode -- see the header's "reduced-order power stage" note)
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
-        const auto cf = c.addNode(), vpi = c.addNode(), ct = c.addNode(), biasRail = c.addNode();
+        const auto cf = c.addNode();
         ch.wSrcCf = c.addSource (cf, 0.0);
-        ch.wSrcPi = c.addSource (vpi, railPhaseInverterNominal);
-        ch.wSrcCt = c.addSource (ct, railPlatesNominal);
-        ch.wSrcBias = c.addSource (biasRail, -48.0);
 
         // Tone stack (the Bassman / Marshall "TMB" stack): 250 pF treble bypass, 56k slope resistor, 250k treble,
         // 1M bass, 25k middle, two 0.02 uF capacitors. DC-coupled to the follower's cathode.
@@ -295,6 +320,18 @@ void BassmanStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rBass = c.addResistor (n1, n2, 500.0e3);
         c.addCapacitor (slope, n2, 0.02e-6);
         ch.rMid = c.addResistor (n2, gnd, 12.5e3);
+    }
+
+    // ================================================================ phase inverter, power amp -- the FULL reference
+    // netlist only (reducedOrder replaces all of this with behavioralPowerStage(), fitted to this same circuit's own
+    // measured output -- docs/circuits/Bassman5F6A.md)
+    if (! reducedOrder)
+    {
+        auto& c = ch.power;
+        const auto vpi = c.addNode(), ct = c.addNode(), biasRail = c.addNode();
+        ch.wSrcPi = c.addSource (vpi, railPhaseInverterNominal);
+        ch.wSrcCt = c.addSource (ct, railPlatesNominal);
+        ch.wSrcBias = c.addSource (biasRail, -48.0);
 
         // Phase inverter: 12AX7 long-tailed pair. Cathodes -> 470 -> junction (grid leaks return here) -> 10k.
         const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), bn = c.addNode();
@@ -398,6 +435,8 @@ void BassmanStyleAmplifierProcessor::buildChannel (Channel& ch)
 
 void BassmanStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
 {
+    if (reducedOrder)
+        return; // no physical speaker RLC network exists in this mode (see the header's "reduced-order power stage" note)
     const auto sm = speakerModel (speakerNominal[juce::jlimit (0, 2, index)]);
     ch.power.setResistance (ch.rSpkRe, sm.re);
     ch.power.setResistance (ch.rSpkRp, sm.rp);
@@ -439,19 +478,26 @@ void BassmanStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
         ch.power.setResistance (ch.rBass, bassR);
         ch.power.setResistance (ch.rMid, midR);
-        ch.power.setResistance (ch.rPresTop, presTop);
-        ch.power.setResistance (ch.rPresBottom, presBottom);
-        ch.power.setResistance (ch.rFeedback, feedbackR);
-        ch.power.setSource (ch.wSrcBias, biasVolts);
+        // reducedOrder: Presence/feedback/bias don't exist in the tone-stack-only power circuit (see the header's
+        // "reduced-order power stage" note) -- none of Presence, Bias or Tube Feel are reproduced yet (a documented gap).
+        if (! reducedOrder)
+        {
+            ch.power.setResistance (ch.rPresTop, presTop);
+            ch.power.setResistance (ch.rPresBottom, presBottom);
+            ch.power.setResistance (ch.rFeedback, feedbackR);
+            ch.power.setSource (ch.wSrcBias, biasVolts);
+        }
         ch.supply.setResistance (ch.rRect, rectifier);
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
         if (! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
     }
     appliedSpeaker = k.speaker;
-    // A lighter load gives more volts and a heavier one fewer; the digital level follows the load's nominal impedance
-    // so that switching 4 / 8 / 16 ohm changes the sound, not the loudness (measured full-drive volts ~ z^0.83).
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 8.0, -0.8);
+    // A lighter load gives more volts and a heavier one fewer; this compensates so 4 / 8 / 16 ohm changes the sound, not
+    // the loudness (measured full-drive volts ~ z^0.83) on the FULL reference netlist. reducedOrder has no physical
+    // speaker impedance left to compensate for (see SuperLeadStyleAmplifierProcessor's own fix for this exact bug,
+    // 2026-09-27) -- applying this same factor there would make 4 ohm louder than 16 instead of matching them.
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 8.0, -0.8);
 }
 
 void BassmanStyleAmplifierProcessor::recover (Channel& ch) const
@@ -485,10 +531,35 @@ void BassmanStyleAmplifierProcessor::updateSupply (Channel& ch) const
 
     // ... and a rectified supply can neither reverse nor exceed its open-circuit voltage.
     const auto rail = [&] (NodalCircuit::Node node, double maxVolts) { return juce::jlimit (0.0, maxVolts, ch.supply.voltage (node)); };
-    ch.power.setSource (ch.wSrcCt, rail (ch.sA, 520.0));
-    ch.power.setSource (ch.wSrcPi, rail (ch.sC, 470.0));
+    // reducedOrder: wSrcCt/wSrcPi don't exist in the tone-stack-only power circuit (see the header's "reduced-order power
+    // stage" note) -- behavioralPowerStage() has its own, separate sag lookup, fitted directly from real measured data.
+    if (! reducedOrder)
+    {
+        ch.power.setSource (ch.wSrcCt, rail (ch.sA, 520.0));
+        ch.power.setSource (ch.wSrcPi, rail (ch.sC, 470.0));
+    }
     ch.pre.setSource (ch.pSrcVcc, rail (ch.sD, 400.0));
     ch.vScreen = rail (ch.sB, 520.0);
+}
+
+double BassmanStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept
+{
+    constexpr double attackMs = 8.0, releaseMs = 45.0;
+    const double absDrive = std::abs (toneVoltage);
+    const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
+    const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
+    ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
+    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+
+    const double k = ch.bmRail * bmYmax / bmGain0;
+    const double u = absDrive / juce::jmax (1.0e-9, k);
+    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
+    const double raw = std::copysign (y * ch.bmRail, toneVoltage);
+
+    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
+    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    return ch.bmOutput;
 }
 
 double BassmanStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
@@ -508,7 +579,7 @@ double BassmanStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
         case Probe::powerPlateA: return ch.power.voltage (ch.wPP1);
         case Probe::powerPlateB: return ch.power.voltage (ch.wPP2);
         case Probe::powerGridA: return ch.power.voltage (ch.wPowerGridA);
-        case Probe::speaker: return ch.power.voltage (ch.wOut);
+        case Probe::speaker: return reducedOrder ? ch.bmOutput : ch.power.voltage (ch.wOut);
     }
     return 0.0;
 }
@@ -520,6 +591,8 @@ double BassmanStyleAmplifierProcessor::debugIterations (int block) const noexcep
 
 void BassmanStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 {
+    if (reducedOrder)
+        return; // no physical speaker network to compare against a resistor in this mode
     for (auto& ch : channels)
     {
         ch.power.setResistance (ch.rSpkRe, ohms);
@@ -535,12 +608,16 @@ void BassmanStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 void BassmanStyleAmplifierProcessor::debugSetFeedbackResistance (double ohms)
 {
     feedbackOverride = ohms;
+    if (reducedOrder)
+        return; // no feedback resistor node exists in this mode (see the header's "reduced-order power stage" note)
     for (auto& ch : channels)
         ch.power.setResistance (ch.rFeedback, ohms);
 }
 
 double BassmanStyleAmplifierProcessor::plateCurrentTotal() const noexcept
 {
+    if (reducedOrder)
+        return 0.0; // no pentode devices exist in this mode
     double a = 0.0, b = 0.0, sa = 0.0, sb = 0.0;
     channels[0].power.pentodeCurrents (channels[0].penA, a, sa);
     channels[0].power.pentodeCurrents (channels[0].penB, b, sb);
@@ -549,6 +626,8 @@ double BassmanStyleAmplifierProcessor::plateCurrentTotal() const noexcept
 
 double BassmanStyleAmplifierProcessor::screenCurrentTotal() const noexcept
 {
+    if (reducedOrder)
+        return 0.0;
     double a = 0.0, b = 0.0, sa = 0.0, sb = 0.0;
     channels[0].power.pentodeCurrents (channels[0].penA, a, sa);
     channels[0].power.pentodeCurrents (channels[0].penB, b, sb);
@@ -611,17 +690,26 @@ void BassmanStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         // there keeps the DC relaxation from charging the capacitors through a violent step.
         ch.power.setInitialGuess (ch.wToneIn, ch.followerDc);
         ch.power.setInitialGuess (ch.wSlope, ch.followerDc);
-        ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
         ch.vScreen = ch.supply.voltage (ch.sB);
-        ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.5);
-        ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.5);
+        // reducedOrder: none of the PI/pentode handles below exist in the tone-stack-only power circuit (see the header's
+        // "reduced-order power stage" note); ipA/ipB/isA/isB stay 0, decaying the supply's assumed power-tube draw toward
+        // 0 -- a reasonable idle point for the PREAMP's own rails, which is all this supply model needs here.
+        double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+            ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.5);
+            ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.5);
+        }
         dcOk = ch.power.prepare (newSampleRate) && dcOk;
         ch.power.solveSample();
 
-        double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
-        ch.power.pentodeCurrents (ch.penA, ipA, isA);
-        ch.power.pentodeCurrents (ch.penB, ipB, isB);
+        if (! reducedOrder)
+        {
+            ch.power.pentodeCurrents (ch.penA, ipA, isA);
+            ch.power.pentodeCurrents (ch.penB, ipB, isB);
+        }
         ch.supply.setCurrentSource (ch.iA, -(ipA + ipB));
         ch.supply.setCurrentSource (ch.iB, -(isA + isB));
         // Open-circuit voltage such that the rails sit at the schematic's values with THIS model's idle currents.
@@ -631,13 +719,20 @@ void BassmanStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.screenDropA = screenResistor * isA;
         ch.screenDropB = screenResistor * isB;
         ch.vScreen = ch.supply.voltage (ch.sB);
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
-        ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+        }
         ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sD));
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.failStreak = 0;
+        ch.bmRail = railPlatesNominal;
+        ch.bmEnvelope = 0.0;
+        ch.bmOutput = 0.0;
+        ch.bmToneState = 0.0;
     }
 
     controlCounter = 0;
@@ -743,9 +838,12 @@ void BassmanStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             bool ok = okPre;
 
             ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * (ch.pre.voltage (ch.pFollower) - ch.followerDc));
-            ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
-            ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
-            const bool ok2 = ch.power.solveSample();
+            if (! reducedOrder)
+            {
+                ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
+                ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            }
+            const bool ok2 = ch.power.solveSample(); // reducedOrder: a pure linear circuit (the tone stack only) -- always converges
             ok = ok && ok2;
             if (chIdx == 0)
             {
@@ -753,14 +851,20 @@ void BassmanStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 failuresPower += ok2 ? 0 : 1;
             }
 
-            double ipA, ipB, isA, isB;
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
-            ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
-            ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
-            ch.sumPlate += ipA + ipB;
-            ch.sumScreen += isA + isB;
-            ++ch.sumCount;
+            // reducedOrder: no pentode devices exist, so there is no current to read back into the shared supply model --
+            // its rails just settle toward the (small) preamp-only draw; behavioralPowerStage() below has its own,
+            // separate sag lookup fitted directly from the full model's real behaviour.
+            if (! reducedOrder)
+            {
+                double ipA, ipB, isA, isB;
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+                ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
+                ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
+                ch.sumPlate += ipA + ipB;
+                ch.sumScreen += isA + isB;
+                ++ch.sumCount;
+            }
             if (++ch.supplyCounter >= supplyInterval)
             {
                 ch.supplyCounter = 0;
@@ -769,8 +873,9 @@ void BassmanStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
 
             // A converged solve can still land on a state no amplifier reaches (a speaker terminal at hundreds of volts, a
             // plate below ground): the output stage has run away between two samples. Such a sample is a failure, and
-            // the output holds its last value instead of printing the excursion.
-            const double speakerVolts = ch.power.voltage (ch.wOut);
+            // the output holds its last value instead of printing the excursion. reducedOrder's behavioralPowerStage() is
+            // a bounded saturating function -- there is no Newton solve left to have a bad day.
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone)) : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

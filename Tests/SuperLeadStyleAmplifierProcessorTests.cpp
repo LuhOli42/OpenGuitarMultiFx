@@ -62,6 +62,11 @@ public:
 
     void runTest() override
     {
+        // Deterministic regardless of process history: EffectRegistry.cpp flips this static to true for the real app, and
+        // some other test/bench that goes through the registry could have run first in this same process. Every test below
+        // (except SL_REDUCED / SL_COST_REDUCED, which set it explicitly and restore it) assumes the full reference netlist.
+        SuperLeadStyleAmplifierProcessor::reducedOrder = false;
+
         if (juce::SystemStats::getEnvironmentVariable ("SL_EXPLORE", {}).isNotEmpty())
         {
             beginTest ("explore (dev only)");
@@ -968,13 +973,164 @@ public:
             }
         }
 
-        if (juce::SystemStats::getEnvironmentVariable ("SL_REDUCED", {}).isNotEmpty())
+        if (juce::SystemStats::getEnvironmentVariable ("SL_NOON_DIAG", {}).isNotEmpty())
         {
-            // Verification for behavioralPowerStage() (2026-09-27): re-run the same calibration sweep, this time driving
-            // BOTH a reference (full netlist) and a reducedOrder amp with the SAME signal, comparing level and checking
-            // reducedOrder has zero failures/recoveries by construction (no Newton solve left to have a bad day) and a
-            // tiny, CONSTANT cost regardless of how hard it's driven.
-            beginTest ("reducedOrder power stage vs the reference (dev only)");
+            // Diagnostic: PedalUnityLevelTests sets every page-1 knob to 0.5 and measures gain via the registry (so
+            // reducedOrder is whatever EffectRegistry.cpp sets) -- isolate which knob's now-missing effect explains the gap.
+            beginTest ("noon knobs diagnostic (dev only)");
+            const auto gainAt = [] (bool reduced, float presence)
+            {
+                SuperLeadStyleAmplifierProcessor::reducedOrder = reduced;
+                SuperLeadStyleAmplifierProcessor amp;
+                const auto pages = amp.getParameterPages();
+                for (auto* f : pages[0])
+                    if (f->range.interval < 1.0f) // matches PedalUnityLevelTests.cpp's own skip for stepped selectors
+                        *f = juce::jlimit (f->range.start, f->range.end, 0.5f);
+                setParam (amp, "sl_presence", presence);
+                amp.prepare (sr, 512, 1);
+                const double twoPi = 2.0 * juce::MathConstants<double>::pi, f0 = 164.81, rmsIn = 0.1;
+                double norm = 0.0;
+                for (int k = 1; k <= 10; ++k) norm += 0.5 / (double) (k * k);
+                const double scale = rmsIn / std::sqrt (norm);
+                const int warm = (int) (5.0 * sr), len = (int) (1.0 * sr);
+                juce::AudioBuffer<float> buf (1, 64);
+                double sIn = 0.0, sOut = 0.0;
+                for (long long base = 0; base < warm + len; base += 64)
+                {
+                    double x[64];
+                    for (int i = 0; i < 64; ++i)
+                    {
+                        double v = 0.0;
+                        for (int k = 1; k <= 10; ++k) v += std::sin (twoPi * f0 * k * (double) (base + i) / sr) / (double) k;
+                        x[i] = scale * v;
+                        buf.setSample (0, i, (float) x[i]);
+                    }
+                    amp.process (buf);
+                    if (base >= warm)
+                        for (int i = 0; i < 64; ++i) { sIn += x[i] * x[i]; sOut += (double) buf.getSample (0, i) * buf.getSample (0, i); }
+                }
+                return 10.0 * std::log10 (sOut / sIn);
+            };
+            {
+                // Faithful reproduction of PedalUnityLevelTests.cpp itself (via the real registry factory: oversampling +
+                // trim included), to cross-check the hand-rolled gainAt() lambdas above against the actual failing number.
+                EffectRegistry registry;
+                registerBuiltInEffects (registry);
+                auto pedal = registry.create ("SuperLeadStyleAmplifier");
+                pedal->prepare (sr, 512, 1);
+                const auto pedalPages = pedal->getParameterPages();
+                for (auto* f : pedalPages[0])
+                    if (f->range.interval < 1.0f)
+                        *f = juce::jlimit (f->range.start, f->range.end, 0.5f);
+                const double twoPi = 2.0 * juce::MathConstants<double>::pi, f0 = 164.81, rmsIn = 0.1;
+                double norm = 0.0;
+                for (int k = 1; k <= 10; ++k) norm += 0.5 / (double) (k * k);
+                const double scale = rmsIn / std::sqrt (norm);
+                const int warm = (int) (5.0 * sr), len = (int) (1.0 * sr);
+                juce::AudioBuffer<float> buf (1, 64);
+                double sIn = 0.0, sOut = 0.0;
+                for (long long base = 0; base < warm + len; base += 64)
+                {
+                    double x[64];
+                    for (int i = 0; i < 64; ++i)
+                    {
+                        double v = 0.0;
+                        for (int k = 1; k <= 10; ++k) v += std::sin (twoPi * f0 * k * (double) (base + i) / sr) / (double) k;
+                        x[i] = scale * v;
+                        buf.setSample (0, i, (float) x[i]);
+                    }
+                    pedal->process (buf);
+                    if (base >= warm)
+                        for (int i = 0; i < 64; ++i) { sIn += x[i] * x[i]; sOut += (double) buf.getSample (0, i) * buf.getSample (0, i); }
+                }
+                logMessage ("via registry.create(): " + juce::String (10.0 * std::log10 (sOut / sIn), 2) + " dB, reducedOrder="
+                            + juce::String ((int) SuperLeadStyleAmplifierProcessor::reducedOrder));
+            }
+            logMessage ("ref presence=0.5: " + juce::String (gainAt (false, 0.5f), 2) + " dB");
+            logMessage ("red presence=0.5: " + juce::String (gainAt (true, 0.5f), 2) + " dB");
+            logMessage ("ref presence=0.0: " + juce::String (gainAt (false, 0.0f), 2) + " dB");
+            logMessage ("red presence=0.0: " + juce::String (gainAt (true, 0.0f), 2) + " dB");
+
+            const auto gainAtInput = [] (bool reduced, float input)
+            {
+                SuperLeadStyleAmplifierProcessor::reducedOrder = reduced;
+                SuperLeadStyleAmplifierProcessor amp;
+                const auto pages = amp.getParameterPages();
+                for (auto* f : pages[0])
+                    *f = juce::jlimit (f->range.start, f->range.end, 0.5f);
+                setParam (amp, "sl_input", input);
+                amp.prepare (sr, 512, 1);
+                const double twoPi = 2.0 * juce::MathConstants<double>::pi, f0 = 164.81, rmsIn = 0.1;
+                double norm = 0.0;
+                for (int k = 1; k <= 10; ++k) norm += 0.5 / (double) (k * k);
+                const double scale = rmsIn / std::sqrt (norm);
+                const int warm = (int) (5.0 * sr), len = (int) (1.0 * sr);
+                juce::AudioBuffer<float> buf (1, 64);
+                double sIn = 0.0, sOut = 0.0;
+                for (long long base = 0; base < warm + len; base += 64)
+                {
+                    double x[64];
+                    for (int i = 0; i < 64; ++i)
+                    {
+                        double v = 0.0;
+                        for (int k = 1; k <= 10; ++k) v += std::sin (twoPi * f0 * k * (double) (base + i) / sr) / (double) k;
+                        x[i] = scale * v;
+                        buf.setSample (0, i, (float) x[i]);
+                    }
+                    amp.process (buf);
+                    if (base >= warm)
+                        for (int i = 0; i < 64; ++i) { sIn += x[i] * x[i]; sOut += (double) buf.getSample (0, i) * buf.getSample (0, i); }
+                }
+                return 10.0 * std::log10 (sOut / sIn);
+            };
+            for (float inp : { 0.0f, 1.0f, 2.0f })
+            {
+                logMessage ("input=" + juce::String (inp, 0) + " ref: " + juce::String (gainAtInput (false, inp), 2)
+                            + " dB, red: " + juce::String (gainAtInput (true, inp), 2) + " dB");
+            }
+
+            // Isolate: is the gap about Loudness-knob setting, or about the richer/higher-frequency test signal?
+            const auto pureToneGainAt = [] (bool reduced, float loud, double freq)
+            {
+                SuperLeadStyleAmplifierProcessor::reducedOrder = reduced;
+                SuperLeadStyleAmplifierProcessor amp;
+                setParam (amp, "sl_input", 0.0f);
+                setParam (amp, "sl_loud1", loud);
+                setParam (amp, "sl_loud2", loud);
+                setParam (amp, "sl_power", 1.0f);
+                amp.prepare (sr, 512, 1);
+                const double twoPi = 2.0 * juce::MathConstants<double>::pi, rmsIn = 0.1;
+                const int warm = (int) (2.0 * sr), len = (int) (1.0 * sr);
+                juce::AudioBuffer<float> buf (1, 64);
+                double sIn = 0.0, sOut = 0.0;
+                for (long long base = 0; base < warm + len; base += 64)
+                {
+                    double x[64];
+                    for (int i = 0; i < 64; ++i)
+                    {
+                        x[i] = rmsIn * std::sqrt (2.0) * std::sin (twoPi * freq * (double) (base + i) / sr);
+                        buf.setSample (0, i, (float) x[i]);
+                    }
+                    amp.process (buf);
+                    if (base >= warm)
+                        for (int i = 0; i < 64; ++i) { sIn += x[i] * x[i]; sOut += (double) buf.getSample (0, i) * buf.getSample (0, i); }
+                }
+                return 10.0 * std::log10 (sOut / sIn);
+            };
+            for (double freq : { 100.0, 165.0, 500.0, 1000.0, 1650.0 })
+                logMessage ("pure tone " + juce::String (freq, 0) + " Hz, loud=0.5: ref " + juce::String (pureToneGainAt (false, 0.5f, freq), 2)
+                            + " dB, red " + juce::String (pureToneGainAt (true, 0.5f, freq), 2) + " dB");
+            logMessage ("pure tone 165 Hz, loud=0.8: ref " + juce::String (pureToneGainAt (false, 0.8f, 165.0), 2)
+                        + " dB, red " + juce::String (pureToneGainAt (true, 0.8f, 165.0), 2) + " dB");
+            SuperLeadStyleAmplifierProcessor::reducedOrder = false;
+        }
+
+        {
+            // Permanent regression test for behavioralPowerStage() (2026-09-27, the shipped default -- EffectRegistry.cpp
+            // turns it on for the real app): drives BOTH a reference (full netlist) and a reducedOrder amp with the SAME
+            // signal, asserting level tracks the reference within 1 dB across the whole dynamic range, and reducedOrder
+            // has zero failures/recoveries by construction (no Newton solve left to have a bad day).
+            beginTest ("reducedOrder power stage tracks the reference (level, and zero failures by construction)");
             SuperLeadStyleAmplifierProcessor::reducedOrder = false;
             SuperLeadStyleAmplifierProcessor ref;
             setParam (ref, "sl_input", 0.0f);
@@ -1038,8 +1194,35 @@ public:
                             + "% cpu, fails " + juce::String (ref.getSolveFailureRate(), 6) + ", recov " + juce::String (ref.debugRecoveries())
                             + ") vs reduced " + juce::String (redRms, 3) + " Vrms (" + juce::String (100.0 * redSeconds / 1.5, 2) + "% cpu, fails "
                             + juce::String (red.getSolveFailureRate(), 6) + ", recov " + juce::String (red.debugRecoveries()) + "), diff " + juce::String (dB, 2) + " dB");
+                expectLessThan (std::abs (dB), 1.0);
+                expectLessThan (red.getSolveFailureRate(), 1.0e-6);
+                expect (red.debugRecoveries() == 0);
             }
             SuperLeadStyleAmplifierProcessor::reducedOrder = false; // restore the default for every other test in this suite
+        }
+
+        {
+            // Regression test for the 2026-09-27 speaker-level bug the user found by ear: reducedOrder must NOT apply the
+            // reference netlist's z^-0.8 impedance compensation (there's no physical mismatch left for it to cancel) --
+            // 4 / 8 / 16 ohm must sound equally loud in the shipped default, not a ~9.6 dB jump.
+            beginTest ("reducedOrder: 4 / 8 / 16 ohm sound equally loud (the shipped default has no physical speaker to mismatch)");
+            SuperLeadStyleAmplifierProcessor::reducedOrder = true;
+            const auto rmsAt = [] (float speaker)
+            {
+                SuperLeadStyleAmplifierProcessor amp;
+                setParam (amp, "sl_input", 0.0f);
+                setParam (amp, "sl_loud2", 0.8f);
+                setParam (amp, "sl_speaker", speaker);
+                amp.prepare (sr, 128, 2);
+                double r, pk;
+                sineRun (amp, 200.0, 0.02, P::speaker, r, pk, 0.6);
+                return r;
+            };
+            const double r4 = rmsAt (0.0f), r8 = rmsAt (1.0f), r16 = rmsAt (2.0f);
+            logMessage ("reducedOrder speaker volts at 4 / 8 / 16 ohm: " + juce::String (r4, 2) + " / " + juce::String (r8, 2) + " / " + juce::String (r16, 2) + " V rms");
+            expectLessThan (std::abs (20.0 * std::log10 (r4 / r16)), 0.1);
+            expectLessThan (std::abs (20.0 * std::log10 (r8 / r16)), 0.1);
+            SuperLeadStyleAmplifierProcessor::reducedOrder = false;
         }
 
         beginTest ("a triode's plate below its cathode passes no current, whatever the grid does (regression: a phantom 0.5-3.7 mA below the table's low edge)");
