@@ -24,6 +24,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   SagEmulatorTests.cpp
   BassmanStyleAmplifierProcessorTests.cpp
   SuperLeadStyleAmplifierProcessorTests.cpp
+  TwinReverbStyleAmplifierProcessorTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
@@ -133,6 +134,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/Effects/OCDStyleOverdriveProcessor.cpp
   ../Source/Effects/BassmanStyleAmplifierProcessor.cpp
   ../Source/Effects/SuperLeadStyleAmplifierProcessor.cpp
+  ../Source/Effects/TwinReverbStyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp

@@ -21,6 +21,7 @@
 #include "Effects/BD2StyleOverdriveProcessor.h"
 #include "Effects/BassmanStyleAmplifierProcessor.h"
 #include "Effects/SuperLeadStyleAmplifierProcessor.h"
+#include "Effects/TwinReverbStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -305,6 +306,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     BassmanStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("BassmanStyleAmplifier");
     registry.registerType ("BassmanStyleAmplifier", [] { return trimmed (oversampled<BassmanStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -13.94f); });
+    // docs/circuits/TwinReverbAB763.md. reducedOrder calibrated (TR_POWERCAL) and verified (level tracks the reference
+    // within 0.01-0.06 dB, PedalUnityLevelTests passing) -- shipped as the default, same as the Super Lead/Bassman.
+    TwinReverbStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("TwinReverbStyleAmplifier");
+    registry.registerType ("TwinReverbStyleAmplifier", [] { return trimmed (oversampled<TwinReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 4.24f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
