@@ -27,6 +27,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   TwinReverbStyleAmplifierProcessorTests.cpp
   DeluxeReverbStyleAmplifierProcessorTests.cpp
   JC120StyleAmplifierProcessorTests.cpp
+  JTM45StyleAmplifierProcessorTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
@@ -139,6 +140,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/Effects/TwinReverbStyleAmplifierProcessor.cpp
   ../Source/Effects/DeluxeReverbStyleAmplifierProcessor.cpp
   ../Source/Effects/JC120StyleAmplifierProcessor.cpp
+  ../Source/Effects/JTM45StyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp

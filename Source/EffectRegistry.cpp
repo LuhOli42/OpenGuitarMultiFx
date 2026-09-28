@@ -24,6 +24,7 @@
 #include "Effects/TwinReverbStyleAmplifierProcessor.h"
 #include "Effects/DeluxeReverbStyleAmplifierProcessor.h"
 #include "Effects/JC120StyleAmplifierProcessor.h"
+#include "Effects/JTM45StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -322,6 +323,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/JC120JazzChorus.md. Solid-state (op-amp preamp, a saturating-op-amp power stage standing in for the
     // real discrete Class AB output pair, real BBD chorus).
     registry.registerType ("JC120StyleAmplifier", [] { return trimmed (std::make_unique<JC120StyleAmplifierProcessor>(), 14.10f); });
+    // docs/circuits/JTM45Marshall.md. reducedOrder calibrated (JM_POWERCAL) against this amp's own (stabilised, see
+    // the doc's "power-stage instability" section) reference model -- shipped as the default, same as the other amps.
+    JTM45StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("JTM45StyleAmplifier");
+    registry.registerType ("JTM45StyleAmplifier", [] { return trimmed (oversampled<JTM45StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 21.60f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

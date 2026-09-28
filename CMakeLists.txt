@@ -143,6 +143,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/TwinReverbStyleAmplifierProcessor.cpp
   Source/Effects/DeluxeReverbStyleAmplifierProcessor.cpp
   Source/Effects/JC120StyleAmplifierProcessor.cpp
+  Source/Effects/JTM45StyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp
