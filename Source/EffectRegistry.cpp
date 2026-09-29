@@ -25,6 +25,7 @@
 #include "Effects/DeluxeReverbStyleAmplifierProcessor.h"
 #include "Effects/JC120StyleAmplifierProcessor.h"
 #include "Effects/JTM45StyleAmplifierProcessor.h"
+#include "Effects/JCM800StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -328,6 +329,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     JTM45StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("JTM45StyleAmplifier");
     registry.registerType ("JTM45StyleAmplifier", [] { return trimmed (oversampled<JTM45StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 21.60f); });
+    // docs/circuits/JCM8002203.md. Reuses the Super Lead's own (already stable) power section unchanged; the preamp is
+    // newly built (4 cascaded gain stages). reducedOrder placeholder trim pending its own J8_POWERCAL measurement.
+    JCM800StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("JCM800StyleAmplifier");
+    registry.registerType ("JCM800StyleAmplifier", [] { return trimmed (oversampled<JCM800StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -17.47f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
