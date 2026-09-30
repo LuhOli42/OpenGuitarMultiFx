@@ -26,6 +26,7 @@
 #include "Effects/JC120StyleAmplifierProcessor.h"
 #include "Effects/JTM45StyleAmplifierProcessor.h"
 #include "Effects/JCM800StyleAmplifierProcessor.h"
+#include "Effects/AC15StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -334,6 +335,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     JCM800StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("JCM800StyleAmplifier");
     registry.registerType ("JCM800StyleAmplifier", [] { return trimmed (oversampled<JCM800StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -17.47f); });
+    // docs/circuits/AC15Twin.md. Genuinely new family: EF86 pentode preamp, cathodyne (split-load) phase inverter,
+    // cathode-biased EL84 pair, no global feedback. reducedOrder calibrated (A15_POWERCAL) against this amp's own
+    // stable reference (no instability investigation needed, unlike the JTM45/JCM800).
+    AC15StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("AC15StyleAmplifier");
+    registry.registerType ("AC15StyleAmplifier", [] { return trimmed (oversampled<AC15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 37.37f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

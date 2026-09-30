@@ -145,6 +145,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/JC120StyleAmplifierProcessor.cpp
   Source/Effects/JTM45StyleAmplifierProcessor.cpp
   Source/Effects/JCM800StyleAmplifierProcessor.cpp
+  Source/Effects/AC15StyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp

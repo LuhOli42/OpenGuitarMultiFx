@@ -73,7 +73,7 @@ namespace
         // Circuit-modelled amplifiers (component-level, from a schematic) are kept apart from the neural captures.
         if (displayName == "Bassman-Style Amplifier" || displayName == "Super Lead-Style Amplifier" || displayName == "Twin Reverb-Style Amplifier"
             || displayName == "Deluxe Reverb-Style Amplifier" || displayName == "JC-120-Style Amplifier" || displayName == "JTM45-Style Amplifier"
-            || displayName == "JCM800-Style Amplifier")
+            || displayName == "JCM800-Style Amplifier" || displayName == "AC15-Style Amplifier")
             return "Modeled Amps";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")
             return "Neural";
