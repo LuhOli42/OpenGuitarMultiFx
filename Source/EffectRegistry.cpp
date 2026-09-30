@@ -27,6 +27,7 @@
 #include "Effects/JTM45StyleAmplifierProcessor.h"
 #include "Effects/JCM800StyleAmplifierProcessor.h"
 #include "Effects/AC15StyleAmplifierProcessor.h"
+#include "Effects/AC30StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -341,6 +342,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     AC15StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AC15StyleAmplifier");
     registry.registerType ("AC15StyleAmplifier", [] { return trimmed (oversampled<AC15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 37.37f); });
+    // docs/circuits/AC30TopBoost.md. Top Boost channel only. Cathode-biased 4xEL84 (two parallel pairs), a genuine
+    // long-tailed-pair phase inverter, no global feedback (confirmed absent on the factory power-amp drawing).
+    AC30StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("AC30StyleAmplifier");
+    registry.registerType ("AC30StyleAmplifier", [] { return trimmed (oversampled<AC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 25.88f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
