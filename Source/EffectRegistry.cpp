@@ -30,6 +30,7 @@
 #include "Effects/AC30StyleAmplifierProcessor.h"
 #include "Effects/SLO100StyleAmplifierProcessor.h"
 #include "Effects/MarkIICPlusStyleAmplifierProcessor.h"
+#include "Effects/DualRectifierStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -360,6 +361,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     MarkIICPlusStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MarkIICPlusStyleAmplifier");
     registry.registerType ("MarkIICPlusStyleAmplifier", [] { return trimmed (oversampled<MarkIICPlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.51f); });
+    // docs/circuits/DualRectifier.md. Mesa/Boogie Dual Rectifier RED channel. Four cascaded 12AX7 gain stages with
+    // unbypassed compression stage, TMB tone stack with Master, LTP PI, 4x6L6GC fixed-bias push-pull.
+    DualRectifierStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DualRectifierStyleAmplifier");
+    registry.registerType ("DualRectifierStyleAmplifier", [] { return trimmed (oversampled<DualRectifierStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -23.06f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
