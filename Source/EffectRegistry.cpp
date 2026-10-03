@@ -29,6 +29,7 @@
 #include "Effects/AC15StyleAmplifierProcessor.h"
 #include "Effects/AC30StyleAmplifierProcessor.h"
 #include "Effects/SLO100StyleAmplifierProcessor.h"
+#include "Effects/MarkIICPlusStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -353,6 +354,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     SLO100StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SLO100StyleAmplifier");
     registry.registerType ("SLO100StyleAmplifier", [] { return trimmed (oversampled<SLO100StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -18.92f); });
+    // docs/circuits/MarkIICPlus.md. Mesa/Boogie Mark IIC+ Lead channel. Five cascaded 12AX7 gain stages with unique
+    // inter-stage EQ/gain network, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated
+    // placeholder (Twin Reverb's 6L6GC constants).
+    MarkIICPlusStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("MarkIICPlusStyleAmplifier");
+    registry.registerType ("MarkIICPlusStyleAmplifier", [] { return trimmed (oversampled<MarkIICPlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.51f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
