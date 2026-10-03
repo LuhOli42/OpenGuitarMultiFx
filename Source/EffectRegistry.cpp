@@ -28,6 +28,7 @@
 #include "Effects/JCM800StyleAmplifierProcessor.h"
 #include "Effects/AC15StyleAmplifierProcessor.h"
 #include "Effects/AC30StyleAmplifierProcessor.h"
+#include "Effects/SLO100StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -347,6 +348,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     AC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AC30StyleAmplifier");
     registry.registerType ("AC30StyleAmplifier", [] { return trimmed (oversampled<AC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 25.88f); });
+    // docs/circuits/SLO100.md. Soldano SLO-100 OD channel. Five cascaded 12AX7 gain stages, TMB tone stack,
+    // LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated placeholder (Twin Reverb's 6L6GC constants).
+    SLO100StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("SLO100StyleAmplifier");
+    registry.registerType ("SLO100StyleAmplifier", [] { return trimmed (oversampled<SLO100StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -18.92f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

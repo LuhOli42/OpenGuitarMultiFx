@@ -31,6 +31,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   JCM800StyleAmplifierProcessorTests.cpp
   AC15StyleAmplifierProcessorTests.cpp
   AC30StyleAmplifierProcessorTests.cpp
+  SLO100StyleAmplifierProcessorTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
@@ -147,6 +148,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/Effects/JCM800StyleAmplifierProcessor.cpp
   ../Source/Effects/AC15StyleAmplifierProcessor.cpp
   ../Source/Effects/AC30StyleAmplifierProcessor.cpp
+  ../Source/Effects/SLO100StyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp
