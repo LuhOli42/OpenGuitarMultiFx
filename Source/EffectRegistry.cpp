@@ -32,6 +32,7 @@
 #include "Effects/MarkIICPlusStyleAmplifierProcessor.h"
 #include "Effects/DualRectifierStyleAmplifierProcessor.h"
 #include "Effects/EVH5150StyleAmplifierProcessor.h"
+#include "Effects/ENGLPowerballStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -372,6 +373,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     EVH5150StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("EVH5150StyleAmplifier");
     registry.registerType ("EVH5150StyleAmplifier", [] { return trimmed (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -23.2f); });
+    // docs/circuits/ENGLPowerball.md. ENGL Powerball Hi Lead channel. Six cascaded 12AX7 gain stages
+    // (3 pre-tonestack + 3 post-tonestack), FMV tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
+    ENGLPowerballStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("ENGLPowerballStyleAmplifier");
+    registry.registerType ("ENGLPowerballStyleAmplifier", [] { return trimmed (oversampled<ENGLPowerballStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -22.5f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
