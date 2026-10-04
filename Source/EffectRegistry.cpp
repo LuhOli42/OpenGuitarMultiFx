@@ -33,6 +33,7 @@
 #include "Effects/DualRectifierStyleAmplifierProcessor.h"
 #include "Effects/EVH5150StyleAmplifierProcessor.h"
 #include "Effects/ENGLPowerballStyleAmplifierProcessor.h"
+#include "Effects/RockerverbStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -378,6 +379,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     ENGLPowerballStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("ENGLPowerballStyleAmplifier");
     registry.registerType ("ENGLPowerballStyleAmplifier", [] { return trimmed (oversampled<ENGLPowerballStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -22.5f); });
+    // Orange Rockerverb 50 MK1 Dirty channel. Four cascaded 12AX7 gain stages, FMV tone stack,
+    // LTP PI, 4x6V6 fixed-bias push-pull.
+    RockerverbStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("RockerverbStyleAmplifier");
+    registry.registerType ("RockerverbStyleAmplifier", [] { return trimmed (oversampled<RockerverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -14.3f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

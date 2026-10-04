@@ -36,6 +36,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   DualRectifierStyleAmplifierProcessorTests.cpp
   EVH5150StyleAmplifierProcessorTests.cpp
   ENGLPowerballStyleAmplifierProcessorTests.cpp
+  RockerverbStyleAmplifierProcessorTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
@@ -157,6 +158,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/Effects/DualRectifierStyleAmplifierProcessor.cpp
   ../Source/Effects/EVH5150StyleAmplifierProcessor.cpp
   ../Source/Effects/ENGLPowerballStyleAmplifierProcessor.cpp
+  ../Source/Effects/RockerverbStyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp

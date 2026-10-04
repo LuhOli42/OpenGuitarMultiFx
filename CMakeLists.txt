@@ -152,6 +152,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/DualRectifierStyleAmplifierProcessor.cpp
   Source/Effects/EVH5150StyleAmplifierProcessor.cpp
   Source/Effects/ENGLPowerballStyleAmplifierProcessor.cpp
+  Source/Effects/RockerverbStyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp
