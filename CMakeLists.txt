@@ -150,6 +150,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/SLO100StyleAmplifierProcessor.cpp
   Source/Effects/MarkIICPlusStyleAmplifierProcessor.cpp
   Source/Effects/DualRectifierStyleAmplifierProcessor.cpp
+  Source/Effects/EVH5150StyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp

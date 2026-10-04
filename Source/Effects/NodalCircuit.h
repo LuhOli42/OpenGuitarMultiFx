@@ -68,7 +68,7 @@ namespace openguitarmultifx
 class NodalCircuit
 {
 public:
-    static constexpr int maxUnknowns = 32;
+    static constexpr int maxUnknowns = 48;
 
     using Node = int;
     static constexpr Node ground = 0;

@@ -34,6 +34,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   SLO100StyleAmplifierProcessorTests.cpp
   MarkIICPlusStyleAmplifierProcessorTests.cpp
   DualRectifierStyleAmplifierProcessorTests.cpp
+  EVH5150StyleAmplifierProcessorTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
@@ -153,6 +154,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/Effects/SLO100StyleAmplifierProcessor.cpp
   ../Source/Effects/MarkIICPlusStyleAmplifierProcessor.cpp
   ../Source/Effects/DualRectifierStyleAmplifierProcessor.cpp
+  ../Source/Effects/EVH5150StyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp

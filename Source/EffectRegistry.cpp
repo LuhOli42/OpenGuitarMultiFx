@@ -31,6 +31,7 @@
 #include "Effects/SLO100StyleAmplifierProcessor.h"
 #include "Effects/MarkIICPlusStyleAmplifierProcessor.h"
 #include "Effects/DualRectifierStyleAmplifierProcessor.h"
+#include "Effects/EVH5150StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -366,6 +367,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     DualRectifierStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DualRectifierStyleAmplifier");
     registry.registerType ("DualRectifierStyleAmplifier", [] { return trimmed (oversampled<DualRectifierStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -23.06f); });
+    // docs/circuits/EVH5150.md. Peavey/EVH 5150 Ultra channel. Five cascaded 12AX7 gain stages plus
+    // post-tonestack gain recovery, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
+    EVH5150StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("EVH5150StyleAmplifier");
+    registry.registerType ("EVH5150StyleAmplifier", [] { return trimmed (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -23.2f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
