@@ -235,6 +235,21 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     auto presence = make ("mk2c_presence", "Presence", 0.3f);
     auto master = make ("mk2c_master", "Master", 0.5f);
     auto output = make ("mk2c_output", "Output", 0.5f);
+    auto geqMake = [] (const char* id, const char* name)
+    {
+        return std::make_unique<juce::AudioParameterFloat> (
+            id, name, juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+            {
+                const float db = (v - 0.5f) * 24.0f;
+                return (db >= 0.0f ? juce::String ("+") : juce::String()) + juce::String (db, 1) + " dB";
+            }));
+    };
+    auto geq80 = geqMake ("mk2c_geq80", "80 Hz");
+    auto geq240 = geqMake ("mk2c_geq240", "240 Hz");
+    auto geq750 = geqMake ("mk2c_geq750", "750 Hz");
+    auto geq2200 = geqMake ("mk2c_geq2200", "2200 Hz");
+    auto geq6600 = geqMake ("mk2c_geq6600", "6600 Hz");
     auto power = make ("mk2c_power", "Power Drive", 0.5f);
     auto bias = make ("mk2c_bias", "Bias", 0.5f);
     auto feel = make ("mk2c_tube_feel", "Tube Feel", 1.0f);
@@ -252,6 +267,11 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     presenceParam = presence.get();
     masterParam = master.get();
     outputParam = output.get();
+    geqParams[0] = geq80.get();
+    geqParams[1] = geq240.get();
+    geqParams[2] = geq750.get();
+    geqParams[3] = geq2200.get();
+    geqParams[4] = geq6600.get();
     powerParam = power.get();
     biasParam = bias.get();
     tubeFeelParam = feel.get();
@@ -270,6 +290,13 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     group->addChild (std::move (page2));
+    auto page3 = std::make_unique<juce::AudioProcessorParameterGroup> ("mk2c_geq", "Graphic EQ", "|",
+        std::move (geq80));
+    page3->addChild (std::move (geq240));
+    page3->addChild (std::move (geq750));
+    page3->addChild (std::move (geq2200));
+    page3->addChild (std::move (geq6600));
+    group->addChild (std::move (page3));
     parameters = std::move (group);
 }
 
@@ -791,6 +818,15 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
     }
     updatePots (lastKnobs);
 
+    for (int b = 0; b < geqBands; ++b)
+    {
+        geqCoeffs[b] = {};
+        geqState[0][b] = {};
+        geqState[1][b] = {};
+        lastGeqSliders[b] = 0.5f;
+    }
+    geqUpdateCounter = 0;
+
     controlCounter = 0;
     sampleCount = 0;
     failureCount = 0;
@@ -834,6 +870,45 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
         {
             controlCounter = 0;
             updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice });
+        }
+
+        if (++geqUpdateCounter >= controlInterval)
+        {
+            geqUpdateCounter = 0;
+            bool needUpdate = false;
+            for (int b = 0; b < geqBands; ++b)
+            {
+                const float v = geqParams[b]->get();
+                if (v != lastGeqSliders[b])
+                {
+                    lastGeqSliders[b] = v;
+                    needUpdate = true;
+                }
+            }
+            if (needUpdate)
+            {
+                constexpr double Q = 1.5;
+                for (int b = 0; b < geqBands; ++b)
+                {
+                    const double dB = (lastGeqSliders[b] - 0.5) * 24.0;
+                    if (std::abs (dB) < 0.01)
+                    {
+                        geqCoeffs[b] = {};
+                        continue;
+                    }
+                    const double A = std::pow (10.0, dB / 40.0);
+                    const double w0 = 2.0 * juce::MathConstants<double>::pi * geqFreqs[b] / sampleRate;
+                    const double sinW = std::sin (w0);
+                    const double cosW = std::cos (w0);
+                    const double alpha = sinW / (2.0 * Q);
+                    const double a0 = 1.0 + alpha / A;
+                    geqCoeffs[b].b0 = (1.0 + alpha * A) / a0;
+                    geqCoeffs[b].b1 = (-2.0 * cosW) / a0;
+                    geqCoeffs[b].b2 = (1.0 - alpha * A) / a0;
+                    geqCoeffs[b].a1 = (-2.0 * cosW) / a0;
+                    geqCoeffs[b].a2 = (1.0 - alpha / A) / a0;
+                }
+            }
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
@@ -882,7 +957,17 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone)) : ch.power.voltage (ch.wOut);
+            double toneOut = ch.power.voltage (ch.wTone);
+            for (int b = 0; b < geqBands; ++b)
+            {
+                const auto& c = geqCoeffs[b];
+                auto& s = geqState[chIdx][b];
+                const double y = c.b0 * toneOut + s.s1;
+                s.s1 = c.b1 * toneOut - c.a1 * y + s.s2;
+                s.s2 = c.b2 * toneOut - c.a2 * y;
+                toneOut = y;
+            }
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, toneOut) : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

@@ -156,6 +156,7 @@ private:
     juce::AudioParameterFloat* presenceParam = nullptr;
     juce::AudioParameterFloat* masterParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
+    juce::AudioParameterFloat* geqParams[5] {};
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
@@ -163,6 +164,15 @@ private:
 
     juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
+
+    static constexpr int geqBands = 5;
+    static constexpr double geqFreqs[geqBands] = { 80.0, 240.0, 750.0, 2200.0, 6600.0 };
+    struct BiquadState { double s1 = 0.0, s2 = 0.0; };
+    struct BiquadCoeffs { double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0; };
+    BiquadCoeffs geqCoeffs[geqBands] {};
+    BiquadState geqState[2][geqBands] {};
+    float lastGeqSliders[geqBands] {};
+    int geqUpdateCounter = 0;
 
     double sampleRate = 0.0;
     int controlCounter = 0;
