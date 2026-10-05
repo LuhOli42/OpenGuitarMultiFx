@@ -243,13 +243,12 @@ namespace
         c.setInitialGuess (b.plateV1b, 200.0);
         c.setInitialGuess (k2, 1.4);
 
-        // V2a: C7 0.022 uF coupling, R10/R11 470k either side of a small bright cap (C8 470 pF), R12 100k plate
+        // V2a: C7 0.022 uF coupling, R11 470k grid leak, R12 100k plate
         // (vcc2), R9 820 ohm cathode -- UNBYPASSED again.
         const auto g3 = c.addNode(), k3 = c.addNode();
         b.plate2 = c.addNode();
         c.addCapacitor (b.plateV1b, g3, 0.022e-6);
         c.addResistor (g3, gnd, 470.0e3);
-        c.addCapacitor (g3, gnd, 470.0e-12);
         c.addTriode (b.plate2, g3, k3, triode12AX7());
         c.addCapacitor (g3, b.plate2, cgp);
         c.addResistor (vcc2, b.plate2, 100.0e3);
