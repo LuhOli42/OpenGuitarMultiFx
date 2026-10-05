@@ -110,6 +110,8 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
     auto treble = make ("tr_treble", "Treble", 0.5f);
     auto middle = make ("tr_middle", "Middle", 0.5f);
     auto bass = make ("tr_bass", "Bass", 0.5f);
+    auto speed = make ("tr_speed", "Speed", 0.5f);
+    auto intensity = make ("tr_intensity", "Intensity", 0.0f);
     auto output = make ("tr_output", "Output", 0.5f);
     auto power = make ("tr_power", "Power Drive", 1.0f);
     auto bias = make ("tr_bias", "Bias", 0.5f);
@@ -124,6 +126,8 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
     trebleParam = treble.get();
     middleParam = middle.get();
     bassParam = bass.get();
+    speedParam = speed.get();
+    intensityParam = intensity.get();
     outputParam = output.get();
     powerParam = power.get();
     biasParam = bias.get();
@@ -136,6 +140,8 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
     group->addChild (std::move (treble));
     group->addChild (std::move (middle));
     group->addChild (std::move (bass));
+    group->addChild (std::move (speed));
+    group->addChild (std::move (intensity));
     group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("twinreverb_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
@@ -540,6 +546,8 @@ void TwinReverbStyleAmplifierProcessor::prepare (double newSampleRate, int maxBl
     setup (smoothedTreble, trebleParam, 0.02);
     setup (smoothedMiddle, middleParam, 0.02);
     setup (smoothedBass, bassParam, 0.02);
+    setup (smoothedSpeed, speedParam, 0.02);
+    setup (smoothedIntensity, intensityParam, 0.02);
     setup (smoothedOutput, outputParam, 0.02);
     setup (smoothedPower, powerParam, 0.02);
     setup (smoothedBias, biasParam, 0.05);
@@ -605,6 +613,7 @@ void TwinReverbStyleAmplifierProcessor::prepare (double newSampleRate, int maxBl
     sampleCount = 0;
     failureCount = 0;
     shortcut.reset();
+    lfoPhase = 0.0;
 }
 
 void TwinReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -619,6 +628,8 @@ void TwinReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
     smoothedTreble.setTargetValue (trebleParam->get());
     smoothedMiddle.setTargetValue (middleParam->get());
     smoothedBass.setTargetValue (bassParam->get());
+    smoothedSpeed.setTargetValue (speedParam->get());
+    smoothedIntensity.setTargetValue (intensityParam->get());
     smoothedOutput.setTargetValue (outputParam->get());
     smoothedPower.setTargetValue (powerParam->get());
     smoothedBias.setTargetValue (biasParam->get());
@@ -634,10 +645,19 @@ void TwinReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
         const float tr = smoothedTreble.getNextValue();
         const float mi = smoothedMiddle.getNextValue();
         const float ba = smoothedBass.getNextValue();
+        const float sp = smoothedSpeed.getNextValue();
+        const float in = smoothedIntensity.getNextValue();
         const float ou = smoothedOutput.getNextValue();
         const float pw = smoothedPower.getNextValue();
         const float bi = smoothedBias.getNextValue();
         const float fe = smoothedFeel.getNextValue();
+
+        const double lfoHz = 1.0 + 11.0 * pots::audio ((double) sp);
+        lfoPhase += lfoHz / sampleRate;
+        if (lfoPhase >= 1.0)
+            lfoPhase -= 1.0;
+        const double tremDepth = (double) in;
+        const double tremMod = 1.0 - tremDepth * 0.5 * (1.0 + std::sin (2.0 * juce::MathConstants<double>::pi * lfoPhase));
 
         if (++controlCounter >= controlInterval)
         {
@@ -660,7 +680,7 @@ void TwinReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            const double mixV = ch.pre.voltage (ch.pMix);
+            const double mixV = ch.pre.voltage (ch.pMix) * tremMod;
             bool ok2 = true; // reducedOrder: ch.power is empty, nothing to solve, always "converges"
             if (! reducedOrder)
             {

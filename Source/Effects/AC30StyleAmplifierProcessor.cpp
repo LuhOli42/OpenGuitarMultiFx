@@ -112,6 +112,7 @@ AC30StyleAmplifierProcessor::AC30StyleAmplifierProcessor()
     auto volume = make ("a30_volume", "Volume", 0.4f);
     auto treble = make ("a30_treble", "Treble", 0.5f);
     auto bass = make ("a30_bass", "Bass", 0.5f);
+    auto cut = make ("a30_cut", "Cut", 0.5f);
     auto output = make ("a30_output", "Output", 0.5f);
     auto power = make ("a30_power", "Power Drive", 1.0f);
     auto bias = make ("a30_bias", "Bias", 0.5f);
@@ -127,6 +128,7 @@ AC30StyleAmplifierProcessor::AC30StyleAmplifierProcessor()
     volumeParam = volume.get();
     trebleParam = treble.get();
     bassParam = bass.get();
+    cutParam = cut.get();
     outputParam = output.get();
     powerParam = power.get();
     biasParam = bias.get();
@@ -138,6 +140,7 @@ AC30StyleAmplifierProcessor::AC30StyleAmplifierProcessor()
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (bass));
+    group->addChild (std::move (cut));
     group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("ac30_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
@@ -540,6 +543,7 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     setup (smoothedVolume, volumeParam, 0.02);
     setup (smoothedTreble, trebleParam, 0.02);
     setup (smoothedBass, bassParam, 0.02);
+    setup (smoothedCut, cutParam, 0.02);
     setup (smoothedOutput, outputParam, 0.02);
     setup (smoothedPower, powerParam, 0.02);
     setup (smoothedBias, biasParam, 0.05);
@@ -547,7 +551,7 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
 
     idleSupplyCurrent = 0.08;
     appliedSpeaker = matchedSpeaker;
-    updatePots ({ volumeParam->get(), trebleParam->get(), bassParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
+    updatePots ({ volumeParam->get(), trebleParam->get(), bassParam->get(), cutParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
                   juce::roundToInt (speakerParam->get()) });
 
     dcOk = true;
@@ -597,6 +601,7 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     sampleCount = 0;
     failureCount = 0;
     shortcut.reset();
+    cutFilterState = 0.0;
 }
 
 void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -610,6 +615,7 @@ void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedVolume.setTargetValue (volumeParam->get());
     smoothedTreble.setTargetValue (trebleParam->get());
     smoothedBass.setTargetValue (bassParam->get());
+    smoothedCut.setTargetValue (cutParam->get());
     smoothedOutput.setTargetValue (outputParam->get());
     smoothedPower.setTargetValue (powerParam->get());
     smoothedBias.setTargetValue (biasParam->get());
@@ -623,6 +629,7 @@ void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         const float vo = smoothedVolume.getNextValue();
         const float tr = smoothedTreble.getNextValue();
         const float ba = smoothedBass.getNextValue();
+        const float cu = smoothedCut.getNextValue();
         const float ou = smoothedOutput.getNextValue();
         const float pw = smoothedPower.getNextValue();
         const float bi = smoothedBias.getNextValue();
@@ -631,7 +638,7 @@ void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ vo, tr, ba, pw, bi, fe, speakerChoice });
+            updatePots ({ vo, tr, ba, cu, pw, bi, fe, speakerChoice });
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
@@ -672,8 +679,14 @@ void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, masterGain * ch.pre.voltage (ch.pFollower))
+            double speakerVolts = reducedOrder ? behavioralPowerStage (ch, masterGain * ch.pre.voltage (ch.pFollower))
                                                        : ch.power.voltage (ch.wOut);
+            {
+                const double cutHz = 800.0 + 19200.0 * (1.0 - pots::audio ((double) cu));
+                const double cutCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cutHz / juce::jmax (1.0, sampleRate));
+                cutFilterState += cutCoeff * (speakerVolts - cutFilterState);
+                speakerVolts = cutFilterState;
+            }
             constexpr double saneLimit = 120.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

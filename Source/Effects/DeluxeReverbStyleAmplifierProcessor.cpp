@@ -133,6 +133,8 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
     auto volume = make ("dr_volume", "Volume", 0.4f);
     auto treble = make ("dr_treble", "Treble", 0.5f);
     auto bass = make ("dr_bass", "Bass", 0.5f);
+    auto speed = make ("dr_speed", "Speed", 0.5f);
+    auto intensity = make ("dr_intensity", "Intensity", 0.0f);
     auto output = make ("dr_output", "Output", 0.5f);
     auto power = make ("dr_power", "Power Drive", 1.0f);
     auto bias = make ("dr_bias", "Bias", 0.5f);
@@ -146,6 +148,8 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
     volumeParam = volume.get();
     trebleParam = treble.get();
     bassParam = bass.get();
+    speedParam = speed.get();
+    intensityParam = intensity.get();
     outputParam = output.get();
     powerParam = power.get();
     biasParam = bias.get();
@@ -157,6 +161,8 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (bass));
+    group->addChild (std::move (speed));
+    group->addChild (std::move (intensity));
     group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("deluxereverb_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
@@ -558,6 +564,8 @@ void DeluxeReverbStyleAmplifierProcessor::prepare (double newSampleRate, int max
     setup (smoothedVolume, volumeParam, 0.02);
     setup (smoothedTreble, trebleParam, 0.02);
     setup (smoothedBass, bassParam, 0.02);
+    setup (smoothedSpeed, speedParam, 0.02);
+    setup (smoothedIntensity, intensityParam, 0.02);
     setup (smoothedOutput, outputParam, 0.02);
     setup (smoothedPower, powerParam, 0.02);
     setup (smoothedBias, biasParam, 0.05);
@@ -623,6 +631,7 @@ void DeluxeReverbStyleAmplifierProcessor::prepare (double newSampleRate, int max
     sampleCount = 0;
     failureCount = 0;
     shortcut.reset();
+    lfoPhase = 0.0;
 }
 
 void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -636,6 +645,8 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
     smoothedVolume.setTargetValue (volumeParam->get());
     smoothedTreble.setTargetValue (trebleParam->get());
     smoothedBass.setTargetValue (bassParam->get());
+    smoothedSpeed.setTargetValue (speedParam->get());
+    smoothedIntensity.setTargetValue (intensityParam->get());
     smoothedOutput.setTargetValue (outputParam->get());
     smoothedPower.setTargetValue (powerParam->get());
     smoothedBias.setTargetValue (biasParam->get());
@@ -650,10 +661,19 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
         const float vo = smoothedVolume.getNextValue();
         const float tr = smoothedTreble.getNextValue();
         const float ba = smoothedBass.getNextValue();
+        const float sp = smoothedSpeed.getNextValue();
+        const float in = smoothedIntensity.getNextValue();
         const float ou = smoothedOutput.getNextValue();
         const float pw = smoothedPower.getNextValue();
         const float bi = smoothedBias.getNextValue();
         const float fe = smoothedFeel.getNextValue();
+
+        const double lfoHz = 1.0 + 11.0 * pots::audio ((double) sp);
+        lfoPhase += lfoHz / sampleRate;
+        if (lfoPhase >= 1.0)
+            lfoPhase -= 1.0;
+        const double tremDepth = (double) in;
+        const double tremMod = 1.0 - tremDepth * 0.5 * (1.0 + std::sin (2.0 * juce::MathConstants<double>::pi * lfoPhase));
 
         if (++controlCounter >= controlInterval)
         {
@@ -676,7 +696,7 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            const double mixV = ch.pre.voltage (ch.pMix);
+            const double mixV = ch.pre.voltage (ch.pMix) * tremMod;
             bool ok2 = true; // reducedOrder: ch.power is empty, nothing to solve, always "converges"
             if (! reducedOrder)
             {

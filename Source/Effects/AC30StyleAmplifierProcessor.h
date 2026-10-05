@@ -20,7 +20,8 @@ namespace openguitarmultifx
     real amp) is not modelled, matching this project's single-channel scoping for the JTM45/JCM800/AC15.
 
     Controls, page 1: Input (High / Low sensitivity jack), Volume, Treble, Bass (the real amp's own Top Boost
-    controls), Output (a plug-in level control; the real amp has no master volume). Page 2: Power Drive (a synthetic
+    controls), Cut (treble roll-off, the real amp's own "Cut" control in the NFB loop, modelled as a one-pole LPF on
+    the output), Output (a plug-in level control; the real amp has no master volume). Page 2: Power Drive (a synthetic
     master ahead of the phase inverter, matching this project's convention), Bias (a synthetic shift of the shared
     cathode-bias resistor -- the real amp has no adjustable bias trim, being self-biased), Tube Feel, Speaker
     (4 / 8 / 16 ohm, matching the real amp's own transformer taps exactly).
@@ -104,7 +105,7 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double volume, treble, bass, powerDrive, bias, tubeFeel;
+        double volume, treble, bass, cut, powerDrive, bias, tubeFeel;
         int speaker; // 0 = 4 ohm, 1 = 8, 2 = 16
     };
     void updatePots (const Knobs& k);
@@ -129,13 +130,15 @@ private:
     juce::AudioParameterFloat* volumeParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
+    juce::AudioParameterFloat* cutParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedBass, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
+    juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedBass, smoothedCut, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
+    double cutFilterState = 0.0;
 
     double sampleRate = 0.0;
     int controlCounter = 0;

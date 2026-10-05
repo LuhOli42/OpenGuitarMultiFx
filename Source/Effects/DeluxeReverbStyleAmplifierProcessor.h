@@ -17,12 +17,15 @@ namespace openguitarmultifx
     notes what's specific here: a 2-band tone stack (no Middle -- a fixed 6.8k resistor takes its place, the real amp has
     no Middle knob either), a 12AT7 (not 12AX7) phase inverter, and a SINGLE 6V6GT per side (not a doubled pair).
 
-    Scope: the CLEAN AMPLIFICATION PATH only -- same "never model an effects loop" call as the Twin Reverb: no spring
-    reverb tank/driver or vibrato/tremolo oscillator modelled (separate ReverbProcessor/TremoloProcessor effects cover
-    that ground).
+    Scope: the CLEAN AMPLIFICATION PATH only -- no spring reverb tank/driver modelled (a separate ReverbProcessor covers
+    that ground). The built-in bias-modulated tremolo (labelled "vibrato" on the real amp) IS modelled as a sine LFO
+    applied at the same signal-chain position as the AB763's V3A/V3B roach-coupler oscillator.
 
-    Controls, page 1: Input (Normal / Vibrato / Both), Volume, Treble, Bass (no Middle on this amp), Output. Page 2: Power
-    Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm) -- same page-2 convention as every other modelled amp in this project.
+    Controls, page 1: Input (Normal / Vibrato / Both), Volume, Treble, Bass (no Middle on this amp), Speed, Intensity,
+    Output. Page 2: Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm) -- same page-2 convention as every other
+    modelled amp in this project. Speed and Intensity control the built-in bias-modulated tremolo (labelled "vibrato" on
+    the real amp). The oscillator is a sine LFO applied as amplitude modulation on the signal feeding the power stage,
+    matching the AB763's V3A/V3B roach-coupler position in the signal chain.
 */
 class DeluxeReverbStyleAmplifierProcessor : public EffectProcessor
 {
@@ -145,15 +148,18 @@ private:
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
+    juce::AudioParameterFloat* speedParam = nullptr;
+    juce::AudioParameterFloat* intensityParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedBass, smoothedOutput, smoothedPower,
-        smoothedBias, smoothedFeel;
+    juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedBass, smoothedOutput, smoothedSpeed,
+        smoothedIntensity, smoothedPower, smoothedBias, smoothedFeel;
 
     double sampleRate = 0.0;
+    double lfoPhase = 0.0;
     int controlCounter = 0;
     long long sampleCount = 0, failureCount = 0, failuresPre = 0, failuresPower = 0;
     bool dcOk = false;

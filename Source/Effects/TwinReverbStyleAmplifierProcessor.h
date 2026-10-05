@@ -17,9 +17,9 @@ namespace openguitarmultifx
     Scope: the CLEAN AMPLIFICATION PATH only -- both channels' preamp + tone stack, the shared gain-recovery stage, the
     long-tailed-pair phase inverter, the four 6L6GC output tubes (as two push-pull PAIRS, same pattern as the Super Lead's
     EL34 pairs), the output transformer and the global negative feedback loop. The built-in spring reverb tank/driver and
-    the bias-wiggle vibrato/tremolo oscillator are NOT modelled (same call as never modelling an effects loop: this project
-    already has separate, general ReverbProcessor/TremoloProcessor effects that cover that ground without duplicating a
-    spring tank's own physics here) -- see the doc for exactly what was left out and why.
+    the built-in bias-modulated tremolo (labelled "vibrato" on the real amp) IS modelled as a sine LFO with Speed and
+    Intensity controls, applied at the same signal-chain position as the AB763's oscillator. The spring reverb
+    tank/driver is NOT modelled (a separate ReverbProcessor covers that ground).
 
     Same three-part structure as the Bassman/Super Lead (a preamp block, a power block, a small supply model). Structural
     difference from those two: EACH channel (Normal, Vibrato) has its OWN complete 3-band tone stack (not one shared stack
@@ -29,8 +29,9 @@ namespace openguitarmultifx
     Controls, page 1: Input (Normal / Vibrato / Both -- the real amp's two independent channel jacks, "Both" being the
     jumper-cable trick), Volume, Treble, Middle, Bass (applied to whichever channel(s) Input selects; a real amp has two
     independent full knob sets, simplified to one shared set here since almost nobody plays both channels jumpered with
-    different settings), Output. Page 2: Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm) -- same page-2 convention
-    as every other modelled amp in this project.
+    different settings), Speed, Intensity, Output. Speed and Intensity control the built-in bias-modulated tremolo
+    (labelled "vibrato" on the real amp). Page 2: Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm) -- same page-2
+    convention as every other modelled amp in this project.
 */
 class TwinReverbStyleAmplifierProcessor : public EffectProcessor
 {
@@ -153,16 +154,19 @@ private:
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* middleParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
+    juce::AudioParameterFloat* speedParam = nullptr;
+    juce::AudioParameterFloat* intensityParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedMiddle, smoothedBass, smoothedOutput, smoothedPower,
-        smoothedBias, smoothedFeel;
+    juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedMiddle, smoothedBass, smoothedSpeed,
+        smoothedIntensity, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
     double sampleRate = 0.0;
+    double lfoPhase = 0.0;
     int controlCounter = 0;
     long long sampleCount = 0, failureCount = 0, failuresPre = 0, failuresPower = 0;
     bool dcOk = false;
