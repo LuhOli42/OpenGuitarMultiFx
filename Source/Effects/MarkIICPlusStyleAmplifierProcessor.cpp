@@ -233,6 +233,7 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     auto mid = make ("mk2c_mid", "Mid", 0.5f);
     auto bass = make ("mk2c_bass", "Bass", 0.5f);
     auto presence = make ("mk2c_presence", "Presence", 0.3f);
+    auto master = make ("mk2c_master", "Master", 0.5f);
     auto output = make ("mk2c_output", "Output", 0.5f);
     auto power = make ("mk2c_power", "Power Drive", 0.5f);
     auto bias = make ("mk2c_bias", "Bias", 0.5f);
@@ -249,6 +250,7 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     midParam = mid.get();
     bassParam = bass.get();
     presenceParam = presence.get();
+    masterParam = master.get();
     outputParam = output.get();
     powerParam = power.get();
     biasParam = bias.get();
@@ -261,6 +263,7 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
+    group->addChild (std::move (master));
     group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("mk2c_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
@@ -363,6 +366,9 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rMidTop = c.addResistor (nM, nMw, 12.5e3);    // Mid 25K linear, split
         ch.rMidBottom = c.addResistor (nMw, gnd, 12.5e3);
         c.addCapacitor (nB, nMw, 22.0e-9);               // 22nF mid coupling cap
+
+        // Master: 250KA rheostat from tone stack output to ground, before the PI coupling cap.
+        ch.rMaster = c.addResistor (ch.wTone, gnd, 125.0e3);
     }
 
     // ================================================================ phase inverter, power amp (full reference only)
@@ -484,6 +490,7 @@ void MarkIICPlusStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double midTop = juce::jmax (1.0, 25.0e3 - midBottom);
     const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
     const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
+    const double masterR = juce::jmax (1.0, 250.0e3 * pots::audio (k.master));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
@@ -498,6 +505,7 @@ void MarkIICPlusStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rBass, bassR);
         ch.power.setResistance (ch.rMidTop, midTop);
         ch.power.setResistance (ch.rMidBottom, midBottom);
+        ch.power.setResistance (ch.rMaster, masterR);
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
@@ -687,6 +695,7 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
     setup (smoothedMid, midParam, 0.02);
     setup (smoothedBass, bassParam, 0.02);
     setup (smoothedPresence, presenceParam, 0.02);
+    setup (smoothedMaster, masterParam, 0.02);
     setup (smoothedOutput, outputParam, 0.02);
     setup (smoothedPower, powerParam, 0.02);
     setup (smoothedBias, biasParam, 0.05);
@@ -695,7 +704,7 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
     idleSupplyCurrent = 0.18;
     appliedSpeaker = matchedSpeaker;
     updatePots ({ gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
-                  presenceParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(), juce::roundToInt (speakerParam->get()) });
+                  presenceParam->get(), masterParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(), juce::roundToInt (speakerParam->get()) });
 
     dcOk = true;
     for (auto& ch : channels)
@@ -801,6 +810,7 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
     smoothedMid.setTargetValue (midParam->get());
     smoothedBass.setTargetValue (bassParam->get());
     smoothedPresence.setTargetValue (presenceParam->get());
+    smoothedMaster.setTargetValue (masterParam->get());
     smoothedOutput.setTargetValue (outputParam->get());
     smoothedPower.setTargetValue (powerParam->get());
     smoothedBias.setTargetValue (biasParam->get());
@@ -814,6 +824,7 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
         const float mi = smoothedMid.getNextValue();
         const float ba = smoothedBass.getNextValue();
         const float pr = smoothedPresence.getNextValue();
+        const float ms = smoothedMaster.getNextValue();
         const float ou = smoothedOutput.getNextValue();
         const float pw = smoothedPower.getNextValue();
         const float bi = smoothedBias.getNextValue();
@@ -822,7 +833,7 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ gn, tr, mi, ba, pr, pw, bi, fe, speakerChoice });
+            updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice });
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));

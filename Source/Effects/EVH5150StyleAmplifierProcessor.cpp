@@ -222,6 +222,7 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
     auto mid = make ("evh_mid", "Mid", 0.5f);
     auto bass = make ("evh_bass", "Bass", 0.5f);
     auto presence = make ("evh_presence", "Presence", 0.3f);
+    auto resonance = make ("evh_resonance", "Resonance", 0.3f);
     auto post = make ("evh_post", "Post", 0.5f);
     auto output = make ("evh_output", "Output", 0.5f);
     auto power = make ("evh_power", "Power Drive", 0.5f);
@@ -239,6 +240,7 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
     midParam = mid.get();
     bassParam = bass.get();
     presenceParam = presence.get();
+    resonanceParam = resonance.get();
     postParam = post.get();
     outputParam = output.get();
     powerParam = power.get();
@@ -252,6 +254,7 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
+    group->addChild (std::move (resonance));
     group->addChild (std::move (post));
     group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("evh_page2", "Page 2", "|", std::move (power));
@@ -479,6 +482,10 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addCapacitor (fp, wp, 0.01e-6);                  // C8
         c.addCapacitor (fp, gnd, 1.5e-9);                  // stray for HF stability
 
+        // Resonance: 1MA pot from speaker to feedback point + 22nF cap (low-freq emphasis)
+        ch.rResonancePot = c.addResistor (ch.wOut, fp, 1.0e6);
+        c.addCapacitor (ch.wOut, fp, 22.0e-9);
+
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
         c.setInitialGuess (a1, railPlatesNominal);
@@ -503,6 +510,7 @@ void EVH5150StyleAmplifierProcessor::updatePots (const Knobs& k)
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
+    const double resonanceR = juce::jmax (1.0, 1.0e6 * (1.0 - pots::audio (k.resonance)));
 
     for (auto& ch : channels)
     {
@@ -521,6 +529,7 @@ void EVH5150StyleAmplifierProcessor::updatePots (const Knobs& k)
             ch.power.setResistance (ch.rPresBottom, presBottom);
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
+            ch.power.setResistance (ch.rResonancePot, resonanceR);
         }
         if (! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
@@ -705,6 +714,7 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     setup (smoothedMid, midParam, 0.02);
     setup (smoothedBass, bassParam, 0.02);
     setup (smoothedPresence, presenceParam, 0.02);
+    setup (smoothedResonance, resonanceParam, 0.02);
     setup (smoothedPost, postParam, 0.02);
     setup (smoothedOutput, outputParam, 0.02);
     setup (smoothedPower, powerParam, 0.02);
@@ -714,7 +724,7 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     idleSupplyCurrent = 0.18;
     appliedSpeaker = matchedSpeaker;
     updatePots ({ gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
-                  presenceParam->get(), postParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
+                  presenceParam->get(), resonanceParam->get(), postParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
                   juce::roundToInt (speakerParam->get()) });
 
     dcOk = true;
@@ -819,6 +829,7 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedMid.setTargetValue (midParam->get());
     smoothedBass.setTargetValue (bassParam->get());
     smoothedPresence.setTargetValue (presenceParam->get());
+    smoothedResonance.setTargetValue (resonanceParam->get());
     smoothedPost.setTargetValue (postParam->get());
     smoothedOutput.setTargetValue (outputParam->get());
     smoothedPower.setTargetValue (powerParam->get());
@@ -833,6 +844,7 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         const float mi = smoothedMid.getNextValue();
         const float ba = smoothedBass.getNextValue();
         const float pr = smoothedPresence.getNextValue();
+        const float rs = smoothedResonance.getNextValue();
         const float ps = smoothedPost.getNextValue();
         const float ou = smoothedOutput.getNextValue();
         const float pw = smoothedPower.getNextValue();
@@ -842,7 +854,7 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ gn, tr, mi, ba, pr, ps, pw, bi, fe, speakerChoice });
+            updatePots ({ gn, tr, mi, ba, pr, rs, ps, pw, bi, fe, speakerChoice });
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));

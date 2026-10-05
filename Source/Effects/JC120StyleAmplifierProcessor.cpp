@@ -67,7 +67,10 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
     auto bass = make ("jc_bass", "Bass", 0.5f);
     auto middle = make ("jc_middle", "Middle", 0.5f);
     auto output = make ("jc_output", "Output", 0.5f);
-    auto distortion = make ("jc_distortion", "Distortion", 0.0f);
+    auto distortion = std::make_unique<juce::AudioParameterFloat> (
+        "jc_distortion", "Distortion", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        { return juce::roundToInt (v) == 0 ? juce::String ("Off") : juce::String ("On"); }));
     auto effect = std::make_unique<juce::AudioParameterFloat> (
         "jc_effect", "Effect", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
@@ -291,9 +294,9 @@ void JC120StyleAmplifierProcessor::updatePots (const Knobs& k)
             ch.pre.setResistance (ch.rVolBot[i], volBottom);
             ch.pre.setResistance (ch.rVolTop[i], juce::jmax (1.0, 100.0e3 - volBottom));
         }
-        const double distortionBlend = juce::jlimit (0.0, 1.0, k.distortion);
-        ch.power.setResistance (ch.rDistCouple, 2.2e3 / juce::jmax (1.0e-3, distortionBlend));
-        ch.power.setResistance (ch.rCleanCouple, 1.0e3 / juce::jmax (1.0e-3, 1.0 - distortionBlend));
+        const bool distOn = k.distortion >= 0.5;
+        ch.power.setResistance (ch.rDistCouple, distOn ? 2.2e3 : 1.0e9);
+        ch.power.setResistance (ch.rCleanCouple, distOn ? 1.0e9 : 1.0e3);
         if (k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
     }

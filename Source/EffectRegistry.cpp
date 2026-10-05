@@ -363,7 +363,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // placeholder (Twin Reverb's 6L6GC constants).
     MarkIICPlusStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MarkIICPlusStyleAmplifier");
-    registry.registerType ("MarkIICPlusStyleAmplifier", [] { return trimmed (oversampled<MarkIICPlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.51f); });
+    registry.registerType ("MarkIICPlusStyleAmplifier", [] { return trimmed (oversampled<MarkIICPlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 13.23f); });
     // docs/circuits/DualRectifier.md. Mesa/Boogie Dual Rectifier RED channel. Four cascaded 12AX7 gain stages with
     // unbypassed compression stage, TMB tone stack with Master, LTP PI, 4x6L6GC fixed-bias push-pull.
     DualRectifierStyleAmplifierProcessor::reducedOrder = true;
