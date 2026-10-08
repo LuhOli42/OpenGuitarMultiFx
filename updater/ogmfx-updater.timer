@@ -1,0 +1,15 @@
+# OGMFX periodic update check.
+# Fires at a fixed granularity; the effective interval between real checks is
+# check_interval in /etc/ogmfx/updater.conf (ogmfx-update.sh self-throttles).
+# Keep OnUnitActiveSec <= the smallest check_interval you ever intend to use.
+[Unit]
+Description=Periodic OGMFX update check
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
