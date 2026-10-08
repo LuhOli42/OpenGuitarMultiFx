@@ -256,3 +256,23 @@ target_link_libraries(OpenGuitarMultiFx PRIVATE
 
 enable_testing()
 add_subdirectory(Tests)
+
+# --- Install rules (Phase 6 W3) --------------------------------------------
+# `cmake --install <build> --prefix <dir>` stages the release payload that
+# scripts/package.sh packs into ogmfx-<version>-<arch>.tar.gz (layout per the
+# "Package artifact" contract in docs/Phase6Plan.md). package.sh adds the
+# VERSION file, latest.json and the .sha256 sidecar on top.
+install(TARGETS OpenGuitarMultiFx RUNTIME DESTINATION bin)
+install(FILES
+  packaging/ogmfx.service
+  packaging/ogmfx-updater.service
+  packaging/ogmfx-updater.timer
+  DESTINATION systemd)
+install(PROGRAMS packaging/install.sh DESTINATION .)
+install(FILES packaging/updater.conf DESTINATION etc/ogmfx)
+# ogmfx-update.sh lives in updater/ (W4's tree) — absent on branches that
+# don't have the merged updater yet, so guard the rule instead of failing
+# configure.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/updater/ogmfx-update.sh")
+  install(PROGRAMS updater/ogmfx-update.sh DESTINATION sbin)
+endif()

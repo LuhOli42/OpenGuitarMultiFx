@@ -1,0 +1,118 @@
+# Phase 6 W3: release pipeline (docs/Phase6Plan.md).
+#
+# Tag push v* -> build both arches through the W1 toolchain image
+# (scripts/cross-build.sh) -> scripts/package.sh -> GitHub Release carrying:
+#
+#   ogmfx-<version>-aarch64.tar.gz (+ .sha256)
+#   ogmfx-<version>-x86_64.tar.gz  (+ .sha256)
+#   latest.json                    from the aarch64 package — the on-device
+#                                  updater checks its tarball_url against
+#                                  `uname -m`, so it must point at the
+#                                  device arch
+#
+# A tag that is not a clean vX.Y.Z (e.g. v1.2.3-beta.1) publishes as a
+# prerelease on channel "beta" — that is how ogmfx-update.sh's channel
+# setting (updater/updater.conf) finds it: stable = /releases/latest,
+# beta = newest non-draft prerelease.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  BUILD_JOBS: 4
+  TAG: ${{ github.ref_name }}
+
+jobs:
+  package:
+    name: package-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe needs the tags
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build toolchain image (layer-cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/toolchain
+          build-args: TARGET=aarch64
+          tags: ogmfx-toolchain:latest
+          load: true
+          cache-from: type=gha,scope=ogmfx-toolchain
+          cache-to: type=gha,mode=max,scope=ogmfx-toolchain
+
+      - name: Restore build tree (deps + objects)
+        uses: actions/cache@v4
+        with:
+          path: build-${{ matrix.arch }}
+          key: ogmfx-build-${{ matrix.arch }}-${{ hashFiles('CMakeLists.txt', 'Tests/CMakeLists.txt', 'cmake/**', 'tools/toolchain/**') }}
+          restore-keys: ogmfx-build-${{ matrix.arch }}-
+
+      - name: Build ${{ matrix.arch }}
+        run: scripts/cross-build.sh ${{ matrix.arch }}
+
+      - name: Channel for this tag
+        id: meta
+        run: |
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package
+        env:
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          REPO: ${{ github.repository }}
+        run: scripts/package.sh ${{ matrix.arch }} "$TAG"
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.arch }}
+          path: dist/${{ matrix.arch }}/
+          retention-days: 7
+
+  publish:
+    name: GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: assets
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          # Each package.sh run emitted its own latest.json — only the
+          # aarch64 one ships as the release's `latest.json` asset: the
+          # on-device updater arch-checks its tarball_url against `uname -m`,
+          # so it must point at the device arch's tarball.
+          cp assets/package-aarch64/*.tar.gz assets/package-aarch64/*.sha256 \
+             assets/package-aarch64/latest.json out/
+          cp assets/package-x86_64/*.tar.gz assets/package-x86_64/*.sha256 out/
+          ( cd out && sha256sum -c ./*.sha256 )
+          prerelease=""
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || prerelease="--prerelease"
+          gh release create "$TAG" out/* \
+            --title "$TAG" \
+            --generate-notes \
+            $prerelease

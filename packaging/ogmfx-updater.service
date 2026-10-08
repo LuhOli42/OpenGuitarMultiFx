@@ -1,0 +1,24 @@
+# OGMFX on-device updater — one-shot update check.
+# Runs ogmfx-update.sh; triggered periodically by ogmfx-updater.timer.
+# The script lives at /usr/local/sbin/ogmfx-update.sh (installed by the
+# system image or by a package's install.sh — see updater/README.md).
+[Unit]
+Description=OGMFX update check
+Documentation=https://github.com/LuhOli42/OpenGuitarMultiFx
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/ogmfx/updater.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ogmfx-update.sh
+Nice=10
+IOSchedulingClass=idle
+
+# Hardening: the updater only needs to write the install root and state dir,
+# reach the network, and talk to systemd.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/ogmfx /var/lib/ogmfx
+ProtectHome=true
+PrivateTmp=true
