@@ -1,0 +1,13 @@
+# Schedules ogmfx-updater.service. The interval in /etc/ogmfx/updater.conf is
+# advisory for the script; this timer is what actually fires.
+[Unit]
+Description=Periodic OpenGuitarMultiFx update check
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

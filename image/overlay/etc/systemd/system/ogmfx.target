@@ -1,0 +1,12 @@
+# Appliance boot target (docs/Phase6Plan.md: ogmfx.service is
+# "WantedBy=ogmfx.target-style" autostart). The image makes this the default
+# target; `systemctl isolate multi-user.target` drops to a plain console for
+# maintenance, `systemctl isolate ogmfx.target` brings the kiosk back.
+[Unit]
+Description=OpenGuitarMultiFx appliance
+Documentation=https://github.com/LuhOli42/OpenGuitarMultiFx/blob/main/docs/Phase6Plan.md
+Requires=multi-user.target
+After=multi-user.target
+Conflicts=rescue.service rescue.target
+Wants=ogmfx.service
+AllowIsolate=yes

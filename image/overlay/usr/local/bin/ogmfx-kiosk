@@ -1,0 +1,22 @@
+#!/bin/sh
+# Kiosk launcher for ogmfx.service: Xorg on $OGMFX_VT, no window manager, the
+# app as the only X client. When the app exits, xinit tears X down and systemd
+# decides (Restart=on-failure). Cage/wlroots is the documented alternative if
+# X misbehaves on the BSP (image/README.md).
+set -eu
+
+APP="${OGMFX_APP:-/opt/ogmfx/current/bin/OpenGuitarMultiFx}"
+
+if [ "${1:-}" = "--client" ]; then
+    # No screen blanking on a pedalboard.
+    xset s off s noblank -dpms 2>/dev/null || true
+    exec "$APP"
+fi
+
+[ -x "$APP" ] || { echo "ogmfx-kiosk: $APP not found or not executable" >&2; exit 1; }
+
+# OGMFX_X_ARGS: extra Xorg flags, e.g. "-nocursor" for touch-only units.
+# shellcheck disable=SC2086
+exec /usr/bin/xinit "$(readlink -f "$0")" --client -- /usr/bin/Xorg \
+    "${OGMFX_DISPLAY:-:0}" "${OGMFX_VT:-vt7}" -keeptty -nolisten tcp -s 0 -dpms \
+    ${OGMFX_X_ARGS:-}
