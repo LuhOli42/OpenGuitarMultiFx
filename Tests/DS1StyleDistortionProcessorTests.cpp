@@ -207,6 +207,41 @@ public:
             expectLessThan (std::abs (beforeSample - afterSample), 1.0f);
         }
 
+        beginTest ("reset() returns the circuit to its DC operating point");
+        {
+            DS1StyleDistortionProcessor ds1;
+            ds1.prepare (48000.0, 512, 1);
+            setParam (ds1, "ds1_drive", 0.8f);
+
+            const auto idle = ds1.getDebugBiasPoint();
+            const double idleAmp = ds1.debugOpAmpOut();
+
+            // Drive it hard so capacitor state wanders away from DC.
+            juce::AudioBuffer<float> buffer (1, 512);
+            for (int block = 0; block < 60; ++block)
+            {
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                    buffer.setSample (0, i, 0.9f * std::sin ((float) (block * 512 + i) * 0.05f));
+                ds1.process (buffer);
+            }
+
+            const auto drifted = ds1.getDebugBiasPoint();
+            // State really moved (sanity: the test is exercising something).
+            logMessage ("drift: base " + juce::String (drifted.vBase - idle.vBase, 4)
+                        + " coll " + juce::String (drifted.vCollector - idle.vCollector, 4));
+
+            ds1.reset();
+            const auto back = ds1.getDebugBiasPoint();
+            logMessage ("reset bias: base " + juce::String (back.vBase - idle.vBase, 6)
+                        + " emitter " + juce::String (back.vEmitter - idle.vEmitter, 6)
+                        + " coll " + juce::String (back.vCollector - idle.vCollector, 6)
+                        + " opamp " + juce::String (ds1.debugOpAmpOut() - idleAmp, 6));
+            expectWithinAbsoluteError (back.vBase, idle.vBase, 0.01f);
+            expectWithinAbsoluteError (back.vEmitter, idle.vEmitter, 0.01f);
+            expectWithinAbsoluteError (back.vCollector, idle.vCollector, 0.01f);
+            expectWithinAbsoluteError ((float) ds1.debugOpAmpOut(), (float) idleAmp, 0.01f);
+        }
+
         beginTest ("stereo channels stay independent and both finite");
         {
             DS1StyleDistortionProcessor ds1;
