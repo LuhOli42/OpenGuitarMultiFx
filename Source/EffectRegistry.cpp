@@ -323,13 +323,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // within 0.01-0.06 dB, PedalUnityLevelTests passing) -- shipped as the default, same as the Super Lead/Bassman.
     TwinReverbStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("TwinReverbStyleAmplifier");
-    registry.registerType ("TwinReverbStyleAmplifier", [] { return trimmed (oversampled<TwinReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.31f); });
+    registry.registerType ("TwinReverbStyleAmplifier", [] { return trimmed (oversampled<TwinReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 4.19f); });
     // docs/circuits/DeluxeReverbAB763.md. reducedOrder calibrated (DR_POWERCAL) and verified (level tracks the reference
     // within 0.00-0.02 dB, PedalUnityLevelTests passing) -- shipped as the default, same as the Super Lead/Bassman/Twin
     // Reverb. Trim placeholder pending PedalUnityLevelTests measurement.
     DeluxeReverbStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DeluxeReverbStyleAmplifier");
-    registry.registerType ("DeluxeReverbStyleAmplifier", [] { return trimmed (oversampled<DeluxeReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 2.06f); });
+    registry.registerType ("DeluxeReverbStyleAmplifier", [] { return trimmed (oversampled<DeluxeReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.06f); });
     // docs/circuits/JC120JazzChorus.md. Solid-state (op-amp preamp, a saturating-op-amp power stage standing in for the
     // real discrete Class AB output pair, real BBD chorus).
     registry.registerType ("JC120StyleAmplifier", [] { return trimmed (std::make_unique<JC120StyleAmplifierProcessor>(), 14.10f); });
