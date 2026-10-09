@@ -38,8 +38,12 @@ const Urei1176StyleCompressorProcessor::RatioSpec& Urei1176StyleCompressorProces
 
 Urei1176StyleCompressorProcessor::Urei1176StyleCompressorProcessor()
 {
-    auto in = std::make_unique<juce::AudioParameterFloat> ("u1176_input", "Input", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
-    auto out = std::make_unique<juce::AudioParameterFloat> ("u1176_output", "Output", juce::NormalisableRange<float> (-20.0f, 20.0f, 0.1f), 0.0f,
+    // Input = the unit's input attenuator (-20 .. +20 dB of drive into the FET stage). Default fully CCW (-20 dB): at
+    // 0 dB a guitar-level DI sits ~22 dB over the 4:1 limiting onset, so the pedal idled in ~15 dB of limiting with
+    // no make-up -- ~-13 dB out. Output defaults fully CW (+20 dB make-up) to restore the level; compression engages
+    // as Input is raised.
+    auto in = std::make_unique<juce::AudioParameterFloat> ("u1176_input", "Input", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f);
+    auto out = std::make_unique<juce::AudioParameterFloat> ("u1176_output", "Output", juce::NormalisableRange<float> (-20.0f, 20.0f, 0.1f), 20.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return (v > 0.0f ? "+" : "") + juce::String (v, 1) + " dB"; }));
     auto atk = std::make_unique<juce::AudioParameterFloat> ("u1176_attack", "Attack", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
