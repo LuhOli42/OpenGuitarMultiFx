@@ -6,6 +6,23 @@
 namespace openguitarmultifx
 {
 
+namespace
+{
+    // Output protection, the pedal-level counterpart of the amps' input/output soft bounds: the collector node
+    // genuinely swings several volts at high Boost (that's what the real pedal hands the next stage, and volts
+    // are this chain's internal signal convention -- every amp input already soft-limits its own ~0.65 V knee,
+    // so in-chain nothing past ~1.4 V ever reaches a stage linearly anyway). Past that, the only thing the
+    // delivered signal could do was square off at +-1.0 at the file/interface rail. Rounding the top smoothly
+    // keeps the transistor's own saturation shape; the registry's fixed -3.2 dB trim lands the hottest setting
+    // under ~0.87 FS sustained, ~0.96 FS including the pickup-load filter's edge overshoot.
+    constexpr double outputKnee = 1.02, outputSpan = 0.23; // asymptote ~1.25 V
+    inline double outputLimit (double v) noexcept
+    {
+        const double a = std::abs (v);
+        return a <= outputKnee ? v : std::copysign (outputKnee + outputSpan * std::tanh ((a - outputKnee) / outputSpan), v);
+    }
+}
+
 PositiveGroundBoosterProcessor::PositiveGroundBoosterProcessor()
 {
     auto boostParam = std::make_unique<juce::AudioParameterFloat> (
@@ -174,7 +191,7 @@ void PositiveGroundBoosterProcessor::process (juce::AudioBuffer<float>& buffer)
             // referenced to (mirrored) ground -- mirror back to the real
             // (unmirrored) output signal.
             const double outputNodeMirrored = outputBranchCurrent * (double) outputLoadResistance;
-            data[i] = (float) -outputNodeMirrored;
+            data[i] = (float) -outputLimit (outputNodeMirrored);
         }
     }
 }
