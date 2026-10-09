@@ -87,6 +87,15 @@ private:
     bool isAmpCabRole() const noexcept { return name.containsIgnoreCase ("Cab"); }
     void timerCallback() override { modelSlot.sweep(); }
 
+    // Control thread only, same contract as loadModel(). applyNormalization
+    // is off only for prepare()'s rebuild-after-rate-change: that path swaps
+    // in a fresh instance, not a fresh user choice, so existing trims stay.
+    void loadModelInternal (const std::filesystem::path& namFilePath, bool applyNormalization);
+    // Measured-load calibration: pushes a short DI-level probe through the
+    // just-loaded model and sets the input/output trim defaults so a typical
+    // DI lands back at unity. Control thread only (allocates + renders).
+    void normalizeLevels (nam::DSP& model);
+
     juce::String name;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* inputGainDb = nullptr;
