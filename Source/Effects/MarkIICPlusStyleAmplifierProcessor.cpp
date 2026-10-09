@@ -96,134 +96,189 @@ namespace
     constexpr int matchedSpeaker = 2;
     constexpr double powerTheta = 0.9;
 
-    // ---- preamp helper ----
+    // ---- preamp (Bancika's "Mark IIc+ inspired preamp", diy-fever.com) ----
     struct PreampBuild
     {
         NodalCircuit& c;
-        int srcV1 = 0, srcV2 = 0, srcV3 = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0, rBrightSeries = 0, rV1bSeries = 0;
-        NodalCircuit::Node plateV1a = 0, plateV1b = 0, plateV2a = 0, plateV2b = 0, plateV3a = 0, follower = 0, gainWiper = 0;
-        NodalCircuit::Node nodeV1 = 0, nodeV2 = 0, nodeV3 = 0;
+        int src0V1 = 0, srcIn = 0, srcV1 = 0, srcV2 = 0, srcV3 = 0, srcG1b = 0, src3V2 = 0, src3V2a = 0, src3X = 0;
+        NodalCircuit::Node wiper = 0, x = 0;
+        int rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMid = 0, capBass = 0, capMid = 0;
+        int rVol1Top = 0, rVol1Bot = 0, rBrightSeries = 0;
+        int rGainTop = 0, rGainBot = 0, rLeadMute = 0, rLeadMaster = 0;
+        NodalCircuit::Node plateV1a = 0, plateV1b = 0, plateV2a = 0, plateV2b = 0, plateV3a = 0, follower = 0, toneOut = 0;
     };
 
-    /** The Mark IIC+ Lead preamp: FIVE cascaded 12AX7 gain stages (V1a -> V1b -> V2a -> V2b -> V3a) plus a
-        V3b cathode follower driving the tone stack.
+    NodalCircuit::Node gainStage (NodalCircuit& c, NodalCircuit::Node grid, NodalCircuit::Node vcc, double rPlate,
+                                  double rCathode, double cBypass, double plateGuess)
+    {
+        const auto gnd = NodalCircuit::ground;
+        const auto plate = c.addNode(), k = c.addNode();
+        c.addTriode (plate, grid, k, triode12AX7());
+        c.addCapacitor (grid, plate, cgp);
+        c.addResistor (vcc, plate, rPlate);
+        c.addResistor (k, gnd, rCathode);
+        if (cBypass > 0.0)
+            c.addCapacitor (k, gnd, cBypass);
+        c.setInitialGuess (plate, plateGuess);
+        c.setInitialGuess (k, 1.5);
+        return plate;
+    }
 
-        Key voicing elements:
-        - 1nF coupling from V1a to the Gain pot (treble-forward character from the first stage)
-        - 120pF enhanced Miller cap on V2a (deliberate HF roll-off in the high-gain stages)
-        - 68K/3.3K voltage divider between V2a and V2b (precise gain structuring)
-        - 87K unbypassed cathode on V2b (very low gain, tone-shaping stage)
-        - 250pF enhanced Miller on V2b (further HF roll-off before the 547pF coupling)
-        - 547pF silver mica coupling V2b→V3a (THE famous IIC+ cap -- only treble reaches V3a)
+    /** V3b is a cathode follower with a bootstrapped grid leak (470K from the grid to the 1.5K/100K junction), so its
+        grid sits at ~98.5% of its own cathode. Grid-to-cathode DC for that self-consistent point, by bisection (the
+        same physics as tubeamp::cathodeFollowerDc). */
+    double bootstrappedFollowerDrop (double vcc)
+    {
+        const KorenTriode tube { };
+        constexpr double tap = 100.0e3 / 101.5e3;
+        double lo = 0.0, hi = vcc;
+        for (int i = 0; i < 80; ++i)
+        {
+            const double vk = 0.5 * (lo + hi);
+            const double ip = tube.evaluate (tap * vk - vk, vcc - vk).ip;
+            (ip - vk / 101.5e3 > 0.0 ? lo : hi) = vk;
+        }
+        const double vk = 0.5 * (lo + hi);
+        return tap * vk - vk;
+    }
 
-        Supply taps: B+4 (v1Guess) for V1a, B+3 (v2Guess) for V1b/V2a/V2b, B+2 (v3Guess) for V3a/V3b. */
-    PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double v1Guess, double v2Guess, double v3Guess)
+    /** Rails: B+4 (srcV1) V1a/V1b, B+3 (srcV2) V2a/V2b, B+2 (srcV3) V3a/V3b. */
+    PreampBuild buildPreamp (NodalCircuit& c0, NodalCircuit& c, NodalCircuit& c3, double v1Guess, double v2Guess, double v3Guess)
     {
         const auto gnd = NodalCircuit::ground;
         PreampBuild b { c };
 
-        const auto vcc1 = c.addNode(), vcc2 = c.addNode(), vcc3 = c.addNode(), in = c.addNode();
-        b.nodeV1 = vcc1;
-        b.nodeV2 = vcc2;
-        b.nodeV3 = vcc3;
-        b.srcV1 = c.addSource (vcc1, v1Guess);
-        b.srcV2 = c.addSource (vcc2, v2Guess);
-        b.srcV3 = c.addSource (vcc3, v3Guess);
-        b.srcIn = c.addSource (in, 0.0);
-
-        // V1a: 150K plate (B+4), 1M grid leak, 1.5K/0.47µF cathode. The first gain stage -- full cathode
-        // bypass for maximum gain, feeding the 1nF treble-forward coupling into the Gain pot.
-        const auto g1 = c.addNode(), k1 = c.addNode();
-        b.plateV1a = c.addNode();
-        c.addResistor (in, g1, 68.0e3);              // grid stopper
-        c.addResistor (g1, gnd, 1.0e6);              // grid leak
-        c.addTriode (b.plateV1a, g1, k1, triode12AX7());
-        c.addCapacitor (g1, b.plateV1a, cgp);
-        c.addResistor (vcc1, b.plateV1a, 150.0e3);
-        c.addResistor (k1, gnd, 1.5e3);
-        c.addCapacitor (k1, gnd, 0.47e-6);
-        c.setInitialGuess (b.plateV1a, 250.0);
-        c.setInitialGuess (k1, 1.5);
-
-        // Gain (Lead Drive, 1MA audio taper): V1a plate → 1nF → Gain pot.
-        // The 1nF is THE defining voicing element -- it rolls off bass from the first stage, creating the
-        // Mark series' characteristic treble-forward lead tone at all gain settings.
-        const auto gainIn = c.addNode(), gainWiper = c.addNode();
-        c.addCapacitor (b.plateV1a, gainIn, 1.0e-9); // 1nF ceramic -- the Mark series character cap
-        b.rGainTop = c.addResistor (gainIn, gainWiper, 1.0e6);
-        b.rGainBot = c.addResistor (gainWiper, gnd, 1.0e6);
+        // ---------------- block 1: V1a, the tone stack, Volume 1 ----------------
         {
-            const auto brightMid = c.addNode();
-            b.rBrightSeries = c.addResistor (gainIn, brightMid, 100.0e6);
-            c.addCapacitor (brightMid, gainWiper, 470.0e-12);
+            auto& c1 = c0;
+            const auto vcc = c1.addNode(), in = c1.addNode();
+            b.src0V1 = c1.addSource (vcc, v1Guess);
+            b.srcIn = c1.addSource (in, 0.0);
+
+            // V1a: input straight to the grid, 1M leak; 150K plate; 1.5K + 0.47uF.
+            c1.addResistor (in, gnd, 1.0e6);
+            b.plateV1a = gainStage (c1, in, vcc, 150.0e3, 1.5e3, 0.47e-6, 250.0);
+
+        // Tone stack straight off V1a's plate: 1nF -> Treble 250KB; 100K slope; 0.1uF -> Bass 250KA (rheostat);
+        // 0.047uF -> Middle 10KB (rheostat) to ground. Pull Shift swaps the two coupling caps.
+            const auto top = c1.addNode(), tb = c1.addNode(), sl = c1.addNode(), mt = c1.addNode();
+            b.toneOut = c1.addNode();
+            c1.addCapacitor (b.plateV1a, top, 1.0e-9);
+            b.rTrebleTop = c1.addResistor (top, b.toneOut, 125.0e3);
+            b.rTrebleBottom = c1.addResistor (b.toneOut, tb, 125.0e3);
+            c1.addResistor (b.plateV1a, sl, 100.0e3);
+            b.capBass = c1.addCapacitor (sl, tb, 0.1e-6);
+            b.rBass = c1.addResistor (tb, mt, 125.0e3);
+            b.capMid = c1.addCapacitor (sl, mt, 0.047e-6);
+            b.rMid = c1.addResistor (mt, gnd, 5.0e3);
+
+            // Volume 1 (1MA) with the Pull Bright cap across its upper half. V1b's grid input capacitance (its
+            // Miller multiplied grid-plate capacitance, ~(1 + 60) x 1.7 pF) stays here as the load on the wiper.
+            b.wiper = c1.addNode();
+            const auto brightMid = c1.addNode();
+            b.rVol1Top = c1.addResistor (b.toneOut, b.wiper, 0.5e6);
+            b.rVol1Bot = c1.addResistor (b.wiper, gnd, 0.5e6);
+            b.rBrightSeries = c1.addResistor (b.toneOut, brightMid, 100.0e6);
+            c1.addCapacitor (brightMid, b.wiper, 470.0e-12);
+            c1.addCapacitor (b.wiper, gnd, 61.0 * cgp);
         }
 
-        // V1b: 100K plate (B+3), grid from gain wiper through 100K series, 3.3M grid leak, 1.5K/6.8µF cathode.
-        const auto g2 = c.addNode(), k2 = c.addNode();
-        b.plateV1b = c.addNode();
-        b.gainWiper = gainWiper;
-        b.rV1bSeries = c.addResistor (gainWiper, g2, 100.0e3); // switchable: 100M for Clean
-        c.addResistor (g2, gnd, 3.3e6);              // 3.3M grid leak
-        c.addTriode (b.plateV1b, g2, k2, triode12AX7());
-        c.addCapacitor (g2, b.plateV1b, cgp);
-        c.addResistor (vcc2, b.plateV1b, 100.0e3);
-        c.addResistor (k2, gnd, 1.5e3);
-        c.addCapacitor (k2, gnd, 6.8e-6);
-        c.setInitialGuess (b.plateV1b, 300.0);
-        c.setInitialGuess (k2, 1.5);
+        // ---------------- block 2: V1b onwards ----------------
+        const auto vcc1 = c.addNode(), vcc2 = c.addNode(), g1b = c.addNode();
+        b.srcV1 = c.addSource (vcc1, v1Guess);
+        b.srcV2 = c.addSource (vcc2, v2Guess);
+        b.srcG1b = c.addSource (g1b, 0.0);
 
-        // V2a: 82K plate (B+3), 680K series from 47nF coupling, 470K grid leak, 120pF enhanced Miller (deliberate
-        // HF roll-off in this high-gain stage), 1.5K/2.2µF cathode.
-        const auto g3 = c.addNode(), k3 = c.addNode(), coup2 = c.addNode();
-        b.plateV2a = c.addNode();
-        c.addCapacitor (b.plateV1b, coup2, 47.0e-9); // 47nF coupling from V1b
-        c.addResistor (coup2, g3, 680.0e3);          // 680K series into V2a grid
-        c.addResistor (g3, gnd, 470.0e3);            // 470K grid leak
-        c.addTriode (b.plateV2a, g3, k3, triode12AX7());
-        c.addCapacitor (g3, b.plateV2a, 120.0e-12);  // 120pF enhanced Miller cap
-        c.addResistor (vcc2, b.plateV2a, 82.0e3);
-        c.addResistor (k3, gnd, 1.5e3);
-        c.addCapacitor (k3, gnd, 2.2e-6);
-        c.setInitialGuess (b.plateV2a, 320.0);
-        c.setInitialGuess (k3, 1.5);
+        // V1b (100K, 1.5K + 6.8uF), its grid driven by Volume 1's wiper.
+        {
+            const auto plate = c.addNode(), k = c.addNode();
+            c.addTriode (plate, g1b, k, triode12AX7());
+            c.addResistor (vcc1, plate, 100.0e3);
+            c.addResistor (k, gnd, 1.5e3);
+            c.addCapacitor (k, gnd, 6.8e-6);
+            c.setInitialGuess (plate, 280.0);
+            c.setInitialGuess (k, 1.5);
+            b.plateV1b = plate;
+        }
 
-        // V2a → V2b coupling: 68K/3.3K voltage divider attenuates V2a's signal to ~4.6% before V2b.
-        // This is deliberate gain structuring -- V2b is a tone-shaping stage, not a gain stage.
-        const auto attenNode = c.addNode();
-        c.addResistor (b.plateV2a, attenNode, 68.0e3);  // 68K series from V2a plate
-        c.addResistor (attenNode, gnd, 3.3e3);           // 3.3K to ground
+        // 47nF -> X (100K to ground). Rhythm: X -> 3.3M || 10pF -> A. Lead: X -> 22nF -> 680K -> Lead Drive (1MA).
+        const auto x = c.addNode();
+        b.x = x;
+        c.addCapacitor (b.plateV1b, x, 47.0e-9);
+        c.addResistor (x, gnd, 100.0e3);
+        c.addResistor (x, gnd, 3.3e6);                           // the rhythm path's load (into V3a's low-Z grid node)
+        const auto c22 = c.addNode(), ld = c.addNode(), g2a = c.addNode();
+        c.addCapacitor (x, c22, 22.0e-9);
+        c.addResistor (c22, ld, 680.0e3);
+        b.rGainTop = c.addResistor (ld, g2a, 0.5e6);
+        b.rGainBot = c.addResistor (g2a, gnd, 0.5e6);
+        b.rLeadMute = c.addResistor (g2a, gnd, 100.0e6);       // grounds the lead signal in Rhythm
 
-        // V2b: 270K plate (B+3), 470K grid leak, 87K unbypassed cathode (the stage's defining element --
-        // very low gain ~2.5x, mostly tone shaping), 250pF enhanced Miller.
-        const auto g4 = c.addNode(), k4 = c.addNode();
-        b.plateV2b = c.addNode();
-        c.addCapacitor (attenNode, g4, 22.0e-9);     // 22nF coupling from attenuator
-        c.addResistor (g4, gnd, 470.0e3);            // 470K grid leak
-        c.addTriode (b.plateV2b, g4, k4, triode12AX7());
-        c.addCapacitor (g4, b.plateV2b, 250.0e-12);  // 250pF enhanced Miller
-        c.addResistor (vcc2, b.plateV2b, 270.0e3);
-        c.addResistor (k4, gnd, 87.0e3);             // 87K UNBYPASSED -- V2b barely amplifies
-        c.setInitialGuess (b.plateV2b, 415.0);       // near supply due to extremely low current (~25µA)
-        c.setInitialGuess (k4, 2.0);
+        // V2a: 470K leak, 120pF grid to cathode, 82K plate, 1.5K + 2.2uF.
+        c.addResistor (g2a, gnd, 470.0e3);
+        {
+            const auto plate = c.addNode(), k = c.addNode();
+            c.addTriode (plate, g2a, k, triode12AX7());
+            c.addCapacitor (g2a, plate, cgp);
+            c.addCapacitor (g2a, k, 120.0e-12);
+            c.addResistor (vcc2, plate, 82.0e3);
+            c.addResistor (k, gnd, 1.5e3);
+            c.addCapacitor (k, gnd, 2.2e-6);
+            c.setInitialGuess (plate, 250.0);
+            c.setInitialGuess (k, 1.5);
+            b.plateV2a = plate;
+        }
 
-        // V3a: 100K plate (B+2), 220K grid leak, 1.5K unbypassed cathode.
-        // The famous 547pF silver mica is the ONLY coupling between V2b and V3a -- it passes only treble
-        // (HP corner ~1.3 kHz with 220K grid leak), creating the tight, articulate lead tone.
-        const auto g5 = c.addNode(), k5 = c.addNode();
-        b.plateV3a = c.addNode();
-        c.addCapacitor (b.plateV2b, g5, 547.0e-12);  // 547pF silver mica -- THE famous IIC+ cap
-        c.addResistor (g5, gnd, 220.0e3);            // 220K grid leak
-        c.addTriode (b.plateV3a, g5, k5, triode12AX7());
-        c.addCapacitor (g5, b.plateV3a, cgp);
-        c.addResistor (vcc3, b.plateV3a, 100.0e3);
-        c.addResistor (k5, gnd, 1.5e3);              // unbypassed
-        c.setInitialGuess (b.plateV3a, 300.0);
-        c.setInitialGuess (k5, 1.5);
+        // V2a's load as block 2 sees it: 22nF -> 270K -> Y (1nF, 68K).
+        {
+            const auto cc = c.addNode(), yy = c.addNode();
+            c.addCapacitor (b.plateV2a, cc, 22.0e-9);
+            c.addResistor (cc, yy, 270.0e3);
+            c.addCapacitor (yy, gnd, 1.0e-9);
+            c.addResistor (yy, gnd, 68.0e3);
+        }
 
-        // V3b: cathode follower (same 12AX7) -- drives the tone stack through a low-impedance output.
-        b.follower = c.addNode();
-        c.addFollower (b.plateV3a, b.follower, followerDrop);
+        // ---------------- block 3: V2b onwards ----------------
+        const auto vcc2b = c3.addNode(), vcc3 = c3.addNode(), v2aIn = c3.addNode(), xIn = c3.addNode();
+        b.src3V2 = c3.addSource (vcc2b, v2Guess);
+        b.srcV3 = c3.addSource (vcc3, v3Guess);
+        b.src3V2a = c3.addSource (v2aIn, 0.0);
+        b.src3X = c3.addSource (xIn, 0.0);
+
+        // 22nF -> 270K -> Y (1nF to ground) -> V2b (68K leak, 270K plate, 3.3K cathode; its 0.22uF switch open).
+        const auto c22b = c3.addNode(), y = c3.addNode(), a = c3.addNode();
+        c3.addCapacitor (v2aIn, c22b, 22.0e-9);
+        c3.addResistor (c22b, y, 270.0e3);
+        c3.addCapacitor (y, gnd, 1.0e-9);
+        c3.addResistor (y, gnd, 68.0e3);
+        b.plateV2b = gainStage (c3, y, vcc2b, 270.0e3, 3.3e3, 0.0, 300.0);
+
+        // Rhythm: X -> 3.3M || 10pF -> A. Lead: 47nF -> 250pF || 220K -> A (87K, 547pF to ground) = V3a's grid.
+        c3.addResistor (xIn, a, 3.3e6);
+        c3.addCapacitor (xIn, a, 10.0e-12);
+        const auto c47 = c3.addNode();
+        c3.addCapacitor (b.plateV2b, c47, 47.0e-9);
+        c3.addResistor (c47, a, 220.0e3);
+        c3.addCapacitor (c47, a, 250.0e-12);
+        c3.addResistor (a, gnd, 87.0e3);
+        c3.addCapacitor (a, gnd, 547.0e-12);
+        b.plateV3a = gainStage (c3, a, vcc3, 100.0e3, 1.5e3, 0.0, 250.0);
+
+        // 47nF -> 47K -> M (Lead Master 250KA rheostat to ground) -> 150K -> 22nF -> V3b follower (cathode 1.5K +
+        // 100K, 470K grid leak bootstrapped from their junction). Bancika's drawing also shunts N with 4.7K: that is
+        // the ~-30 dB line-level output pad of his stand-alone preamp build; in the amp the follower drives the
+        // Master and phase inverter at full level, so it is left out.
+        const auto c47b = c3.addNode(), m = c3.addNode(), n = c3.addNode(), g3b = c3.addNode(), kTap = c3.addNode();
+        c3.addCapacitor (b.plateV3a, c47b, 47.0e-9);
+        c3.addResistor (c47b, m, 47.0e3);
+        b.rLeadMaster = c3.addResistor (m, gnd, 250.0e3);
+        c3.addResistor (m, n, 150.0e3);
+        c3.addCapacitor (n, g3b, 22.0e-9);
+        b.follower = c3.addNode();
+        c3.addFollower (g3b, b.follower, bootstrappedFollowerDrop (v3Guess));
+        c3.addResistor (b.follower, kTap, 1.5e3);
+        c3.addResistor (kTap, gnd, 100.0e3);
+        c3.addResistor (g3b, kTap, 470.0e3);
         return b;
     }
 }
@@ -237,8 +292,7 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     auto channel = std::make_unique<juce::AudioParameterFloat> (
         "mk2c_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-        { return juce::roundToInt (v) == 0 ? juce::String ("Clean") : juce::String ("Lead"); }));
-    auto gain = make ("mk2c_gain", "Gain", 0.5f);
+        { return juce::roundToInt (v) == 0 ? juce::String ("Rhythm") : juce::String ("Lead"); }));
     auto makeSw = [] (const char* id, const char* name)
     {
         return std::make_unique<juce::AudioParameterFloat> (
@@ -246,14 +300,17 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
             juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
             { return v < 0.5f ? juce::String ("Off") : juce::String ("On"); }));
     };
+    auto volume1 = make ("mk2c_volume1", "Volume 1", 0.5f);
     auto pullBright = makeSw ("mk2c_pull_bright", "Pull Bright");
-    auto pullDeep = makeSw ("mk2c_pull_deep", "Pull Deep");
-    auto pullShift = makeSw ("mk2c_pull_shift", "Pull Shift");
     auto treble = make ("mk2c_treble", "Treble", 0.5f);
-    auto mid = make ("mk2c_mid", "Mid", 0.5f);
+    auto pullShift = makeSw ("mk2c_pull_shift", "Pull Shift");
     auto bass = make ("mk2c_bass", "Bass", 0.5f);
-    auto presence = make ("mk2c_presence", "Presence", 0.3f);
+    auto mid = make ("mk2c_mid", "Middle", 0.5f);
     auto master = make ("mk2c_master", "Master", 0.5f);
+    auto pullDeep = makeSw ("mk2c_pull_deep", "Pull Deep");
+    auto gain = make ("mk2c_gain", "Lead Drive", 0.5f);
+    auto leadMaster = make ("mk2c_lead_master", "Lead Master", 0.5f);
+    auto presence = make ("mk2c_presence", "Presence", 0.3f);
     auto output = make ("mk2c_output", "Output", 0.5f);
     auto geqMake = [] (const char* id, const char* name)
     {
@@ -270,7 +327,7 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     auto geq750 = geqMake ("mk2c_geq750", "750 Hz");
     auto geq2200 = geqMake ("mk2c_geq2200", "2200 Hz");
     auto geq6600 = geqMake ("mk2c_geq6600", "6600 Hz");
-    auto power = make ("mk2c_power", "Power Drive", 0.5f);
+    auto power = make ("mk2c_power", "Power Drive", 1.0f); // synthetic; 1.0 = neutral (the real Master is on page 1)
     auto bias = make ("mk2c_bias", "Bias", 0.5f);
     auto feel = make ("mk2c_tube_feel", "Tube Feel", 1.0f);
     auto speaker = std::make_unique<juce::AudioParameterFloat> (
@@ -281,7 +338,9 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
         }));
 
     channelParam = channel.get();
+    volume1Param = volume1.get();
     gainParam = gain.get();
+    leadMasterParam = leadMaster.get();
     pullBrightParam = pullBright.get();
     pullDeepParam = pullDeep.get();
     pullShiftParam = pullShift.get();
@@ -303,15 +362,17 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "mk2cplus", "Mark IIC+-Style Amplifier", "|", std::move (channel));
-    group->addChild (std::move (gain));
+    group->addChild (std::move (volume1));
     group->addChild (std::move (pullBright));
-    group->addChild (std::move (pullDeep));
-    group->addChild (std::move (pullShift));
     group->addChild (std::move (treble));
-    group->addChild (std::move (mid));
+    group->addChild (std::move (pullShift));
     group->addChild (std::move (bass));
-    group->addChild (std::move (presence));
+    group->addChild (std::move (mid));
     group->addChild (std::move (master));
+    group->addChild (std::move (pullDeep));
+    group->addChild (std::move (gain));
+    group->addChild (std::move (leadMaster));
+    group->addChild (std::move (presence));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("mk2c_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
@@ -378,55 +439,31 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.sF, 416.0);
     }
 
-    // ================================================================ preamp (two-pass for cathode follower DC offset)
+    // ================================================================ preamp: V1a -> tone stack -> Volume 1 -> ... -> V3b
     {
-        auto probe = buildPreamp (ch.pre, 0.0, 416.0, 418.0, 420.0);
-        ch.pre.prepare (48000.0);
-        const double plate = ch.pre.voltage (probe.plateV3a);
-        const double drop = plate - cathodeFollowerDc (420.0, plate);
-        ch.pre = NodalCircuit {};
-        auto b = buildPreamp (ch.pre, drop, 416.0, 418.0, 420.0);
-        ch.pSrcV1 = b.srcV1;
-        ch.pSrcV2 = b.srcV2;
-        ch.pSrcV3 = b.srcV3;
-        ch.pSrcIn = b.srcIn;
-        ch.rGainTop = b.rGainTop;
-        ch.rGainBot = b.rGainBot;
-        ch.rBrightSeries = b.rBrightSeries;
-        ch.rV1bSeries = b.rV1bSeries;
-        ch.pGainWiper = b.gainWiper;
-        ch.pPlateV1a = b.plateV1a;
-        ch.pPlateV1b = b.plateV1b;
-        ch.pPlateV2a = b.plateV2a;
-        ch.pPlateV2b = b.plateV2b;
-        ch.pPlateV3a = b.plateV3a;
-        ch.pFollower = b.follower;
+        auto b = buildPreamp (ch.pre0, ch.pre, ch.pre2, 416.0, 418.0, 420.0);
+        ch.p2SrcV2 = b.src3V2;  ch.p2SrcV3 = b.srcV3;  ch.p2SrcV2a = b.src3V2a;  ch.p2SrcX = b.src3X;  ch.pX = b.x;
+        ch.p0SrcV1 = b.src0V1;  ch.p0SrcIn = b.srcIn;  ch.p0Wiper = b.wiper;  ch.pSrcG1b = b.srcG1b;
+        ch.pSrcV1 = b.srcV1;  ch.pSrcV2 = b.srcV2;
+        ch.rTrebleTop = b.rTrebleTop;  ch.rTrebleBottom = b.rTrebleBottom;  ch.rBass = b.rBass;  ch.rMid = b.rMid;
+        ch.capBass = b.capBass;  ch.capMid = b.capMid;
+        ch.rVol1Top = b.rVol1Top;  ch.rVol1Bot = b.rVol1Bot;  ch.rBrightSeries = b.rBrightSeries;
+        ch.rGainTop = b.rGainTop;  ch.rGainBot = b.rGainBot;  ch.rLeadMute = b.rLeadMute;  ch.rLeadMaster = b.rLeadMaster;
+        ch.pPlateV1a = b.plateV1a;  ch.pPlateV1b = b.plateV1b;  ch.pPlateV2a = b.plateV2a;  ch.pPlateV2b = b.plateV2b;
+        ch.pPlateV3a = b.plateV3a;  ch.pFollower = b.follower;  ch.pToneOut = b.toneOut;
     }
 
-    // ================================================================ tone stack (Fender TMB, always built and solved)
-    // Mark IIC+ tone stack: 47K slope, 250pF treble, 22nF bass, 22nF mid. Treble 250K, Mid 25K, Bass 250K (linear).
+    // ================================================================ V3b's output -> Master (1MA) -> PI input (always built)
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
         const auto cf = c.addNode();
         ch.wSrcCf = c.addSource (cf, 0.0);
-
-        const auto ti = c.addNode(), top = c.addNode(), nB = c.addNode(), nT = c.addNode(), nM = c.addNode(), nMw = c.addNode();
-        ch.wToneIn = ti;
+        ch.wToneIn = c.addNode();
+        c.addResistor (cf, ch.wToneIn, cathodeFollowerImpedance);
         ch.wTone = c.addNode();
-        c.addResistor (cf, ti, cathodeFollowerImpedance);
-        c.addCapacitor (ti, top, 250.0e-12);             // 250pF treble coupling cap
-        c.addResistor (ti, nB, 47.0e3);                  // 47K slope resistor
-        ch.rTrebleTop = c.addResistor (top, ch.wTone, 125.0e3);   // Treble 250K linear, split
-        ch.rTrebleBottom = c.addResistor (ch.wTone, nT, 125.0e3);
-        ch.capMidBass = c.addCapacitor (nB, nT, 22.0e-9);  // 22nF bass coupling cap (Pull Shift: 4.7nF)
-        ch.rBass = c.addResistor (nT, nM, 125.0e3);      // Bass 250K linear (rheostat)
-        ch.rMidTop = c.addResistor (nM, nMw, 12.5e3);    // Mid 25K linear, split
-        ch.rMidBottom = c.addResistor (nMw, gnd, 12.5e3);
-        ch.capMidMid = c.addCapacitor (nB, nMw, 22.0e-9); // 22nF mid coupling cap (Pull Shift: 4.7nF)
-
-        // Master: 250KA rheostat from tone stack output to ground, before the PI coupling cap.
-        ch.rMaster = c.addResistor (ch.wTone, gnd, 125.0e3);
+        ch.rMasterTop = c.addResistor (ch.wToneIn, ch.wTone, 0.5e6);
+        ch.rMaster = c.addResistor (ch.wTone, gnd, 0.5e6);
     }
 
     // ================================================================ phase inverter, power amp (full reference only)
@@ -546,29 +583,37 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
 void MarkIICPlusStyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
-    const double trebleBottom = juce::jmax (1.0, 250.0e3 * k.treble);
+    const double trebleBottom = juce::jmax (1.0, 250.0e3 * k.treble);           // 250KB
     const double trebleTop = juce::jmax (1.0, 250.0e3 - trebleBottom);
-    const double bassR = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass));
-    const double midBottom = juce::jmax (1.0, 25.0e3 * k.mid);
-    const double midTop = juce::jmax (1.0, 25.0e3 - midBottom);
+    const double bassR = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass));       // 250KA rheostat
+    const double midR = juce::jmax (1.0, 10.0e3 * k.mid);                        // 10KB rheostat
+    const double vol1Bottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volume1)); // 1MA
+    const double gainBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.gain));    // Lead Drive 1MA
+    // Lead Master 250KA (rheostat): only in the lead path; in Rhythm the real amp's switching takes it out.
+    const double leadMasterR = k.channel == 1 ? juce::jmax (1.0, 250.0e3 * pots::audio (k.leadMaster)) : 250.0e3;
+    const double masterBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.master)); // Master 1MA
     const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
     const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
-    const double masterR = juce::jmax (1.0, 250.0e3 * pots::audio (k.master));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
 
     for (auto& ch : channels)
     {
-        const double gainBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.gain));
-        ch.pre.setResistance (ch.rGainBot, gainBottom);
-        ch.pre.setResistance (ch.rGainTop, juce::jmax (1.0, 1.0e6 - gainBottom));
-        ch.power.setResistance (ch.rTrebleTop, trebleTop);
-        ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
-        ch.power.setResistance (ch.rBass, bassR);
-        ch.power.setResistance (ch.rMidTop, midTop);
-        ch.power.setResistance (ch.rMidBottom, midBottom);
-        ch.power.setResistance (ch.rMaster, masterR);
+        auto& p0 = ch.pre0;
+        p0.setResistance (ch.rTrebleTop, trebleTop);
+        p0.setResistance (ch.rTrebleBottom, trebleBottom);
+        p0.setResistance (ch.rBass, bassR);
+        p0.setResistance (ch.rMid, midR);
+        p0.setResistance (ch.rVol1Bot, vol1Bottom);
+        p0.setResistance (ch.rVol1Top, juce::jmax (1.0, 1.0e6 - vol1Bottom));
+        auto& p = ch.pre;
+        p.setResistance (ch.rGainBot, gainBottom);
+        p.setResistance (ch.rGainTop, juce::jmax (1.0, 1.0e6 - gainBottom));
+        p.setResistance (ch.rLeadMute, k.channel == 1 ? 100.0e6 : 1.0);
+        ch.pre2.setResistance (ch.rLeadMaster, leadMasterR);
+        ch.power.setResistance (ch.rMaster, masterBottom);
+        ch.power.setResistance (ch.rMasterTop, juce::jmax (1.0, 1.0e6 - masterBottom));
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
@@ -619,7 +664,9 @@ void MarkIICPlusStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 void MarkIICPlusStyleAmplifierProcessor::recover (Channel& ch) const
 {
     ++recoveries;
+    ch.pre0.restoreDynamicState (ch.pre0Rest);
     ch.pre.restoreDynamicState (ch.preRest);
+    ch.pre2.restoreDynamicState (ch.pre2Rest);
     ch.power.restoreDynamicState (ch.powerRest);
     ch.supply.restoreDynamicState (ch.supplyRest);
     ch.screenDropA = ch.screenDropB = 0.0;
@@ -648,9 +695,11 @@ void MarkIICPlusStyleAmplifierProcessor::updateSupply (Channel& ch) const
         ch.power.setSource (ch.wSrcCt, rail (ch.sA, 560.0));
         ch.power.setSource (ch.wSrcPi, rail (ch.sC, 520.0));
     }
-    ch.pre.setSource (ch.pSrcV3, rail (ch.sD, 480.0));   // V3a/V3b from B+2
-    ch.pre.setSource (ch.pSrcV2, rail (ch.sE, 480.0));   // V1b/V2a/V2b from B+3
-    ch.pre.setSource (ch.pSrcV1, rail (ch.sF, 480.0));   // V1a from B+4
+    ch.pre2.setSource (ch.p2SrcV3, rail (ch.sD, 480.0)); // V3a/V3b from B+2
+    ch.pre.setSource (ch.pSrcV2, rail (ch.sE, 480.0));   // V2a from B+3
+    ch.pre2.setSource (ch.p2SrcV2, rail (ch.sE, 480.0)); // V2b from B+3
+    ch.pre.setSource (ch.pSrcV1, rail (ch.sF, 480.0));   // V1a/V1b from B+4
+    ch.pre0.setSource (ch.p0SrcV1, rail (ch.sF, 480.0));
     ch.vScreen = rail (ch.sB, 560.0);
 }
 
@@ -679,13 +728,13 @@ double MarkIICPlusStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
     const auto& ch = channels[0];
     switch (p)
     {
-        case Probe::v1aPlate: return ch.pre.voltage (ch.pPlateV1a);
+        case Probe::v1aPlate: return ch.pre0.voltage (ch.pPlateV1a);
         case Probe::v1bPlate: return ch.pre.voltage (ch.pPlateV1b);
         case Probe::v2aPlate: return ch.pre.voltage (ch.pPlateV2a);
-        case Probe::v2bPlate: return ch.pre.voltage (ch.pPlateV2b);
-        case Probe::v3aPlate: return ch.pre.voltage (ch.pPlateV3a);
-        case Probe::followerOut: return ch.pre.voltage (ch.pFollower);
-        case Probe::toneStackOut: return ch.power.voltage (ch.wTone);
+        case Probe::v2bPlate: return ch.pre2.voltage (ch.pPlateV2b);
+        case Probe::v3aPlate: return ch.pre2.voltage (ch.pPlateV3a);
+        case Probe::followerOut: return ch.pre2.voltage (ch.pFollower);
+        case Probe::toneStackOut: return ch.pre0.voltage (ch.pToneOut);
         case Probe::phaseInverterGrid: return ch.power.voltage (ch.wGridA);
         case Probe::phaseInverterPlateA: return ch.power.voltage (ch.wPlateA);
         case Probe::phaseInverterPlateB: return ch.power.voltage (ch.wPlateB);
@@ -753,6 +802,8 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
         s.reset (newSampleRate, seconds);
         s.setCurrentAndTargetValue (p->get());
     };
+    setup (smoothedVolume1, volume1Param, 0.02);
+    setup (smoothedLeadMaster, leadMasterParam, 0.02);
     setup (smoothedGain, gainParam, 0.02);
     setup (smoothedTreble, trebleParam, 0.02);
     setup (smoothedMid, midParam, 0.02);
@@ -766,8 +817,9 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
 
     idleSupplyCurrent = 0.18;
     appliedSpeaker = matchedSpeaker;
-    updatePots ({ gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
-                  presenceParam->get(), masterParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(), juce::roundToInt (speakerParam->get()) });
+    updatePots ({ volume1Param->get(), gainParam->get(), leadMasterParam->get(), trebleParam->get(), midParam->get(),
+                  bassParam->get(), presenceParam->get(), masterParam->get(), powerParam->get(), biasParam->get(),
+                  tubeFeelParam->get(), juce::roundToInt (speakerParam->get()), juce::roundToInt (channelParam->get()) >= 1 ? 1 : 0 });
 
     dcOk = true;
     for (auto& ch : channels)
@@ -780,13 +832,18 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
         {
             passOk = ch.supply.prepare (supplyRate);
 
-            ch.pre.setSource (ch.pSrcV3, ch.supply.voltage (ch.sD));
+            ch.pre2.setSource (ch.p2SrcV3, ch.supply.voltage (ch.sD));
+            ch.pre2.setSource (ch.p2SrcV2, ch.supply.voltage (ch.sE));
             ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sE));
             ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sF));
+            ch.pre0.setSource (ch.p0SrcV1, ch.supply.voltage (ch.sF));
+            passOk = ch.pre0.prepare (newSampleRate) && passOk;
+            ch.pre.setSource (ch.pSrcG1b, ch.pre0.voltage (ch.p0Wiper));
             passOk = ch.pre.prepare (newSampleRate) && passOk;
-            ch.followerDc = ch.pre.voltage (ch.pFollower);
-            ch.preampTapDc[0] = ch.pre.voltage (ch.pGainWiper);
-            ch.preampTapDc[1] = ch.followerDc;
+            ch.pre2.setSource (ch.p2SrcV2a, ch.pre.voltage (ch.pPlateV2a));
+            ch.pre2.setSource (ch.p2SrcX, ch.pre.voltage (ch.pX));
+            passOk = ch.pre2.prepare (newSampleRate) && passOk;
+            ch.followerDc = ch.pre2.voltage (ch.pFollower);
 
             ch.power.setSource (ch.wSrcCf, ch.followerDc);
             ch.power.setInitialGuess (ch.wToneIn, ch.followerDc);
@@ -811,13 +868,13 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
             }
             // Preamp current draw computation: V3 (V3a from B+2), V2 (V1b/V2a/V2b from B+3), V1 (V1a from B+4)
             const double vV3 = ch.supply.voltage (ch.sD);
-            const double iV3 = (vV3 - ch.pre.voltage (ch.pPlateV3a)) / 100.0e3 + ch.followerDc / 100.0e3;
+            const double iV3 = (vV3 - ch.pre2.voltage (ch.pPlateV3a)) / 100.0e3 + ch.followerDc / 101.5e3;
             const double vV2 = ch.supply.voltage (ch.sE);
-            const double iV2 = (vV2 - ch.pre.voltage (ch.pPlateV1b)) / 100.0e3
-                             + (vV2 - ch.pre.voltage (ch.pPlateV2a)) / 82.0e3
-                             + (vV2 - ch.pre.voltage (ch.pPlateV2b)) / 270.0e3;
+            const double iV2 = (vV2 - ch.pre.voltage (ch.pPlateV2a)) / 82.0e3
+                             + (vV2 - ch.pre2.voltage (ch.pPlateV2b)) / 270.0e3;
             const double vV1 = ch.supply.voltage (ch.sF);
-            const double iV1 = (vV1 - ch.pre.voltage (ch.pPlateV1a)) / 150.0e3;
+            const double iV1 = (vV1 - ch.pre0.voltage (ch.pPlateV1a)) / 150.0e3
+                             + (vV1 - ch.pre.voltage (ch.pPlateV1b)) / 100.0e3;
             ipRun += 0.5 * ((ipA + ipB) - ipRun);
             isRun += 0.5 * ((isA + isB) - isRun);
             iPiRun += 0.5 * (iPi - iPiRun);
@@ -842,10 +899,14 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
             ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
         }
-        ch.pre.setSource (ch.pSrcV3, ch.supply.voltage (ch.sD));
+        ch.pre2.setSource (ch.p2SrcV3, ch.supply.voltage (ch.sD));
+        ch.pre2.setSource (ch.p2SrcV2, ch.supply.voltage (ch.sE));
         ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sE));
         ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sF));
+        ch.pre0.setSource (ch.p0SrcV1, ch.supply.voltage (ch.sF));
+        ch.pre0.saveDynamicState (ch.pre0Rest);
         ch.pre.saveDynamicState (ch.preRest);
+        ch.pre2.saveDynamicState (ch.pre2Rest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.failStreak = 0;
@@ -853,6 +914,8 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.power.solveSample();
+        ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6, ch.power.voltage (ch.wTone));
     }
     updatePots (lastKnobs);
 
@@ -879,6 +942,8 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
     const int numSamples = buffer.getNumSamples();
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
 
+    smoothedVolume1.setTargetValue (volume1Param->get());
+    smoothedLeadMaster.setTargetValue (leadMasterParam->get());
     smoothedGain.setTargetValue (gainParam->get());
     smoothedTreble.setTargetValue (trebleParam->get());
     smoothedMid.setTargetValue (midParam->get());
@@ -893,6 +958,8 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float v1 = smoothedVolume1.getNextValue();
+        const float lm = smoothedLeadMaster.getNextValue();
         const float gn = smoothedGain.getNextValue();
         const float tr = smoothedTreble.getNextValue();
         const float mi = smoothedMid.getNextValue();
@@ -908,18 +975,18 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice });
+            updatePots ({ v1, gn, lm, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice, channelSel });
             const bool brightOn = pullBrightParam->get() >= 0.5f;
             const bool deepOn = pullDeepParam->get() >= 0.5f;
             const bool shiftOn = pullShiftParam->get() >= 0.5f;
             for (auto& ch : channels)
             {
-                ch.pre.setResistance (ch.rV1bSeries, channelSel == 0 ? 100.0e6 : 100.0e3);
-                ch.pre.setResistance (ch.rBrightSeries, brightOn ? 1.0 : 100.0e6);
+                ch.pre0.setResistance (ch.rBrightSeries, brightOn ? 1.0 : 100.0e6);
                 if (! reducedOrder)
                     ch.power.setResistance (ch.rDeepSeries, deepOn ? 1.0 : 100.0e6);
-                ch.power.setCapacitance (ch.capMidBass, shiftOn ? 4.7e-9 : 22.0e-9);
-                ch.power.setCapacitance (ch.capMidMid, shiftOn ? 4.7e-9 : 22.0e-9);
+                // Pull Shift: smaller stack caps move the bass/mid corners up (same 4.7/22 ratio as before).
+                ch.pre0.setCapacitance (ch.capBass, shiftOn ? 0.1e-6 * 4.7 / 22.0 : 0.1e-6);
+                ch.pre0.setCapacitance (ch.capMid, shiftOn ? 0.047e-6 * 4.7 / 22.0 : 0.047e-6);
             }
         }
 
@@ -973,14 +1040,18 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
             auto* data = buffer.getWritePointer (chIdx);
 
             const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
-            ch.pre.setSource (ch.pSrcIn, x);
-            const bool okPre = ch.pre.solveSample();
+            ch.pre0.setSource (ch.p0SrcIn, x);
+            const bool okPre0 = ch.pre0.solveSample();
+            ch.pre.setSource (ch.pSrcG1b, ch.pre0.voltage (ch.p0Wiper));
+            const bool okPre1 = ch.pre.solveSample();
+            ch.pre2.setSource (ch.p2SrcV2a, ch.pre.voltage (ch.pPlateV2a));
+            ch.pre2.setSource (ch.p2SrcX, ch.pre.voltage (ch.pX));
+            const bool okPre = ch.pre2.solveSample() && okPre1 && okPre0;
             bool ok = okPre;
 
-            const NodalCircuit::Node preNode = channelSel == 0 ? ch.pGainWiper : ch.pFollower;
-            const double preDc = ch.preampTapDc[channelSel];
-            const double preAc = ch.pre.voltage (preNode) - preDc;
-            ch.power.setSource (ch.wSrcCf, preDc + masterGain * cathodeFollowerGain * preAc);
+            // Both channels leave the preamp through V3b.
+            const double preAc = ch.pre2.voltage (ch.pFollower) - ch.followerDc;
+            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * preAc);
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
@@ -1011,7 +1082,7 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
                 updateSupply (ch);
             }
 
-            double toneOut = ch.power.voltage (ch.wTone);
+            double toneOut = ch.piCoupling.process (ch.power.voltage (ch.wTone));
             for (int b = 0; b < geqBands; ++b)
             {
                 const auto& c = geqCoeffs[b];
@@ -1036,7 +1107,9 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
                 if (++ch.restRefreshCounter >= restRefreshInterval)
                 {
                     ch.restRefreshCounter = 0;
+                    ch.pre0.saveDynamicState (ch.pre0Rest);
                     ch.pre.saveDynamicState (ch.preRest);
+                    ch.pre2.saveDynamicState (ch.pre2Rest);
                     ch.power.saveDynamicState (ch.powerRest);
                     ch.supply.saveDynamicState (ch.supplyRest);
                 }

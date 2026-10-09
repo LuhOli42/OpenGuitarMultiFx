@@ -1,16 +1,36 @@
 # Mark IIC+-Style Amplifier
 
-A component-level model of the **Mesa/Boogie Mark IIC+** Lead channel, built from a DIY Fever clone schematic
-(by Bancika, diy-fever.com — the closest available component-level reference for this amp). The Mark IIC+ is
-arguably the most revered high-gain amplifier ever built, defining the modern "Mesa" lead tone heard on
-countless metal and progressive rock recordings from the mid-1980s onward.
+A component-level model of the **Mesa/Boogie Mark IIC+**, built from Bancika's "Mesa Mark IIc+ inspired preamp"
+(diy-fever.com, `mesa_IIc_preamp.png`) -- the closest available component-level reference.
 
 Display name: **Mark IIC+-Style Amplifier** (trademark-safe convention).
 
-## Architecture
+## 2026-10-08 rebuild (read first; supersedes the stage list below)
+The first version misread that drawing: it took "1nF -> 250KB" (V1a's plate -> the TREBLE pot) for "1nF coupling ->
+Gain pot", put a Fender stack AFTER the cascade, and read V2b's 3.3K cathode resistor as a "68K/3.3K divider" and
+V3a's 87K grid leak as V2b's cathode. The Mark's defining trait is the opposite: **the tone stack right after V1a**,
+so the EQ shapes the signal before the cascade distorts it. Now, as drawn:
+* **V1a** (150K, 1.5K + 0.47uF; the drawing's switchable 6.8uF bypass left open) -> **tone stack**: 1nF -> Treble
+  250KB, 100K slope, 0.1uF -> Bass 250KA (rheostat), 0.047uF -> Middle 10KB (rheostat). Pull Shift scales both
+  coupling caps by 4.7/22 (the old model's ratio; the drawing has no shift switch).
+* **Volume 1** (1MA, Pull Bright = 470 pF across it) -> **V1b** (100K, 1.5K + 6.8uF) -> 47nF -> X (100K).
+* **Rhythm**: X -> 3.3M || 10pF -> A. **Lead**: X -> 22nF -> 680K -> **Lead Drive** (1MA) -> V2a (470K, 120pF grid ->
+  cathode, 82K, 1.5K + 2.2uF) -> 22nF -> 270K -> Y (1nF, 68K) -> V2b (270K, 3.3K; its 0.22uF switch open) -> 47nF ->
+  250pF || 220K -> A. In Rhythm the Lead Drive's output is grounded (the real amp's channel switching).
+* **A** (87K, 547pF) = V3a's grid; V3a (100K, 1.5K) -> 47nF -> 47K -> **Lead Master** (250KA rheostat; forced to
+  full in Rhythm) -> 150K -> 22nF -> **V3b** follower (1.5K + 100K, 470K grid leak bootstrapped from their junction;
+  ideal follower whose grid-cathode DC is solved by `bootstrappedFollowerDrop()`).
+* **Left out on purpose**: Bancika's 4.7K shunt after the 150K is the line-level output pad of his stand-alone
+  preamp (~-30 dB); in the amp V3b drives the Master and PI at full level.
+* Power block: V3b -> **Master** (1MA divider) -> PI (4x6L6, NFB with Presence/Pull Deep), unchanged otherwise;
+  reducedOrder reads the PI grid through `CouplingCapHighpass` (0.022uF / 1M).
+* **Three solver blocks** (CPU 15.6% -> 13.0%): V1a + stack + Volume 1 (V1b's ~61 x cgp Miller input capacitance
+  kept as the wiper's load) -> V1b/V2a -> V2b/V3a/V3b. Both cuts are where the next stage sits behind a high
+  impedance (V1b's grid; 270K and 3.3M into V2b/V3a), so they are feed-forward and near-exact.
+* Power Drive (synthetic) defaults to 1.0. Registry trim +13.23 -> -11.79 dB.
 
-**Lead channel only** is modelled, as the amp's defining voice. The Clean and Rhythm channels are not
-implemented.
+Measured (AmpDynamicsBench): Rhythm clean over most of Volume 1, crunch from ~8 (5%), 18% fully up with a hot
+input; Lead from crunch at Drive 2 (20%) to full saturation (39%).
 
 ### Preamp (five cascaded 12AX7 gain stages)
 

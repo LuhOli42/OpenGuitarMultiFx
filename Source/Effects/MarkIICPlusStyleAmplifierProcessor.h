@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -10,26 +11,20 @@ namespace openguitarmultifx
 {
 
 /**
-    A Mesa/Boogie Mark IIC+-style guitar amplifier, modelled at component level on NodalCircuit from a DIY-Fever
-    clone schematic (by Bancika, diy-fever.com -- the closest available component-level reference for this amp;
-    docs/circuits/MarkIICPlus.md -- read that file to understand this processor). The Mark IIC+ is arguably the
-    most revered high-gain amplifier ever built, defining the modern "Mesa" lead tone heard on countless metal and
-    progressive rock recordings from the mid-1980s onward.
+    A Mesa/Boogie Mark IIC+-style guitar amplifier, modelled at component level on NodalCircuit from Bancika's
+    "Mark IIc+ inspired preamp" (diy-fever.com) -- docs/circuits/MarkIICPlus.md. Rebuilt 2026-10-08 to that drawing's
+    topology: the defining Mark trait is the tone stack RIGHT AFTER the first stage, so the EQ shapes the signal
+    before the cascade distorts it.
 
-    Both channels are modelled: the CLEAN channel bypasses V1b through V3a (taps from the Gain pot wiper,
-    giving a single-stage clean tone from V1a only), and the LEAD channel uses all five cascaded gain stages
-    for the amp's defining high-gain voice. Channel switching is via a switchable series resistor on V1b's
-    grid in the netlist.
+    Preamp: V1a -> Treble 250KB / Bass 250KA / Middle 10KB stack (Pull Shift swaps its caps) -> Volume 1 (1MA, Pull
+    Bright) -> V1b. Rhythm: V1b -> 3.3M || 10pF -> V3a. Lead adds V1b -> 680K -> Lead Drive (1MA) -> V2a (120pF, 82K)
+    -> 270K / 1nF -> V2b (270K plate, 3.3K cathode) -> 250pF || 220K -> V3a's grid (87K, 547pF). V3a -> 47K -> Lead
+    Master (250KA) -> 150K / 4.7K -> V3b cathode follower. In Rhythm the Lead Drive's output is grounded (the real
+    amp's channel switching). Then Master -> phase inverter (4x6L6, global feedback with Presence and Pull Deep).
 
-    Architecture: up to FIVE cascaded 12AX7 gain stages (V1a -> [V1b -> V2a -> V2b -> V3a]), with a unique
-    inter-stage gain/EQ network between V1a and V1b (the "Mark series" character -- multiple coupling caps
-    and pots that shape the frequency content BEFORE the high-gain stages), a Fender-derived TMB tone stack,
-    a cathode-follower output buffer (V3b), a 12AX7 long-tailed-pair phase inverter with global negative
-    feedback, and four 6L6GC beam tetrodes as two push-pull pairs in a fixed-bias output stage.
-
-    Controls, page 1: Channel (Clean / Lead), Gain (Lead Drive, 1MA), Treble, Bass, Mid, Presence, Master,
-    and the pull switches (Bright, Deep, Shift). Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16
-    ohm), Output. Page 3: the 5-band graphic EQ.
+    Controls, page 1 -- the real panel: Channel (Rhythm / Lead), Volume 1, Pull Bright, Treble, Pull Shift, Bass,
+    Middle, Master, Pull Deep, Lead Drive, Lead Master, Presence. Page 2 (synthetic): Power Drive, Bias, Tube Feel,
+    Speaker (4 / 8 / 16 ohm), Output. Page 3: the 5-band graphic EQ.
 */
 class MarkIICPlusStyleAmplifierProcessor : public EffectProcessor
 {
@@ -97,19 +92,25 @@ private:
         double lastEmitted = 0.0, declick = 0.0;
         bool alignOutput = false;
 
-        // preamp: five cascaded 12AX7 sections (V1a -> V1b -> V2a -> V2b -> V3a + V3b follower)
-        int pSrcV1 = 0, pSrcV2 = 0, pSrcV3 = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0, rBrightSeries = 0, rV1bSeries = 0;
-        NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pPlateV2b = 0, pPlateV3a = 0, pFollower = 0, pGainWiper = 0;
+        // preamp block 1 (pre0): V1a -> tone stack -> Volume 1; block 2 (pre): V1b -> (rhythm | lead V2a/V2b) -> V3a ->
+        // Lead Master -> V3b follower. V1b's grid draws ~no current, so block 1's wiper drives block 2 directly.
+        // Block 3 (pre2): V2b -> V3a -> Lead Master -> V3b, fed by V2a's plate through the 22nF/270K it sees anyway
+        // and by the rhythm path's 3.3M (both high-impedance couplings, so splitting there is near-exact).
+        NodalCircuit pre0, pre2;
+        NodalCircuit::DynamicState pre0Rest, pre2Rest;
+        int p0SrcV1 = 0, p0SrcIn = 0, pSrcG1b = 0, p2SrcV2 = 0, p2SrcV3 = 0, p2SrcV2a = 0, p2SrcX = 0;
+        NodalCircuit::Node p0Wiper = 0, pX = 0;
+        int pSrcV1 = 0, pSrcV2 = 0;
+        int rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMid = 0, capBass = 0, capMid = 0;
+        int rVol1Top = 0, rVol1Bot = 0, rBrightSeries = 0;
+        int rGainTop = 0, rGainBot = 0, rLeadMute = 0, rLeadMaster = 0;
+        NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pPlateV2b = 0, pPlateV3a = 0, pFollower = 0, pToneOut = 0;
         double followerDc = 0.0;
-        double preampTapDc[2] = {};  // DC for [gainWiper (Clean), follower (Lead)]
 
         // power section
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
-        int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMaster = 0, rDeepSeries = 0;
-        int capMidBass = 0, capMidMid = 0;
+        int rFeedback = 0, rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMasterTop = 0, rMaster = 0, rDeepSeries = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wOut = 0, wPlateA = 0, wPlateB = 0, wGridA = 0, wTail = 0,
                            wTone = 0, wPP1 = 0, wPP2 = 0, wPowerGridA = 0, wBias = 0, wFeedback = 0;
@@ -118,6 +119,7 @@ private:
 
         // reducedOrder behavioural power stage state
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, iF = 0, srcVoc = 0;
@@ -131,8 +133,8 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double gain, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
-        int speaker;
+        double volume1, gain, leadMaster, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
+        int speaker, channel;
     };
     void updatePots (const Knobs& k);
     void recover (Channel& ch) const;
@@ -155,7 +157,9 @@ private:
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* channelParam = nullptr;
-    juce::AudioParameterFloat* gainParam = nullptr;
+    juce::AudioParameterFloat* volume1Param = nullptr;
+    juce::AudioParameterFloat* gainParam = nullptr;         // Lead Drive (id kept for presets)
+    juce::AudioParameterFloat* leadMasterParam = nullptr;
     juce::AudioParameterFloat* pullBrightParam = nullptr;
     juce::AudioParameterFloat* pullDeepParam = nullptr;
     juce::AudioParameterFloat* pullShiftParam = nullptr;
@@ -171,7 +175,7 @@ private:
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
+    juce::SmoothedValue<float> smoothedVolume1, smoothedLeadMaster, smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
     static constexpr int geqBands = 5;
