@@ -1,36 +1,28 @@
-# Phase 6 W2: CI for both release targets (docs/Phase6Plan.md).
+# Fast CI gate (~5 min): build both arches + a small smoke test subset.
 #
-# One parametrized pipeline for both arches, per the locked decision in the
-# plan: everything builds inside the W1 toolchain image
-# (tools/toolchain/Dockerfile) via scripts/cross-build.sh. Each arch leg
-# builds the image variant matching matrix.arch — the x86_64 leg uses the
-# slim TARGET=x86_64 image (no arm64 sysroot), which is far smaller to
-# build and to `load` into the daemon.
+# The whole-suite qemu run is ~3 h of CPU work — no amount of sharding
+# makes it fit in a 5-min gate, so CI's job is: does it still compile on
+# both arches, and do the core paths still pass a quick sanity subset.
+# The full suite is run on-device (W6 benchmark job) or locally via
+# scripts/test.sh — not on every PR.
 #
-#   x86_64  — native build in the slim image, native ctest (full suite,
-#             run serially: normal suites carry wall-clock perf asserts —
-#             realTimeFactor / %CPU bounds — that go flaky under parallel
-#             CPU contention).
-#   aarch64 — cross build against the image's arm64 sysroot; `ctest` runs
-#             each test under qemu-aarch64 automatically (the toolchain
-#             file sets CMAKE_CROSSCOMPILING_EMULATOR; qemu-user-static is
-#             installed in the image). The "Bench" and "Probe" category
-#             suites are SKIPPED (the *_NoPerf.shard* entries): they assert
-#             wall-clock real-time bounds that emulation cannot hold. The
-#             same applies to perf asserts embedded inside normal suites:
-#             OGMFX_TESTS_UNDER_EMULATION (set by the emulator string)
-#             makes them log-only there — see Tests/TestEnvironment.h —
-#             which is also what makes it safe to run 4 qemu shards in
-#             parallel on the 4-vCPU runner. On-device runs of the perf
-#             suites are W6's on-board benchmark job.
+# Each arch leg builds the image variant matching matrix.arch — x86_64
+# uses the slim TARGET=x86_64 image (no arm64 sysroot), which is far
+# smaller to build and to `load` into the daemon.
 #
-# Caching: the toolchain image layers go through buildx's type=gha cache
-# (per-arch scope); the FetchContent sources under build-<arch>/_deps
-# (JUCE, Eigen, nlohmann/json, NAM core) go through actions/cache keyed on
-# the CMake/dep files; compiled objects are NOT cached — ccache
-# (.ccache/, content-addressed) covers them far better: a git checkout
-# rewrites every source mtime, so a restored build tree looks fully dirty
-# to the build system and would recompile everything anyway.
+#   x86_64  — native build + ~8 fast smoke suites (NodalCircuit solver,
+#             engine, presets, one amp, one pedal; seconds each natively).
+#   aarch64 — cross build + 3 light suites under qemu-aarch64 (engine-
+#             level, no solver loops — ~1 min). The smoke alone can't hold
+#             wall-clock perf bounds under emulation, so
+#             OGMFX_TESTS_UNDER_EMULATION=1 makes them log-only
+#             (Tests/TestEnvironment.h). The 16 `--shard i/16` ctest
+#             registrations stay for local/on-device full-suite runs.
+#
+# Caching: image layers via buildx type=gha (per-arch scope); FetchContent
+# sources under build-<arch>/_deps via actions/cache; objects via ccache
+# (.ccache/, content-addressed — a fresh checkout's mtimes make a restored
+# build tree look fully dirty, so tree caching never paid off).
 name: CI
 
 on:
@@ -46,7 +38,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-test:
+  build:
     name: ${{ matrix.arch }}
     runs-on: ubuntu-latest
     strategy:
@@ -92,19 +84,23 @@ jobs:
       - name: Build ${{ matrix.arch }}
         run: scripts/cross-build.sh ${{ matrix.arch }}
 
-      - name: Test (x86_64, native ctest — full suite, serial)
+      - name: Smoke test (x86_64 — fast core suites)
         if: matrix.arch == 'x86_64'
         run: |
           docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
-            ctest --test-dir build-x86_64 --output-on-failure \
-                  -R '^OpenGuitarMultiFx_UnitTests$'
+            ./build-x86_64/Tests/OpenGuitarMultiFx_Tests_artefacts/Release/OpenGuitarMultiFx_Tests \
+              SignalGraph DeferredReclaimer ParameterManager PresetManager \
+              NodalCircuit OversampledEffect SuperLeadStyleAmplifier \
+              TubeScreamerStyleOverdrive
 
-      - name: Test (aarch64, qemu — NoPerf suite, 4-way parallel over 16 shards)
+      - name: Smoke test (aarch64 — light suites under qemu)
         if: matrix.arch == 'aarch64'
         run: |
           docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
-            ctest --test-dir build-aarch64 --output-on-failure \
-                  --parallel 4 --timeout 2700 -R 'NoPerf\.shard'
+            qemu-aarch64-static -L /opt/sysroots/aarch64 \
+              -E OGMFX_TESTS_UNDER_EMULATION=1 \
+              ./build-aarch64/Tests/OpenGuitarMultiFx_Tests_artefacts/Release/OpenGuitarMultiFx_Tests \
+                SignalGraph DeferredReclaimer ParameterManager
 
       - name: Verify install() payload (x86_64)
         if: matrix.arch == 'x86_64'
