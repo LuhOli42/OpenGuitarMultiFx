@@ -37,6 +37,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   EVH5150StyleAmplifierProcessorTests.cpp
   ENGLPowerballStyleAmplifierProcessorTests.cpp
   RockerverbStyleAmplifierProcessorTests.cpp
+  SVTStyleAmplifierProcessorTests.cpp
   ChannelKnobMemoryTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
@@ -73,6 +74,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RePrepareTransparencyTests.cpp
   OversampledEffectTests.cpp
   PedalUnityLevelTests.cpp
+  AmpAudibleOutputTests.cpp
   PedalDiagnostics.cpp
   NamPedalCompare.cpp
   MixLawTests.cpp
@@ -165,6 +167,7 @@ set(OGMFX_SOURCES
   ../Source/Effects/EVH5150StyleAmplifierProcessor.cpp
   ../Source/Effects/ENGLPowerballStyleAmplifierProcessor.cpp
   ../Source/Effects/RockerverbStyleAmplifierProcessor.cpp
+  ../Source/Effects/SVTStyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp
