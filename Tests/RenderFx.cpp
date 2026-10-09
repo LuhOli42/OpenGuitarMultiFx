@@ -2,7 +2,11 @@
 // result. Meant for listening sessions -- the same processor code that runs live,
 // driven from a file instead of the sound card.
 //
-//   OpenGuitarMultiFx_RenderFx <in.wav> <out.wav> <EffectKey> [param=value ...] [--quality=eco|balanced|high]
+//   OpenGuitarMultiFx_RenderFx <in.wav> <out.wav> <EffectKey> [param=value ...] [--quality=eco|balanced|high] [--raw]
+//
+// Output is 16-bit WAV (plays in every player; some reject 24-bit) normalized to
+// a -1 dBFS peak so renders are audible without cranking the listener's volume.
+// Pass --raw to write the untouched processor output instead (for measurement).
 //
 // Each param=value is matched (case-insensitive) against paramID then display name.
 // Values are in the parameter's own units: knob range for AudioParameterFloat,
@@ -44,7 +48,7 @@ int main (int argc, char* argv[])
 
     if (args.size() < 3)
     {
-        std::cerr << "usage: RenderFx <in.wav> <out.wav> <EffectKey> [param=value ...] [--quality=eco|balanced|high]\n";
+        std::cerr << "usage: RenderFx <in.wav> <out.wav> <EffectKey> [param=value ...] [--quality=eco|balanced|high] [--raw]\n";
         return 2;
     }
 
@@ -55,11 +59,16 @@ int main (int argc, char* argv[])
     registerBuiltInEffects (registry);
 
     auto quality = EffectRegistry::OversamplingQuality::high;
+    bool raw = false;
     juce::Array<std::pair<juce::String, double>> assignments;
     for (int i = 3; i < args.size(); ++i)
     {
         const auto& a = args[i];
-        if (a.startsWithIgnoreCase ("--quality="))
+        if (a.equalsIgnoreCase ("--raw"))
+        {
+            raw = true;
+        }
+        else if (a.startsWithIgnoreCase ("--quality="))
         {
             const auto v = a.fromLastOccurrenceOf ("=", false, false).toLowerCase();
             quality = v.startsWith ("eco") ? EffectRegistry::OversamplingQuality::eco
@@ -106,19 +115,22 @@ int main (int argc, char* argv[])
         fx->process (slice);
     }
 
+    float peak = buf.getMagnitude (0, 0, n);
+    if (! raw && peak > 0.0f)
+        buf.applyGain (0.89f / peak); // peak-normalize to -1 dBFS so renders play audibly everywhere
+
     outFile.deleteFile();
     std::unique_ptr<juce::FileOutputStream> os (outFile.createOutputStream());
     if (os == nullptr) { std::cerr << "cannot write " << outFile.getFullPathName() << "\n"; return 1; }
     juce::WavAudioFormat wav;
     std::unique_ptr<juce::AudioFormatWriter> w (
-        wav.createWriterFor (os.get(), reader->sampleRate, (unsigned) chs, 24, {}, 0));
+        wav.createWriterFor (os.get(), reader->sampleRate, (unsigned) chs, 16, {}, 0));
     if (w == nullptr) { std::cerr << "cannot create wav writer\n"; return 1; }
     os.release();
     w->writeFromAudioSampleBuffer (buf, 0, n);
 
-    float peak = buf.getMagnitude (0, 0, n);
     std::cout << fx->getName() << " | " << inFile.getFileName() << " -> " << outFile.getFileName()
               << " | " << n << " samples @ " << reader->sampleRate << " Hz, " << chs << " ch"
-              << " | peak " << juce::String (peak, 3) << "\n";
+              << " | peak " << juce::String (peak, 3) << (raw ? " (raw)" : " | normalized -1 dBFS") << "\n";
     return 0;
 }
