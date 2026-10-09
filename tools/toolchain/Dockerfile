@@ -9,13 +9,17 @@
 # TARGET selects which sysroot gets baked in:
 #   aarch64 (default) — full image: amd64 deps (host toolchain, juceaide,
 #                       x86_64 target) + arm64 sysroot. Builds both arches.
-#   x86_64            — slim image without the arm64 sysroot; x86_64 only.
+#   x86_64            — slim image without the arm64 sysroot, cross
+#                       compilers or qemu; x86_64 only. CI's x86_64 leg
+#                       uses it — much smaller to build and load.
 #
 # The JUCE Linux dev-dep list mirrors what CMakeLists.txt actually requires:
 # ALSA (juce_audio_devices), the X11 stack + FreeType + fontconfig
 # (juce_gui_basics), libcurl (JUCE_USE_CURL / Tone3000Manager), and
 # GTK3 + webkit2gtk-4.1 (juce_gui_extra WebBrowserComponent,
 # JUCE_WEB_BROWSER=1 for TONE3000 login).
+# qemu-user-static lets CI run the aarch64 test binaries through ctest
+# (see the toolchain file's CMAKE_CROSSCOMPILING_EMULATOR and ci.yml).
 
 ARG TARGET=aarch64
 FROM ubuntu:24.04
@@ -23,6 +27,10 @@ ARG TARGET
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV OGMFX_SYSROOT_AARCH64=/opt/sysroots/aarch64
+# Ninja over the default Makefiles: lower per-TU overhead and better
+# parallel scheduling on the 4-vCPU CI runners (and covers the nested
+# juceaide configure, which inherits the env).
+ENV CMAKE_GENERATOR=Ninja
 
 # Build tools + the host (amd64) JUCE deps. The amd64 set is required even for
 # pure aarch64 builds: JUCE always compiles its build-time helper `juceaide`
@@ -47,13 +55,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev \
     libgtk-3-dev \
     libwebkit2gtk-4.1-dev \
+    ccache \
  && rm -rf /var/lib/apt/lists/*
 
-# Cross compilers for aarch64.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc-aarch64-linux-gnu \
-    g++-aarch64-linux-gnu \
- && rm -rf /var/lib/apt/lists/*
+# Cross compilers + qemu: only the aarch64 image needs them (the slim
+# x86_64 image never cross-compiles or runs arm64 binaries). qemu lives
+# here rather than in the sysroot because CMAKE_CROSSCOMPILING_EMULATOR
+# needs a host-side binary.
+RUN if [ "$TARGET" = "aarch64" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        gcc-aarch64-linux-gnu \
+        g++-aarch64-linux-gnu \
+        qemu-user-static \
+     && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # aarch64 sysroot, sourced via apt multiarch. Ubuntu splits arch ports: the
 # default ubuntu.sources points at archive.ubuntu.com (amd64/i386 only), so it

@@ -32,3 +32,10 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 # neither CMAKE_PKG_CONFIG_* nor plain env vars work here.
 set(PKG_CONFIG_EXECUTABLE "${CMAKE_CURRENT_LIST_DIR}/pkg-config-aarch64.sh"
     CACHE FILEPATH "pkg-config for the aarch64 sysroot")
+
+# Run the cross-built test binaries under qemu so `ctest` works on the x86_64
+# build host/CI (qemu-user-static is installed in the toolchain image; -L
+# resolves the dynamic linker and libs from the arm64 sysroot, -E marks
+# emulation so wall-clock perf asserts go log-only — Tests/TestEnvironment.h).
+set(CMAKE_CROSSCOMPILING_EMULATOR
+    "qemu-aarch64-static;-L;${OGMFX_SYSROOT_AARCH64};-E;OGMFX_TESTS_UNDER_EMULATION=1")
