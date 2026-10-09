@@ -48,7 +48,8 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     /** Amplifier output (speaker-terminal volts) is scaled by this to get a signal level. */
-    static constexpr double outputScale = 1.0 / 40.0; // 8 ohm secondary: 2x the volts of the original 2 ohm one for the same power
+    static constexpr double outputScale = 1.0 / 12.3; // 8 ohm secondary level mapping -- rescaled with the reduced
+                                                // power stage's retuned drive law (keeps the unity trim the registry was calibrated for)
 
     // ---- reduced-order power stage (2026-09-27) ----
     // Same mechanism as SuperLeadStyleAmplifierProcessor (see that header's own note for the full reasoning, the
@@ -58,11 +59,13 @@ public:
     // unchanged; EffectRegistry.cpp turns it on centrally for the real app. docs/circuits/JTM45Marshall.md has the
     // calibration data and verified numbers.
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 0.225;   // fitted from this amp's own JM_POWERCAL sweep, see the .cpp -- much lower
+    static constexpr double bmGain0 = 0.021;   // fitted from this amp's own JM_POWERCAL sweep, see the .cpp -- much lower
     static constexpr double bmYmax = 0.001278; // than the Bassman's own numbers, a direct consequence of the softened
                                                 // pentode fit (see pentodeKt66()'s own note) needing a much bigger drive
                                                 // swing to reach the same relative saturation
-    static constexpr double bmKneeN = 6.0;
+    static constexpr double bmAsym = 0.09;   // push-pull clip lopsidedness (off-centre bias point in the knee)
+    static constexpr double bmGridClampV = 24.0; // LTP grid-conduction clamp level on the delivered drive (see .cpp)
+    static constexpr double bmDcHz = 8.0;    // OT DC-block on the asymmetric stage output (transformer cannot pass DC)
     // Same reasoning as SuperLeadStyleAmplifierProcessor's own note: the removed PI/power tubes/OT/feedback loop have a
     // real frequency response beyond the tone stack that a flat memoryless curve lacks -- restored approximately with a
     // high-shelf cut, fitted against the full reference model's own measured gain at several frequencies (see the .cpp).
@@ -134,6 +137,11 @@ private:
 
         // reducedOrder only: behavioural power stage state (see behavioralPowerStage())
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+
+        // follower-drive conditioner state (notch + lowpass + DC track on the follower AC before it couples into
+        // the power block -- removes the preamp solve's fs/2 weave artifact; see process())
+        double cfDrivePrev = 0.0, cfDriveLp = 0.0, cfDriveDc = 0.0;
+        double bmDcState = 0.0;
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, srcVoc = 0;
