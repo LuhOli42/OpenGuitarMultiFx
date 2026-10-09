@@ -44,8 +44,18 @@ public:
     static constexpr double bmGain0 = 8.5;
     static constexpr double bmYmax = 0.20;
     static constexpr double bmKneeN = 6.0;
-    static constexpr double bmShelfHz = 80.0;
-    static constexpr double bmShelfHfGain = 0.55;
+    // The removed phase inverter / power tubes / output transformer / speaker / feedback loop have their OWN
+    // frequency response beyond the tone stack. The earlier one-pole shelf (bmShelfHz/bmShelfHfGain) was
+    // calibrated only up to 1.65 kHz and wrongly kept falling: this amp's own full reference netlist measures
+    // +4.5 dB @80 Hz (speaker cone resonance past the NFB), a shallow mid dip, a +2-3 dB presence-region
+    // ridge at ~4 kHz and a gentle roll above -- the Rockerverb's dark, mid-thick voicing. Refitted 2026-10-09
+    // as the analog section the measurement shows (resonant LF shelf + one zero + resonant HF pole pair),
+    // discretized in prepare().
+    static constexpr double bmBumpHz = 93.0, bmBumpQp = 4.0, bmBumpQz = 1.35;
+    static constexpr double bmTopZHz = 2015.0, bmTopPHz = 4376.0, bmTopQp = 0.65;
+    // Level re-trim: the refit is ~5 dB hotter at noon than the shelf it replaced, and PedalUnityLevel needs
+    // noon at unity while the registry's -5.74 dB trim stays put.
+    static constexpr double bmLevelTrim = 0.55;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -109,8 +119,11 @@ private:
         double screenDropA = 0.0, screenDropB = 0.0;
         double vScreen = 410.0;
 
-        // reducedOrder behavioural power stage state
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        // reducedOrder behavioural power stage state (see behavioralPowerStage()); bmRail is set to the real
+        // nominal rail in prepare(). The two quads are the fitted sections' direct-form-I histories.
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
+        double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, srcVoc = 0;
@@ -141,7 +154,10 @@ private:
     double feedbackOverride = 0.0;
     bool supplyCurrentFrozen = false;
     void updateSupply (Channel& ch) const;
+    void designPowerFilters();
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
+    double bmAB0 = 1.0, bmAB1 = 0.0, bmAB2 = 0.0, bmAA1 = 0.0, bmAA2 = 0.0;
+    double bmBB0 = 1.0, bmBB1 = 0.0, bmBB2 = 0.0, bmBA1 = 0.0, bmBA2 = 0.0;
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;

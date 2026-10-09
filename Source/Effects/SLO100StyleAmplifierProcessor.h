@@ -59,8 +59,23 @@ public:
     static constexpr double bmGain0 = 9.5;      // placeholder, to be calibrated
     static constexpr double bmYmax = 0.198;      // placeholder, to be calibrated
     static constexpr double bmKneeN = 6.0;
-    static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.55;
+    // The removed phase inverter / power tubes / output transformer / speaker / feedback loop have their OWN
+    // frequency response beyond the tone stack. The earlier one-pole shelf (bmShelfHz/bmShelfHfGain) was
+    // calibrated only up to 1.65 kHz and wrongly kept falling: this amp's own full reference netlist measures
+    // +2.8 dB @80 Hz (speaker cone resonance past the strong NFB), ~flat mids, a +3 dB presence-region ridge
+    // at ~4 kHz and a steep roll above ~6 kHz. Refitted 2026-10-09 as the analog section the measurement
+    // shows (resonant LF shelf + one zero + resonant HF pole pair), discretized in prepare().
+    static constexpr double bmBumpHz = 80.0, bmBumpQp = 4.0, bmBumpQz = 2.85;
+    static constexpr double bmTopZHz = 4695.0, bmTopPHz = 4576.0, bmTopQp = 1.04;
+    // Presence: the 25K pot + .1 uF leg in the feedback path opens the loop progressively at HF. The
+    // reference netlist's presence wiring reads dead (same compromise class as the JCM800's), so the fitted
+    // law is shared with the SuperLead's identical 25K/.1uF network: a resonant high-pass contribution into
+    // the saturator drive, mix m(p) = K*p/(1-R*p).
+    static constexpr double bmPresHz = 4684.0, bmPresQ = 0.67, bmPresZeroHz = 3205.0;
+    static constexpr double bmPresMixK = 0.727, bmPresMixR = 0.909;
+    // Level re-trim: the refit is ~5 dB hotter at noon than the shelf it replaced, and PedalUnityLevel needs
+    // noon at unity while the registry's -18.92 dB trim stays put.
+    static constexpr double bmLevelTrim = 0.62;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -128,8 +143,13 @@ private:
         double screenDropA = 0.0, screenDropB = 0.0;
         double vScreen = 470.0;
 
-        // reducedOrder behavioural power stage state
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        // reducedOrder behavioural power stage state (see behavioralPowerStage()); bmRail is set to the real
+        // nominal rail in prepare(). The three quads are the fitted sections' direct-form-I histories.
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
+        double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
+        double bmHpX1 = 0.0, bmHpX2 = 0.0, bmHpY1 = 0.0, bmHpY2 = 0.0;
+        double presenceMix = 0.0;
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, iF = 0, srcVoc = 0;
@@ -160,7 +180,11 @@ private:
     double feedbackOverride = 0.0;
     bool supplyCurrentFrozen = false;
     void updateSupply (Channel& ch) const;
+    void designPowerFilters();
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
+    double bmAB0 = 1.0, bmAB1 = 0.0, bmAB2 = 0.0, bmAA1 = 0.0, bmAA2 = 0.0;
+    double bmBB0 = 1.0, bmBB1 = 0.0, bmBB2 = 0.0, bmBA1 = 0.0, bmBA2 = 0.0;
+    double bmHpB0 = 0.0, bmHpB1 = 0.0, bmHpB2 = 0.0, bmHpA1 = 0.0, bmHpA2 = 0.0;
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
