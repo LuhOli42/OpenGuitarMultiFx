@@ -58,7 +58,8 @@ PREAMP BLOCK (always solved)
   V2:A 12AX7 CF: plate -- rail;  k --R15 4.7k--R16 220k-- gnd;  k --C26 .68-- R33 1M -- preOut
 
 POWER BLOCK (the global feedback loop lives here; replaced by a fitted curve when reducedOrder is set)
-  preOut --R7 1k-- g(PI:A);  R8 470k leak
+  preOut --C .1-- g7 --R7 1k-- g(PI:A);  R8 470k leak (coupling cap -- without it the 1k holds g1
+    at the source's 0 V while g2 floats to bn, unbalancing the pair on silence)
   PI 12AX7 LTP: pa --R12 100k-- +345;  pb --R15 68k-- +345;  shared k --R14 220-- bn --R13 47k-- -180 V
   pa --C8 .047-- g(drvA);  pb --C11 .047-- g(drvB);  470k grid leaks
   DrvA/DrvB 12AU7: plate --47k-- +365;  k --1.8k-- gnd;  C9 1u k-to-k
@@ -71,6 +72,8 @@ POWER BLOCK (the global feedback loop lives here; replaced by a fitted curve whe
 
 Supply model: rectified ~690 V node (plate), a ~365 V node (screens + drivers, separate winding modelled as
 its own source + series resistance), +345 V after R49 8.2k for preamp + PI, and a fixed −180 V.
+The schematic's +345 V is the loaded value, so the constant sink through R49 is the implied 2.4 mA
+(365-345 V / 8.2k) rather than a sum of the preamp/PI quiescents.
 
 ## Tubes
 

@@ -389,6 +389,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // The Ampeg SVT-CL bass head, modelled from its service schematic (docs/circuits/AmpegSVT.md): four 12AX7
     // in the preamp, Baxandall + tapped-inductor mid section, a 12AX7 phase splitter, two 12AU7 drivers and
     // six 6550s. No reducedOrder yet: the full reference netlist always runs (trim measured by PedalUnityLevelTests).
+    registry.markQualityDependent ("SVTStyleAmplifier");
     registry.registerType ("SVTStyleAmplifier", [] { return trimmed (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.69f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded

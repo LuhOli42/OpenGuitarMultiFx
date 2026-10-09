@@ -430,6 +430,20 @@ public:
             }
     }
 
+    /** Single-winding shorthand: same as setInductorInverse(firstState, { inverse }) but cannot allocate,
+        so it is safe to call from the audio callback. */
+    void setInductorInverse (int firstState, double inverse) noexcept
+    {
+        for (auto& grp : inductorGroups)
+            if (grp.first == firstState && grp.inverse.size() == 1)
+            {
+                grp.inverse[0] = inverse;
+                matrixDirty = true;
+                modelsDirty = true;
+                return;
+            }
+    }
+
     /** Current through winding `state` (as returned by addCoupledInductors, plus the winding's position). */
     double windingCurrent (int state) const noexcept { return capacitors[(size_t) state].iPrev; }
 

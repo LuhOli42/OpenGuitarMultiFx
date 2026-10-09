@@ -25,7 +25,7 @@ namespace
     constexpr double idlePlateCurrent = 0.33;     // six 6550 at ~55 mA
     constexpr double idleScreenCurrent = 0.020;
     constexpr double idleDriverCurrent = 0.010;   // two 12AU7 driver stages at ~5 mA each... combined
-    constexpr double idlePreampCurrent = 0.007;   // preamp triodes + phase splitter, sets the 8.2k drop
+    constexpr double idlePreampCurrent = 0.0024;  // the marked +345 V is the LOADED rail: (365-345)/8.2k
     constexpr double railDriverReturn = -180.0;   // regulated-ish negative winding the level-shifters return to
 
     // ---- tubes ----
@@ -391,7 +391,11 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         // grid leaks return to bn (the tail's DC reference). Plates ~200/250 V on the schematic.
         const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(),
                    k = c.addNode(), bn = c.addNode();
-        c.addResistor (cin, g1, 1.0e3);                  // R7 grid stopper
+        // The preamp feeds the first grid through a coupling cap -- without it the 1k stopper would hold
+        // g1 at the source's 0 V while g2 floats to bn through its leak, unbalancing the pair on silence.
+        const auto g7 = c.addNode();
+        c.addCapacitor (cin, g7, 0.1e-6);                // coupling cap
+        c.addResistor (g7, g1, 1.0e3);                   // R7 grid stopper
         c.addResistor (g1, bn, 470.0e3);                 // R8 leak (returns to the tail node)
         c.addResistor (g2, bn, 470.0e3);
         c.addTriode (pa, g1, k, triode12AX7());
@@ -518,14 +522,14 @@ void SVTStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
     ch.power.setResistance (ch.rSpkRe, sm.re);
     ch.power.setResistance (ch.rSpkRp, sm.rp);
     ch.power.setCapacitance (ch.capSpkCp, sm.cp);
-    ch.power.setInductorInverse (ch.grpSpkLe, { 1.0 / sm.le });
-    ch.power.setInductorInverse (ch.grpSpkLp, { 1.0 / sm.lp });
+    ch.power.setInductorInverse (ch.grpSpkLe, 1.0 / sm.le);
+    ch.power.setInductorInverse (ch.grpSpkLp, 1.0 / sm.lp);
 }
 
 void SVTStyleAmplifierProcessor::applyMidFreq (Channel& ch, int index) const
 {
     const int i = juce::jlimit (0, 2, index);
-    ch.pre.setInductorInverse (ch.grpMidL, { 1.0 / midInductance[i] });
+    ch.pre.setInductorInverse (ch.grpMidL, 1.0 / midInductance[i]);
     ch.pre.setCapacitance (ch.capMidC, midCapacitance[i]);
 }
 
