@@ -10,8 +10,12 @@
 #             /opt/sysroots/aarch64/usr/bin/qemu-aarch64) with the "Bench" and
 #             "Probe" category suites SKIPPED: they assert wall-clock
 #             real-time bounds that emulation cannot hold (W1 verified the
-#             rest of the suite passes under qemu). On-device runs of the
-#             perf suites are W6's on-board benchmark job.
+#             rest of the suite passes under qemu). The same applies to the
+#             wall-clock perf asserts embedded inside normal suites
+#             (real-time factors / %CPU bounds): OGMFX_TESTS_UNDER_EMULATION
+#             makes them log-only there — see Tests/TestEnvironment.h.
+#             On-device runs of the perf suites are W6's on-board benchmark
+#             job.
 #
 # Caching: the toolchain image layers go through buildx's type=gha cache
 # (scope shared by both matrix legs); the build-<arch> tree (FetchContent
@@ -73,12 +77,14 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
             ctest --test-dir build-x86_64 --output-on-failure
 
-      - name: Test (aarch64, qemu — Bench/Probe suites skipped)
+      - name: Test (aarch64, qemu — Bench/Probe skipped, perf asserts log-only)
         if: matrix.arch == 'aarch64'
         run: |
           tests_bin="$(find build-aarch64 -name OpenGuitarMultiFx_Tests -type f -print -quit)"
           [ -n "$tests_bin" ] || { echo "Tests binary not found"; exit 1; }
-          docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
+          docker run --rm -v "$PWD:/src" -w /src \
+            -e OGMFX_TESTS_UNDER_EMULATION=1 \
+            ogmfx-toolchain:latest \
             /opt/sysroots/aarch64/usr/bin/qemu-aarch64 -L /opt/sysroots/aarch64 \
             "/src/$tests_bin" --skip-category Bench --skip-category Probe
 

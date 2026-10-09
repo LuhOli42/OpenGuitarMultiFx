@@ -1,4 +1,5 @@
 #include "Effects/PositiveGroundBoosterProcessor.h"
+#include "TestEnvironment.h"
 
 #include <juce_core/juce_core.h>
 
@@ -190,7 +191,8 @@ public:
             // regression (e.g. someone raising EbersMollBJT's default
             // Newton-Raphson iteration count), not to assert a specific
             // performance target.
-            expectGreaterThan (realTimeFactor, 5.0);
+            if (! testEnvironment::underEmulation())
+                expectGreaterThan (realTimeFactor, 5.0);
             expect (std::isfinite (buffer.getSample (0, 0)));
         }
 

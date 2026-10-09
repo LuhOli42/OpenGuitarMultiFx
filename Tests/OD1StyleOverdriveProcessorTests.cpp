@@ -1,4 +1,5 @@
 #include "Effects/OD1StyleOverdriveProcessor.h"
+#include "TestEnvironment.h"
 
 #include <juce_core/juce_core.h>
 
@@ -248,7 +249,8 @@ public:
             logMessage ("Processed " + juce::String (audioSeconds, 1) + "s of stereo audio in "
                         + juce::String (elapsedSeconds, 3) + "s wall-clock -- " + juce::String (realTimeFactor, 1) + "x real-time");
 
-            expectGreaterThan (realTimeFactor, 1.0);
+            if (! testEnvironment::underEmulation())
+                expectGreaterThan (realTimeFactor, 1.0);
             expect (std::isfinite (buffer.getSample (0, 0)));
         }
 

@@ -1,5 +1,6 @@
 #include "EffectRegistry.h"
 #include "Effects/EVH5150StyleAmplifierProcessor.h"
+#include "TestEnvironment.h"
 
 #include <juce_core/juce_core.h>
 
@@ -226,7 +227,8 @@ public:
             const double audio = (double) (measureBlocks * 128) / sr;
             const double pct = 100.0 * wall / audio;
             logMessage ("reducedOrder CPU " + juce::String (pct, 1) + "%");
-            expectLessThan (pct, 50.0);
+            if (! testEnvironment::underEmulation())
+                expectLessThan (pct, 50.0);
         }
 
         if (juce::SystemStats::getEnvironmentVariable ("OGMFX_DIAG", "").isNotEmpty())
