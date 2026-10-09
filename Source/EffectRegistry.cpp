@@ -35,6 +35,8 @@
 #include "Effects/ENGLPowerballStyleAmplifierProcessor.h"
 #include "Effects/RockerverbStyleAmplifierProcessor.h"
 #include "Effects/SVTStyleAmplifierProcessor.h"
+#include "Effects/TrainwreckExpressStyleAmplifierProcessor.h"
+#include "Effects/KometConcordeStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -391,6 +393,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // six 6550s. No reducedOrder yet: the full reference netlist always runs (trim measured by PedalUnityLevelTests).
     registry.markQualityDependent ("SVTStyleAmplifier");
     registry.registerType ("SVTStyleAmplifier", [] { return trimmed (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.69f); });
+    // Trainwreck Express (docs/circuits/TrainwreckExpress.md) and the Trainwreck-descended Komet Concorde
+    // (docs/circuits/KometConcorde.md): three-12AX7 anode-driven preamps, LTP, 2x EL34, no global feedback. Full netlist.
+    registry.markQualityDependent ("TrainwreckExpressStyleAmplifier");
+    registry.registerType ("TrainwreckExpressStyleAmplifier", [] { return trimmed (oversampled<TrainwreckExpressStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.03f); });
+    registry.markQualityDependent ("KometConcordeStyleAmplifier");
+    registry.registerType ("KometConcordeStyleAmplifier", [] { return trimmed (oversampled<KometConcordeStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.31f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
