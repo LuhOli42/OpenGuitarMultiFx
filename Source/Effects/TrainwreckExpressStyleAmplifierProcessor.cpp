@@ -418,10 +418,13 @@ void TrainwreckExpressStyleAmplifierProcessor::updatePots (const Knobs& k)
         // the bias supply sits behind 15k into a 220k || 220k grid-leak pair that draws no DC: source volts = grid volts
         ch.power.setSource (ch.wSrcBias, biasVolts);
         ch.supply.setResistance (ch.rRect, rectifier);
-        applySpeaker (ch, k.speaker);
     }
     if (appliedSpeaker != k.speaker && ! resistiveLoadForced)
+    {
+        for (auto& ch : channels)
+            applySpeaker (ch, k.speaker);
         appliedSpeaker = k.speaker;
+    }
 
     speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
 }
@@ -436,8 +439,8 @@ void TrainwreckExpressStyleAmplifierProcessor::applySpeaker (Channel& ch, int in
     ch.power.setResistance (ch.rSpkRp, sm.rp);
     ch.power.setResistance (ch.rSpkEddy, speakerEddyLoss * nominal / speakerNominal[matchedSpeaker]);
     ch.power.setCapacitance (ch.capSpkCp, sm.cp);
-    ch.power.setInductorInverse (ch.grpSpkLe, { 1.0 / sm.le });
-    ch.power.setInductorInverse (ch.grpSpkLp, { 1.0 / sm.lp });
+    ch.power.setInductorInverse (ch.grpSpkLe, 1.0 / sm.le);
+    ch.power.setInductorInverse (ch.grpSpkLp, 1.0 / sm.lp);
 }
 
 void TrainwreckExpressStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
@@ -570,7 +573,7 @@ void TrainwreckExpressStyleAmplifierProcessor::prepare (double newSampleRate, in
     setup (smoothedBias, biasParam, 0.05);
     setup (smoothedFeel, tubeFeelParam, 0.05);
 
-    appliedSpeaker = matchedSpeaker;
+    appliedSpeaker = -1;
     updatePots ({ volumeParam->get(), trebleParam->get(), middleParam->get(), bassParam->get(), presenceParam->get(),
                   hiCutParam != nullptr ? hiCutParam->get() : 0.0f, powerParam->get(), biasParam->get(), tubeFeelParam->get(),
                   juce::roundToInt (speakerParam->get()) });

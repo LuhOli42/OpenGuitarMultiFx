@@ -154,6 +154,15 @@ public:
             logMessage ("presence 0 / 1 at 6 kHz: " + juce::String (pLo, 5) + " / " + juce::String (pHi, 5));
             expectGreaterThan (pHi, pLo * 1.2);
 
+            Amp speakerAmp;
+            setParam (speakerAmp, juce::String (px) + "volume", 0.25f);
+            const double at16Ohm = sineRms (speakerAmp, 85.0, 0.002);
+            setParam (speakerAmp, juce::String (px) + "speaker", 0.0f);
+            const double at4Ohm = sineRms (speakerAmp, 85.0, 0.002);
+            logMessage ("speaker 16 / 4 ohm at 85 Hz: " + juce::String (at16Ohm, 5) + " / " + juce::String (at4Ohm, 5));
+            expect (std::abs (at4Ohm - at16Ohm) > juce::jmax (at4Ohm, at16Ohm) * 0.01,
+                    "changing the speaker selector changes the output");
+
             Amp hot, cold;
             setParam (hot, juce::String (px) + "bias", 1.0f);
             setParam (cold, juce::String (px) + "bias", 0.0f);
