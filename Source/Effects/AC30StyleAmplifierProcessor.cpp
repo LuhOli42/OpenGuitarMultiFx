@@ -180,20 +180,22 @@ namespace
         c.setInitialGuess (b.plate, 250.0);
         c.setInitialGuess (k1, 1.2);
 
-        // Coupling into Volume (500k log): 500 pF then 100 pF to ground (confirmed on the drawing).
+        // Coupling into Volume (500k log): 500 pF into the track top; the 100 pF is the pot's own
+        // bright cap, track-top to WIPER on the drawing (it bridges the attenuating top segment, so
+        // highs keep reaching V2a when the knob is down) -- it is NOT a shunt to ground.
         const auto volIn = c.addNode();
         c.addCapacitor (b.plate, volIn, 500.0e-12);
-        c.addCapacitor (volIn, gnd, 100.0e-12);
         b.volOut = c.addNode();
         b.rVolTop = c.addResistor (volIn, b.volOut, 500.0e3);
         b.rVolBot = c.addResistor (b.volOut, gnd, 500.0e3);
+        c.addCapacitor (volIn, b.volOut, 100.0e-12);
 
-        // V2a: 100k plate, 1k5 cathode + 25 uF bypass -- DIRECT-COUPLED (a plain wire, confirmed on the drawing, no
-        // capacitor) into V2b's grid.
-        const auto g2 = c.addNode(), k2 = c.addNode();
+        // V2a: 100k plate, 1k5 cathode + 25 uF bypass. The Volume wiper runs straight to this grid
+        // (a plain wire on the drawing) -- the pot's own track is the grid leak, no series resistor.
+        // DIRECT-COUPLED (a plain wire, confirmed on the drawing, no capacitor) into V2b's grid.
+        const auto k2 = c.addNode();
         const auto plate2a = c.addNode();
-        c.addTriode (plate2a, g2, k2, triode12AX7());
-        c.addResistor (b.volOut, g2, 1.0e6); // the Volume pot's own load into V2a's grid
+        c.addTriode (plate2a, b.volOut, k2, triode12AX7());
         c.addResistor (rail, plate2a, 100.0e3);
         c.addResistor (k2, gnd, 1.5e3);
         c.addCapacitor (k2, gnd, 25.0e-6);
@@ -367,13 +369,14 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
 void AC30StyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
-    // Treble: 1M linear (the Top Boost pot is a linear/reverse pot in the real amp), wiper is the stage output --
-    // more knob = more of the top (bright, capacitively-coupled) segment reaches the wiper.
-    const double trebleTop = juce::jmax (1.0, 1.0e6 * k.treble);
-    const double trebleBottom = juce::jmax (1.0, 1.0e6 - trebleTop);
-    // Bass: 1M linear, wiper feeds the .022 uF divider node (more knob = more of the top segment, closer to D).
-    const double bassTop = juce::jmax (1.0, 1.0e6 * k.bass);
-    const double bassBottom = juce::jmax (1.0, 1.0e6 - bassTop);
+    // Treble: 1M linear (the Top Boost pot is a linear pot in the real amp), wiper is the stage output --
+    // more knob moves the wiper toward the A (50 pF-fed) lug: the A->wiper segment shrinks (brighter),
+    // the wiper->D segment grows. Previous code had this backwards (knob up darkened).
+    const double trebleTop = juce::jmax (1.0, 1.0e6 * (1.0 - k.treble));
+    const double trebleBottom = juce::jmax (1.0, 1.0e6 * k.treble);
+    // Bass: 1M linear, wiper E rides the D->F track; more knob moves E toward D (more bass).
+    const double bassTop = juce::jmax (1.0, 1.0e6 * (1.0 - k.bass));
+    const double bassBottom = juce::jmax (1.0, 1.0e6 * k.bass);
     // Volume: 500k audio taper.
     const double volBottom = juce::jmax (1.0, 500.0e3 * pots::audio (k.volume));
 

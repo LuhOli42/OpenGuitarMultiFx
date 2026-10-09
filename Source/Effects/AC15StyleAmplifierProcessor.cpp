@@ -179,6 +179,14 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pPlate = c.addNode();
         c.addResistor (in, g, 220.0e3);
         c.addResistor (g, gnd, 1.0e6); // grid leak
+        // Tone: on the real drawing (OS/005) this control sits at the EF86's own INPUT GRID -- a 1M LIN
+        // rheostat in series with a .01 uF cap to ground, the same treble-cut arrangement a guitar's
+        // own tone knob uses (knob up = more series R = brighter). It was previously mis-modelled as
+        // a fixed 33k + 1nF low-pass after the plate, which shelved the top end ~-11 dB at every
+        // knob position and muted the signal outright as the knob turned down.
+        const auto toneShunt = c.addNode();
+        ch.rToneTop = c.addResistor (g, toneShunt, 1.0);
+        c.addCapacitor (toneShunt, gnd, 0.01e-6);
         // EF86's real screen operating voltage (~200 V, well under its ~300 V rating) is far lower than the raw
         // decoupled preamp rail -- a dedicated screen dropping resistor exists on the real amp (not fully legible on
         // the scan, see the doc); modelled here as a fixed, plausible screen voltage rather than a literal resistor.
@@ -189,15 +197,12 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.pPlate, 220.0);
         c.setInitialGuess (k, 1.4);
 
-        // Tone: a single treble-cut control (no Bass/Middle/Presence on the real amp) -- a coupling cap into a fixed
-        // load resistor, with a variable resistor + cap shunting highs to ground as the knob turns down.
+        // Plate coupling into the Volume pot's top. The real amp runs the anode through a coupling
+        // cap straight into Volume -- the tone control is NOT in this path (see the grid note above).
         const auto toneIn = c.addNode();
         c.addCapacitor (ch.pPlate, toneIn, 0.02e-6);
         c.addResistor (toneIn, gnd, 1.0e6); // grid-leak-style DC reference for the coupling cap
-        ch.pToneOut = c.addNode();
-        c.addResistor (toneIn, ch.pToneOut, 33.0e3);
-        ch.rToneTop = c.addResistor (ch.pToneOut, gnd, 1.0); // Tone pot: more resistance to ground = brighter
-        c.addCapacitor (ch.pToneOut, gnd, 1.0e-9);
+        ch.pToneOut = toneIn;
 
         // Volume: 1M log pot.
         ch.pVolOut = c.addNode();
