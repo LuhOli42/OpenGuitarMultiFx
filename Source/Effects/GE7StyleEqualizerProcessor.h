@@ -34,7 +34,7 @@ public:
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
-    void reset() override {}
+    void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "GE-7-Style Equalizer"; }
@@ -79,6 +79,20 @@ private:
     std::array<juce::AudioParameterFloat*, numBands> bands {};
     juce::AudioParameterFloat* level = nullptr;
     std::array<float, numBands + 1> appliedSliders {};
+
+        /** JUCE's reset() must return the circuit to its DC operating point -- an
+        empty reset() (the bug this fixes) left stale capacitor state forever.
+        prepare() deliberately no-ops on a same-rate re-prepare to protect live
+        state during the UI's chain-reorder, so reset() re-arms the rate and
+        forces the rebuild. Control thread only. */
+    void forceReprepare()
+    {
+        if (sampleRate <= 0.0)
+            return;
+        const double sr = sampleRate;
+        sampleRate = 0.0;
+        prepare (sr, 0, 0);
+    }
 
     double sampleRate = 0.0;
     int controlCounter = 0;
