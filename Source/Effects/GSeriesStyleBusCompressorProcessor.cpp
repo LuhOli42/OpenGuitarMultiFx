@@ -19,7 +19,9 @@ namespace
 
 GSeriesStyleBusCompressorProcessor::GSeriesStyleBusCompressorProcessor()
 {
-    auto thr = std::make_unique<juce::AudioParameterFloat> ("gbus_threshold", "Threshold", juce::NormalisableRange<float> (-40.0f, 0.0f, 0.5f), -18.0f,
+    // default -4 dBFS: a guitar-level signal (peaks ~-6 dBFS) just grazes the knee -- the -18 dB default sat the DI
+    // ~15 dB over threshold, i.e. ~11 dB of GR at idle
+    auto thr = std::make_unique<juce::AudioParameterFloat> ("gbus_threshold", "Threshold", juce::NormalisableRange<float> (-40.0f, 0.0f, 0.5f), -4.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " dB"; }));
     auto rat = std::make_unique<juce::AudioParameterFloat> ("gbus_ratio", "Ratio", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 1.0f,
         selectorText ([] (int i) { const char* n[] = { "2:1", "4:1", "10:1" }; return juce::String (n[juce::jlimit (0, 2, i)]); }));

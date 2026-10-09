@@ -30,7 +30,9 @@ namespace
 
 SqueezerStyleCompressorProcessor::SqueezerStyleCompressorProcessor()
 {
-    auto vol = std::make_unique<juce::AudioParameterFloat> ("squeezer_volume", "Volume", juce::NormalisableRange<float> (0.0f, 1.0f), 0.7f);
+    // Volume default 0.4: measured -0.4 dB vs a guitar DI (the 0.7 default ran ~+10 dB hot through the audio taper
+    // and pushed the float output over full scale). Noon keeps the level the registry unity trim was calibrated for.
+    auto vol = std::make_unique<juce::AudioParameterFloat> ("squeezer_volume", "Volume", juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
     auto bia = std::make_unique<juce::AudioParameterFloat> ("squeezer_bias", "Bias", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
     volume = vol.get();
     bias = bia.get();
@@ -44,7 +46,7 @@ void SqueezerStyleCompressorProcessor::buildChannel (Channel& ch)
 
     const auto v9 = c.addNode(), in = c.addNode(), n1 = c.addNode(), n2 = c.addNode(), nGate = c.addNode(), nB = c.addNode();
     const auto nY = c.addNode(), nC4 = c.addNode(), plus = c.addNode(), minus = c.addNode(), nR7 = c.addNode(), op = c.addNode(), oc = c.addNode();
-    const auto nD = c.addNode(), wiper = c.addNode();
+    const auto nD = c.addNode(), wiper = c.addNode(), jack = c.addNode();
     c.addSource (v9, vcc);
     ch.srcIn = c.addSource (in, 0.0);
 
@@ -79,21 +81,25 @@ void SqueezerStyleCompressorProcessor::buildChannel (Channel& ch)
     c.addCapacitor (nY, gnd, 4.7e-6);
     c.addResistor (nY, gnd, 100.0e3);
 
-    // VR1, the Volume, into the load
+    // VR1, the Volume. The wiper IS the output jack: whatever pedal sits next in the chain AC-couples it (its input
+    // coupling cap into its input impedance). Modelling that stage matters -- the half-wave rectifier drags a DC onto
+    // `oc`/the wiper under signal (charge flows out through D1 and returns through the pot track), which is real
+    // circuit behaviour but must not leak downstream as DC.
     ch.rVolTop = c.addResistor (oc, wiper, 1.0e3);
     ch.rVolBottom = c.addResistor (wiper, gnd, 1.0e3);
-    c.addResistor (wiper, gnd, downstreamLoad);
+    c.addCapacitor (wiper, jack, 1.0e-6);
+    c.addResistor (jack, gnd, downstreamLoad);
 
     ch.nOp = op;
     ch.nControl = nY;
     ch.nDivider = n2;
-    ch.nOut = wiper;
+    ch.nOut = jack;
 
     for (auto n : { plus, minus, op })
         c.setInitialGuess (n, vcc * 470.0 / 860.0);
     c.setInitialGuess (nR7, 0.0);
     c.setInitialGuess (nB, 2.0);
-    for (auto n : { n1, n2, nGate, nY, nC4, oc, nD, wiper })
+    for (auto n : { n1, n2, nGate, nY, nC4, oc, nD, wiper, jack })
         c.setInitialGuess (n, 0.0);
 }
 
