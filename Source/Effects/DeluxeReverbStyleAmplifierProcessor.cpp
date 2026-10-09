@@ -130,9 +130,14 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
-    auto volume = make ("dr_volume", "Volume", 0.4f);
-    auto treble = make ("dr_treble", "Treble", 0.5f);
-    auto bass = make ("dr_bass", "Bass", 0.5f);
+    // Two full knob sets, as on the real AB763 panel (no Middle on either). The Vibrato channel keeps the original
+    // parameter ids (it is the default input), so presets saved before the Normal channel got its own knobs are unchanged.
+    auto nVolume = make ("dr_n_volume", "Normal Volume", 0.4f);
+    auto nTreble = make ("dr_n_treble", "Normal Treble", 0.5f);
+    auto nBass = make ("dr_n_bass", "Normal Bass", 0.5f);
+    auto volume = make ("dr_volume", "Vibrato Volume", 0.4f);
+    auto treble = make ("dr_treble", "Vibrato Treble", 0.5f);
+    auto bass = make ("dr_bass", "Vibrato Bass", 0.5f);
     auto speed = make ("dr_speed", "Speed", 0.5f);
     auto intensity = make ("dr_intensity", "Intensity", 0.0f);
     auto output = make ("dr_output", "Output", 0.5f);
@@ -145,9 +150,12 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
         { return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm"; }));
 
     inputParam = input.get();
-    volumeParam = volume.get();
-    trebleParam = treble.get();
-    bassParam = bass.get();
+    volumeParam[0] = nVolume.get();
+    trebleParam[0] = nTreble.get();
+    bassParam[0] = nBass.get();
+    volumeParam[1] = volume.get();
+    trebleParam[1] = treble.get();
+    bassParam[1] = bass.get();
     speedParam = speed.get();
     intensityParam = intensity.get();
     outputParam = output.get();
@@ -158,16 +166,19 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "deluxereverb", "Deluxe Reverb-Style Amplifier", "|", std::move (input));
+    group->addChild (std::move (nVolume));
+    group->addChild (std::move (nTreble));
+    group->addChild (std::move (nBass));
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (bass));
     group->addChild (std::move (speed));
     group->addChild (std::move (intensity));
-    group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("deluxereverb_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -386,10 +397,6 @@ void DeluxeReverbStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) 
 void DeluxeReverbStyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
-    const double trebleBottom = juce::jmax (1.0, 125.0e3 * 2.0 * k.treble); // 250k-A total, split like the Bassman's own
-    const double trebleTop = juce::jmax (1.0, 250.0e3 - trebleBottom);
-    const double bassR = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass));
-    const double volBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volume));
     const double biasVolts = -25.0 - 20.0 * k.bias; // a plausible +-10 V trim range around the printed -35 V (this amp has a real bias trimmer)
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
@@ -398,6 +405,10 @@ void DeluxeReverbStyleAmplifierProcessor::updatePots (const Knobs& k)
     {
         for (int i = 0; i < 2; ++i)
         {
+            const double trebleBottom = juce::jmax (1.0, 125.0e3 * 2.0 * k.treble[i]); // 250k-A total, split like the Bassman's own
+            const double trebleTop = juce::jmax (1.0, 250.0e3 - trebleBottom);
+            const double bassR = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass[i]));
+            const double volBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volume[i]));
             ch.pre.setResistance (ch.rTrebleTop[i], trebleTop);
             ch.pre.setResistance (ch.rTrebleBottom[i], trebleBottom);
             ch.pre.setResistance (ch.rBass[i], bassR);
@@ -561,9 +572,12 @@ void DeluxeReverbStyleAmplifierProcessor::prepare (double newSampleRate, int max
         s.reset (newSampleRate, time);
         s.setCurrentAndTargetValue (p->get());
     };
-    setup (smoothedVolume, volumeParam, 0.02);
-    setup (smoothedTreble, trebleParam, 0.02);
-    setup (smoothedBass, bassParam, 0.02);
+    for (int v = 0; v < 2; ++v)
+    {
+        setup (smoothedVolume[v], volumeParam[v], 0.02);
+        setup (smoothedTreble[v], trebleParam[v], 0.02);
+        setup (smoothedBass[v], bassParam[v], 0.02);
+    }
     setup (smoothedSpeed, speedParam, 0.02);
     setup (smoothedIntensity, intensityParam, 0.02);
     setup (smoothedOutput, outputParam, 0.02);
@@ -573,7 +587,8 @@ void DeluxeReverbStyleAmplifierProcessor::prepare (double newSampleRate, int max
 
     idleSupplyCurrent = idlePlateCurrent * 2.0 + idleScreenCurrent * 2.0 + phaseInverterNodeCurrent + preampNodeCurrent;
     appliedSpeaker = matchedSpeaker;
-    updatePots ({ volumeParam->get(), trebleParam->get(), bassParam->get(),
+    updatePots ({ { volumeParam[0]->get(), volumeParam[1]->get() }, { trebleParam[0]->get(), trebleParam[1]->get() },
+                  { bassParam[0]->get(), bassParam[1]->get() },
                   powerParam->get(), biasParam->get(), tubeFeelParam->get(), juce::roundToInt (speakerParam->get()) });
 
     dcOk = true;
@@ -642,9 +657,12 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
     const int numSamples = buffer.getNumSamples();
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
 
-    smoothedVolume.setTargetValue (volumeParam->get());
-    smoothedTreble.setTargetValue (trebleParam->get());
-    smoothedBass.setTargetValue (bassParam->get());
+    for (int v = 0; v < 2; ++v)
+    {
+        smoothedVolume[v].setTargetValue (volumeParam[v]->get());
+        smoothedTreble[v].setTargetValue (trebleParam[v]->get());
+        smoothedBass[v].setTargetValue (bassParam[v]->get());
+    }
     smoothedSpeed.setTargetValue (speedParam->get());
     smoothedIntensity.setTargetValue (intensityParam->get());
     smoothedOutput.setTargetValue (outputParam->get());
@@ -658,9 +676,13 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const float vo = smoothedVolume.getNextValue();
-        const float tr = smoothedTreble.getNextValue();
-        const float ba = smoothedBass.getNextValue();
+        Knobs knobs {};
+        for (int v = 0; v < 2; ++v)
+        {
+            knobs.volume[v] = smoothedVolume[v].getNextValue();
+            knobs.treble[v] = smoothedTreble[v].getNextValue();
+            knobs.bass[v] = smoothedBass[v].getNextValue();
+        }
         const float sp = smoothedSpeed.getNextValue();
         const float in = smoothedIntensity.getNextValue();
         const float ou = smoothedOutput.getNextValue();
@@ -678,7 +700,11 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ vo, tr, ba, pw, bi, fe, speakerChoice });
+            knobs.powerDrive = pw;
+            knobs.bias = bi;
+            knobs.tubeFeel = fe;
+            knobs.speaker = speakerChoice;
+            updatePots (knobs);
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
@@ -692,11 +718,13 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
 
             const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
             ch.pre.setSource (ch.pSrcInNormal, inputConnectsNormal ? x : 0.0);
-            ch.pre.setSource (ch.pSrcInVibrato, inputConnectsVibrato ? x : 0.0);
+            // The real amp's "vibrato" (bias tremolo) only moves the Vibrato channel. Its input triode is near-linear
+            // at guitar level, so modulating the signal entering that channel is the same as modulating its output.
+            ch.pre.setSource (ch.pSrcInVibrato, inputConnectsVibrato ? x * tremMod : 0.0);
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            const double mixV = ch.pre.voltage (ch.pMix) * tremMod;
+            const double mixV = ch.pre.voltage (ch.pMix);
             bool ok2 = true; // reducedOrder: ch.power is empty, nothing to solve, always "converges"
             if (! reducedOrder)
             {

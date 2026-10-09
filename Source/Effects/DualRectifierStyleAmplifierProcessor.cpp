@@ -100,8 +100,8 @@ namespace
     {
         NodalCircuit& c;
         int srcV2 = 0, srcV3 = 0, srcE = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node plateV1a = 0, plateV2a = 0, plateV2b = 0, plateV3a = 0, follower = 0;
+        int rGainTop = 0, rGainBot = 0, rV2aSeries = 0, rBypassV2a = 0, rV2bSeries = 0, rBypassV2b = 0;
+        NodalCircuit::Node plateV1a = 0, plateV2a = 0, plateV2b = 0, plateV3a = 0, follower = 0, gainWiper = 0;
         NodalCircuit::Node nodeV2 = 0, nodeV3 = 0, nodeE = 0;
     };
 
@@ -155,7 +155,8 @@ namespace
         // but consistent with the D rail voltage drop to the ~280V plate reading).
         const auto g2 = c.addNode(), k2 = c.addNode();
         b.plateV2a = c.addNode();
-        c.addResistor (gainWiper, g2, 39.0e3);           // series from gain wiper (estimated from schematic)
+        b.rV2aSeries = c.addResistor (gainWiper, g2, 39.0e3); // switchable: 100M for Clean
+        b.gainWiper = gainWiper;
         c.addResistor (g2, gnd, 470.0e3);                // grid leak
         c.addTriode (b.plateV2a, g2, k2, triode12AX7());
         c.addCapacitor (g2, b.plateV2a, cgp);
@@ -167,10 +168,12 @@ namespace
 
         // V2B: 100K plate (D rail), 220K grid leak. Unbypassed cathode (~27K estimated from 384V plate and
         // ~6V cathode → Ip ≈ 22µA → Rk = 6/0.000022 ≈ 27K). This is the compression/clipping shaping stage.
+        // Orange channel bypasses this stage entirely (relay/LDR switching).
         const auto g3 = c.addNode(), k3 = c.addNode(), coup3 = c.addNode();
         b.plateV2b = c.addNode();
         c.addCapacitor (b.plateV2a, coup3, 22.0e-9);     // coupling from V2A
-        c.addResistor (coup3, g3, 470.0e3);              // series into V2B grid
+        b.rBypassV2a = c.addResistor (gainWiper, coup3, 100.0e6); // Clean bypass: 1 ohm to skip V2A
+        b.rV2bSeries = c.addResistor (coup3, g3, 470.0e3); // series into V2B grid (switchable: 100M for Orange)
         c.addResistor (g3, gnd, 220.0e3);                // R225, grid leak
         c.addTriode (b.plateV2b, g3, k3, triode12AX7());
         c.addCapacitor (g3, b.plateV2b, cgp);
@@ -184,6 +187,7 @@ namespace
         const auto g4 = c.addNode(), k4 = c.addNode(), coup4 = c.addNode();
         b.plateV3a = c.addNode();
         c.addCapacitor (b.plateV2b, coup4, 22.0e-9);     // coupling from V2B
+        b.rBypassV2b = c.addResistor (coup3, coup4, 100.0e6); // Orange bypass: 1 ohm to skip V2B
         c.addResistor (coup4, g4, 39.0e3);               // R103 grid stopper
         c.addResistor (g4, gnd, 220.0e3);                // R225 grid leak
         c.addTriode (b.plateV3a, g4, k4, triode12AX7());
@@ -207,6 +211,13 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
+    auto channel = std::make_unique<juce::AudioParameterFloat> (
+        "drec_channel", "Channel", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 2.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        {
+            constexpr const char* names[] = { "Clean", "Orange", "Red" };
+            return juce::String (names[juce::jlimit (0, 2, juce::roundToInt (v))]);
+        }));
     auto gain = make ("drec_gain", "Gain", 0.5f);
     auto treble = make ("drec_treble", "Treble", 0.5f);
     auto mid = make ("drec_mid", "Mid", 0.5f);
@@ -224,6 +235,7 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
             return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm";
         }));
 
+    channelParam = channel.get();
     gainParam = gain.get();
     trebleParam = treble.get();
     midParam = mid.get();
@@ -237,19 +249,40 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "dualrec", "Dual Rectifier-Style Amplifier", "|", std::move (gain));
+        "dualrec", "Dual Rectifier-Style Amplifier", "|", std::move (channel));
+    group->addChild (std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
     group->addChild (std::move (master));
-    group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("drec_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
+
+    // The real amp has a full Gain/Treble/Mid/Bass/Presence/Master set per channel.
+    channelMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
+        std::vector<juce::AudioParameterFloat*> { gainParam, trebleParam, midParam, bassParam, presenceParam, masterParam });
+}
+
+std::unique_ptr<juce::XmlElement> DualRectifierStyleAmplifierProcessor::getState() const
+{
+    auto xml = EffectProcessor::getState();
+    channelMemory->writeState (*xml);
+    return xml;
+}
+
+void DualRectifierStyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    {
+        const ChannelKnobMemory::ScopedSuspend suspend (*channelMemory);
+        EffectProcessor::setState (state);
+    }
+    channelMemory->readState (state);
 }
 
 void DualRectifierStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -310,6 +343,10 @@ void DualRectifierStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pSrcIn = b.srcIn;
         ch.rGainTop = b.rGainTop;
         ch.rGainBot = b.rGainBot;
+        ch.rV2aSeries = b.rV2aSeries;
+        ch.rBypassV2a = b.rBypassV2a;
+        ch.rV2bSeries = b.rV2bSeries;
+        ch.rBypassV2b = b.rBypassV2b;
         ch.pPlateV1a = b.plateV1a;
         ch.pPlateV2a = b.plateV2a;
         ch.pPlateV2b = b.plateV2b;
@@ -761,6 +798,7 @@ void DualRectifierStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6, ch.power.voltage (ch.wTone));
     }
     updatePots (lastKnobs);
 
@@ -807,6 +845,15 @@ void DualRectifierStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
         {
             controlCounter = 0;
             updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice });
+
+            const int chSel = juce::jlimit (0, 2, juce::roundToInt (channelParam->get()));
+            for (auto& ch : channels)
+            {
+                ch.pre.setResistance (ch.rV2aSeries, chSel == 0 ? 100.0e6 : 39.0e3);
+                ch.pre.setResistance (ch.rBypassV2a, chSel == 0 ? 1.0 : 100.0e6);
+                ch.pre.setResistance (ch.rV2bSeries, chSel <= 1 ? 100.0e6 : 470.0e3);
+                ch.pre.setResistance (ch.rBypassV2b, chSel <= 1 ? 1.0 : 100.0e6);
+            }
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
@@ -855,7 +902,7 @@ void DualRectifierStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone)) : ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.piCoupling.process (ch.power.voltage (ch.wTone))) : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

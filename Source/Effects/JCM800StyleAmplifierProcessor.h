@@ -21,12 +21,10 @@ namespace openguitarmultifx
     cathode follower into the tone stack) -- the real source of this amp's much higher gain and "master volume lead"
     character, and why a dedicated Gain knob sits ahead of the tone stack instead of two per-channel Volume knobs.
 
-    Controls, page 1: Input (High / Low sensitivity jack), Gain (the preamp's own Volume/Gain pot, VR1), Treble,
-    Middle, Bass, Presence, Output (a plug-in level control; the real amp's own Master Volume is modelled as Power
-    Drive on page 2, matching this project's convention for every other amp here). Page 2: Power Drive (the real
-    amp's own Master Volume, VR2), Bias (the trimmer on the bias supply), Tube Feel (how much the supply sags and how
-    little negative feedback there is: 0 = stiff, 1 = the real amp) and Speaker (4 / 8 / 16 ohm, on the transformer's
-    16 ohm tap).
+    Controls, page 1 (the real 2203 panel): Input (High / Low sensitivity jack), Preamp (VR1), Treble, Middle, Bass,
+    Presence, Master (VR2; parameter id j8_power). Page 2 (synthetic): Bias (the trimmer on the bias supply), Tube Feel
+    (how much the supply sags and how little negative feedback there is: 0 = stiff, 1 = the real amp), Speaker
+    (4 / 8 / 16 ohm, on the transformer's 16 ohm tap) and Output (a plug-in level control).
 */
 class JCM800StyleAmplifierProcessor : public EffectProcessor
 {

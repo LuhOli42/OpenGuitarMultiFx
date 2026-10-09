@@ -1,8 +1,10 @@
 #pragma once
 
+#include "ChannelKnobMemory.h"
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -15,16 +17,18 @@ namespace openguitarmultifx
     amplifiers, known for its aggressive, tight distortion and mid-forward voicing that became the
     standard for modern metal rhythm tones.
 
-    The ULTRA (Lead) channel only is modelled. Clean/Crunch switching, effects loop, and channel relay
-    circuitry are not implemented.
+    Both the LEAD (Ultra) and RHYTHM channels are modelled. The Lead channel uses all five preamp gain
+    stages (V1A -> V1B -> V2A -> V2B -> V5B); the Rhythm channel bypasses V2A and V2B via switchable
+    series resistors, going from V1B directly to V5B for a tighter, less-saturated crunch tone.
 
-    Architecture: FIVE cascaded 12AX7 gain stages (V1A -> V1B -> V2A -> V2B -> V5B) plus a V5A cathode
-    follower, tone stack, a post-tone-stack gain recovery stage (V3B), a 12AX7 long-tailed-pair phase
-    inverter (V4A/V4B) with global negative feedback, and four 6L6GC beam tetrodes as two push-pull
+    Architecture: up to FIVE cascaded 12AX7 gain stages (V1A -> V1B -> [V2A -> V2B] -> V5B) plus a V5A
+    cathode follower, tone stack, a post-tone-stack gain recovery stage (V3B), a 12AX7 long-tailed-pair
+    phase inverter (V4A/V4B) with global negative feedback, and four 6L6GC beam tetrodes as two push-pull
     pairs in a fixed-bias output stage.
 
-    Controls, page 1: Gain (Ultra Pre, 1MA), Treble (High), Mid, Bass (Low), Presence, Resonance,
-    Post (master), Output. Page 2: Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm).
+    Controls, page 1 (the real panel's labels): Channel (Rhythm / Lead), Gain, Low, Mid, High, Volume -- each channel
+    keeps its own set (ChannelKnobMemory.h), like the real amp's separate pots -- plus the shared Presence and
+    Resonance. Page 2 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class EVH5150StyleAmplifierProcessor : public EffectProcessor
 {
@@ -36,6 +40,8 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    std::unique_ptr<juce::XmlElement> getState() const override;
+    void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return "5150-Style Amplifier"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2a2a2a); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
@@ -92,7 +98,7 @@ private:
 
         // preamp: five cascaded 12AX7 gain stages + cathode follower
         int pSrcV2 = 0, pSrcV1 = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
+        int rGainTop = 0, rGainBot = 0, rV2aSeries = 0, rBypassV2ab = 0;
         NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pPlateV2b = 0,
                            pPlateV5b = 0, pFollower = 0;
         double followerDc = 0.0;
@@ -111,6 +117,7 @@ private:
 
         // reducedOrder behavioural power stage state
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, srcVoc = 0;
@@ -147,6 +154,7 @@ private:
     DualMonoShortcut shortcut;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
+    juce::AudioParameterFloat* channelParam = nullptr;
     juce::AudioParameterFloat* gainParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* midParam = nullptr;
@@ -159,6 +167,7 @@ private:
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
+    std::unique_ptr<ChannelKnobMemory> channelMemory;
 
     juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedResonance, smoothedPost, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;

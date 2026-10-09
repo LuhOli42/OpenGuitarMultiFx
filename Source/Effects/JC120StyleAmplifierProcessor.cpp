@@ -58,6 +58,10 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
         {
             switch (juce::roundToInt (v)) { case 1: return juce::String ("Channel 2"); case 2: return juce::String ("Both"); default: return juce::String ("Channel 1"); }
         }));
+    auto bright = std::make_unique<juce::AudioParameterFloat> (
+        "jc_bright", "Bright", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        { return v < 0.5f ? juce::String ("Off") : juce::String ("On"); }));
     auto make = [] (const char* id, const char* name, float def)
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
@@ -85,6 +89,7 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
         { return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm"; }));
 
     inputParam = input.get();
+    brightParam = bright.get();
     volumeParam = volume.get();
     trebleParam = treble.get();
     bassParam = bass.get();
@@ -98,6 +103,7 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "jc120", "JC-120-Style Amplifier", "|", std::move (input));
+    group->addChild (std::move (bright));
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (bass));
@@ -165,6 +171,13 @@ void JC120StyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.rVolTop[ch2] = c.addResistor (tone, w, 100.0e3);
             ch.rVolBot[ch2] = c.addResistor (w, vb, 100.0e3);
             c.addResistor (w, ch.pMix, 47.0e3);
+
+            if (ch2 == 0)
+            {
+                const auto brightMid = c.addNode();
+                ch.rBrightSeries = c.addResistor (tone, brightMid, 100.0e6);
+                c.addCapacitor (brightMid, w, 100.0e-12);
+            }
         }
         ch.pPlate1 = plateNodes[0];
         ch.pPlate2 = plateNodes[1];
@@ -441,6 +454,10 @@ void JC120StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             controlCounter = 0;
             updatePots ({ vo, tr, ba, mi, distortionKnob, (double) effectChoice, sp, de, speakerChoice });
+
+            const bool brightOn = brightParam->get() >= 0.5f;
+            for (auto& ch : channels)
+                ch.pre.setResistance (ch.rBrightSeries, brightOn ? 1.0 : 100.0e6);
         }
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;

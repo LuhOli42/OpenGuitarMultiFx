@@ -70,6 +70,7 @@ private:
         // preamp: both channels' input op-amp + tone stack live here, mixing into pMix
         int pSrcIn1 = 0, pSrcIn2 = 0;
         int rTrebleTop[2] {}, rTrebleBottom[2] {}, rBass[2] {}, rMid[2] {}, rVolTop[2] {}, rVolBot[2] {};
+        int rBrightSeries = 0;
         NodalCircuit::Node pPlate1 = 0, pPlate2 = 0, pMix = 0;
 
         // power: master gain, distortion clipper, driver, output pair
@@ -111,6 +112,7 @@ private:
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* inputParam = nullptr;
+    juce::AudioParameterFloat* brightParam = nullptr;
     juce::AudioParameterFloat* volumeParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;

@@ -48,7 +48,10 @@ public:
             juce::AudioBuffer<float> buf (2, 128);
             buf.clear();
             for (int b = 0; b < (int) (2.0 * sr / 128); ++b)
+            {
+                buf.clear(); // silence in every block: without it the previous output is fed back in as input
                 amp.process (buf);
+            }
             double peak = 0.0;
             for (int i = 0; i < 128; ++i)
                 peak = juce::jmax (peak, (double) std::abs (buf.getSample (0, i)));

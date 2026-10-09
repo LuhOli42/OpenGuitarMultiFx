@@ -26,8 +26,8 @@ namespace openguitarmultifx
       3. the solid-state rectifier, choke and the chain of filter nodes (plates, screens, phase inverter, V2, V1).
 
     Controls, page 1: Input (Normal / Jumped / Bright: which channel's jack(s) the guitar is patched into), Loudness I (the
-    bright channel), Loudness II (the normal channel), Treble, Middle, Bass, Presence, Output (a plug-in level control; the
-    real amp has no master volume). Page 2: Power Drive (a master volume before the tone stack), Bias (the trimmer on the bias
+    bright channel), Loudness II (the normal channel), Treble, Middle, Bass, Presence, Page 2 (synthetic, plus Output -- a plug-in level
+    control; the real amp has no master volume): Power Drive (a master volume before the tone stack), Bias (the trimmer on the bias
     supply) and Tube Feel (how much the supply sags and how little negative feedback there is: 0 = stiff, 1 = the real amp) and Speaker
     (the load: 4 / 8 / 16 ohm, a real speaker with its voice-coil inductance and cone resonance, on the transformer's 16 ohm tap).
 */

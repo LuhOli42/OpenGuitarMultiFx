@@ -101,8 +101,8 @@ namespace
     {
         NodalCircuit& c;
         int srcV1 = 0, srcV2 = 0, srcV3 = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node plateV1a = 0, plateV1b = 0, plateV2a = 0, plateV2b = 0, plateV3a = 0, follower = 0;
+        int rGainTop = 0, rGainBot = 0, rBrightSeries = 0, rV1bSeries = 0;
+        NodalCircuit::Node plateV1a = 0, plateV1b = 0, plateV2a = 0, plateV2b = 0, plateV3a = 0, follower = 0, gainWiper = 0;
         NodalCircuit::Node nodeV1 = 0, nodeV2 = 0, nodeV3 = 0;
     };
 
@@ -153,11 +153,17 @@ namespace
         c.addCapacitor (b.plateV1a, gainIn, 1.0e-9); // 1nF ceramic -- the Mark series character cap
         b.rGainTop = c.addResistor (gainIn, gainWiper, 1.0e6);
         b.rGainBot = c.addResistor (gainWiper, gnd, 1.0e6);
+        {
+            const auto brightMid = c.addNode();
+            b.rBrightSeries = c.addResistor (gainIn, brightMid, 100.0e6);
+            c.addCapacitor (brightMid, gainWiper, 470.0e-12);
+        }
 
         // V1b: 100K plate (B+3), grid from gain wiper through 100K series, 3.3M grid leak, 1.5K/6.8µF cathode.
         const auto g2 = c.addNode(), k2 = c.addNode();
         b.plateV1b = c.addNode();
-        c.addResistor (gainWiper, g2, 100.0e3);      // 100K series from gain wiper
+        b.gainWiper = gainWiper;
+        b.rV1bSeries = c.addResistor (gainWiper, g2, 100.0e3); // switchable: 100M for Clean
         c.addResistor (g2, gnd, 3.3e6);              // 3.3M grid leak
         c.addTriode (b.plateV1b, g2, k2, triode12AX7());
         c.addCapacitor (g2, b.plateV1b, cgp);
@@ -228,7 +234,21 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
+    auto channel = std::make_unique<juce::AudioParameterFloat> (
+        "mk2c_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        { return juce::roundToInt (v) == 0 ? juce::String ("Clean") : juce::String ("Lead"); }));
     auto gain = make ("mk2c_gain", "Gain", 0.5f);
+    auto makeSw = [] (const char* id, const char* name)
+    {
+        return std::make_unique<juce::AudioParameterFloat> (
+            id, name, juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+            { return v < 0.5f ? juce::String ("Off") : juce::String ("On"); }));
+    };
+    auto pullBright = makeSw ("mk2c_pull_bright", "Pull Bright");
+    auto pullDeep = makeSw ("mk2c_pull_deep", "Pull Deep");
+    auto pullShift = makeSw ("mk2c_pull_shift", "Pull Shift");
     auto treble = make ("mk2c_treble", "Treble", 0.5f);
     auto mid = make ("mk2c_mid", "Mid", 0.5f);
     auto bass = make ("mk2c_bass", "Bass", 0.5f);
@@ -260,7 +280,11 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
             return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm";
         }));
 
+    channelParam = channel.get();
     gainParam = gain.get();
+    pullBrightParam = pullBright.get();
+    pullDeepParam = pullDeep.get();
+    pullShiftParam = pullShift.get();
     trebleParam = treble.get();
     midParam = mid.get();
     bassParam = bass.get();
@@ -278,17 +302,21 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "mk2cplus", "Mark IIC+-Style Amplifier", "|", std::move (gain));
+        "mk2cplus", "Mark IIC+-Style Amplifier", "|", std::move (channel));
+    group->addChild (std::move (gain));
+    group->addChild (std::move (pullBright));
+    group->addChild (std::move (pullDeep));
+    group->addChild (std::move (pullShift));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
     group->addChild (std::move (master));
-    group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("mk2c_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     auto page3 = std::make_unique<juce::AudioProcessorParameterGroup> ("mk2c_geq", "Graphic EQ", "|",
         std::move (geq80));
@@ -364,6 +392,9 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pSrcIn = b.srcIn;
         ch.rGainTop = b.rGainTop;
         ch.rGainBot = b.rGainBot;
+        ch.rBrightSeries = b.rBrightSeries;
+        ch.rV1bSeries = b.rV1bSeries;
+        ch.pGainWiper = b.gainWiper;
         ch.pPlateV1a = b.plateV1a;
         ch.pPlateV1b = b.plateV1b;
         ch.pPlateV2a = b.plateV2a;
@@ -388,11 +419,11 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (ti, nB, 47.0e3);                  // 47K slope resistor
         ch.rTrebleTop = c.addResistor (top, ch.wTone, 125.0e3);   // Treble 250K linear, split
         ch.rTrebleBottom = c.addResistor (ch.wTone, nT, 125.0e3);
-        c.addCapacitor (nB, nT, 22.0e-9);                // 22nF bass coupling cap
+        ch.capMidBass = c.addCapacitor (nB, nT, 22.0e-9);  // 22nF bass coupling cap (Pull Shift: 4.7nF)
         ch.rBass = c.addResistor (nT, nM, 125.0e3);      // Bass 250K linear (rheostat)
         ch.rMidTop = c.addResistor (nM, nMw, 12.5e3);    // Mid 25K linear, split
         ch.rMidBottom = c.addResistor (nMw, gnd, 12.5e3);
-        c.addCapacitor (nB, nMw, 22.0e-9);               // 22nF mid coupling cap
+        ch.capMidMid = c.addCapacitor (nB, nMw, 22.0e-9); // 22nF mid coupling cap (Pull Shift: 4.7nF)
 
         // Master: 250KA rheostat from tone stack output to ground, before the PI coupling cap.
         ch.rMaster = c.addResistor (ch.wTone, gnd, 125.0e3);
@@ -496,6 +527,11 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
         c.addCapacitor (fp, wp, 0.1e-6);
         c.addCapacitor (fp, gnd, 1.5e-9);             // stray for HF stability
+        {
+            const auto deepMid = c.addNode();
+            ch.rDeepSeries = c.addResistor (fp, deepMid, 100.0e6);
+            c.addCapacitor (deepMid, gnd, 820.0e-12);
+        }
 
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
@@ -749,6 +785,8 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
             ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sF));
             passOk = ch.pre.prepare (newSampleRate) && passOk;
             ch.followerDc = ch.pre.voltage (ch.pFollower);
+            ch.preampTapDc[0] = ch.pre.voltage (ch.pGainWiper);
+            ch.preampTapDc[1] = ch.followerDc;
 
             ch.power.setSource (ch.wSrcCf, ch.followerDc);
             ch.power.setInitialGuess (ch.wToneIn, ch.followerDc);
@@ -866,10 +904,23 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
         const float bi = smoothedBias.getNextValue();
         const float fe = smoothedFeel.getNextValue();
 
+        const int channelSel = juce::roundToInt (channelParam->get()) >= 1 ? 1 : 0;
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
             updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice });
+            const bool brightOn = pullBrightParam->get() >= 0.5f;
+            const bool deepOn = pullDeepParam->get() >= 0.5f;
+            const bool shiftOn = pullShiftParam->get() >= 0.5f;
+            for (auto& ch : channels)
+            {
+                ch.pre.setResistance (ch.rV1bSeries, channelSel == 0 ? 100.0e6 : 100.0e3);
+                ch.pre.setResistance (ch.rBrightSeries, brightOn ? 1.0 : 100.0e6);
+                if (! reducedOrder)
+                    ch.power.setResistance (ch.rDeepSeries, deepOn ? 1.0 : 100.0e6);
+                ch.power.setCapacitance (ch.capMidBass, shiftOn ? 4.7e-9 : 22.0e-9);
+                ch.power.setCapacitance (ch.capMidMid, shiftOn ? 4.7e-9 : 22.0e-9);
+            }
         }
 
         if (++geqUpdateCounter >= controlInterval)
@@ -926,7 +977,10 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * (ch.pre.voltage (ch.pFollower) - ch.followerDc));
+            const NodalCircuit::Node preNode = channelSel == 0 ? ch.pGainWiper : ch.pFollower;
+            const double preDc = ch.preampTapDc[channelSel];
+            const double preAc = ch.pre.voltage (preNode) - preDc;
+            ch.power.setSource (ch.wSrcCf, preDc + masterGain * cathodeFollowerGain * preAc);
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);

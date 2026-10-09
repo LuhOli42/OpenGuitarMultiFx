@@ -773,8 +773,8 @@ public:
             BassmanStyleAmplifierProcessor amp;
             auto pages = amp.getParameterPages();
             expectEquals ((int) pages.size(), 2);
-            expectEquals ((int) pages[0].size(), 8); // Input, Volume Normal/Bright, Treble, Middle, Bass, Presence, Output
-            expectEquals ((int) pages[1].size(), 4);
+            expectEquals ((int) pages[0].size(), 7); // the real panel: Input, Volume Normal/Bright, Treble, Middle, Bass, Presence
+            expectEquals ((int) pages[1].size(), 5); // synthetic: Power Drive, Bias, Tube Feel, Speaker, Output
             setParam (amp, "bm_bias", 0.8f);
             setParam (amp, "bm_speaker", 2.0f);
             auto xml = amp.getState();

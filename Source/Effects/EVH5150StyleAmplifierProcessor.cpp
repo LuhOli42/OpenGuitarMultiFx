@@ -100,6 +100,7 @@ namespace
         NodalCircuit& c;
         int srcV2 = 0, srcV1 = 0, srcIn = 0;
         int rGainTop = 0, rGainBot = 0;
+        int rV2aSeries = 0, rBypassV2ab = 0;
         NodalCircuit::Node plateV1a = 0, plateV1b = 0, plateV2a = 0, plateV2b = 0, plateV5b = 0, follower = 0;
         NodalCircuit::Node nodeV2 = 0, nodeV1 = 0;
     };
@@ -162,11 +163,11 @@ namespace
         c.setInitialGuess (k2, 1.6);
 
         // V2A: 100K plate (V1 rail), 470K grid leak, 39K series, 1.82K cathode bypassed with 1µF.
-        // Additional R11=330K and R9=1M in the coupling network (modelled as combined leak).
+        // Rhythm channel bypasses V2A+V2B entirely (relay switching).
         const auto g3 = c.addNode(), k3 = c.addNode(), coup3 = c.addNode();
         b.plateV2a = c.addNode();
         c.addCapacitor (b.plateV1b, coup3, 22.0e-9);     // coupling
-        c.addResistor (coup3, g3, 39.0e3);               // R15
+        b.rV2aSeries = c.addResistor (coup3, g3, 39.0e3); // R15 (switchable: 100M for Rhythm)
         c.addResistor (g3, gnd, 470.0e3);                // R6 grid leak
         c.addTriode (b.plateV2a, g3, k3, triode12AX7());
         c.addCapacitor (g3, b.plateV2a, cgp);
@@ -194,6 +195,7 @@ namespace
         const auto g5 = c.addNode(), k5 = c.addNode(), coup5 = c.addNode();
         b.plateV5b = c.addNode();
         c.addCapacitor (b.plateV2b, coup5, 22.0e-9);     // coupling
+        b.rBypassV2ab = c.addResistor (coup3, coup5, 100.0e6); // Rhythm bypass: 1 ohm to skip V2A+V2B
         c.addResistor (coup5, g5, 100.0e3);              // R101 series stopper
         c.addResistor (g5, gnd, 1.0e6);                  // R87 grid leak
         c.addTriode (b.plateV5b, g5, k5, triode12AX7());
@@ -217,13 +219,19 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
+    auto channel = std::make_unique<juce::AudioParameterFloat> (
+        "evh_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        {
+            return v < 0.5f ? juce::String ("Rhythm") : juce::String ("Lead");
+        }));
     auto gain = make ("evh_gain", "Gain", 0.5f);
-    auto treble = make ("evh_treble", "Treble", 0.5f);
+    auto treble = make ("evh_treble", "High", 0.5f);
     auto mid = make ("evh_mid", "Mid", 0.5f);
-    auto bass = make ("evh_bass", "Bass", 0.5f);
+    auto bass = make ("evh_bass", "Low", 0.5f);
     auto presence = make ("evh_presence", "Presence", 0.3f);
     auto resonance = make ("evh_resonance", "Resonance", 0.3f);
-    auto post = make ("evh_post", "Post", 0.5f);
+    auto post = make ("evh_post", "Volume", 0.5f);
     auto output = make ("evh_output", "Output", 0.5f);
     auto power = make ("evh_power", "Power Drive", 0.5f);
     auto bias = make ("evh_bias", "Bias", 0.5f);
@@ -235,6 +243,7 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
             return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm";
         }));
 
+    channelParam = channel.get();
     gainParam = gain.get();
     trebleParam = treble.get();
     midParam = mid.get();
@@ -249,20 +258,41 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "evh5150", "5150-Style Amplifier", "|", std::move (gain));
+        "evh5150", "5150-Style Amplifier", "|", std::move (channel));
+    group->addChild (std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
     group->addChild (std::move (resonance));
     group->addChild (std::move (post));
-    group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("evh_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
+
+    // 5150 III: Gain / Low / Mid / High / Volume are per channel; Presence and Resonance are shared.
+    channelMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
+        std::vector<juce::AudioParameterFloat*> { gainParam, trebleParam, midParam, bassParam, postParam });
+}
+
+std::unique_ptr<juce::XmlElement> EVH5150StyleAmplifierProcessor::getState() const
+{
+    auto xml = EffectProcessor::getState();
+    channelMemory->writeState (*xml);
+    return xml;
+}
+
+void EVH5150StyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    {
+        const ChannelKnobMemory::ScopedSuspend suspend (*channelMemory);
+        EffectProcessor::setState (state);
+    }
+    channelMemory->readState (state);
 }
 
 void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -321,6 +351,8 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pSrcIn = b.srcIn;
         ch.rGainTop = b.rGainTop;
         ch.rGainBot = b.rGainBot;
+        ch.rV2aSeries = b.rV2aSeries;
+        ch.rBypassV2ab = b.rBypassV2ab;
         ch.pPlateV1a = b.plateV1a;
         ch.pPlateV1b = b.plateV1b;
         ch.pPlateV2a = b.plateV2a;
@@ -807,6 +839,7 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6, ch.power.voltage (ch.wRecoveryPlate));
     }
     updatePots (lastKnobs);
 
@@ -855,6 +888,13 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             controlCounter = 0;
             updatePots ({ gn, tr, mi, ba, pr, rs, ps, pw, bi, fe, speakerChoice });
+
+            const int chSel = juce::roundToInt (channelParam->get());
+            for (auto& ch : channels)
+            {
+                ch.pre.setResistance (ch.rV2aSeries, chSel == 0 ? 100.0e6 : 39.0e3);
+                ch.pre.setResistance (ch.rBypassV2ab, chSel == 0 ? 1.0 : 100.0e6);
+            }
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
@@ -903,7 +943,7 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wRecoveryPlate)) : ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.piCoupling.process (ch.power.voltage (ch.wRecoveryPlate))) : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

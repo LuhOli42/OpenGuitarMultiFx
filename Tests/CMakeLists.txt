@@ -37,6 +37,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   EVH5150StyleAmplifierProcessorTests.cpp
   ENGLPowerballStyleAmplifierProcessorTests.cpp
   RockerverbStyleAmplifierProcessorTests.cpp
+  ChannelKnobMemoryTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp

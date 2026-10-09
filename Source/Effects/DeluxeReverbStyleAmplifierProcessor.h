@@ -121,7 +121,8 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double volume, treble, bass, powerDrive, bias, tubeFeel;
+        double volume[2], treble[2], bass[2];   // [0] Normal, [1] Vibrato: two full knob sets, like the real panel
+        double powerDrive, bias, tubeFeel;
         int speaker;
     };
     void updatePots (const Knobs& k);
@@ -144,9 +145,10 @@ private:
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* inputParam = nullptr;
-    juce::AudioParameterFloat* volumeParam = nullptr;
-    juce::AudioParameterFloat* trebleParam = nullptr;
-    juce::AudioParameterFloat* bassParam = nullptr;
+    // [0] Normal, [1] Vibrato
+    juce::AudioParameterFloat* volumeParam[2] {};
+    juce::AudioParameterFloat* trebleParam[2] {};
+    juce::AudioParameterFloat* bassParam[2] {};
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* speedParam = nullptr;
     juce::AudioParameterFloat* intensityParam = nullptr;
@@ -155,8 +157,8 @@ private:
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedBass, smoothedOutput, smoothedSpeed,
-        smoothedIntensity, smoothedPower, smoothedBias, smoothedFeel;
+    juce::SmoothedValue<float> smoothedVolume[2], smoothedTreble[2], smoothedBass[2];
+    juce::SmoothedValue<float> smoothedOutput, smoothedSpeed, smoothedIntensity, smoothedPower, smoothedBias, smoothedFeel;
 
         /** JUCE's reset() must return the circuit to its DC operating point -- an
         empty reset() (the bug this fixes) left stale capacitor state forever.

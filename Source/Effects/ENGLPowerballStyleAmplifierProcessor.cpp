@@ -99,8 +99,8 @@ namespace
     {
         NodalCircuit& c;
         int srcV1 = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node plateU5a = 0, plateU5b = 0, plateU6a = 0;
+        int rGainTop = 0, rGainBot = 0, rU5bSeries = 0, rU6aSeries = 0;
+        NodalCircuit::Node plateU5a = 0, plateU5b = 0, plateU6a = 0, gainWiper = 0;
     };
 
     PreampBuild buildPreamp (NodalCircuit& c, double v1Guess)
@@ -127,6 +127,7 @@ namespace
 
         // CH2 Gain: U5A plate → coupling → P10=1MA (audio taper)
         const auto gainIn = c.addNode(), gainWiper = c.addNode();
+        b.gainWiper = gainWiper;
         c.addCapacitor (b.plateU5a, gainIn, 47.0e-9);    // coupling from U5A plate
         c.addResistor (gainIn, gnd, 470.0e3);             // bias reference
         b.rGainTop = c.addResistor (gainIn, gainWiper, 1.0e6);
@@ -135,7 +136,7 @@ namespace
         // U5B: R9=100K plate, R7=1M grid leak, R8=1.5K cathode, CE2=22µF bypass
         const auto g2 = c.addNode(), k2 = c.addNode();
         b.plateU5b = c.addNode();
-        c.addResistor (gainWiper, g2, 10.0e3);            // series from gain wiper
+        b.rU5bSeries = c.addResistor (gainWiper, g2, 10.0e3); // switchable: 100M for Clean
         c.addResistor (g2, gnd, 1.0e6);                   // R7 grid leak
         c.addTriode (b.plateU5b, g2, k2, triode12AX7());
         c.addCapacitor (g2, b.plateU5b, cgp);
@@ -150,7 +151,7 @@ namespace
         const auto g3 = c.addNode(), k3 = c.addNode(), coup3 = c.addNode();
         b.plateU6a = c.addNode();
         c.addCapacitor (b.plateU5b, coup3, 47.0e-9);      // coupling from U5B plate
-        c.addResistor (coup3, g3, 100.0e3);               // series stopper
+        b.rU6aSeries = c.addResistor (coup3, g3, 100.0e3); // switchable: 100M for Clean/Crunch
         c.addResistor (g3, gnd, 470.0e3);                  // R14 grid leak
         c.addTriode (b.plateU6a, g3, k3, triode12AX7());
         c.addCapacitor (g3, b.plateU6a, cgp);
@@ -170,13 +171,20 @@ ENGLPowerballStyleAmplifierProcessor::ENGLPowerballStyleAmplifierProcessor()
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
+    auto channel = std::make_unique<juce::AudioParameterFloat> (
+        "engl_pb_channel", "Channel", juce::NormalisableRange<float> (0.0f, 3.0f, 1.0f), 3.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        {
+            constexpr const char* names[] = { "Clean", "Crunch", "Lead", "Hi Lead" };
+            return juce::String (names[juce::jlimit (0, 3, juce::roundToInt (v))]);
+        }));
     auto gain = make ("engl_pb_gain", "Gain", 0.5f);
     auto treble = make ("engl_pb_treble", "Treble", 0.5f);
     auto mid = make ("engl_pb_mid", "Mid", 0.5f);
     auto bass = make ("engl_pb_bass", "Bass", 0.5f);
     auto presence = make ("engl_pb_presence", "Presence", 0.3f);
     auto depth = make ("engl_pb_depth", "Depth", 0.3f);
-    auto master = make ("engl_pb_master", "Master", 0.5f);
+    auto master = make ("engl_pb_master", "Volume", 0.5f); // the selected channel's own Volume (id kept for presets)
     auto output = make ("engl_pb_output", "Output", 0.5f);
     auto power = make ("engl_pb_power", "Power Drive", 0.5f);
     auto bias = make ("engl_pb_bias", "Bias", 0.5f);
@@ -188,6 +196,7 @@ ENGLPowerballStyleAmplifierProcessor::ENGLPowerballStyleAmplifierProcessor()
             return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm";
         }));
 
+    channelParam = channel.get();
     gainParam = gain.get();
     trebleParam = treble.get();
     midParam = mid.get();
@@ -202,20 +211,45 @@ ENGLPowerballStyleAmplifierProcessor::ENGLPowerballStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "engl_powerball", "Powerball-Style Amplifier", "|", std::move (gain));
+        "engl_powerball", "Powerball-Style Amplifier", "|", std::move (channel), std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
     group->addChild (std::move (depth));
     group->addChild (std::move (master));
-    group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("engl_pb_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
+
+    // Real panel: each of the four channels has its own Gain and Volume; Clean/Crunch share one Bass/Middle/Treble
+    // section and the two Lead channels share the other. Presence/Depth (and Master A/B, our Power Drive) are global.
+    channelMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
+        std::vector<juce::AudioParameterFloat*> { gainParam, masterParam });
+    eqMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
+        std::vector<juce::AudioParameterFloat*> { trebleParam, midParam, bassParam }, std::vector<int> { 0, 0, 1, 1 });
+}
+
+std::unique_ptr<juce::XmlElement> ENGLPowerballStyleAmplifierProcessor::getState() const
+{
+    auto xml = EffectProcessor::getState();
+    channelMemory->writeState (*xml);
+    eqMemory->writeState (*xml);
+    return xml;
+}
+
+void ENGLPowerballStyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    {
+        const ChannelKnobMemory::ScopedSuspend a (*channelMemory), b (*eqMemory);
+        EffectProcessor::setState (state);
+    }
+    channelMemory->readState (state);
+    eqMemory->readState (state);
 }
 
 void ENGLPowerballStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -260,9 +294,12 @@ void ENGLPowerballStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pSrcIn = b.srcIn;
         ch.rGainTop = b.rGainTop;
         ch.rGainBot = b.rGainBot;
+        ch.rU5bSeries = b.rU5bSeries;
+        ch.rU6aSeries = b.rU6aSeries;
         ch.pPlateU5a = b.plateU5a;
         ch.pPlateU5b = b.plateU5b;
         ch.pPlateU6a = b.plateU6a;
+        ch.pGainWiper = b.gainWiper;
     }
 
     // ================================================================ tone block: tone stack + U6B + U7A + U7B + master
@@ -531,9 +568,14 @@ void ENGLPowerballStyleAmplifierProcessor::recover (Channel& ch) const
     ch.vScreen = ch.supply.voltage (ch.sB);
     ch.mwDcPrev = ch.tone.voltage (ch.tMasterWiper);
     ch.mwDcOut = 0.0;
-    ch.u7bDcPrev = ch.tone.voltage (ch.tPlateU7b) - ch.plateDcU7b;
-    ch.u7bDcOut = 0.0;
-    ch.mwServo = 0.0;
+    {
+        const NodalCircuit::Node taps[] = { ch.tTone, ch.tPlateU6b, ch.tPlateU7a, ch.tPlateU7b };
+        for (int t = 0; t < 4; ++t)
+        {
+            ch.tapDcPrev[t] = ch.tone.voltage (taps[t]) - ch.toneTapDc[t];
+            ch.tapDcOut[t] = 0.0;
+        }
+    }
 }
 
 void ENGLPowerballStyleAmplifierProcessor::updateSupply (Channel& ch) const
@@ -710,19 +752,28 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
 
         ch.pre.solveSample();
         ch.plateDcU6a = ch.pre.voltage (ch.pPlateU6a);
+        ch.preampTapDc[0] = ch.pre.voltage (ch.pGainWiper);
+        ch.preampTapDc[1] = ch.pre.voltage (ch.pPlateU5b);
+        ch.preampTapDc[2] = ch.plateDcU6a;
         ch.tone.setSource (ch.tSrcPre, 0.0);
         ch.tone.solveSample();
         ch.plateDcU7b = ch.tone.voltage (ch.tPlateU7b);
+        ch.toneTapDc[0] = ch.tone.voltage (ch.tTone);
+        ch.toneTapDc[1] = ch.tone.voltage (ch.tPlateU6b);
+        ch.toneTapDc[2] = ch.tone.voltage (ch.tPlateU7a);
+        ch.toneTapDc[3] = ch.plateDcU7b;
         if (! reducedOrder)
             ch.power.solveSample();
 
         ch.mwTarget = ch.tone.voltage (ch.tMasterWiper);
-        ch.mwServo = 0.0;
 
         ch.mwDcPrev = ch.mwTarget;
         ch.mwDcOut = 0.0;
-        ch.u7bDcPrev = ch.tone.voltage (ch.tPlateU7b) - ch.plateDcU7b;
-        ch.u7bDcOut = 0.0;
+        for (int t = 0; t < 4; ++t)
+        {
+            ch.tapDcPrev[t] = 0.0;
+            ch.tapDcOut[t] = 0.0;
+        }
 
         ch.pre.saveDynamicState (ch.preRest);
         ch.tone.saveDynamicState (ch.toneRest);
@@ -762,6 +813,7 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
     smoothedBias.setTargetValue (biasParam->get());
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
+    const int channelSel = juce::jlimit (0, 3, juce::roundToInt (channelParam->get()));
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -781,6 +833,12 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
         {
             controlCounter = 0;
             updatePots ({ gn, tr, mi, ba, pr, dp, ms, pw, bi, fe, speakerChoice });
+
+            for (auto& ch : channels)
+            {
+                ch.pre.setResistance (ch.rU5bSeries, channelSel == 0 ? 100.0e6 : 10.0e3);
+                ch.pre.setResistance (ch.rU6aSeries, channelSel <= 1 ? 100.0e6 : 100.0e3);
+            }
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
@@ -797,18 +855,17 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
             ch.pre.setSource (ch.pSrcIn, x);
             const bool okPre = ch.pre.solveSample();
 
-            // AC-coupled from U6A plate to tone block, scaled by Power Drive
-            const double acU6a = ch.pre.voltage (ch.pPlateU6a) - ch.plateDcU6a;
-            ch.tone.setSource (ch.tSrcPre, masterGain * acU6a - ch.mwServo);
+            // AC-coupled from preamp to tone block, tap depends on channel
+            const int preTap = juce::jmin (channelSel, 2);
+            const NodalCircuit::Node preampNodes[] = { ch.pGainWiper, ch.pPlateU5b, ch.pPlateU6a };
+            const double acPre = ch.pre.voltage (preampNodes[preTap]) - ch.preampTapDc[preTap];
+            ch.tone.setSource (ch.tSrcPre, masterGain * acPre);
             const bool okTone = ch.tone.solveSample();
 
-            // DC servo: slow integrator that feeds back the master wiper's DC
-            // error to the tone input, counteracting the 230,000x open-loop drift
-            constexpr double servoGain = 1.0e-3;
-            {
-                const double mw = ch.tone.voltage (ch.tMasterWiper);
-                ch.mwServo += servoGain * (mw - ch.mwTarget);
-            }
+            // (A "DC servo" used to integrate the master wiper's DC error back into the tone input here. Three
+            // coupling caps sit between those two points, so it could never correct anything: it wound up into a
+            // ramp, and the clean channel's tap -- read before those caps -- turned that ramp into a constant DC
+            // output, i.e. silence. Removed 2026-10-08.)
 
             // DC-block inter-block signals
             constexpr double dcR = 0.999935; // HPF fc ≈ 0.5 Hz at 48 kHz
@@ -818,9 +875,13 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
                 ch.mwDcPrev = mw;
             }
             {
-                const double u7b = ch.tone.voltage (ch.tPlateU7b) - ch.plateDcU7b;
-                ch.u7bDcOut = dcR * ch.u7bDcOut + u7b - ch.u7bDcPrev;
-                ch.u7bDcPrev = u7b;
+                const NodalCircuit::Node tapNodes[] = { ch.tTone, ch.tPlateU6b, ch.tPlateU7a, ch.tPlateU7b };
+                for (int t = 0; t < 4; ++t)
+                {
+                    const double raw = ch.tone.voltage (tapNodes[t]) - ch.toneTapDc[t];
+                    ch.tapDcOut[t] = dcR * ch.tapDcOut[t] + raw - ch.tapDcPrev[t];
+                    ch.tapDcPrev[t] = raw;
+                }
             }
 
             bool ok = okPre && okTone;
@@ -850,7 +911,7 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
             }
 
             const double speakerVolts = reducedOrder
-                ? behavioralPowerStage (ch, ch.u7bDcOut)
+                ? behavioralPowerStage (ch, ch.tapDcOut[channelSel])
                 : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;

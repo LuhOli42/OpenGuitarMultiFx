@@ -42,17 +42,14 @@ namespace
     // ---- tubes ----
     KorenTriode::Parameters triode12AX7() { return {}; } // Koren's ECC83 set
 
-    /** The LTP's own 12AX7, `kg1` softened -- see docs/circuits/AC30TopBoost.md's "A small power-stage instability"
-        section. With silence at the input, the shared-cathode-bias node coupling the two output phases (all four
-        EL84s tied to ONE cathode resistor, confirmed on the drawing) let the LTP settle into a slow, low-amplitude
-        flip-flop between two nearly-symmetric plate states instead of a single stable point. Freezing the supply's
-        own sag loop did NOT remove it, ruling that out. Softening EITHER tube ALONE needed a much larger multiple to
-        reach genuine stability, and on the OUTPUT pentode alone that visibly flattened the reference model's own
-        driven-signal response into a near-dead-zone (output barely changed across two decades of input level) well
-        before reaching stability -- the same "fix crushes the curve" failure this project's other kg1
-        investigations found. Splitting a smaller multiple across BOTH tubes (6x each) reaches the same genuine 10 s
-        stability with much less damage to either one's own transfer curve -- same lesson as the JCM800's own
-        power-stage investigation. */
+    /** The LTP's own 12AX7, `kg1` softened 6x, together with the EL84 pair below. History, so nobody re-derives it:
+        this split was first tuned (2026-09-29) to quench a slow silent-input oscillation -- but that reference had two
+        real bugs, found 2026-10-05: each EL84 plate was shunted to B+ by its "series" resistor (killing ~35 dB of
+        output-stage gain) and the preamp tap had no RC decoupling (output ripple fed straight back into the preamp,
+        which is what actually oscillated once the shunt was gone). With both fixed the amp is stable even at the
+        published kg1 -- but then the full reference delivers ~42 V rms into 16 ohm (~110 W from four EL84s, which
+        cannot happen; a real AC30 gives ~30 W). With the 6x split it gives ~18 V rms (~20 W) at full drive: the
+        softening now stands as the closer match to the real amp's output power, not as a stability fix. */
     KorenTriode::Parameters triode12AX7Pi()
     {
         auto p = triode12AX7();
@@ -141,11 +138,11 @@ AC30StyleAmplifierProcessor::AC30StyleAmplifierProcessor()
     group->addChild (std::move (treble));
     group->addChild (std::move (bass));
     group->addChild (std::move (cut));
-    group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("ac30_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -259,9 +256,8 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pFollower = b.follower;
     }
 
-    // ================================================================ power: Top Boost tone stack -> LTP -> 2x2 EL84
-    // pairs, cathode-biased, no NFB (confirmed absent on the drawing -- no feedback resistor from the OT back into
-    // the phase inverter appears anywhere on this circuit)
+    // ================================================================ tone stack (ALWAYS built and solved: a real linear
+    // circuit either way, so it costs nothing extra in reducedOrder mode)
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
@@ -283,10 +279,13 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rBass = c.addResistor (d, e, 1.0e6);
         ch.rBassBottom = c.addResistor (e, f, 1.0e6);
         c.addResistor (f, gnd, 10.0e3);
+    }
 
-        // Long-tailed-pair phase inverter: V1a driven from the tone stack's own output through 47k + 1M grid leak;
-        // V1b's own grid returns to ground through its own 1M leak (no feedback signal reaches it -- this circuit
-        // has no global feedback loop at all, confirmed absent on the drawing); shared 1k2 tail, unbypassed.
+    // ================================================================ phase inverter, power amp -- full reference
+    // netlist only (reducedOrder replaces this with behavioralPowerStage())
+    if (! reducedOrder)
+    {
+        auto& c = ch.power;
         const auto rail = c.addNode();
         ch.wSrcRail = c.addSource (rail, railPlatesNominal);
         const auto g1 = c.addNode(), g2 = c.addNode(), tail = c.addNode();
@@ -307,8 +306,6 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.wPiPlateB, 280.0);
         c.setInitialGuess (tail, 1.0);
 
-        // Each phase couples through a 0.047 uF cap and a 220k grid leak into its own pair of EL84 grids
-        // (confirmed on the drawing).
         ch.wGridA = c.addNode();
         ch.wGridB = c.addNode();
         c.addCapacitor (ch.wPiPlateA, ch.wGridA, 0.047e-6);
@@ -316,39 +313,35 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addCapacitor (ch.wPiPlateB, ch.wGridB, 0.047e-6);
         c.addResistor (ch.wGridB, gnd, 220.0e3);
 
-        // Four EL84s as two parallel pairs (one pair per phase) sharing ONE cathode-bias node through their own
-        // 100 ohm resistors each (confirmed on the drawing) -- self-biased, no fixed bias supply, matching the AC15.
         ch.wCathodeBias = c.addNode();
-        ch.rCathodeBias = c.addResistor (ch.wCathodeBias, gnd, 65.0); // two 100 ohm resistors in parallel per pair, halved again for two pairs sharing one node -- see the doc
-        c.addCapacitor (ch.wCathodeBias, gnd, 25.0e-6); // confirmed 25 uF on the drawing
+        ch.rCathodeBias = c.addResistor (ch.wCathodeBias, gnd, 65.0);
+        c.addCapacitor (ch.wCathodeBias, gnd, 25.0e-6);
 
         ch.wPP1 = c.addNode();
         ch.wPP2 = c.addNode();
-        // Screens: all four tied to one shared node through a 50 ohm resistor + 25 uF bypass (confirmed on the
-        // drawing) -- modelled as a fixed, plausible screen voltage rather than a literal shared resistor node
-        // (the screen isn't a circuit node in this project's pentode model -- see NodalCircuit::addPentode).
         ch.penA = c.addPentode (ch.wPP1, ch.wGridA, ch.wCathodeBias, pentodeEL84Pair(), 300.0);
         ch.penB = c.addPentode (ch.wPP2, ch.wGridB, ch.wCathodeBias, pentodeEL84Pair(), 300.0);
-        c.addResistor (rail, ch.wPP1, 50.0); // 1k5 || 1k5 (two per phase, confirmed on the drawing)
-        c.addResistor (rail, ch.wPP2, 50.0);
         c.setInitialGuess (ch.wPP1, 340.0);
         c.setInitialGuess (ch.wPP2, 335.0);
         c.setInitialGuess (ch.wCathodeBias, 12.0);
 
-        // Output transformer, no negative feedback: plate-to-plate, 16 ohm tap (the real amp's own printed 15 ohm
-        // tap, rounded).
         c.addCapacitor (ch.wPP1, ch.wPP2, 400.0e-12);
         c.addResistor (ch.wPP1, ch.wPP2, 20.0e3);
         c.addCapacitor (ch.wPP1, gnd, 400.0e-12);
         c.addCapacitor (ch.wPP2, gnd, 400.0e-12);
-        const auto a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode();
+        // Each plate reaches its half of the primary through its own series resistor (on the drawing). It used to be
+        // wired from the rail straight to the plate, i.e. a 50 ohm shunt across each half-primary, which shorted
+        // almost all of the output away (the reference made ~0.3 V rms where a real amp makes tens of volts).
+        const auto a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode(), t1 = c.addNode(), t2 = c.addNode();
+        c.addResistor (t1, ch.wPP1, 50.0);
+        c.addResistor (t2, ch.wPP2, 50.0);
         c.addResistor (rail, a1, primaryHalfResistance);
         c.addResistor (rail, a2, primaryHalfResistance);
         const double lh = primaryHalfInductance;
         const double ls = lh / (halfToSecondaryTurns * halfToSecondaryTurns);
         const double m12 = -couplingHalves * lh;
         const double mps = couplingSecondary * std::sqrt (lh * ls);
-        c.addCoupledInductors ({ { a1, ch.wPP1 }, { a2, ch.wPP2 }, { sw, gnd } },
+        c.addCoupledInductors ({ { a1, t1 }, { a2, t2 }, { sw, gnd } },
                                { lh,  m12, -mps,
                                  m12, lh,   mps,
                                  -mps, mps, ls });
@@ -364,6 +357,8 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.grpSpkLp = c.addCoupledInductors ({ { nbb, gnd } }, { sm.lp });
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
+        c.setInitialGuess (t1, railPlatesNominal);
+        c.setInitialGuess (t2, railPlatesNominal);
         c.setInitialGuess (a1, railPlatesNominal);
         c.setInitialGuess (a2, railPlatesNominal);
     }
@@ -389,12 +384,12 @@ void AC30StyleAmplifierProcessor::updatePots (const Knobs& k)
     {
         ch.pre.setResistance (ch.rVolTop, juce::jmax (1.0, 500.0e3 - volBottom));
         ch.pre.setResistance (ch.rVolBot, volBottom);
+        ch.power.setResistance (ch.rTrebleTop, trebleTop);
+        ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
+        ch.power.setResistance (ch.rBass, bassTop);
+        ch.power.setResistance (ch.rBassBottom, bassBottom);
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rTrebleTop, trebleTop);
-            ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
-            ch.power.setResistance (ch.rBass, bassTop);
-            ch.power.setResistance (ch.rBassBottom, bassBottom);
             ch.power.setResistance (ch.rCathodeBias, cathodeR);
             ch.supply.setResistance (ch.rRect, rectifier);
         }
@@ -470,7 +465,14 @@ void AC30StyleAmplifierProcessor::updateSupply (Channel& ch) const
     const auto rail = [&] (NodalCircuit::Node node, double maxVolts) { return juce::jlimit (0.0, maxVolts, ch.supply.voltage (node)); };
     if (! reducedOrder)
         ch.power.setSource (ch.wSrcRail, rail (ch.sB, 450.0));
-    ch.pre.setSource (ch.pSrcRail, rail (ch.sB, 450.0) * 0.725);
+    // The preamp tap is decoupled on the real amp (a dropping resistor + filter cap; the 290 V is printed, the parts are
+    // not legible -- 22k + 16 uF assumed, a typical Vox value). Without it every bit of output-stage ripple on the main
+    // B+ reached the preamp unfiltered and closed a loop the real amp doesn't have: a ~235 Hz oscillation that grew
+    // without bound in silence once the output stage had its full gain.
+    constexpr double decouplingTau = 22.0e3 * 16.0e-6;
+    const double dt = (double) supplyInterval / juce::jmax (1.0, sampleRate);
+    ch.preRail += (1.0 - std::exp (-dt / decouplingTau)) * (rail (ch.sB, 450.0) * 0.725 - ch.preRail);
+    ch.pre.setSource (ch.pSrcRail, ch.preRail);
 }
 
 double AC30StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept
@@ -567,12 +569,15 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             ch.pre.setSource (ch.pSrcRail, ch.supply.voltage (ch.sB) * 0.725);
             passOk = ch.pre.prepare (newSampleRate) && passOk;
 
+            ch.followerDc = ch.pre.voltage (ch.pFollower);
+            ch.power.setSource (ch.wSrcCf, ch.followerDc);
+            if (! reducedOrder)
+                ch.power.setSource (ch.wSrcRail, ch.supply.voltage (ch.sB));
+            passOk = ch.power.prepare (newSampleRate) && passOk;
+
             double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
             if (! reducedOrder)
             {
-                ch.power.setSource (ch.wSrcCf, 0.0);
-                ch.power.setSource (ch.wSrcRail, ch.supply.voltage (ch.sB));
-                passOk = ch.power.prepare (newSampleRate) && passOk;
                 ch.power.solveSample();
                 ch.power.pentodeCurrents (ch.penA, ipA, isA);
                 ch.power.pentodeCurrents (ch.penB, ipB, isB);
@@ -585,7 +590,9 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         dcOk = passOk && ch.supply.prepare (supplyRate) && dcOk;
         if (! reducedOrder)
             ch.power.setSource (ch.wSrcRail, ch.supply.voltage (ch.sB));
-        ch.pre.setSource (ch.pSrcRail, ch.supply.voltage (ch.sB) * 0.725);
+        ch.preRail = ch.supply.voltage (ch.sB) * 0.725;
+        ch.pre.setSource (ch.pSrcRail, ch.preRail);
+        ch.followerDc = ch.pre.voltage (ch.pFollower);
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
@@ -655,18 +662,17 @@ void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            bool ok2 = true;
+            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * (ch.pre.voltage (ch.pFollower) - ch.followerDc));
+            const bool ok2 = ch.power.solveSample();
+            ok = ok && ok2;
             if (! reducedOrder)
             {
-                ch.power.setSource (ch.wSrcCf, masterGain * ch.pre.voltage (ch.pFollower));
-                ok2 = ch.power.solveSample();
                 double ipA, ipB, isA, isB;
                 ch.power.pentodeCurrents (ch.penA, ipA, isA);
                 ch.power.pentodeCurrents (ch.penB, ipB, isB);
                 ch.sumPlate += ipA + ipB + isA + isB;
                 ++ch.sumCount;
             }
-            ok = ok && ok2;
             if (chIdx == 0)
             {
                 failuresPre += okPre ? 0 : 1;
@@ -679,7 +685,7 @@ void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            double speakerVolts = reducedOrder ? behavioralPowerStage (ch, masterGain * ch.pre.voltage (ch.pFollower))
+            double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone))
                                                        : ch.power.voltage (ch.wOut);
             {
                 const double cutHz = 800.0 + 19200.0 * (1.0 - pots::audio ((double) cu));

@@ -21,7 +21,7 @@ namespace openguitarmultifx
 
     Controls, page 1: Input (High / Low sensitivity jack), Volume, Treble, Bass (the real amp's own Top Boost
     controls), Cut (treble roll-off, the real amp's own "Cut" control in the NFB loop, modelled as a one-pole LPF on
-    the output), Output (a plug-in level control; the real amp has no master volume). Page 2: Power Drive (a synthetic
+    the output), Page 2 (synthetic, plus Output -- a plug-in level control; the real amp has no master volume): Power Drive (a synthetic
     master ahead of the phase inverter, matching this project's convention), Bias (a synthetic shift of the shared
     cathode-bias resistor -- the real amp has no adjustable bias trim, being self-biased), Tube Feel, Speaker
     (4 / 8 / 16 ohm, matching the real amp's own transformer taps exactly).
@@ -44,8 +44,10 @@ public:
 
     // ---- reduced-order power stage, built in from the start ----
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 0.00128;
-    static constexpr double bmYmax = 0.00105;
+    // Fitted (2026-10-05) to the full reference after its plate resistors were rewired in series with the OT (they
+    // were a shunt across each half-primary that killed ~35 dB of output; the old constants were fitted to that).
+    static constexpr double bmGain0 = 17.3;
+    static constexpr double bmYmax = 0.0583;
     static constexpr double bmKneeN = 3.0;
     static constexpr double bmShelfHz = 120.0;
     static constexpr double bmShelfHfGain = 0.7;
@@ -83,6 +85,7 @@ private:
         int pSrcIn = 0, pSrcRail = 0;
         int rVolTop = 0, rVolBot = 0;
         NodalCircuit::Node pPlate = 0, pVolOut = 0, pFollower = 0;
+        double followerDc = 0.0;
 
         // power section: Top Boost tone stack -> LTP -> 2x2 EL84 pairs, cathode-biased, no NFB
         int wSrcCf = 0, wSrcRail = 0;
@@ -100,6 +103,7 @@ private:
         double sumPlate = 0.0;
         int sumCount = 0;
         int supplyCounter = 0;
+        double preRail = 0.0; // the decoupled 290 V preamp tap, after its RC filter
     };
 
     void buildChannel (Channel& ch);

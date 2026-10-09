@@ -1277,7 +1277,7 @@ public:
             int page2Count = 0;
             for (auto* g : amp.getParameters()->getSubgroups (false))
                 page2Count += (int) g->getParameters (false).size();
-            expectEquals (page2Count, 4); // Power Drive, Bias, Tube Feel, Speaker
+            expectEquals (page2Count, 5); // Power Drive, Bias, Tube Feel, Speaker, Output
         }
 
         beginTest ("stereo: identical channels are processed once and stay identical; different channels are independent");

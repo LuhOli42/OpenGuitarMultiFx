@@ -49,6 +49,13 @@ public:
                             *f = (float) knob;
                             break;
                         }
+                // AMP_SET="id=value,id=value": set parameters by id (the first parameter is often a selector)
+                if (const char* set = std::getenv ("AMP_SET"))
+                    for (auto& pair : juce::StringArray::fromTokens (set, ",", ""))
+                        for (auto* p : params)
+                            if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+                                if (f->paramID == pair.upToFirstOccurrenceOf ("=", false, false))
+                                    *f = pair.fromFirstOccurrenceOf ("=", false, false).getFloatValue();
                 fx->prepare (sr, 128, 1);
             }
             BassmanStyleAmplifierProcessor amp;

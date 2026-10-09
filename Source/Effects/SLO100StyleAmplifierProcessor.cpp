@@ -112,21 +112,32 @@ namespace
 
 SLO100StyleAmplifierProcessor::SLO100StyleAmplifierProcessor()
 {
-    auto input = std::make_unique<juce::AudioParameterFloat> (
-        "slo_input", "Input", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+    auto onOff = [] (const char* id, const char* name)
+    {
+        return std::make_unique<juce::AudioParameterFloat> (
+            id, name, juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+            { return juce::roundToInt (v) == 0 ? juce::String ("Off") : juce::String ("On"); }));
+    };
+    auto channel = std::make_unique<juce::AudioParameterFloat> (
+        "slo_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-        { return juce::roundToInt (v) == 0 ? juce::String ("Normal") : juce::String ("Bright"); }));
+        { return juce::roundToInt (v) == 0 ? juce::String ("Normal") : juce::String ("Overdrive"); }));
+    auto input = onOff ("slo_input", "Bright");
+    auto crunch = onOff ("slo_crunch", "Crunch");
     auto make = [] (const char* id, const char* name, float def)
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
-    auto gain = make ("slo_gain", "Gain", 0.5f);
+    auto nGain = make ("slo_n_gain", "Normal Preamp", 0.5f);
+    auto gain = make ("slo_gain", "Overdrive Preamp", 0.5f);
     auto treble = make ("slo_treble", "Treble", 0.5f);
-    auto mid = make ("slo_mid", "Mid", 0.5f);
+    auto mid = make ("slo_mid", "Middle", 0.5f);
     auto bass = make ("slo_bass", "Bass", 0.5f);
+    auto nMaster = make ("slo_n_master", "Normal Master", 0.5f);
+    auto power = make ("slo_power", "Overdrive Master", 0.5f);
     auto presence = make ("slo_presence", "Presence", 0.3f);
     auto output = make ("slo_output", "Output", 0.5f);
-    auto power = make ("slo_power", "Power Drive", 0.5f);
     auto bias = make ("slo_bias", "Bias", 0.5f);
     auto feel = make ("slo_tube_feel", "Tube Feel", 1.0f);
     auto speaker = std::make_unique<juce::AudioParameterFloat> (
@@ -136,129 +147,145 @@ SLO100StyleAmplifierProcessor::SLO100StyleAmplifierProcessor()
             return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm";
         }));
 
+    channelParam = channel.get();
     inputParam = input.get();
+    crunchParam = crunch.get();
+    nGainParam = nGain.get();
     gainParam = gain.get();
     trebleParam = treble.get();
     midParam = mid.get();
     bassParam = bass.get();
+    nMasterParam = nMaster.get();
+    powerParam = power.get();
     presenceParam = presence.get();
     outputParam = output.get();
-    powerParam = power.get();
     biasParam = bias.get();
     tubeFeelParam = feel.get();
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "slo100", "SLO-100-Style Amplifier", "|", std::move (input));
+        "slo100", "SLO-100-Style Amplifier", "|", std::move (channel));
+    group->addChild (std::move (input));
+    group->addChild (std::move (crunch));
+    group->addChild (std::move (nGain));
     group->addChild (std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
+    group->addChild (std::move (nMaster));
+    group->addChild (std::move (power));
     group->addChild (std::move (presence));
-    group->addChild (std::move (output));
-    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("slo100_page2", "Page 2", "|", std::move (power));
-    page2->addChild (std::move (bias));
+    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("slo100_page2", "Page 2", "|", std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
 
 namespace
 {
+    constexpr double ldrOn = 1.0e3, ldrOff = 100.0e6;
+
     struct PreampBuild
     {
         NodalCircuit& c;
         int srcV1 = 0, srcV2 = 0, srcV3 = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node plateV1b = 0, plateV2a = 0, plateV2b = 0, plateV3b = 0, follower = 0;
-        NodalCircuit::Node nodeV1 = 0, nodeV2 = 0, nodeV3 = 0;
+        int rGainTop = 0, rGainBot = 0, rNGainTop = 0, rNGainBot = 0;
+        int rCrunchSeries = 0, rCrunchShunt = 0, rBrightSeries = 0;
+        NodalCircuit::Node plateV1b = 0, plateV1a = 0, plateV2a = 0, plateV2b = 0, plateV3b = 0, follower = 0;
     };
 
-    /** The SLO-100 OD preamp: FIVE cascaded 12AX7 sections -- V1b (first gain, bypassed cathode), OD Volume (500K),
-        V2a (second gain, bypassed cathode), V2b (third gain, 39K unbypassed cathode -- the key "tight" stage),
-        V3b (fourth gain, bypassed cathode), and V3a as a cathode follower driving the tone stack.
-        Supply taps: B4 (v1Guess) for V1b, B3 (v2Guess) for V2a/V2b, B2 (v3Guess) for V3b/V3a.
+    NodalCircuit::Node gainStage (NodalCircuit& c, NodalCircuit::Node grid, NodalCircuit::Node vcc, double rPlate,
+                                  double rCathode, double cBypass, double plateGuess, double cathodeGuess)
+    {
+        const auto gnd = NodalCircuit::ground;
+        const auto plate = c.addNode(), k = c.addNode();
+        c.addTriode (plate, grid, k, triode12AX7());
+        c.addCapacitor (grid, plate, cgp);
+        c.addResistor (vcc, plate, rPlate);
+        c.addResistor (k, gnd, rCathode);
+        if (cBypass > 0.0)
+            c.addCapacitor (k, gnd, cBypass);
+        c.setInitialGuess (plate, plateGuess);
+        c.setInitialGuess (k, cathodeGuess);
+        return plate;
+    }
 
-        The .001uF (1nF) coupling cap between V2a and V2b is one of the defining voicing components -- it rolls off
-        bass going into the high-gain stages, producing the SLO-100's characteristic tight distortion at high gain. */
-    PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double v1Guess, double v2Guess, double v3Guess)
+    /** The SLO-100 preamp, both channels, from Rob Robinette's annotated factory schematic. Rails: B+5 (359 V, srcV1)
+        for V1B/V1A/V2A, B+4 (350 V, srcV2) for V2B, B+3 (378 V, srcV3) for V3B/V3A. */
+    /** Two netlists, one per channel, each solved only while its channel is selected (measured: in Overdrive the Normal
+        branch's 2.2M path into V3B changes the output by < 0.01 dB, and in Normal LDR1 grounds V2B's grid, so the
+        inactive branch's tubes contribute nothing). Each still carries the OTHER branch's passive input network as a
+        load on V1B. `normal` selects which branch's tubes are built. */
+    PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double v1Guess, double v2Guess, double v3Guess, bool normal)
     {
         const auto gnd = NodalCircuit::ground;
         PreampBuild b { c };
 
         const auto vcc1 = c.addNode(), vcc2 = c.addNode(), vcc3 = c.addNode(), in = c.addNode();
-        b.nodeV1 = vcc1;
-        b.nodeV2 = vcc2;
-        b.nodeV3 = vcc3;
         b.srcV1 = c.addSource (vcc1, v1Guess);
         b.srcV2 = c.addSource (vcc2, v2Guess);
         b.srcV3 = c.addSource (vcc3, v3Guess);
         b.srcIn = c.addSource (in, 0.0);
 
-        // V1b: 68K grid stopper, 1M grid leak, 220K plate load (B4), 1.8K cathode with 1uF bypass -- the first high-gain
-        // stage with full cathode bypass for maximum gain.
-        const auto g1 = c.addNode(), k1 = c.addNode();
-        b.plateV1b = c.addNode();
+        // Preamp 1 (V1B, both channels): 68K grid stop, 1M input leak, 220K plate, 1.8K + 1uF.
+        const auto g1 = c.addNode();
         c.addResistor (in, g1, 68.0e3);
         c.addResistor (g1, gnd, 1.0e6);
-        c.addTriode (b.plateV1b, g1, k1, triode12AX7());
-        c.addCapacitor (g1, b.plateV1b, cgp);
-        c.addResistor (vcc1, b.plateV1b, 220.0e3);
-        c.addResistor (k1, gnd, 1.8e3);
-        c.addCapacitor (k1, gnd, 1.0e-6);
-        c.setInitialGuess (b.plateV1b, 200.0);
-        c.setInitialGuess (k1, 1.5);
+        b.plateV1b = gainStage (c, g1, vcc1, 220.0e3, 1.8e3, 1.0e-6, 200.0, 1.5);
+        const auto p1 = c.addNode();
+        c.addCapacitor (b.plateV1b, p1, 0.02e-6);
 
-        // OD Volume (500K, audio taper): the drive control for the cascaded gain stages. 0.02uF couples V1b's plate
-        // into the pot's top lug; the wiper feeds V2a's grid.
-        const auto gainIn = c.addNode(), gainWiper = c.addNode();
-        c.addCapacitor (b.plateV1b, gainIn, 0.02e-6);
-        b.rGainTop = c.addResistor (gainIn, gainWiper, 500.0e3);
-        b.rGainBot = c.addResistor (gainWiper, gnd, 500.0e3);
+        // ---- Overdrive: 470K attenuator || 0.002uF treble peaker -> OD Preamp 500KL (fixed 0.001uF bright) -> 470K grid
+        // stop -> V2A (100K, 1.8K + 1uF) -> 0.02uF -> 470K / 1M attenuator -> V2B cold clipper (100K || 0.001uF, 39K).
+        const auto q = c.addNode(), odWiper = c.addNode(), g2 = c.addNode();
+        c.addResistor (p1, q, 470.0e3);
+        c.addCapacitor (p1, q, 0.002e-6);
+        b.rGainTop = c.addResistor (q, odWiper, 250.0e3);
+        b.rGainBot = c.addResistor (odWiper, gnd, 250.0e3);
+        c.addCapacitor (q, odWiper, 0.001e-6);
+        c.addResistor (odWiper, g2, 470.0e3);
+        const auto v3in = c.addNode();
+        if (! normal)
+        {
+            b.plateV2a = gainStage (c, g2, vcc1, 100.0e3, 1.8e3, 1.0e-6, 190.0, 1.5);
+            const auto a = c.addNode(), g3 = c.addNode();
+            c.addCapacitor (b.plateV2a, a, 0.02e-6);
+            c.addResistor (a, g3, 470.0e3);
+            c.addResistor (g3, gnd, 1.0e6);
+            b.plateV2b = gainStage (c, g3, vcc2, 100.0e3, 39.0e3, 0.0, 280.0, 30.0);
+            c.addCapacitor (b.plateV2b, vcc2, 0.001e-6);         // plate load bypass (high-cut)
+            const auto odOut = c.addNode();
+            c.addCapacitor (b.plateV2b, odOut, 0.02e-6);
+            c.addResistor (odOut, gnd, 2.2e6);                   // anti-pop
+            c.addResistor (odOut, v3in, ldrOn);                  // LDR2 lit: Overdrive connected to V3B
+        }
 
-        // V2a: 470K grid leak, 100K plate (B3), 1.8K cathode with 1uF bypass -- high gain, bypassed.
-        const auto g2 = c.addNode(), k2 = c.addNode();
-        b.plateV2a = c.addNode();
-        c.addResistor (gainWiper, g2, 470.0e3); // grid leak from wiper
-        c.addTriode (b.plateV2a, g2, k2, triode12AX7());
-        c.addCapacitor (g2, b.plateV2a, cgp);
-        c.addResistor (vcc2, b.plateV2a, 100.0e3);
-        c.addResistor (k2, gnd, 1.8e3);
-        c.addCapacitor (k2, gnd, 1.0e-6);
-        c.setInitialGuess (b.plateV2a, 190.0);
-        c.setInitialGuess (k2, 1.5);
+        // ---- Normal: 470K (bypassed by Crunch) -> 470K (|| 470pF with Bright) -> 39K (removed by Crunch) || Normal
+        // Preamp 500KL -> V1A (100K, 2.2K unbypassed) -> 0.02uF -> 2.2M || 120pF -> V3B's input (330K leak).
+        const auto t = c.addNode(), n = c.addNode(), nWiper = c.addNode(), brightMid = c.addNode();
+        b.rCrunchSeries = c.addResistor (p1, t, 470.0e3);
+        c.addResistor (t, n, 470.0e3);
+        b.rBrightSeries = c.addResistor (t, brightMid, ldrOff);
+        c.addCapacitor (brightMid, n, 470.0e-12);
+        b.rCrunchShunt = c.addResistor (n, gnd, 39.0e3);
+        b.rNGainTop = c.addResistor (n, nWiper, 250.0e3);
+        b.rNGainBot = c.addResistor (nWiper, gnd, 250.0e3);
+        if (normal)
+        {
+            b.plateV1a = gainStage (c, nWiper, vcc1, 100.0e3, 2.2e3, 0.0, 230.0, 1.5);
+            const auto cOut = c.addNode();
+            c.addCapacitor (b.plateV1a, cOut, 0.02e-6);
+            c.addResistor (cOut, v3in, 2.2e6);
+            c.addCapacitor (cOut, v3in, 120.0e-12);
+        }
+        c.addResistor (v3in, gnd, 330.0e3);
 
-        // V2b: .001uF (1nF) coupling from V2a -> 100K mixing resistor -> V2b grid. 1M grid leak, 100K plate (B3),
-        // 39K cathode UNBYPASSED -- this stage's large unbypassed cathode resistor gives the SLO-100's characteristic
-        // tight, focused distortion by providing strong local negative feedback at the point where the signal is
-        // already heavily clipped from the first two gain stages.
-        const auto g3 = c.addNode(), k3 = c.addNode(), mix = c.addNode();
-        b.plateV2b = c.addNode();
-        c.addCapacitor (b.plateV2a, mix, 0.001e-6); // 1nF -- the defining voicing cap
-        c.addResistor (mix, g3, 100.0e3);            // mixing resistor
-        c.addResistor (g3, gnd, 1.0e6);
-        c.addTriode (b.plateV2b, g3, k3, triode12AX7());
-        c.addCapacitor (g3, b.plateV2b, cgp);
-        c.addResistor (vcc2, b.plateV2b, 100.0e3);
-        c.addResistor (k3, gnd, 39.0e3);
-        c.setInitialGuess (b.plateV2b, 280.0);
-        c.setInitialGuess (k3, 30.0);
-
-        // V3b: .02uF coupling, 220K grid leak, 220K plate (B2), 1.8K cathode with 1uF bypass.
-        const auto g4 = c.addNode(), k4 = c.addNode();
-        b.plateV3b = c.addNode();
-        c.addCapacitor (b.plateV2b, g4, 0.02e-6);
-        c.addResistor (g4, gnd, 220.0e3);
-        c.addTriode (b.plateV3b, g4, k4, triode12AX7());
-        c.addCapacitor (g4, b.plateV3b, cgp);
-        c.addResistor (vcc3, b.plateV3b, 220.0e3);
-        c.addResistor (k4, gnd, 1.8e3);
-        c.addCapacitor (k4, gnd, 1.0e-6);
-        c.setInitialGuess (b.plateV3b, 220.0);
-        c.setInitialGuess (k4, 1.5);
-
-        // V3a: cathode follower (same 12AX7) -- drives the tone stack through a low-impedance output.
+        // ---- OD Preamp 4 (V3B, both channels): 220K grid stop, 220K plate, 1.8K + 1uF; V3A cathode follower.
+        const auto g4 = c.addNode();
+        c.addResistor (v3in, g4, 220.0e3);
+        b.plateV3b = gainStage (c, g4, vcc3, 220.0e3, 1.8e3, 1.0e-6, 220.0, 1.5);
         b.follower = c.addNode();
         c.addFollower (b.plateV3b, b.follower, followerDrop);
         return b;
@@ -314,25 +341,23 @@ void SLO100StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.sF, 359.0);
     }
 
-    // ================================================================ preamp
+    // ================================================================ preamp: one netlist per channel
+    for (int side = 0; side < 2; ++side)
     {
-        auto probe = buildPreamp (ch.pre, 0.0, 359.0, 350.0, 378.0);
-        ch.pre.prepare (48000.0);
-        const double plate = ch.pre.voltage (probe.plateV3b);
+        auto& p = ch.pre[(size_t) side];
+        const bool normal = side == 0;
+        // The follower's DC drop needs V3B's own plate voltage: build once with no drop, read it, rebuild.
+        auto probe = buildPreamp (p.net, 0.0, 359.0, 350.0, 378.0, normal);
+        p.net.prepare (48000.0);
+        const double plate = p.net.voltage (probe.plateV3b);
         const double drop = plate - cathodeFollowerDc (378.0, plate);
-        ch.pre = NodalCircuit {};
-        auto b = buildPreamp (ch.pre, drop, 359.0, 350.0, 378.0);
-        ch.pSrcV1 = b.srcV1;
-        ch.pSrcV2 = b.srcV2;
-        ch.pSrcV3 = b.srcV3;
-        ch.pSrcIn = b.srcIn;
-        ch.rGainTop = b.rGainTop;
-        ch.rGainBot = b.rGainBot;
-        ch.pPlateV1b = b.plateV1b;
-        ch.pPlateV2a = b.plateV2a;
-        ch.pPlateV2b = b.plateV2b;
-        ch.pPlateV3b = b.plateV3b;
-        ch.pFollower = b.follower;
+        p.net = NodalCircuit {};
+        auto b = buildPreamp (p.net, drop, 359.0, 350.0, 378.0, normal);
+        p.srcV1 = b.srcV1;  p.srcV2 = b.srcV2;  p.srcV3 = b.srcV3;  p.srcIn = b.srcIn;
+        p.rGainTop = b.rGainTop;  p.rGainBot = b.rGainBot;  p.rNGainTop = b.rNGainTop;  p.rNGainBot = b.rNGainBot;
+        p.rCrunchSeries = b.rCrunchSeries;  p.rCrunchShunt = b.rCrunchShunt;  p.rBrightSeries = b.rBrightSeries;
+        p.plateV1b = b.plateV1b;  p.plateV1a = b.plateV1a;  p.plateV2a = b.plateV2a;  p.plateV2b = b.plateV2b;
+        p.plateV3b = b.plateV3b;  p.follower = b.follower;
     }
 
     // ================================================================ tone stack (always built and solved)
@@ -489,9 +514,19 @@ void SLO100StyleAmplifierProcessor::updatePots (const Knobs& k)
 
     for (auto& ch : channels)
     {
-        const double gainBottom = juce::jmax (1.0, 500.0e3 * pots::audio (k.gain));
-        ch.pre.setResistance (ch.rGainBot, gainBottom);
-        ch.pre.setResistance (ch.rGainTop, juce::jmax (1.0, 500.0e3 - gainBottom));
+        // Both preamp pots are 500KL (linear) on the schematic.
+        const double gainBottom = juce::jmax (1.0, 500.0e3 * k.gain);
+        for (auto& p : ch.pre)
+        {
+            p.net.setResistance (p.rGainBot, gainBottom);
+            p.net.setResistance (p.rGainTop, juce::jmax (1.0, 500.0e3 - gainBottom));
+        }
+        const double nGainBottom = juce::jmax (1.0, 500.0e3 * k.nGain);
+        for (auto& p : ch.pre)
+        {
+            p.net.setResistance (p.rNGainBot, nGainBottom);
+            p.net.setResistance (p.rNGainTop, juce::jmax (1.0, 500.0e3 - nGainBottom));
+        }
         ch.power.setResistance (ch.rTrebleTop, trebleTop);
         ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
         ch.power.setResistance (ch.rBass, bassR);
@@ -547,7 +582,8 @@ void SLO100StyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 void SLO100StyleAmplifierProcessor::recover (Channel& ch) const
 {
     ++recoveries;
-    ch.pre.restoreDynamicState (ch.preRest);
+    for (auto& p : ch.pre)
+        p.net.restoreDynamicState (p.rest);
     ch.power.restoreDynamicState (ch.powerRest);
     ch.supply.restoreDynamicState (ch.supplyRest);
     ch.screenDropA = ch.screenDropB = 0.0;
@@ -576,9 +612,12 @@ void SLO100StyleAmplifierProcessor::updateSupply (Channel& ch) const
         ch.power.setSource (ch.wSrcCt, rail (ch.sA, 560.0));
         ch.power.setSource (ch.wSrcPi, rail (ch.sC, 520.0));
     }
-    ch.pre.setSource (ch.pSrcV3, rail (ch.sC, 480.0));  // V3b/V3a from B2
-    ch.pre.setSource (ch.pSrcV2, rail (ch.sD, 480.0));  // V2a/V2b from B3
-    ch.pre.setSource (ch.pSrcV1, rail (ch.sF, 480.0));  // V1b from B4
+    for (auto& p : ch.pre)
+    {
+        p.net.setSource (p.srcV3, rail (ch.sC, 480.0));  // V3b/V3a from B2
+        p.net.setSource (p.srcV2, rail (ch.sD, 480.0));  // V2b from B3
+        p.net.setSource (p.srcV1, rail (ch.sF, 480.0));  // V1b/V1a/V2a from B4
+    }
     ch.vScreen = rail (ch.sB, 560.0);
 }
 
@@ -607,11 +646,12 @@ double SLO100StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
     const auto& ch = channels[0];
     switch (p)
     {
-        case Probe::v1bPlate: return ch.pre.voltage (ch.pPlateV1b);
-        case Probe::v2aPlate: return ch.pre.voltage (ch.pPlateV2a);
-        case Probe::v2bPlate: return ch.pre.voltage (ch.pPlateV2b);
-        case Probe::v3bPlate: return ch.pre.voltage (ch.pPlateV3b);
-        case Probe::followerOut: return ch.pre.voltage (ch.pFollower);
+        case Probe::v1bPlate: return ch.pre[(size_t) ch.activePre].net.voltage (ch.pre[(size_t) ch.activePre].plateV1b);
+        case Probe::v1aPlate: return ch.pre[0].net.voltage (ch.pre[0].plateV1a);
+        case Probe::v2aPlate: return ch.pre[1].net.voltage (ch.pre[1].plateV2a);
+        case Probe::v2bPlate: return ch.pre[1].net.voltage (ch.pre[1].plateV2b);
+        case Probe::v3bPlate: return ch.pre[(size_t) ch.activePre].net.voltage (ch.pre[(size_t) ch.activePre].plateV3b);
+        case Probe::followerOut: return ch.pre[(size_t) ch.activePre].net.voltage (ch.pre[(size_t) ch.activePre].follower);
         case Probe::toneStackOut: return ch.power.voltage (ch.wTone);
         case Probe::phaseInverterGrid: return ch.power.voltage (ch.wGridA);
         case Probe::phaseInverterPlateA: return ch.power.voltage (ch.wPlateA);
@@ -629,7 +669,7 @@ double SLO100StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
 
 double SLO100StyleAmplifierProcessor::debugIterations (int block) const noexcept
 {
-    return block == 0 ? channels[0].pre.averageIterations() : channels[0].power.averageIterations();
+    return block == 0 ? channels[0].pre[(size_t) channels[0].activePre].net.averageIterations() : channels[0].power.averageIterations();
 }
 
 int SLO100StyleAmplifierProcessor::debugLastPowerIterations() const noexcept { return channels[0].power.lastIterations(); }
@@ -680,6 +720,8 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         s.reset (newSampleRate, seconds);
         s.setCurrentAndTargetValue (p->get());
     };
+    setup (smoothedNGain, nGainParam, 0.02);
+    setup (smoothedNMaster, nMasterParam, 0.02);
     setup (smoothedGain, gainParam, 0.02);
     setup (smoothedTreble, trebleParam, 0.02);
     setup (smoothedMid, midParam, 0.02);
@@ -692,7 +734,7 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
 
     idleSupplyCurrent = 0.18;
     appliedSpeaker = matchedSpeaker;
-    updatePots ({ gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
+    updatePots ({ nGainParam->get(), gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
                   presenceParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(), juce::roundToInt (speakerParam->get()) });
 
     dcOk = true;
@@ -706,11 +748,15 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         {
             passOk = ch.supply.prepare (supplyRate);
 
-            ch.pre.setSource (ch.pSrcV3, ch.supply.voltage (ch.sC));
-            ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sD));
-            ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sF));
-            passOk = ch.pre.prepare (newSampleRate) && passOk;
-            ch.followerDc = ch.pre.voltage (ch.pFollower);
+            for (auto& p : ch.pre)
+            {
+                p.net.setSource (p.srcV3, ch.supply.voltage (ch.sC));
+                p.net.setSource (p.srcV2, ch.supply.voltage (ch.sD));
+                p.net.setSource (p.srcV1, ch.supply.voltage (ch.sF));
+                passOk = p.net.prepare (newSampleRate) && passOk;
+                p.followerDc = p.net.voltage (p.follower);
+            }
+            ch.followerDc = ch.pre[(size_t) ch.activePre].followerDc;
 
             ch.power.setSource (ch.wSrcCf, ch.followerDc);
             ch.power.setInitialGuess (ch.wToneIn, ch.followerDc);
@@ -734,11 +780,14 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
                 iPi = (vPi - ch.power.voltage (ch.wPlateA)) / 82.0e3 + (vPi - ch.power.voltage (ch.wPlateB)) / 81.0e3;
             }
             const double vV3 = ch.supply.voltage (ch.sC);
-            const double iV3 = (vV3 - ch.pre.voltage (ch.pPlateV3b)) / 220.0e3 + ch.followerDc / 100.0e3;
+            const auto& od = ch.pre[1];
+            const auto& nm = ch.pre[0];
+            const double iV3 = (vV3 - od.net.voltage (od.plateV3b)) / 220.0e3 + ch.followerDc / 100.0e3;
             const double vV2 = ch.supply.voltage (ch.sD);
-            const double iV2 = (vV2 - ch.pre.voltage (ch.pPlateV2a)) / 100.0e3 + (vV2 - ch.pre.voltage (ch.pPlateV2b)) / 100.0e3;
+            const double iV2 = (vV2 - od.net.voltage (od.plateV2b)) / 100.0e3;
             const double vV1 = ch.supply.voltage (ch.sF);
-            const double iV1 = (vV1 - ch.pre.voltage (ch.pPlateV1b)) / 220.0e3;
+            const double iV1 = (vV1 - od.net.voltage (od.plateV1b)) / 220.0e3 + (vV1 - nm.net.voltage (nm.plateV1a)) / 100.0e3
+                             + (vV1 - od.net.voltage (od.plateV2a)) / 100.0e3;
             ipRun += 0.5 * ((ipA + ipB) - ipRun);
             isRun += 0.5 * ((isA + isB) - isRun);
             iPiRun += 0.5 * (iPi - iPiRun);
@@ -764,10 +813,13 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
         }
-        ch.pre.setSource (ch.pSrcV3, ch.supply.voltage (ch.sC));
-        ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sD));
-        ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sF));
-        ch.pre.saveDynamicState (ch.preRest);
+        for (auto& p : ch.pre)
+        {
+            p.net.setSource (p.srcV3, ch.supply.voltage (ch.sC));
+            p.net.setSource (p.srcV2, ch.supply.voltage (ch.sD));
+            p.net.setSource (p.srcV1, ch.supply.voltage (ch.sF));
+            p.net.saveDynamicState (p.rest);
+        }
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.failStreak = 0;
@@ -792,6 +844,8 @@ void SLO100StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
 
+    smoothedNGain.setTargetValue (nGainParam->get());
+    smoothedNMaster.setTargetValue (nMasterParam->get());
     smoothedGain.setTargetValue (gainParam->get());
     smoothedTreble.setTargetValue (trebleParam->get());
     smoothedMid.setTargetValue (midParam->get());
@@ -802,13 +856,33 @@ void SLO100StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedBias.setTargetValue (biasParam->get());
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
-    const int inputChoice = juce::roundToInt (inputParam->get()); // 0 Normal, 1 Bright
-    // Bright switch: adds a bright cap across the OD Volume pot's top segment. In this model, Bright mode just adds
-    // ~3 dB at 2-5 kHz by slightly boosting the input level (a simplification -- the real bright cap is 470pF).
-    const double inputGain = inputChoice == 0 ? 1.0 : 1.4;
+    // The panel's switches and the channel LDRs (an LDR is ~1k lit, effectively open dark).
+    const bool brightOn = juce::roundToInt (inputParam->get()) == 1;
+    const bool crunchOn = juce::roundToInt (crunchParam->get()) == 1;
+    const int channelSel = juce::roundToInt (channelParam->get()) >= 1 ? 1 : 0;
+    for (auto& ch : channels)
+    {
+        for (auto& p : ch.pre)
+        {
+            p.net.setResistance (p.rBrightSeries, brightOn ? 1.0 : ldrOff);
+            p.net.setResistance (p.rCrunchSeries, crunchOn ? 1.0 : 470.0e3);
+            p.net.setResistance (p.rCrunchShunt, crunchOn ? ldrOff : 39.0e3);
+        }
+        if (channelSel != ch.activePre)
+        {
+            // The channel coming in starts from its own settled operating point; the output is declicked.
+            auto& next = ch.pre[(size_t) channelSel];
+            next.net.restoreDynamicState (next.rest);
+            ch.activePre = channelSel;
+            ch.followerDc = next.followerDc;
+            ch.alignOutput = true;
+        }
+    }
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float ng = smoothedNGain.getNextValue();
+        const float nm = smoothedNMaster.getNextValue();
         const float gn = smoothedGain.getNextValue();
         const float tr = smoothedTreble.getNextValue();
         const float mi = smoothedMid.getNextValue();
@@ -822,11 +896,11 @@ void SLO100StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ gn, tr, mi, ba, pr, pw, bi, fe, speakerChoice });
+            updatePots ({ ng, gn, tr, mi, ba, pr, nm, pw, bi, fe, speakerChoice });
         }
 
-        // Power Drive: the real amp's OD Master Volume, between the tone stack and the phase inverter.
-        const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
+        // The selected channel's master (1MA each), between the shared tone stack and the phase inverter.
+        const double masterGain = juce::jmax (0.002, pots::audio ((double) (channelSel == 0 ? nm : pw)));
 
         // Output control: -30 dB .. 0 dB at noon .. +12 dB.
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
@@ -837,13 +911,15 @@ void SLO100StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
-            const double x = std::isfinite (data[i]) ? inputLimit (inputGain * (double) data[i]) : 0.0;
-            ch.pre.setSource (ch.pSrcIn, x);
-            const bool okPre = ch.pre.solveSample();
+            const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
+            auto& pre = ch.pre[(size_t) ch.activePre];
+            pre.net.setSource (pre.srcIn, x);
+            const bool okPre = pre.net.solveSample();
             bool ok = okPre;
 
-            // Apply Power Drive (OD Master Volume) between preamp and tone stack -- same convention as JCM800.
-            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * (ch.pre.voltage (ch.pFollower) - ch.followerDc));
+            // Both channels reach the tone stack through V3B and the V3A follower.
+            const double preAc = pre.net.voltage (pre.follower) - ch.followerDc;
+            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * preAc);
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
@@ -889,7 +965,7 @@ void SLO100StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 if (++ch.restRefreshCounter >= restRefreshInterval)
                 {
                     ch.restRefreshCounter = 0;
-                    ch.pre.saveDynamicState (ch.preRest);
+                    pre.net.saveDynamicState (pre.rest);
                     ch.power.saveDynamicState (ch.powerRest);
                     ch.supply.saveDynamicState (ch.supplyRest);
                 }

@@ -1,11 +1,35 @@
 # Rockerverb-Style Amplifier
 
-A component-level model of the **Orange Rockerverb 50 MK1** Dirty channel, built from the factory
-schematic ORA-CD204/ORA-CD206 (27 Feb 2004 / 10 Mar 2004). The Rockerverb is Orange's flagship
-high-gain amplifier, known for its thick, harmonically-rich distortion and distinctive mid-range
-character. Only the Dirty channel is modelled here.
+A component-level model of the early **Orange Rockerverb 50 MK1** (4x6V6), built from the factory schematics
+ORA-CD204 (preamp, 27 Feb 2004) and ORA-CD206 (power, 10 Mar 2004). **Both channels are modelled as drawn** (rebuilt
+2026-10-08; the first version modelled only the Dirty channel, with several estimated values, a single Gain pot in
+the wrong place and a generic tone stack -- see "2026-10-08 rebuild" below).
 
 Display name: **Rockerverb-Style Amplifier** (trademark-safe convention).
+
+## 2026-10-08 rebuild (read first)
+Transcribed stage by stage from ORA-CD204 (300 dpi render of the scan, values legible):
+* **Input**: C24 220n -> R42 1M0 shared grid leak -> R47 68K (V9-A) and R44 68K (V10-A).
+* **Dirty**: V9-A (R37 100K, R46 1K5 + C27 10u; C22 not fitted) -> C31 1n0 -> R53 220K -> R60 220K + C42 470p ->
+  **Gain RV4-B** (A1M, bright C36 100p) -> V9-B (R38 100K + C18 100p, R48 1K0 + C28 10u) -> C23 2n2 -> R54 220K ->
+  R61 470K -> **Gain RV4-A** (second gang of the same pot) -> V8-A (R39 100K + C19 100p, R49 2K2 + C29 10u) -> C32 4n7
+  -> R51 470K / R52 220K -> V8-B (R40 100K, R50 1K5 unbypassed) -> tone stack: C37 560p -> **Treble RV7 250KB**,
+  R62 39K slope, C40 22n -> **Bass RV5 500KA** (rheostat) -> **Middle RV6 25KB**, C41 22n -> RV6 wiper ->
+  **Volume RV8 500KA**.
+* **Clean**: V10-A (R35 100K, R43 1K5 + C25 22u) -> C30 1n0 -> R56 220K / R55 220K -> **Volume RV1 500KA** (bright
+  C34 150p) -> V10-B (R36 100K, R45 1K5 + C26 22u) -> tone stack: C35 56p -> **Treble RV3 250KB**, R58 100K slope,
+  C38 22n -> **Bass RV2 250KA**, C39 22n -> RV2 wiper with **R57 6K8** to ground (the fixed "middle": no Middle knob).
+* **Relay RL1** picks one channel; then shared: R4 220K -> C4 220n -> **V7-A (12AT7) cathode follower** (R15 22K,
+  grid biased from rail D by R17 220K / R14 33K + C11 via R16 1M) -> C5 220n -> R6 150K / R13 68K -> loop -> C1 220n,
+  R20 1M, R7 68K -> **V7-B (12AT7)** (R18 56K, R19 1K5 unbypassed) -> C6 220n -> R9 1M -> reverb mixer (RV9 250KA at
+  minimum + R64 220K, R63 1M) -> C3 47n -> PI grid (R26 1M).
+* **No Presence** on this amp (the NFB is a fixed R10 4K7 into the PI tail) -- the old Presence knob was removed.
+  **No master volume**: Power Drive (page 2) now defaults to 1.0 = the real amp.
+* Rails: F (V9/V10) = sE, E (V8) = sD, D (V7) = sC, C (PI) = sB.
+
+Measured (AmpDynamicsBench, 196 Hz sine): Clean at noon 2-3% THD with a normal pickup level, breaking up as Volume
+rises (12% at full, 20% with a hot input); Dirty from a light crunch at Gain 2 (4%) through crunch at 4 (20%) to a
+thick 37% at full. Registry trim -14.3 -> -5.74 dB.
 
 ## Architecture
 

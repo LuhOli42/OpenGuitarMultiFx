@@ -99,9 +99,12 @@ of the job reducedOrder exists for.
 ## Reduced-order (behavioural) power stage
 Built in from the start, calibrated (`A15_POWERCAL`) against this amp's own real reference model -- no instability
 investigation was needed here (see the section above for what almost went unnoticed instead).
-* **Fitted constants**: `bmGain0 = 0.070`, `bmYmax = 0.002837`, `bmKneeN = 1.5` -- far smaller absolute numbers than
-  every other amp on this roadmap, a direct and expected consequence of this being a genuine 15 W design rather than
-  a 100 W Marshall/Fender.
+* **Fitted constants** (2026-10-05): `bmGain0 = 3.22`, `bmYmax = 0.1017`, `bmKneeN = 1.5`. The earlier `0.070` /
+  `0.002837` ("far smaller than every other amp because it is a 15 W design") were NOT a property of the amp: the
+  reference had each EL84 plate shunted to B+ through its 100 ohm resistor (wired rail-to-plate instead of in series
+  with the primary), killing ~35 dB of output, and the behavioural stage was fed the Volume node with its ~150 V DC
+  still on it. Both fixed; the reference now reaches ~21-26 V rms into 16 ohm. The preamp tap also got an RC
+  decoupling filter (22k + 16 uF assumed), see docs/circuits/AC30TopBoost.md. Registry trim +37.37 dB -> +4.30 dB.
 * **Verified**: level tracks the reference within 0.14-0.45 dB across the tested sweep; speaker 4/8/16 behaviour
   bit-identical; worst-block cost under a hot-pedal stress: **2.58% avg, 9.5% worst block, zero failures/recoveries**.
 * **Known, documented gaps**: same as every amp on this pattern -- Presence/Bias/Tube Feel have reduced or no effect

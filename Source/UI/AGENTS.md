@@ -150,8 +150,8 @@ The Settings screen ("..." button, `Tone3000Panel`) has a **Rendering quality** 
   (only for an effect with more than one page); `onPreferredHeightChanged` lets the drawer resize when the page changes.
   Everything stays in `getParameters(true)`, so presets, MIDI Learn and automation see all parameters. A parameter whose range interval is >= 1 with at most 8 positions (a selector such as the amp's 4 / 8 / 16 ohm) shows the
   parameter's own text ("4 ohm") instead of a number. (It used `getNumSteps()` first, which JUCE's `AudioParameterFloat` never overrides: the knob kept showing 0 / 1 / 2.)
-  Used by the amplifiers: Bassman-Style Amplifier (Power Drive, Bias, Tube Feel, Speaker) and the neural amps / amp+cab (Sag).
-* **Menu.** "Amplifiers" was split into **Modeled Amps** (circuit-modelled: Bassman-Style Amplifier), **Neural** (Neural Amp,
+  Used by the amplifiers: Bassman Amplifier (Power Drive, Bias, Tube Feel, Speaker) and the neural amps / amp+cab (Sag).
+* **Menu.** "Amplifiers" was split into **Modeled Amps** (circuit-modelled: Bassman Amplifier), **Neural** (Neural Amp,
   Neural Amp + Cab, Neural Pedal) and **Cabs** (Cab, Dynamic Cab). New modelled amps go in "Modeled Amps".
   "Drive" was split (2026-09-21) into **Overdrive** and **Distortion**, by display-name suffix in `categoryForDisplayName()`:
   "...-Style Distortion" -> Distortion (DS-1, HM-2, Distortion+, Guv'nor, RAT), "...-Style Overdrive" and the Rangemaster booster ->

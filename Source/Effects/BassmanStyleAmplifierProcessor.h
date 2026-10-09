@@ -24,7 +24,7 @@ namespace openguitarmultifx
     Controls, page 1: Input (Normal / Jumped / Bright -- which front-panel jack(s) the guitar is patched into; each
     channel's own grid stopper returns to its OWN jack now, so leaving one disconnected really does silence its Volume
     knob, matching the real amp with nothing plugged into it), Volume (Normal), Volume (Bright), Treble, Middle, Bass,
-    Presence, Output (a plug-in level control; the real amp has no master volume). Page 2: Power Drive (a master volume between the phase inverter and the power
+    Presence, Page 2 (synthetic, plus Output -- a plug-in level control; the real amp has no master volume): Power Drive (a master volume between the phase inverter and the power
     tubes), Bias (the -48 V grid supply), Tube Feel (how much the supply sags and how little negative feedback there
     is: 0 = stiff and solid-state-like, 1 = the real amp) and Speaker (the load: 4 / 8 / 16 ohm, a speaker with its
     voice-coil inductance and cone resonance, so the presence and the bass "thump" interact with the amp).

@@ -15,18 +15,25 @@ namespace openguitarmultifx
     read that file to understand this processor). This is the flagship high-gain amplifier that helped define the modern
     "hot-rodded" American high-gain sound, heard on countless rock and metal recordings from the early 1990s onward.
 
-    The OD (Overdrive) channel only is modelled, as the amp's defining voice and the one that made it famous. The
-    Clean channel (switched by VR1/VR4 optoisolators) is not implemented, same as the JCM800's second channel or the
-    AC30's Normal channel. The FX Send/Return loop is not modelled (standing project rule: amp-no-effects-loop.md).
+    Both channels are modelled: the CLEAN channel bypasses V2a/V2b/V3b (taps from the OD Volume pot wiper,
+    giving a single-stage clean tone), and the OD (Overdrive) channel uses all five cascaded gain stages for the
+    amp's defining high-gain voice. Channel switching is via a switchable series resistor on V2a's grid in the
+    netlist. The FX Send/Return loop is not modelled (standing project rule: amp-no-effects-loop.md).
 
-    Architecture: FIVE cascaded 12AX7 gain stages (V1b -> V2a -> V2b -> V3b -> V3a as a cathode follower), a Fender-style
-    TMB tone stack (Treble 250K / Bass 1M / Mid 25K), a 12AX7 long-tailed-pair phase inverter with global negative
-    feedback from the 4 ohm tap through a Presence pot, and four 6L6GC beam tetrodes as two push-pull pairs in a
-    fixed-bias output stage -- structurally very similar to the Twin Reverb's own power section.
+    Architecture: up to FIVE cascaded 12AX7 gain stages (V1b -> [V2a -> V2b -> V3b] -> V3a as a cathode follower),
+    a Fender-style TMB tone stack (Treble 250K / Bass 1M / Mid 25K), a 12AX7 long-tailed-pair phase inverter with
+    global negative feedback from the 4 ohm tap through a Presence pot, and four 6L6GC beam tetrodes as two
+    push-pull pairs in a fixed-bias output stage -- structurally very similar to the Twin Reverb's own power section.
 
-    Controls, page 1: Input (Normal / Bright, selects the input jack's bright cap), Gain (the preamp's own OD Volume,
-    500K), Treble, Bass, Mid, Presence, Output (a plug-in level control). Page 2: Power Drive (the real amp's own
-    OD Master Volume, applied between the tone stack and PI), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm).
+    Both channels as drawn (Rob Robinette's annotated factory schematic, 2026-10-08 rebuild): Normal = V1B -> Crunch/
+    Clean attenuator (470K + 470K over 39K; Crunch drops one 470K and the 39K) with the Bright switch's 470 pF -> Normal
+    Preamp 500KL -> V1A -> 2.2M || 120 pF -> V3B; Overdrive = V1B -> 470K || 2 nF -> OD Preamp 500KL (fixed 1 nF bright)
+    -> V2A -> 470K / 1M -> V2B cold clipper -> LDR2 -> V3B. LDR1/LDR2 switch the channels. One shared tone stack, then
+    a Normal and an Overdrive master.
+
+    Controls, page 1 -- the real panel: Channel (Normal / Overdrive), Bright, Crunch, Normal Preamp, Overdrive Preamp,
+    Treble, Middle, Bass, Normal Master, Overdrive Master, Presence. Page 2 (synthetic): Bias, Tube Feel, Speaker
+    (4 / 8 / 16 ohm), Output.
 */
 class SLO100StyleAmplifierProcessor : public EffectProcessor
 {
@@ -57,7 +64,7 @@ public:
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
-    enum class Probe { v1bPlate, v2aPlate, v2bPlate, v3bPlate, followerOut, toneStackOut,
+    enum class Probe { v1bPlate, v1aPlate, v2aPlate, v2bPlate, v3bPlate, followerOut, toneStackOut,
                        phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB, phaseInverterTail,
                        powerPlateA, powerPlateB, powerGridA, speaker, biasNode, feedbackNode };
     double debugVoltage (Probe p) const noexcept;
@@ -86,20 +93,29 @@ public:
     double screenCurrentTotal() const noexcept;
 
 private:
+    /** One channel's preamp netlist (V1B -> its branch -> V3B -> V3A follower). */
+    struct PreSide
+    {
+        NodalCircuit net;
+        NodalCircuit::DynamicState rest;
+        int srcV1 = 0, srcV2 = 0, srcV3 = 0, srcIn = 0;
+        int rGainTop = 0, rGainBot = 0, rNGainTop = 0, rNGainBot = 0;  // OD / Normal preamp pots (500KL)
+        int rCrunchSeries = 0, rCrunchShunt = 0, rBrightSeries = 0;    // the Crunch and Bright switches
+        NodalCircuit::Node plateV1b = 0, plateV1a = 0, plateV2a = 0, plateV2b = 0, plateV3b = 0, follower = 0;
+        double followerDc = 0.0;
+    };
+
     struct Channel
     {
-        NodalCircuit pre, power, supply;
-        NodalCircuit::DynamicState preRest, powerRest, supplyRest;
+        std::array<PreSide, 2> pre;          // [0] Normal, [1] Overdrive -- only the selected one is solved
+        int activePre = 1;
+        double followerDc = 0.0;             // the active side's follower DC (what the tone stack sees at rest)
+        NodalCircuit power, supply;
+        NodalCircuit::DynamicState powerRest, supplyRest;
         int failStreak = 0;
         int restRefreshCounter = 0;
         double lastEmitted = 0.0, declick = 0.0;
         bool alignOutput = false;
-
-        // preamp: five cascaded 12AX7 sections (V1b -> OD Volume -> V2a -> V2b -> V3b -> V3a follower)
-        int pSrcV1 = 0, pSrcV2 = 0, pSrcV3 = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node pPlateV1b = 0, pPlateV2a = 0, pPlateV2b = 0, pPlateV3b = 0, pFollower = 0;
-        double followerDc = 0.0;
 
         // power section
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
@@ -127,7 +143,7 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double gain, treble, mid, bass, presence, powerDrive, bias, tubeFeel;
+        double nGain, gain, treble, mid, bass, presence, nMaster, powerDrive, bias, tubeFeel;
         int speaker;
     };
     void updatePots (const Knobs& k);
@@ -150,7 +166,11 @@ private:
     DualMonoShortcut shortcut;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
-    juce::AudioParameterFloat* inputParam = nullptr;
+    juce::AudioParameterFloat* channelParam = nullptr;
+    juce::AudioParameterFloat* inputParam = nullptr;   // the Normal channel's Bright switch (id kept for presets)
+    juce::AudioParameterFloat* crunchParam = nullptr;
+    juce::AudioParameterFloat* nGainParam = nullptr;
+    juce::AudioParameterFloat* nMasterParam = nullptr;
     juce::AudioParameterFloat* gainParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* midParam = nullptr;
@@ -162,7 +182,7 @@ private:
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
+    juce::SmoothedValue<float> smoothedNGain, smoothedNMaster, smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
         /** JUCE's reset() must return the circuit to its DC operating point -- an

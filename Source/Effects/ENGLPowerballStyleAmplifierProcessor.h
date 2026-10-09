@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ChannelKnobMemory.h"
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
@@ -19,6 +20,8 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    std::unique_ptr<juce::XmlElement> getState() const override;
+    void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return "Powerball-Style Amplifier"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff1a1a2e); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
@@ -61,9 +64,10 @@ private:
 
         // preamp: three cascaded 12AX7 gain stages (U5A -> U5B -> U6A)
         int pSrcV1 = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node pPlateU5a = 0, pPlateU5b = 0, pPlateU6a = 0;
+        int rGainTop = 0, rGainBot = 0, rU5bSeries = 0, rU6aSeries = 0;
+        NodalCircuit::Node pPlateU5a = 0, pPlateU5b = 0, pPlateU6a = 0, pGainWiper = 0;
         double plateDcU6a = 0.0;
+        double preampTapDc[3] = {};   // DC for [gainWiper, U5b plate, U6a plate]
 
         // tone block: tone stack + 3 post-tonestack gain stages (U6B, U7A, U7B) + master
         int tSrcPre = 0, tSrcVcc = 0;
@@ -85,8 +89,12 @@ private:
 
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
         double mwDcPrev = 0.0, mwDcOut = 0.0;
-        double u7bDcPrev = 0.0, u7bDcOut = 0.0;
-        double mwTarget = 0.0, mwServo = 0.0;
+        double mwTarget = 0.0;
+
+        // per-channel tone-block tap DC-block state [tTone, U6b, U7a, U7b]
+        double toneTapDc[4] = {};
+        double tapDcPrev[4] = {};
+        double tapDcOut[4] = {};
 
         int iA = 0, iB = 0, iC = 0, iD = 0, srcVoc = 0;
         int rRect = 0;
@@ -118,6 +126,7 @@ private:
     DualMonoShortcut shortcut;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
+    juce::AudioParameterFloat* channelParam = nullptr;
     juce::AudioParameterFloat* gainParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* midParam = nullptr;
@@ -130,6 +139,7 @@ private:
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
+    std::unique_ptr<ChannelKnobMemory> channelMemory, eqMemory;
 
     juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedDepth, smoothedMaster, smoothedOutput, smoothedPower,

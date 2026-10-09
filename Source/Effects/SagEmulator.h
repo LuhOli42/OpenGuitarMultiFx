@@ -10,7 +10,7 @@ namespace openguitarmultifx
     A behavioural power-supply sag for amplifiers that are not circuit-modelled (the neural captures). A real tube
     amp's rectifier and filter capacitors droop while the output stage draws current, so a loud passage squashes
     itself for a few tens of milliseconds and recovers afterwards, with a slow, lightly damped ring (the choke against
-    the capacitors, ~13 Hz on the Bassman). This is the same phenomenon the Bassman-Style Amplifier gets from its
+    the capacitors, ~13 Hz on the Bassman). This is the same phenomenon the Bassman Amplifier gets from its
     real supply model, reduced to what an audio-only model can honour: the output level is the "current draw", a
     2-pole low-pass at 13 Hz (Q 0.9) is the supply's response, and the gain follows the droop.
 

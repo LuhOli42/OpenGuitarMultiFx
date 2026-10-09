@@ -47,7 +47,25 @@ master ahead of the phase inverter, matching this project's convention), Bias (a
 cathode-bias resistor -- the real amp has no adjustable bias trim, being self-biased), Tube Feel, Speaker (4/8/16
 ohm, matching the real amp's own transformer taps almost exactly).
 
-## A small power-stage instability, and its fix
+## Two reference-model bugs found 2026-10-05 (read this before the next section)
+1. **Each EL84 plate was shunted to B+.** The "1k5 || 1k5 / 50 ohm" resistors were wired from the rail straight to the
+   plate, i.e. 50 ohm in parallel with each half of the output-transformer primary. That shorted ~35 dB of the output
+   stage away: the full reference made ~0.3 V rms at the speaker where a 30 W AC30 makes ~20 V rms. They are now in
+   SERIES between each plate and its end of the primary (the same mistake was in the AC15, 100 ohm, fixed the same way).
+2. **The 290 V preamp tap had no decoupling.** The model scaled the main B+ by 0.725 and fed it to the preamp directly,
+   so all output-stage ripple reached the preamp unfiltered. With bug 1 fixed this closed a loop the real amp does not
+   have: a ~235 Hz oscillation growing without bound in silence (vanished with the supply frozen; the speaker load made
+   no difference). Now a first-order RC (22k + 16 uF assumed -- the printed 290 V is legible, the parts are not).
+
+Consequences: the old `bmGain0 = 0.00128` / `bmYmax = 0.00105` (and the +25.88 dB trim) were fitted to the broken
+reference -- the cause of the "AC30 is too quiet" report. Refitted: `bmGain0 = 17.3`, `bmYmax = 0.0583`; trim -11.63 dB.
+With both bugs fixed the amp is stable even at the published EL84/12AX7 kg1, but then delivers ~42 V rms into 16 ohm
+(~110 W, impossible for four EL84s); the 6x/6x kg1 split below gives ~18 V rms (~20 W), so it stays -- now as the
+closer match to the real output power, not as a stability fix. Also fixed: every amp's silence test cleared its buffer
+only once, so each block's OUTPUT was fed back in as the next block's input (harmless while the reference was nearly
+mute, a self-made feedback loop once it was not).
+
+## A small power-stage instability, and its fix (2026-09-29 -- superseded, see above)
 Unlike the AC15 (which settled cleanly on the first attempt), this circuit's full-topology reference model showed a
 genuine, if small, self-oscillation with silence at the input: the LTP settled into a slow (multi-second period),
 low-amplitude flip-flop between two nearly-symmetric plate states instead of a single fixed point (peak ~0.047,
@@ -86,13 +104,13 @@ sweep tail.
 * `reducedOrder` tracks the (now-stable) reference within **-1.87 to +1.98 dB** across a 5e-3 to 0.6 V sweep, and
   4/8/16 ohm speaker settings are bit-identical.
 * Worst-block cost under a hot-pedal stress: **4.63% avg, 7.2% worst block, zero failures/recoveries**.
-* `PedalUnityLevelTests` passes at -0.00 dB with a measured registry trim of **+25.88 dB**.
+* `PedalUnityLevelTests` passes at 0.00 dB with a measured registry trim of **-11.63 dB** (was +25.88 dB against the broken reference).
 
 ## Reduced-order (behavioural) power stage
 Built in from the start, using the same `if (! reducedOrder)` guard pattern around the entire LTP/pentode/output-
 transformer netlist that every amp since the Super Lead uses (`behavioralPowerStage()` is driven directly from the
 preamp's own cathode-follower output when active, matching the AC15's own convention).
-* **Fitted constants**: `bmGain0 = 0.00128`, `bmYmax = 0.00105`, `bmKneeN = 3.0` -- fitted from the well-behaved
+* **Fitted constants** (2026-10-05, against the corrected reference): `bmGain0 = 17.3`, `bmYmax = 0.0583`, `bmKneeN = 3.0`. Superseded: `bmGain0 = 0.00128`, `bmYmax = 0.00105` -- fitted from the well-behaved
   middle portion of an `A30_POWERCAL` sweep (see the instability section above for why the sweep's own extremes were
   excluded).
 * **Verified**: level tracks the reference within -1.87 to +1.98 dB; worst-block cost and speaker 4/8/16 behaviour

@@ -99,6 +99,7 @@ private:
         // preamp: both channels' gain triode + tone stack live here, mixing into pMix
         int pSrcVcc = 0, pSrcInNormal = 0, pSrcInVibrato = 0;
         int rVolTop[2] {}, rVolBot[2] {};               // [0] Normal, [1] Vibrato
+        int rBrightSeries[2] {};                         // each channel's bright cap (120pF) series switch
         int rTrebleTop[2] {}, rTrebleBottom[2] {}, rBass[2] {}, rMid[2] {};
         NodalCircuit::Node pPlateNormal = 0, pPlateVibrato = 0, pMix = 0;
         double followerDc = 0.0; // unused (no cathode follower here); kept for symmetry with the other amps' updateSupply()
@@ -127,7 +128,8 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double volume, treble, middle, bass, powerDrive, bias, tubeFeel;
+        double volume[2], treble[2], middle[2], bass[2];   // [0] Normal, [1] Vibrato: two full knob sets, like the real panel
+        double powerDrive, bias, tubeFeel;
         int speaker;
     };
     void updatePots (const Knobs& k);
@@ -150,10 +152,12 @@ private:
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* inputParam = nullptr;
-    juce::AudioParameterFloat* volumeParam = nullptr;
-    juce::AudioParameterFloat* trebleParam = nullptr;
-    juce::AudioParameterFloat* middleParam = nullptr;
-    juce::AudioParameterFloat* bassParam = nullptr;
+    // [0] Normal, [1] Vibrato
+    juce::AudioParameterFloat* brightParam[2] {};
+    juce::AudioParameterFloat* volumeParam[2] {};
+    juce::AudioParameterFloat* trebleParam[2] {};
+    juce::AudioParameterFloat* middleParam[2] {};
+    juce::AudioParameterFloat* bassParam[2] {};
     juce::AudioParameterFloat* speedParam = nullptr;
     juce::AudioParameterFloat* intensityParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
@@ -162,8 +166,8 @@ private:
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedMiddle, smoothedBass, smoothedSpeed,
-        smoothedIntensity, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
+    juce::SmoothedValue<float> smoothedVolume[2], smoothedTreble[2], smoothedMiddle[2], smoothedBass[2];
+    juce::SmoothedValue<float> smoothedSpeed, smoothedIntensity, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
         /** JUCE's reset() must return the circuit to its DC operating point -- an
         empty reset() (the bug this fixes) left stale capacitor state forever.

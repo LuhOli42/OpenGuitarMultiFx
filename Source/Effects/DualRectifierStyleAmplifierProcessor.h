@@ -1,8 +1,10 @@
 #pragma once
 
+#include "ChannelKnobMemory.h"
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -15,16 +17,19 @@ namespace openguitarmultifx
     that file to understand this processor). The Dual Rectifier is one of the defining high-gain amplifiers of
     the 1990s--2000s metal and hard rock era, known for its massive low-end, saturated gain and chunky rhythm tone.
 
-    The RED channel only is modelled (the high-gain channel), as the amp's defining voice. The ORANGE channel,
-    LDR switching circuitry, tube/diode rectifier select, and FX loop are not implemented. Solid-state
-    rectification only is modelled.
+    All three channels are modelled: CLEAN bypasses both V2A and V2B (signal goes V1A -> Gain pot ->
+    bypass -> V3A -> follower); ORANGE bypasses V2B only (V1A -> V2A -> bypass -> V3A); RED uses all
+    four preamp gain stages (V1A -> V2A -> V2B -> V3A) for maximum saturation. Channel switching is
+    via switchable series resistors in the netlist. The LDR switching circuitry, tube/diode rectifier
+    select, and FX loop are not implemented. Solid-state rectification only is modelled.
 
-    Architecture: FIVE cascaded 12AX7 gain stages (V1A -> V2A -> V2B -> V3A -> V3D follower), a Fender-derived
-    TMB tone stack, a 12AX7 long-tailed-pair phase inverter with global negative feedback, and four 6L6GC
-    beam tetrodes as two push-pull pairs in a fixed-bias output stage.
+    Architecture: up to FIVE cascaded 12AX7 gain stages (V1A -> [V2A] -> [V2B] -> V3A -> V3D follower),
+    a Fender-derived TMB tone stack, a 12AX7 long-tailed-pair phase inverter with global negative feedback,
+    and four 6L6GC beam tetrodes as two push-pull pairs in a fixed-bias output stage.
 
-    Controls, page 1: Gain (RED channel drive, 1MA), Treble, Bass, Mid, Master, Presence, Output. Page 2:
-    Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm).
+    Controls, page 1: Channel (Clean / Orange / Red), Gain (1MA), Treble, Mid, Bass, Presence, Master -- each channel
+    keeps its own full set (ChannelKnobMemory.h), like the real amp's three rows of pots. Page 2 (synthetic): Power
+    Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class DualRectifierStyleAmplifierProcessor : public EffectProcessor
 {
@@ -36,6 +41,8 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    std::unique_ptr<juce::XmlElement> getState() const override;
+    void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return "Dual Rectifier-Style Amplifier"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff1a1a2e); } // deep navy (Mesa chrome/dark)
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
@@ -93,7 +100,7 @@ private:
 
         // preamp: four cascaded 12AX7 gain stages + cathode follower
         int pSrcV2 = 0, pSrcV3 = 0, pSrcE = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
+        int rGainTop = 0, rGainBot = 0, rV2aSeries = 0, rBypassV2a = 0, rV2bSeries = 0, rBypassV2b = 0;
         NodalCircuit::Node pPlateV1a = 0, pPlateV2a = 0, pPlateV2b = 0, pPlateV3a = 0, pFollower = 0;
         double followerDc = 0.0;
 
@@ -110,6 +117,7 @@ private:
 
         // reducedOrder behavioural power stage state
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, srcVoc = 0;
@@ -146,6 +154,7 @@ private:
     DualMonoShortcut shortcut;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
+    juce::AudioParameterFloat* channelParam = nullptr;
     juce::AudioParameterFloat* gainParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* midParam = nullptr;
@@ -174,6 +183,8 @@ private:
         sampleRate = 0.0;
         prepare (sr, 0, 0);
     }
+
+    std::unique_ptr<ChannelKnobMemory> channelMemory;
 
     double sampleRate = 0.0;
     int controlCounter = 0;

@@ -20,8 +20,8 @@ namespace openguitarmultifx
     built-in vibrato/tremolo oscillators (same call as the Twin Reverb/Deluxe Reverb).
 
     Controls, page 1: Input (High / Low sensitivity jack), Volume, Tone (a single treble-cut control, not a Fender/
-    Marshall TMB stack -- the real AC15 has no Bass/Middle/Presence), Output (a plug-in level control; the real amp
-    has no master volume). Page 2: Power Drive (a synthetic master ahead of the phase inverter, matching this
+    Marshall TMB stack -- the real AC15 has no Bass/Middle/Presence), Page 2 (synthetic, plus Output -- a plug-in level control; the real amp
+    has no master volume): Power Drive (a synthetic master ahead of the phase inverter, matching this
     project's convention for every other amp here), Bias (a synthetic shift of the shared cathode-bias operating
     point -- the real amp has no adjustable bias trim, being self-biased), Tube Feel, Speaker (4 / 8 / 16 ohm, on the
     transformer's 16 ohm tap; the real amp ships a fixed ~15 ohm speaker).
@@ -51,8 +51,10 @@ public:
     // including the Tone control is unchanged; only what comes after it (phase inverter, power tubes, transformer,
     // the physical speaker load) is replaced.
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 0.070;
-    static constexpr double bmYmax = 0.002837;
+    // Fitted (2026-10-05) to the full reference after its plate resistors were rewired in series with the OT (they
+    // were a shunt across each half-primary that killed ~35 dB of output; the old constants were fitted to that).
+    static constexpr double bmGain0 = 3.22;
+    static constexpr double bmYmax = 0.1017;
     static constexpr double bmKneeN = 1.5;
     static constexpr double bmShelfHz = 120.0;
     static constexpr double bmShelfHfGain = 0.7;
@@ -94,6 +96,7 @@ private:
         int penPre = 0;
         NodalCircuit::Node pPlate = 0, pToneOut = 0, pVolOut = 0;
         double vScreenPre = 220.0;
+        double volOutDc = 0.0;
 
         // power section: cathodyne PI + 2x EL84, cathode-biased, no NFB
         int wSrcCf = 0, wSrcRail = 0;
@@ -113,6 +116,7 @@ private:
         double sumPlate = 0.0;
         int sumCount = 0;
         int supplyCounter = 0;
+        double preRail = 0.0; // the decoupled preamp tap, after its RC filter
     };
 
     void buildChannel (Channel& ch);

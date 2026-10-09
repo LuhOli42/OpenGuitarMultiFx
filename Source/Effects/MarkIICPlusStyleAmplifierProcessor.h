@@ -16,17 +16,20 @@ namespace openguitarmultifx
     most revered high-gain amplifier ever built, defining the modern "Mesa" lead tone heard on countless metal and
     progressive rock recordings from the mid-1980s onward.
 
-    The Lead channel only is modelled, as the amp's defining voice. The Mark series' characteristic multi-stage
-    cascaded preamp topology gives it far more gain than any Fender/Marshall-derived design.
+    Both channels are modelled: the CLEAN channel bypasses V1b through V3a (taps from the Gain pot wiper,
+    giving a single-stage clean tone from V1a only), and the LEAD channel uses all five cascaded gain stages
+    for the amp's defining high-gain voice. Channel switching is via a switchable series resistor on V1b's
+    grid in the netlist.
 
-    Architecture: FIVE cascaded 12AX7 gain stages (V1a -> V1b -> V2a -> V2b -> V3a), with a unique inter-stage
-    gain/EQ network between V1a and V1b (the "Mark series" character -- multiple coupling caps and pots that
-    shape the frequency content BEFORE the high-gain stages), a Fender-derived TMB tone stack, a cathode-follower
-    output buffer (V3b), a 12AX7 long-tailed-pair phase inverter with global negative feedback, and four 6L6GC
-    beam tetrodes as two push-pull pairs in a fixed-bias output stage.
+    Architecture: up to FIVE cascaded 12AX7 gain stages (V1a -> [V1b -> V2a -> V2b -> V3a]), with a unique
+    inter-stage gain/EQ network between V1a and V1b (the "Mark series" character -- multiple coupling caps
+    and pots that shape the frequency content BEFORE the high-gain stages), a Fender-derived TMB tone stack,
+    a cathode-follower output buffer (V3b), a 12AX7 long-tailed-pair phase inverter with global negative
+    feedback, and four 6L6GC beam tetrodes as two push-pull pairs in a fixed-bias output stage.
 
-    Controls, page 1: Gain (Lead Drive, 1MA), Treble, Bass, Mid, Presence, Master, Output. Page 2: Power Drive,
-    Bias, Tube Feel, Speaker (4 / 8 / 16 ohm).
+    Controls, page 1: Channel (Clean / Lead), Gain (Lead Drive, 1MA), Treble, Bass, Mid, Presence, Master,
+    and the pull switches (Bright, Deep, Shift). Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16
+    ohm), Output. Page 3: the 5-band graphic EQ.
 */
 class MarkIICPlusStyleAmplifierProcessor : public EffectProcessor
 {
@@ -96,15 +99,17 @@ private:
 
         // preamp: five cascaded 12AX7 sections (V1a -> V1b -> V2a -> V2b -> V3a + V3b follower)
         int pSrcV1 = 0, pSrcV2 = 0, pSrcV3 = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pPlateV2b = 0, pPlateV3a = 0, pFollower = 0;
+        int rGainTop = 0, rGainBot = 0, rBrightSeries = 0, rV1bSeries = 0;
+        NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pPlateV2b = 0, pPlateV3a = 0, pFollower = 0, pGainWiper = 0;
         double followerDc = 0.0;
+        double preampTapDc[2] = {};  // DC for [gainWiper (Clean), follower (Lead)]
 
         // power section
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMaster = 0;
+            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMaster = 0, rDeepSeries = 0;
+        int capMidBass = 0, capMidMid = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wOut = 0, wPlateA = 0, wPlateB = 0, wGridA = 0, wTail = 0,
                            wTone = 0, wPP1 = 0, wPP2 = 0, wPowerGridA = 0, wBias = 0, wFeedback = 0;
@@ -149,7 +154,11 @@ private:
     DualMonoShortcut shortcut;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
+    juce::AudioParameterFloat* channelParam = nullptr;
     juce::AudioParameterFloat* gainParam = nullptr;
+    juce::AudioParameterFloat* pullBrightParam = nullptr;
+    juce::AudioParameterFloat* pullDeepParam = nullptr;
+    juce::AudioParameterFloat* pullShiftParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* midParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;

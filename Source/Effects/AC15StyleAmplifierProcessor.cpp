@@ -128,11 +128,11 @@ AC15StyleAmplifierProcessor::AC15StyleAmplifierProcessor()
         "ac15", "AC15-Style Amplifier", "|", std::move (input));
     group->addChild (std::move (volume));
     group->addChild (std::move (tone));
-    group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("ac15_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -258,8 +258,6 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         // fixed, plausible screen voltage rather than a literal resistor network.
         ch.penA = c.addPentode (ch.wPP1, g3s, ch.wCathodeBias, pentodeEL84(), 290.0);
         ch.penB = c.addPentode (ch.wPP2, g4s, ch.wCathodeBias, pentodeEL84(), 290.0);
-        c.addResistor (rail, ch.wPP1, 100.0); // confirmed on the drawing (each plate's own series resistor)
-        c.addResistor (rail, ch.wPP2, 100.0);
         c.setInitialGuess (ch.wPP1, 380.0);
         c.setInitialGuess (ch.wPP2, 375.0);
         c.setInitialGuess (ch.wCathodeBias, 11.0);
@@ -269,14 +267,19 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (ch.wPP1, ch.wPP2, 20.0e3);
         c.addCapacitor (ch.wPP1, gnd, 400.0e-12);
         c.addCapacitor (ch.wPP2, gnd, 400.0e-12);
-        const auto a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode();
+        // Each plate reaches its half of the primary through its own series resistor (on the drawing). It used to be
+        // wired from the rail straight to the plate, i.e. a 100 ohm shunt across each half-primary, which shorted
+        // almost all of the output away (the reference made ~0.3 V rms where a real amp makes tens of volts).
+        const auto a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode(), t1 = c.addNode(), t2 = c.addNode();
+        c.addResistor (t1, ch.wPP1, 100.0);
+        c.addResistor (t2, ch.wPP2, 100.0);
         c.addResistor (rail, a1, primaryHalfResistance);
         c.addResistor (rail, a2, primaryHalfResistance); // the primary's own centre tap sits directly on the plate rail
         const double lh = primaryHalfInductance;
         const double ls = lh / (halfToSecondaryTurns * halfToSecondaryTurns);
         const double m12 = -couplingHalves * lh;
         const double mps = couplingSecondary * std::sqrt (lh * ls);
-        c.addCoupledInductors ({ { a1, ch.wPP1 }, { a2, ch.wPP2 }, { sw, gnd } },
+        c.addCoupledInductors ({ { a1, t1 }, { a2, t2 }, { sw, gnd } },
                                { lh,  m12, -mps,
                                  m12, lh,   mps,
                                  -mps, mps, ls });
@@ -292,6 +295,8 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.grpSpkLp = c.addCoupledInductors ({ { nbb, gnd } }, { sm.lp });
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
+        c.setInitialGuess (t1, railPlatesNominal);
+        c.setInitialGuess (t2, railPlatesNominal);
         c.setInitialGuess (a1, railPlatesNominal);
         c.setInitialGuess (a2, railPlatesNominal);
     }
@@ -393,7 +398,12 @@ void AC15StyleAmplifierProcessor::updateSupply (Channel& ch) const
     const auto rail = [&] (NodalCircuit::Node node, double maxVolts) { return juce::jlimit (0.0, maxVolts, ch.supply.voltage (node)); };
     if (! reducedOrder)
         ch.power.setSource (ch.wSrcRail, rail (ch.sB, 500.0));
-    ch.pre.setSource (ch.pSrcRail, rail (ch.sB, 500.0) * 0.85);
+    // Decoupled preamp tap (dropping resistor + filter cap on the real amp; 22k + 16 uF assumed, the same typical Vox
+    // values as the AC30): output-stage ripple must not reach the EF86 unfiltered.
+    constexpr double decouplingTau = 22.0e3 * 16.0e-6;
+    const double dt = (double) supplyInterval / juce::jmax (1.0, sampleRate);
+    ch.preRail += (1.0 - std::exp (-dt / decouplingTau)) * (rail (ch.sB, 500.0) * 0.85 - ch.preRail);
+    ch.pre.setSource (ch.pSrcRail, ch.preRail);
 }
 
 double AC15StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept
@@ -506,7 +516,9 @@ void AC15StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         dcOk = passOk && ch.supply.prepare (supplyRate) && dcOk;
         if (! reducedOrder)
             ch.power.setSource (ch.wSrcRail, ch.supply.voltage (ch.sB));
-        ch.pre.setSource (ch.pSrcRail, ch.supply.voltage (ch.sB) * 0.85);
+        ch.preRail = ch.supply.voltage (ch.sB) * 0.85;
+        ch.pre.setSource (ch.pSrcRail, ch.preRail);
+        ch.volOutDc = ch.pre.voltage (ch.pVolOut);
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
@@ -595,7 +607,7 @@ void AC15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, masterGain * ch.pre.voltage (ch.pVolOut))
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, masterGain * cathodeFollowerGain * (ch.pre.voltage (ch.pVolOut) - ch.volOutDc))
                                                        : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 120.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;

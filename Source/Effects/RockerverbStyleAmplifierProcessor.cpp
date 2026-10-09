@@ -96,95 +96,152 @@ namespace
     constexpr int matchedSpeaker = 1; // 8 ohm matched
     constexpr double powerTheta = 0.9;
 
-    // ---- preamp helper ----
+    // Published Koren/Duncan 12AT7 (ECC81) set, for V7-A/V7-B (outside any feedback loop, so no stability softening).
+    KorenTriode::Parameters triode12AT7()
+    {
+        KorenTriode::Parameters p;
+        p.mu = 60.0;
+        p.kg1 = 272.0;
+        p.kp = 225.0;
+        p.kvb = 54.7;
+        p.ex = 1.5;
+        return p;
+    }
+
+    // The tone outputs are loaded by R4 220k -> C4 -> V7-A's 1M bias resistor when RL1 selects them.
+    constexpr double relayLoad = 220.0e3 + 1.0e6;
+    constexpr double relayOpen = 100.0e6;
+
+    // ---- preamp block (ORA-CD204 sheet 1/2): both channels and both tone stacks, as drawn ----
     struct PreampBuild
     {
         NodalCircuit& c;
-        int srcE = 0, srcD = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node plateV9a = 0, plateV9b = 0, plateV8a = 0, plateV8b = 0;
-        NodalCircuit::Node nodeE = 0, nodeD = 0;
+        int srcF = 0, srcE = 0, srcIn = 0;
+        int rGainBTop = 0, rGainBBot = 0, rGainATop = 0, rGainABot = 0;
+        int rDTrebleTop = 0, rDTrebleBot = 0, rDBass = 0, rDMidTop = 0, rDMidBot = 0, rDVolTop = 0, rDVolBot = 0;
+        int rCVolTop = 0, rCVolBot = 0, rCTrebleTop = 0, rCTrebleBot = 0, rCBassTop = 0, rCBassBot = 0;
+        int rLoadDirty = 0, rLoadClean = 0;
+        NodalCircuit::Node plateV9a = 0, plateV9b = 0, plateV8a = 0, plateV8b = 0, plateV10a = 0, plateV10b = 0;
+        NodalCircuit::Node dirtyOut = 0, cleanOut = 0;
     };
 
-    /** Orange Rockerverb 50 MK1 Dirty channel preamp: FOUR cascaded 12AX7 gain stages (V9-A -> V9-B -> V8-A -> V8-B).
-        V9-A/V9-B from rail F (~E), V8-A/V8-B from rail E (~D). */
-    PreampBuild buildPreamp (NodalCircuit& c, double eGuess, double dGuess)
+    /** A 12AX7 gain stage: plate load from `vcc`, cathode resistor (+ bypass cap when > 0). Returns the plate node. */
+    NodalCircuit::Node triodeStage (NodalCircuit& c, NodalCircuit::Node grid, NodalCircuit::Node vcc, double rPlate,
+                                    double rCathode, double cBypass, double plateGuess)
+    {
+        const auto gnd = NodalCircuit::ground;
+        const auto plate = c.addNode(), k = c.addNode();
+        c.addTriode (plate, grid, k, KorenTriode::Parameters {});
+        c.addCapacitor (grid, plate, cgp);
+        c.addResistor (vcc, plate, rPlate);
+        c.addResistor (k, gnd, rCathode);
+        if (cBypass > 0.0)
+            c.addCapacitor (k, gnd, cBypass);
+        c.setInitialGuess (plate, plateGuess);
+        c.setInitialGuess (k, 1.5);
+        return plate;
+    }
+
+    PreampBuild buildPreamp (NodalCircuit& c, double fGuess, double eGuess)
     {
         const auto gnd = NodalCircuit::ground;
         PreampBuild b { c };
 
-        const auto vccE = c.addNode(), vccD = c.addNode(), in = c.addNode();
-        b.nodeE = vccE;
-        b.nodeD = vccD;
+        const auto vccF = c.addNode(), vccE = c.addNode(), in = c.addNode();
+        b.srcF = c.addSource (vccF, fGuess);
         b.srcE = c.addSource (vccE, eGuess);
-        b.srcD = c.addSource (vccD, dGuess);
         b.srcIn = c.addSource (in, 0.0);
 
-        // V9-A: R32=100K plate load (rail F/E), R47=68K grid stopper, 1M grid leak, R46=1K5 cathode bypassed with C27=10µF.
-        // Input coupling C24=220nF from input.
-        const auto g1 = c.addNode(), k1 = c.addNode(), coup1 = c.addNode();
-        b.plateV9a = c.addNode();
-        c.addCapacitor (in, coup1, 220.0e-9);               // C24: 220nF input coupling
-        c.addResistor (coup1, g1, 68.0e3);                  // R47 grid stopper
-        c.addResistor (g1, gnd, 1.0e6);                     // 1M grid leak
-        c.addTriode (b.plateV9a, g1, k1, triode12AX7());
-        c.addCapacitor (g1, b.plateV9a, cgp);
-        c.addResistor (vccE, b.plateV9a, 100.0e3);          // R32: 100K plate load
-        c.addResistor (k1, gnd, 1.5e3);                     // R46: 1K5 cathode
-        c.addCapacitor (k1, gnd, 10.0e-6);                  // C27: 10µF bypass
-        c.setInitialGuess (b.plateV9a, 200.0);
-        c.setInitialGuess (k1, 1.5);
+        // Input: C24 220n -> R42 1M0 to ground (shared grid leak) -> R47 68K to V9-A, R44 68K to V10-A.
+        const auto inNode = c.addNode();
+        c.addCapacitor (in, inNode, 220.0e-9);
+        c.addResistor (inNode, gnd, 1.0e6);
 
-        // V9-B: R38=100K plate load (rail E), R53=220K grid leak, 1K5 cathode bypassed with 10µF.
-        // Coupling from V9-A plate through C31=1nF.
-        const auto g2 = c.addNode(), k2 = c.addNode(), coup2 = c.addNode();
-        b.plateV9b = c.addNode();
-        c.addCapacitor (b.plateV9a, coup2, 1.0e-9);         // C31: 1nF coupling
-        c.addResistor (coup2, g2, 10.0e3);                  // series stopper (estimated)
-        c.addResistor (g2, gnd, 220.0e3);                   // R53: 220K grid leak
-        c.addTriode (b.plateV9b, g2, k2, triode12AX7());
-        c.addCapacitor (g2, b.plateV9b, cgp);
-        c.addResistor (vccD, b.plateV9b, 100.0e3);          // R38: 100K plate load (rail E)
-        c.addResistor (k2, gnd, 1.5e3);                     // 1K5 cathode
-        c.addCapacitor (k2, gnd, 10.0e-6);                  // 10µF bypass
-        c.setInitialGuess (b.plateV9b, 250.0);
-        c.setInitialGuess (k2, 1.5);
+        // ---------------- Dirty channel ----------------
+        const auto g9a = c.addNode();
+        c.addResistor (inNode, g9a, 68.0e3);                          // R47
+        b.plateV9a = triodeStage (c, g9a, vccF, 100.0e3, 1.5e3, 10.0e-6, 200.0);   // R37, R46, C27 (C22 not fitted)
 
-        // GAIN pot: RV4=1MA between V9-B and V8-A, through coupling cap (22nF estimated).
-        const auto gainIn = c.addNode(), gainWiper = c.addNode();
-        c.addCapacitor (b.plateV9b, gainIn, 22.0e-9);       // coupling cap (estimated 22nF)
-        c.addResistor (gainIn, gnd, 470.0e3);                // bias reference
-        b.rGainTop = c.addResistor (gainIn, gainWiper, 1.0e6);
-        b.rGainBot = c.addResistor (gainWiper, gnd, 1.0e6);
+        // C31 1n0 -> R53 220K -> X (R60 220K, C42 470p to ground) -> Gain RV4-B (1MA) -> V9-B; bright C36 100p X -> grid.
+        const auto c31 = c.addNode(), x = c.addNode(), g9b = c.addNode();
+        c.addCapacitor (b.plateV9a, c31, 1.0e-9);
+        c.addResistor (c31, x, 220.0e3);
+        c.addResistor (x, gnd, 220.0e3);
+        c.addCapacitor (x, gnd, 470.0e-12);
+        b.rGainBTop = c.addResistor (x, g9b, 0.5e6);
+        b.rGainBBot = c.addResistor (g9b, gnd, 0.5e6);
+        c.addCapacitor (x, g9b, 100.0e-12);
+        b.plateV9b = triodeStage (c, g9b, vccF, 100.0e3, 1.0e3, 10.0e-6, 250.0);  // R38, R48, C28
+        c.addCapacitor (b.plateV9b, gnd, 100.0e-12);                  // C18 (plate to the AC-grounded rail)
 
-        // V8-A: 100K plate load (rail E/D), 220K grid leak, 1K5 cathode bypassed with 10µF.
-        // 100pF bright cap on coupling (estimated).
-        const auto g3 = c.addNode(), k3 = c.addNode();
-        b.plateV8a = c.addNode();
-        c.addResistor (gainWiper, g3, 10.0e3);              // series stopper
-        c.addResistor (g3, gnd, 220.0e3);                   // 220K grid leak
-        c.addTriode (b.plateV8a, g3, k3, triode12AX7());
-        c.addCapacitor (g3, b.plateV8a, cgp);
-        c.addResistor (vccD, b.plateV8a, 100.0e3);          // 100K plate load
-        c.addResistor (k3, gnd, 1.5e3);                     // 1K5 cathode
-        c.addCapacitor (k3, gnd, 10.0e-6);                  // 10µF bypass
-        c.setInitialGuess (b.plateV8a, 250.0);
-        c.setInitialGuess (k3, 1.5);
+        // C23 2n2 -> R54 220K -> Y (R61 470K) -> Gain RV4-A (1MA, second gang) -> V8-A.
+        const auto c23 = c.addNode(), y = c.addNode(), g8a = c.addNode();
+        c.addCapacitor (b.plateV9b, c23, 2.2e-9);
+        c.addResistor (c23, y, 220.0e3);
+        c.addResistor (y, gnd, 470.0e3);
+        b.rGainATop = c.addResistor (y, g8a, 0.5e6);
+        b.rGainABot = c.addResistor (g8a, gnd, 0.5e6);
+        b.plateV8a = triodeStage (c, g8a, vccE, 100.0e3, 2.2e3, 10.0e-6, 250.0);  // R39, R49, C29
+        c.addCapacitor (b.plateV8a, gnd, 100.0e-12);                  // C19
 
-        // V8-B: 100K plate load (rail E/D), 220K grid leak, 1K5 cathode bypassed with 10µF.
-        const auto g4 = c.addNode(), k4 = c.addNode(), coup4 = c.addNode();
-        b.plateV8b = c.addNode();
-        c.addCapacitor (b.plateV8a, coup4, 22.0e-9);        // coupling cap
-        c.addResistor (coup4, g4, 10.0e3);                  // series stopper
-        c.addResistor (g4, gnd, 220.0e3);                   // 220K grid leak
-        c.addTriode (b.plateV8b, g4, k4, triode12AX7());
-        c.addCapacitor (g4, b.plateV8b, cgp);
-        c.addResistor (vccD, b.plateV8b, 100.0e3);          // 100K plate load
-        c.addResistor (k4, gnd, 1.5e3);                     // 1K5 cathode
-        c.addCapacitor (k4, gnd, 10.0e-6);                  // 10µF bypass
-        c.setInitialGuess (b.plateV8b, 250.0);
-        c.setInitialGuess (k4, 1.5);
+        // C32 4n7 -> R51 470K -> R52 220K -> V8-B, cathode R50 1K5 UNBYPASSED.
+        const auto c32 = c.addNode(), g8b = c.addNode();
+        c.addCapacitor (b.plateV8a, c32, 4.7e-9);
+        c.addResistor (c32, g8b, 470.0e3);
+        c.addResistor (g8b, gnd, 220.0e3);
+        b.plateV8b = triodeStage (c, g8b, vccE, 100.0e3, 1.5e3, 0.0, 250.0);      // R40, R50
 
+        // Dirty tone stack straight off V8-B's plate: C37 560p -> Treble RV7 250KB; R62 39K slope; C40 22n -> treble
+        // bottom / bass top; Bass RV5 500KA (rheostat) -> Middle RV6 25KB to ground, C41 22n slope -> RV6's wiper.
+        // Treble wiper -> Volume RV8 500KA -> relay.
+        {
+            const auto t = c.addNode(), w = c.addNode(), bt = c.addNode(), sl = c.addNode(), m = c.addNode(), mw = c.addNode();
+            c.addCapacitor (b.plateV8b, t, 560.0e-12);
+            b.rDTrebleTop = c.addResistor (t, w, 125.0e3);
+            b.rDTrebleBot = c.addResistor (w, bt, 125.0e3);
+            c.addResistor (b.plateV8b, sl, 39.0e3);
+            c.addCapacitor (sl, bt, 22.0e-9);
+            b.rDBass = c.addResistor (bt, m, 250.0e3);
+            b.rDMidTop = c.addResistor (m, mw, 12.5e3);
+            b.rDMidBot = c.addResistor (mw, gnd, 12.5e3);
+            c.addCapacitor (sl, mw, 22.0e-9);
+            b.dirtyOut = c.addNode();
+            b.rDVolTop = c.addResistor (w, b.dirtyOut, 250.0e3);
+            b.rDVolBot = c.addResistor (b.dirtyOut, gnd, 250.0e3);
+            b.rLoadDirty = c.addResistor (b.dirtyOut, gnd, relayLoad);
+        }
+
+        // ---------------- Clean channel ----------------
+        const auto g10a = c.addNode();
+        c.addResistor (inNode, g10a, 68.0e3);                         // R44
+        b.plateV10a = triodeStage (c, g10a, vccF, 100.0e3, 1.5e3, 22.0e-6, 200.0); // R35, R43, C25
+
+        // C30 1n0 -> R56 220K -> W (R55 220K) -> Volume RV1 500KA -> V10-B; bright C34 150p W -> grid.
+        const auto c30 = c.addNode(), wv = c.addNode(), g10b = c.addNode();
+        c.addCapacitor (b.plateV10a, c30, 1.0e-9);
+        c.addResistor (c30, wv, 220.0e3);
+        c.addResistor (wv, gnd, 220.0e3);
+        b.rCVolTop = c.addResistor (wv, g10b, 250.0e3);
+        b.rCVolBot = c.addResistor (g10b, gnd, 250.0e3);
+        c.addCapacitor (wv, g10b, 150.0e-12);
+        b.plateV10b = triodeStage (c, g10b, vccF, 100.0e3, 1.5e3, 22.0e-6, 250.0); // R36, R45, C26
+
+        // Clean tone stack: C35 56p -> Treble RV3 250KB; R58 100K slope; C38 22n -> treble bottom / Bass RV2 250KA top;
+        // C39 22n slope -> RV2's wiper, which has R57 6K8 to ground (the fixed "middle"); RV2's far end to ground.
+        {
+            const auto t = c.addNode(), bt = c.addNode(), sl = c.addNode(), bw = c.addNode();
+            c.addCapacitor (b.plateV10b, t, 56.0e-12);
+            b.cleanOut = c.addNode();
+            b.rCTrebleTop = c.addResistor (t, b.cleanOut, 125.0e3);
+            b.rCTrebleBot = c.addResistor (b.cleanOut, bt, 125.0e3);
+            c.addResistor (b.plateV10b, sl, 100.0e3);
+            c.addCapacitor (sl, bt, 22.0e-9);
+            c.addCapacitor (sl, bw, 22.0e-9);
+            b.rCBassTop = c.addResistor (bt, bw, 125.0e3);
+            b.rCBassBot = c.addResistor (bw, gnd, 125.0e3);
+            c.addResistor (bw, gnd, 6.8e3);
+            b.rLoadClean = c.addResistor (b.cleanOut, gnd, relayOpen);
+        }
         return b;
     }
 }
@@ -195,14 +252,23 @@ RockerverbStyleAmplifierProcessor::RockerverbStyleAmplifierProcessor()
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
-    auto gain = make ("rv_gain", "Gain", 0.5f);
-    auto treble = make ("rv_treble", "Treble", 0.5f);
-    auto mid = make ("rv_mid", "Mid", 0.5f);
-    auto bass = make ("rv_bass", "Bass", 0.5f);
-    auto presence = make ("rv_presence", "Presence", 0.3f);
-    auto post = make ("rv_post", "Master", 0.5f);
+    auto channel = std::make_unique<juce::AudioParameterFloat> (
+        "rv_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        {
+            return juce::String (juce::roundToInt (v) == 0 ? "Clean" : "Dirty");
+        }));
+    // The real panel, left to right. The Dirty knobs keep the original parameter ids (presets stay valid).
+    auto cVolume = make ("rv_c_volume", "Clean Volume", 0.5f);
+    auto cTreble = make ("rv_c_treble", "Clean Treble", 0.5f);
+    auto cBass = make ("rv_c_bass", "Clean Bass", 0.5f);
+    auto gain = make ("rv_gain", "Dirty Gain", 0.5f);
+    auto treble = make ("rv_treble", "Dirty Treble", 0.5f);
+    auto mid = make ("rv_mid", "Dirty Middle", 0.5f);
+    auto bass = make ("rv_bass", "Dirty Bass", 0.5f);
+    auto post = make ("rv_post", "Dirty Volume", 0.5f);
     auto output = make ("rv_output", "Output", 0.5f);
-    auto power = make ("rv_power", "Power Drive", 0.5f);
+    auto power = make ("rv_power", "Power Drive", 1.0f);
     auto bias = make ("rv_bias", "Bias", 0.5f);
     auto feel = make ("rv_tube_feel", "Tube Feel", 1.0f);
     auto speaker = std::make_unique<juce::AudioParameterFloat> (
@@ -212,11 +278,14 @@ RockerverbStyleAmplifierProcessor::RockerverbStyleAmplifierProcessor()
             return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm";
         }));
 
+    channelParam = channel.get();
+    cVolumeParam = cVolume.get();
+    cTrebleParam = cTreble.get();
+    cBassParam = cBass.get();
     gainParam = gain.get();
     trebleParam = treble.get();
     midParam = mid.get();
     bassParam = bass.get();
-    presenceParam = presence.get();
     postParam = post.get();
     outputParam = output.get();
     powerParam = power.get();
@@ -225,17 +294,19 @@ RockerverbStyleAmplifierProcessor::RockerverbStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "rockerverb", "Rockerverb-Style Amplifier", "|", std::move (gain));
+        "rockerverb", "Rockerverb-Style Amplifier", "|", std::move (channel), std::move (cVolume));
+    group->addChild (std::move (cTreble));
+    group->addChild (std::move (cBass));
+    group->addChild (std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
-    group->addChild (std::move (presence));
     group->addChild (std::move (post));
-    group->addChild (std::move (output));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("rv_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -282,52 +353,72 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.sE, 370.0);
     }
 
-    // ================================================================ preamp
+    // ================================================================ preamp: both channels + their tone stacks
     {
-        auto b = buildPreamp (ch.pre, 370.0, 390.0);
+        auto b = buildPreamp (ch.pre, 370.0, 380.0);
+        ch.pSrcF = b.srcF;
         ch.pSrcE = b.srcE;
-        ch.pSrcD = b.srcD;
         ch.pSrcIn = b.srcIn;
-        ch.rGainTop = b.rGainTop;
-        ch.rGainBot = b.rGainBot;
-        ch.pPlateV9a = b.plateV9a;
-        ch.pPlateV9b = b.plateV9b;
-        ch.pPlateV8a = b.plateV8a;
-        ch.pPlateV8b = b.plateV8b;
+        ch.rGainBTop = b.rGainBTop;  ch.rGainBBot = b.rGainBBot;
+        ch.rGainATop = b.rGainATop;  ch.rGainABot = b.rGainABot;
+        ch.rDTrebleTop = b.rDTrebleTop;  ch.rDTrebleBot = b.rDTrebleBot;  ch.rDBass = b.rDBass;
+        ch.rDMidTop = b.rDMidTop;  ch.rDMidBot = b.rDMidBot;  ch.rDVolTop = b.rDVolTop;  ch.rDVolBot = b.rDVolBot;
+        ch.rCVolTop = b.rCVolTop;  ch.rCVolBot = b.rCVolBot;  ch.rCTrebleTop = b.rCTrebleTop;  ch.rCTrebleBot = b.rCTrebleBot;
+        ch.rCBassTop = b.rCBassTop;  ch.rCBassBot = b.rCBassBot;
+        ch.rLoadDirty = b.rLoadDirty;  ch.rLoadClean = b.rLoadClean;
+        ch.pPlateV9a = b.plateV9a;  ch.pPlateV9b = b.plateV9b;  ch.pPlateV8a = b.plateV8a;  ch.pPlateV8b = b.plateV8b;
+        ch.pPlateV10a = b.plateV10a;  ch.pPlateV10b = b.plateV10b;
+        ch.pDirtyOut = b.dirtyOut;  ch.pCleanOut = b.cleanOut;
     }
 
-    // ================================================================ tone stack + master + PI + power amp
+    // ================================================================ post (always built): after relay RL1 the path is
+    // shared -- R4 220K -> C4 220n -> V7-A (12AT7) cathode follower, grid biased from rail D by R17 220K / R14 33K (C11
+    // makes that an AC ground) through R16 1M, cathode R15 22K -> C5 220n -> R6 150K / R13 68K -> loop (normalled) ->
+    // C1 220n, R20 1M, R7 68K -> V7-B (12AT7), plate R18 56K, cathode R19 1K5 unbypassed -> C6 220n -> R9 1M -> the
+    // reverb mixer (Reverb RV9 at minimum: R64 + the whole 250K pot to ground, R63 1M) -> C3 47n -> PI grid (1M).
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
+        const auto src = c.addNode(), vd = c.addNode(), vb = c.addNode();
+        ch.wSrcPost = c.addSource (src, 0.0);
+        ch.wSrcD = c.addSource (vd, 360.0);
+        ch.wSrcV7Bias = c.addSource (vb, 360.0 * 33.0 / 253.0);
 
-        // Pre->Power coupling: AC-coupled from V8-B plate.
-        const auto tsIn = c.addNode();
-        ch.wSrcTs = c.addSource (tsIn, 0.0);
+        const auto r4 = c.addNode(), g7a = c.addNode();
+        c.addResistor (src, r4, 220.0e3);                       // R4
+        c.addCapacitor (r4, g7a, 220.0e-9);                     // C4
+        c.addResistor (g7a, vb, 1.0e6);                         // R16
+        ch.wPlateV7a = vd;
+        ch.wCathodeV7a = c.addNode();
+        c.addTriode (vd, g7a, ch.wCathodeV7a, triode12AT7());
+        c.addResistor (ch.wCathodeV7a, gnd, 22.0e3);            // R15
+        c.setInitialGuess (g7a, 47.0);
+        c.setInitialGuess (ch.wCathodeV7a, 49.0);
 
-        // FMV tone stack: 560pF treble cap, 39K slope, 22n bass-mid, 22n mid,
-        // 250KB treble, 1MA bass, 25KB mid.
-        const auto ti = c.addNode(), top = c.addNode(), nB = c.addNode(), nT = c.addNode(), nM = c.addNode(), nMw = c.addNode();
-        ch.wToneIn = ti;
-        const auto postNode = c.addNode();
-        ch.wTone = c.addNode();
-        c.addResistor (tsIn, ti, 38.0e3);                  // source impedance (100K||62.5K ≈ 38K)
-        c.addCapacitor (ti, top, 560.0e-12);                // 560pF treble coupling cap
-        c.addResistor (ti, nB, 39.0e3);                     // 39K slope resistor
-        ch.rTrebleTop = c.addResistor (top, postNode, 125.0e3);    // 250KB treble, split
-        ch.rTrebleBottom = c.addResistor (postNode, nT, 125.0e3);
-        c.addResistor (nT, nB, 22.0e3);                    // series between treble and bass
-        c.addCapacitor (nB, nT, 22.0e-9);                   // 22nF bass cap
-        ch.rBass = c.addResistor (nT, nM, 500.0e3);        // 1MA bass, rheostat
-        ch.rMidTop = c.addResistor (nM, nMw, 12.5e3);      // 25KB mid, split
-        ch.rMidBottom = c.addResistor (nMw, gnd, 12.5e3);
-        c.addCapacitor (nB, nMw, 22.0e-9);                  // 22nF mid cap
+        const auto c5 = c.addNode(), loop = c.addNode(), c1 = c.addNode(), g7b = c.addNode(), k7b = c.addNode();
+        c.addCapacitor (ch.wCathodeV7a, c5, 220.0e-9);          // C5
+        c.addResistor (c5, loop, 150.0e3);                      // R6
+        c.addResistor (loop, gnd, 68.0e3);                      // R13
+        c.addCapacitor (loop, c1, 220.0e-9);                    // C1
+        c.addResistor (c1, gnd, 1.0e6);                         // R20
+        c.addResistor (c1, g7b, 68.0e3);                        // R7
+        ch.wPlateV7b = c.addNode();
+        c.addTriode (ch.wPlateV7b, g7b, k7b, triode12AT7());
+        c.addCapacitor (g7b, ch.wPlateV7b, cgp);
+        c.addResistor (vd, ch.wPlateV7b, 56.0e3);               // R18
+        c.addResistor (k7b, gnd, 1.5e3);                        // R19
+        c.setInitialGuess (ch.wPlateV7b, 220.0);
+        c.setInitialGuess (k7b, 2.5);
 
-        // Master (500KA rheostat): 100nF coupling from tone stack out, 1M to ground
-        const auto masterCoup = c.addNode();
-        c.addCapacitor (postNode, masterCoup, 100.0e-9);    // 100nF coupling from tone out
-        c.addResistor (masterCoup, gnd, 1.0e6);             // 1M to ground
-        ch.rPost = c.addResistor (masterCoup, ch.wTone, 250.0e3); // 500KA master (half nominal for rheostat)
+        const auto c6 = c.addNode();
+        ch.wMix = c.addNode();
+        c.addCapacitor (ch.wPlateV7b, c6, 220.0e-9);            // C6
+        c.addResistor (c6, ch.wMix, 1.0e6);                     // R9
+        c.addResistor (ch.wMix, gnd, 220.0e3 + 250.0e3);        // R64 + RV9 (reverb at minimum)
+        c.addResistor (ch.wMix, gnd, 1.0e6);                    // R63
+        ch.wTone = c.addNode();                                 // the PI's grid A
+        c.addCapacitor (ch.wMix, ch.wTone, 47.0e-9);            // C3
+        c.addResistor (ch.wTone, gnd, 1.0e6);                   // R26
     }
 
     // ================================================================ phase inverter + power amp (full reference only)
@@ -343,14 +434,12 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
         // 82K/100K plate loads, 10K tail + 47K to ground, 100nF coupling from master to grid A.
         // Cross-coupling: 47nF from PI plate B to grid B.
         // NFB: from OT secondary through 150K + 4K7 to grid B.
-        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
+        const auto g1 = ch.wTone, g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
         ch.wGridA = g1;
         ch.wPlateA = pa;
         ch.wPlateB = pb;
         ch.wTail = nm;
         ch.wFeedback = fp;
-        c.addCapacitor (ch.wTone, g1, 100.0e-9);             // 100nF coupling from master
-        c.addResistor (g1, gnd, 1.0e6);                      // R9: 1M grid leak
         c.addResistor (g2, fp, 1.0e6);                       // grid leak for grid B
         // Cross-coupling: 47nF from plate B to grid B
         c.addCapacitor (pb, g2, 47.0e-9);
@@ -427,12 +516,8 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: from speaker terminal through feedbackResistor to PI grid 2, with Presence 250K shunt.
-        const auto wp = c.addNode();
+        // NFB: from the speaker terminal through feedbackResistor to PI grid 2 (no Presence control on this amp).
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        ch.rPresTop = c.addResistor (fp, wp, 125.0e3);      // Presence 250K, split
-        ch.rPresBottom = c.addResistor (wp, gnd, 125.0e3);
-        c.addCapacitor (fp, wp, 0.01e-6);                    // HF feedback cap
         c.addCapacitor (fp, gnd, 1.5e-9);                    // stray for HF stability
 
         c.setInitialGuess (pp1, railPlatesNominal);
@@ -448,33 +533,41 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
 void RockerverbStyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
-    const double trebleBottom = juce::jmax (1.0, 250.0e3 * k.treble);
-    const double trebleTop = juce::jmax (1.0, 250.0e3 - trebleBottom);
-    const double bassR = juce::jmax (1.0, 1.0e6 * pots::audio (k.bass));
-    const double midBottom = juce::jmax (1.0, 25.0e3 * k.mid);
-    const double midTop = juce::jmax (1.0, 25.0e3 - midBottom);
-    const double presBottom = juce::jmax (1.0, 250.0e3 * (1.0 - k.presence));
-    const double presTop = juce::jmax (1.0, 250.0e3 - presBottom);
-    const double postR = juce::jmax (1.0, 500.0e3 * pots::audio (k.post));
+    const auto split = [] (double total, double bottomFraction, double& top, double& bottom)
+    {
+        bottom = juce::jmax (1.0, total * bottomFraction);
+        top = juce::jmax (1.0, total - bottom);
+    };
+    double gTop, gBot, dtTop, dtBot, dmTop, dmBot, dvTop, dvBot, cvTop, cvBot, ctTop, ctBot, cbTop, cbBot;
+    split (1.0e6, pots::audio (k.gain), gTop, gBot);            // RV4 A1M, both gangs
+    split (250.0e3, k.treble, dtTop, dtBot);                    // RV7 250KB
+    split (25.0e3, k.mid, dmTop, dmBot);                        // RV6 25KB
+    split (500.0e3, pots::audio (k.post), dvTop, dvBot);        // RV8 500KA
+    split (500.0e3, pots::audio (k.cVolume), cvTop, cvBot);     // RV1 500KA
+    split (250.0e3, k.cTreble, ctTop, ctBot);                   // RV3 250KB
+    split (250.0e3, 1.0 - pots::audio (k.cBass), cbTop, cbBot); // RV2 250KA: more Bass = more resistance above the wiper
+    const double dBass = juce::jmax (1.0, 500.0e3 * pots::audio (k.bass)); // RV5 500KA rheostat
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
 
     for (auto& ch : channels)
     {
-        const double gainBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.gain));
-        ch.pre.setResistance (ch.rGainBot, gainBottom);
-        ch.pre.setResistance (ch.rGainTop, juce::jmax (1.0, 1.0e6 - gainBottom));
-        ch.power.setResistance (ch.rTrebleTop, trebleTop);
-        ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
-        ch.power.setResistance (ch.rBass, bassR);
-        ch.power.setResistance (ch.rMidTop, midTop);
-        ch.power.setResistance (ch.rMidBottom, midBottom);
-        ch.power.setResistance (ch.rPost, postR);
+        auto& p = ch.pre;
+        p.setResistance (ch.rGainBTop, gTop);  p.setResistance (ch.rGainBBot, gBot);
+        p.setResistance (ch.rGainATop, gTop);  p.setResistance (ch.rGainABot, gBot);
+        p.setResistance (ch.rDTrebleTop, dtTop);  p.setResistance (ch.rDTrebleBot, dtBot);
+        p.setResistance (ch.rDBass, dBass);
+        p.setResistance (ch.rDMidTop, dmTop);  p.setResistance (ch.rDMidBot, dmBot);
+        p.setResistance (ch.rDVolTop, dvTop);  p.setResistance (ch.rDVolBot, dvBot);
+        p.setResistance (ch.rCVolTop, cvTop);  p.setResistance (ch.rCVolBot, cvBot);
+        p.setResistance (ch.rCTrebleTop, ctTop);  p.setResistance (ch.rCTrebleBot, ctBot);
+        p.setResistance (ch.rCBassTop, cbTop);  p.setResistance (ch.rCBassBot, cbBot);
+        // RL1: only the selected channel's output is connected to (and loaded by) the shared path.
+        p.setResistance (ch.rLoadDirty, k.channel == 1 ? relayLoad : relayOpen);
+        p.setResistance (ch.rLoadClean, k.channel == 0 ? relayLoad : relayOpen);
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rPresTop, presTop);
-            ch.power.setResistance (ch.rPresBottom, presBottom);
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
         }
@@ -550,8 +643,10 @@ void RockerverbStyleAmplifierProcessor::updateSupply (Channel& ch) const
         ch.power.setSource (ch.wSrcCt, rail (ch.sA, 500.0));
         ch.power.setSource (ch.wSrcPi, rail (ch.sB, 480.0));
     }
-    ch.pre.setSource (ch.pSrcD, rail (ch.sC, 460.0));    // V8 from C
-    ch.pre.setSource (ch.pSrcE, rail (ch.sE, 460.0));    // V9 from E
+    ch.pre.setSource (ch.pSrcF, rail (ch.sE, 460.0));    // F: V9 / V10
+    ch.pre.setSource (ch.pSrcE, rail (ch.sD, 460.0));    // E: V8
+    ch.power.setSource (ch.wSrcD, rail (ch.sC, 460.0));  // D: V7
+    ch.power.setSource (ch.wSrcV7Bias, rail (ch.sC, 460.0) * 33.0 / 253.0);
     ch.vScreen = rail (ch.sB, 500.0);
 }
 
@@ -584,7 +679,11 @@ double RockerverbStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
         case Probe::v9bPlate: return ch.pre.voltage (ch.pPlateV9b);
         case Probe::v8aPlate: return ch.pre.voltage (ch.pPlateV8a);
         case Probe::v8bPlate: return ch.pre.voltage (ch.pPlateV8b);
-        case Probe::toneStackOut: return ch.power.voltage (ch.wTone);
+        case Probe::v10aPlate: return ch.pre.voltage (ch.pPlateV10a);
+        case Probe::v10bPlate: return ch.pre.voltage (ch.pPlateV10b);
+        case Probe::v7aCathode: return ch.power.voltage (ch.wCathodeV7a);
+        case Probe::v7bPlate: return ch.power.voltage (ch.wPlateV7b);
+        case Probe::toneStackOut: return ch.pre.voltage (lastKnobs.channel == 0 ? ch.pCleanOut : ch.pDirtyOut);
         case Probe::phaseInverterGrid: return ch.power.voltage (ch.wGridA);
         case Probe::phaseInverterPlateA: return ch.power.voltage (ch.wPlateA);
         case Probe::phaseInverterPlateB: return ch.power.voltage (ch.wPlateB);
@@ -652,11 +751,13 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         s.reset (newSampleRate, seconds);
         s.setCurrentAndTargetValue (p->get());
     };
+    setup (smoothedCVolume, cVolumeParam, 0.02);
+    setup (smoothedCTreble, cTrebleParam, 0.02);
+    setup (smoothedCBass, cBassParam, 0.02);
     setup (smoothedGain, gainParam, 0.02);
     setup (smoothedTreble, trebleParam, 0.02);
     setup (smoothedMid, midParam, 0.02);
     setup (smoothedBass, bassParam, 0.02);
-    setup (smoothedPresence, presenceParam, 0.02);
     setup (smoothedPost, postParam, 0.02);
     setup (smoothedOutput, outputParam, 0.02);
     setup (smoothedPower, powerParam, 0.02);
@@ -665,9 +766,9 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
 
     idleSupplyCurrent = 0.12;
     appliedSpeaker = matchedSpeaker;
-    updatePots ({ gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
-                  presenceParam->get(), postParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
-                  juce::roundToInt (speakerParam->get()) });
+    updatePots ({ cVolumeParam->get(), cTrebleParam->get(), cBassParam->get(), gainParam->get(), trebleParam->get(),
+                  midParam->get(), bassParam->get(), postParam->get(), powerParam->get(), biasParam->get(),
+                  tubeFeelParam->get(), juce::roundToInt (speakerParam->get()), juce::roundToInt (channelParam->get()) });
 
     dcOk = true;
     for (auto& ch : channels)
@@ -675,17 +776,18 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         const double supplyRate = newSampleRate / (double) supplyInterval;
         const double feel = 0.05 + 0.95 * (double) tubeFeelParam->get();
         bool passOk = true;
-        double iCRun = 0.003, iDRun = 0.003, iERun = 0.003, ipRun = 0.10, isRun = 0.008;
+        double iCRun = 0.005, iDRun = 0.003, iERun = 0.006, ipRun = 0.10, isRun = 0.008;
         for (int pass = 0; pass < 10; ++pass)
         {
             passOk = ch.supply.prepare (supplyRate);
 
-            ch.pre.setSource (ch.pSrcD, ch.supply.voltage (ch.sC));
-            ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sE));
+            ch.pre.setSource (ch.pSrcF, ch.supply.voltage (ch.sE));
+            ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sD));
             passOk = ch.pre.prepare (newSampleRate) && passOk;
-            ch.plateDcV8b = ch.pre.voltage (ch.pPlateV8b);
 
-            ch.power.setSource (ch.wSrcTs, 0.0); // DC coupling = 0 (AC only)
+            ch.power.setSource (ch.wSrcPost, 0.0);
+            ch.power.setSource (ch.wSrcD, ch.supply.voltage (ch.sC));
+            ch.power.setSource (ch.wSrcV7Bias, ch.supply.voltage (ch.sC) * 33.0 / 253.0);
             ch.vScreen = ch.supply.voltage (ch.sB);
             double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0, iPi = 0.0;
             if (! reducedOrder)
@@ -705,18 +807,17 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
                 const double vPi = ch.supply.voltage (ch.sB);
                 iPi = (vPi - ch.power.voltage (ch.wPlateA)) / 82.0e3 + (vPi - ch.power.voltage (ch.wPlateB)) / 100.0e3;
             }
-            const double vC = ch.supply.voltage (ch.sC);
-            const double iC = (vC - ch.pre.voltage (ch.pPlateV8a)) / 100.0e3
-                             + (vC - ch.pre.voltage (ch.pPlateV8b)) / 100.0e3;
-            const double vE = ch.supply.voltage (ch.sE);
-            const double iE = (vE - ch.pre.voltage (ch.pPlateV9a)) / 100.0e3;
-            const double vD = ch.supply.voltage (ch.sD);
-            const double iD = (vD - ch.pre.voltage (ch.pPlateV9b)) / 100.0e3;
+            const double vF = ch.supply.voltage (ch.sE), vE = ch.supply.voltage (ch.sD), vD = ch.supply.voltage (ch.sC);
+            const double iF = (vF - ch.pre.voltage (ch.pPlateV9a)) / 100.0e3 + (vF - ch.pre.voltage (ch.pPlateV9b)) / 100.0e3
+                            + (vF - ch.pre.voltage (ch.pPlateV10a)) / 100.0e3 + (vF - ch.pre.voltage (ch.pPlateV10b)) / 100.0e3;
+            const double iE = (vE - ch.pre.voltage (ch.pPlateV8a)) / 100.0e3 + (vE - ch.pre.voltage (ch.pPlateV8b)) / 100.0e3;
+            const double iD = ch.power.voltage (ch.wCathodeV7a) / 22.0e3 + (vD - ch.power.voltage (ch.wPlateV7b)) / 56.0e3
+                            + vD / 253.0e3;
             ipRun += 0.5 * ((ipA + ipB) - ipRun);
             isRun += 0.5 * ((isA + isB) - isRun);
-            iCRun += 0.5 * (iC - iCRun);
-            iDRun += 0.5 * (iD - iDRun);
-            iERun += 0.5 * (iE - iERun);
+            iCRun += 0.5 * (iD - iCRun);
+            iDRun += 0.5 * (iE - iDRun);
+            iERun += 0.5 * (iF - iERun);
             ch.supply.setCurrentSource (ch.iA, -ipRun);
             ch.supply.setCurrentSource (ch.iB, -(isRun + iPi));
             ch.supply.setCurrentSource (ch.iC, -iCRun);
@@ -734,8 +835,12 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sB));
         }
-        ch.pre.setSource (ch.pSrcD, ch.supply.voltage (ch.sC));
-        ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sE));
+        ch.pre.setSource (ch.pSrcF, ch.supply.voltage (ch.sE));
+        ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sD));
+        ch.power.setSource (ch.wSrcD, ch.supply.voltage (ch.sC));
+        ch.power.setSource (ch.wSrcV7Bias, ch.supply.voltage (ch.sC) * 33.0 / 253.0);
+        ch.pre.solveSample();
+        ch.power.solveSample();
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
@@ -761,38 +866,36 @@ void RockerverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
     const int numSamples = buffer.getNumSamples();
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
 
+    smoothedCVolume.setTargetValue (cVolumeParam->get());
+    smoothedCTreble.setTargetValue (cTrebleParam->get());
+    smoothedCBass.setTargetValue (cBassParam->get());
     smoothedGain.setTargetValue (gainParam->get());
     smoothedTreble.setTargetValue (trebleParam->get());
     smoothedMid.setTargetValue (midParam->get());
     smoothedBass.setTargetValue (bassParam->get());
-    smoothedPresence.setTargetValue (presenceParam->get());
     smoothedPost.setTargetValue (postParam->get());
     smoothedOutput.setTargetValue (outputParam->get());
     smoothedPower.setTargetValue (powerParam->get());
     smoothedBias.setTargetValue (biasParam->get());
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
+    const int channelSel = juce::roundToInt (channelParam->get()) >= 1 ? 1 : 0;
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const float gn = smoothedGain.getNextValue();
-        const float tr = smoothedTreble.getNextValue();
-        const float mi = smoothedMid.getNextValue();
-        const float ba = smoothedBass.getNextValue();
-        const float pr = smoothedPresence.getNextValue();
-        const float ps = smoothedPost.getNextValue();
+        Knobs knobs { smoothedCVolume.getNextValue(), smoothedCTreble.getNextValue(), smoothedCBass.getNextValue(),
+                      smoothedGain.getNextValue(), smoothedTreble.getNextValue(), smoothedMid.getNextValue(),
+                      smoothedBass.getNextValue(), smoothedPost.getNextValue(), smoothedPower.getNextValue(),
+                      smoothedBias.getNextValue(), smoothedFeel.getNextValue(), speakerChoice, channelSel };
         const float ou = smoothedOutput.getNextValue();
-        const float pw = smoothedPower.getNextValue();
-        const float bi = smoothedBias.getNextValue();
-        const float fe = smoothedFeel.getNextValue();
 
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ gn, tr, mi, ba, pr, ps, pw, bi, fe, speakerChoice });
+            updatePots (knobs);
         }
 
-        const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
+        const double masterGain = juce::jmax (0.002, pots::audio (knobs.powerDrive));
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
@@ -807,9 +910,9 @@ void RockerverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            // Pre->Power AC coupling: subtract V8-B plate DC
-            const double preOut = masterGain * (ch.pre.voltage (ch.pPlateV8b) - ch.plateDcV8b);
-            ch.power.setSource (ch.wSrcTs, preOut);
+            // Both tone stacks block DC (their only DC paths end on caps), so the relay's output is pure AC.
+            const double selected = ch.pre.voltage (channelSel == 0 ? ch.pCleanOut : ch.pDirtyOut);
+            ch.power.setSource (ch.wSrcPost, masterGain * selected);
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);

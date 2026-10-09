@@ -58,4 +58,25 @@ inline double cathodeFollowerDc (double vcc, double vgrid)
     return 0.5 * (lo + hi);
 }
 
+/** The coupling cap + grid leak in front of the phase inverter. A reduced-order power stage skips the inverter, so
+    when the node it reads is DC-coupled to a cathode follower or a plate (tens to hundreds of volts), this is the part
+    that keeps that DC out -- without it the behavioural curve sits pinned at one rail and the amp outputs only DC
+    (silence). reset() with the node's settled DC so the first sample does not start with a thump. */
+struct CouplingCapHighpass
+{
+    double lowpass = 0.0, coeff = 0.0;
+
+    void prepare (double sampleRate, double capFarads, double leakOhms, double settledDc) noexcept
+    {
+        coeff = 1.0 - std::exp (-1.0 / (capFarads * leakOhms * sampleRate));
+        lowpass = settledDc;
+    }
+
+    double process (double x) noexcept
+    {
+        lowpass += coeff * (x - lowpass);
+        return x - lowpass;
+    }
+};
+
 } // namespace openguitarmultifx::tubeamp

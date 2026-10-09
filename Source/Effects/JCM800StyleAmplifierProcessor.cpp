@@ -134,13 +134,13 @@ JCM800StyleAmplifierProcessor::JCM800StyleAmplifierProcessor()
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
-    auto gain = make ("j8_gain", "Gain", 0.4f);
+    auto gain = make ("j8_gain", "Preamp", 0.4f);
     auto treble = make ("j8_treble", "Treble", 0.5f);
     auto middle = make ("j8_middle", "Middle", 0.5f);
     auto bass = make ("j8_bass", "Bass", 0.5f);
     auto presence = make ("j8_presence", "Presence", 0.3f);
     auto output = make ("j8_output", "Output", 0.5f);
-    auto power = make ("j8_power", "Power Drive", 0.5f);
+    auto power = make ("j8_power", "Master", 0.5f);
     auto bias = make ("j8_bias", "Bias", 0.5f);
     auto feel = make ("j8_tube_feel", "Tube Feel", 1.0f);
     auto speaker = std::make_unique<juce::AudioParameterFloat> (
@@ -169,11 +169,11 @@ JCM800StyleAmplifierProcessor::JCM800StyleAmplifierProcessor()
     group->addChild (std::move (middle));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
-    group->addChild (std::move (output));
-    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("jcm800_page2", "Page 2", "|", std::move (power));
-    page2->addChild (std::move (bias));
+    group->addChild (std::move (power));
+    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("jcm800_page2", "Page 2", "|", std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }

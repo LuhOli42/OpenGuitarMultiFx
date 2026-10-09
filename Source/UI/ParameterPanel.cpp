@@ -84,6 +84,22 @@ void ParameterPanel::refresh()
         statusLabel.setText (current->getStatusText(), juce::dontSendNotification);
         bypassToggle.setToggleState (current->isBypassed(), juce::dontSendNotification);
 
+        // Parameters can change from outside the knob (MIDI CC, a multi-channel amp loading the selected channel's
+        // stored knobs): keep what is drawn in step with the real value.
+        for (auto& row : sliders)
+        {
+            if (row.param == nullptr || row.slider == nullptr || row.slider->isMouseButtonDown())
+                continue;
+            const float v = row.param->get();
+            if (std::abs ((double) v - row.slider->getValue()) > 1.0e-6)
+                row.slider->setValue (v, juce::dontSendNotification);
+            if (row.selector != nullptr)
+            {
+                const auto range = row.param->getNormalisableRange();
+                row.selector->setSelectedIndex ((int) std::lround ((v - range.start) / range.interval), juce::dontSendNotification);
+            }
+        }
+
         const auto& bindings = current->getTempoSyncBindings();
         for (auto& row : sliders)
         {

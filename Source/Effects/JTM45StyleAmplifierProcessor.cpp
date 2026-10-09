@@ -179,12 +179,12 @@ JTM45StyleAmplifierProcessor::JTM45StyleAmplifierProcessor()
     group->addChild (std::move (middle));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
-    group->addChild (std::move (output));
     // Page 2 (a sub-group: see EffectProcessor::getParameterPages()).
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("jtm45_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }

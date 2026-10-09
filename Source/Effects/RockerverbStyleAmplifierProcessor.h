@@ -10,16 +10,18 @@ namespace openguitarmultifx
 {
 
 /**
-    An Orange Rockerverb 50 MK1-style guitar amplifier (Dirty channel only), modelled at component level
-    on NodalCircuit from the factory schematic ORA-CD204 (27 Feb 2004). The Rockerverb is Orange's flagship
-    high-gain amplifier, known for its thick, harmonically-rich distortion and distinctive mid-range character.
+    An Orange Rockerverb 50 MK1-style guitar amplifier (the early 4x6V6 version), modelled at component level on
+    NodalCircuit from the factory schematics ORA-CD204 / ORA-CD206 (Feb/Mar 2004) -- docs/circuits/Rockerverb.md.
 
-    Architecture: FOUR cascaded 12AX7 dirty-channel gain stages (V9-A -> V9-B -> V8-A -> V8-B), FMV tone stack,
-    a 12AX7 long-tailed-pair phase inverter (V5-A/V5-B) with global negative feedback, and four 6V6 beam tetrodes
-    as two push-pull pairs in a fixed-bias output stage.
+    BOTH channels, as drawn: Dirty = V9-A -> (R53/R60, C42, bright C36) -> Gain RV4-B -> V9-B -> (R54/R61) -> Gain RV4-A
+    (the Gain pot is a dual gang) -> V8-A -> (R51/R52) -> V8-B -> its own Treble/Middle/Bass stack -> Volume RV8.
+    Clean = V10-A -> (R56/R55, bright C34) -> Volume RV1 -> V10-B -> its own Treble/Bass stack (no Middle pot: a fixed
+    6k8). Relay RL1 picks one; after it the path is shared: R4 -> cathode follower V7-A (12AT7) -> loop -> V7-B
+    (12AT7 recovery) -> the reverb mixer (reverb not modelled, its pot at minimum as a load) -> C3 -> phase inverter.
 
-    Controls, page 1: Gain (1MA), Treble, Mid, Bass, Presence, Master, Output.
-    Page 2: Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm).
+    Controls, page 1 -- the real front panel: Channel, Clean Volume / Treble / Bass, Dirty Gain / Treble / Middle /
+    Bass / Volume. (No Presence and no master on the real amp.) Page 2 (synthetic): Power Drive (a master ahead of
+    the power stage; 1.0 = the real amp), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class RockerverbStyleAmplifierProcessor : public EffectProcessor
 {
@@ -47,7 +49,7 @@ public:
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
-    enum class Probe { v9aPlate, v9bPlate, v8aPlate, v8bPlate, toneStackOut,
+    enum class Probe { v9aPlate, v9bPlate, v8aPlate, v8bPlate, v10aPlate, v10bPlate, v7aCathode, v7bPlate, toneStackOut,
                        phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB,
                        phaseInverterTail, powerPlateA, powerPlateB, powerGridA, speaker, biasNode,
                        feedbackNode };
@@ -58,7 +60,9 @@ public:
     }
     double railPlates() const noexcept { return channels[0].supply.voltage (channels[0].sA); }
     double railScreens() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
-    double railPi() const noexcept { return channels[0].supply.voltage (channels[0].sC); }
+    // Schematic rails: C (PI) = sB, D (V7) = sC, E (V8) = sD, F (V9/V10) = sE.
+    double railPi() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
+    double railV7() const noexcept { return channels[0].supply.voltage (channels[0].sC); }
     double railV8() const noexcept { return channels[0].supply.voltage (channels[0].sD); }
     double railV9() const noexcept { return channels[0].supply.voltage (channels[0].sE); }
     double debugIterations (int block) const noexcept;
@@ -85,19 +89,21 @@ private:
         double lastEmitted = 0.0, declick = 0.0;
         bool alignOutput = false;
 
-        // preamp: four cascaded 12AX7 gain stages
-        int pSrcE = 0, pSrcD = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        NodalCircuit::Node pPlateV9a = 0, pPlateV9b = 0, pPlateV8a = 0, pPlateV8b = 0;
-        double plateDcV8b = 0.0;
+        // preamp block: both channels, both tone stacks (rails F = V9/V10, E = V8)
+        int pSrcF = 0, pSrcE = 0, pSrcIn = 0;
+        int rGainBTop = 0, rGainBBot = 0, rGainATop = 0, rGainABot = 0;               // RV4-B / RV4-A
+        int rDTrebleTop = 0, rDTrebleBot = 0, rDBass = 0, rDMidTop = 0, rDMidBot = 0, rDVolTop = 0, rDVolBot = 0;
+        int rCVolTop = 0, rCVolBot = 0, rCTrebleTop = 0, rCTrebleBot = 0, rCBassTop = 0, rCBassBot = 0;
+        int rLoadDirty = 0, rLoadClean = 0;                                             // what RL1 connects to
+        NodalCircuit::Node pPlateV9a = 0, pPlateV9b = 0, pPlateV8a = 0, pPlateV8b = 0, pPlateV10a = 0, pPlateV10b = 0;
+        NodalCircuit::Node pDirtyOut = 0, pCleanOut = 0;
 
-        // power section (tone stack + PI + power amp)
-        int wSrcTs = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
+        // post block (always): R4 -> V7-A follower -> loop -> V7-B -> reverb mixer -> C3; then PI + power (full only)
+        int wSrcPost = 0, wSrcD = 0, wSrcV7Bias = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
-        int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rPost = 0;
+        int rFeedback = 0, rBiasTrim = 0;
         int penA = 0, penB = 0;
-        NodalCircuit::Node wToneIn = 0, wTone = 0, wOut = 0, wPlateA = 0,
+        NodalCircuit::Node wPlateV7a = 0, wCathodeV7a = 0, wPlateV7b = 0, wMix = 0, wTone = 0, wOut = 0, wPlateA = 0,
                            wPlateB = 0, wGridA = 0, wTail = 0, wPP1 = 0, wPP2 = 0,
                            wPowerGridA = 0, wBias = 0, wFeedback = 0;
         double screenDropA = 0.0, screenDropB = 0.0;
@@ -118,8 +124,8 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double gain, treble, mid, bass, presence, post, powerDrive, bias, tubeFeel;
-        int speaker;
+        double cVolume, cTreble, cBass, gain, treble, mid, bass, post, powerDrive, bias, tubeFeel;
+        int speaker, channel;
     };
     void updatePots (const Knobs& k);
     void recover (Channel& ch) const;
@@ -141,11 +147,14 @@ private:
     DualMonoShortcut shortcut;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
+    juce::AudioParameterFloat* channelParam = nullptr;
+    juce::AudioParameterFloat* cVolumeParam = nullptr;
+    juce::AudioParameterFloat* cTrebleParam = nullptr;
+    juce::AudioParameterFloat* cBassParam = nullptr;
     juce::AudioParameterFloat* gainParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* midParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
-    juce::AudioParameterFloat* presenceParam = nullptr;
     juce::AudioParameterFloat* postParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
@@ -153,8 +162,8 @@ private:
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
-        smoothedPresence, smoothedPost, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
+    juce::SmoothedValue<float> smoothedCVolume, smoothedCTreble, smoothedCBass, smoothedGain, smoothedTreble, smoothedMid,
+        smoothedBass, smoothedPost, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
         /** JUCE's reset() must return the circuit to its DC operating point -- an
         empty reset() (the bug this fixes) left stale capacitor state forever.
