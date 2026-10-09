@@ -224,13 +224,13 @@ add_test(NAME OpenGuitarMultiFx_UnitTests COMMAND OpenGuitarMultiFx_Tests)
 # asserts elsewhere go log-only under emulation (Tests/TestEnvironment.h),
 # which is what makes parallel sharding safe there.
 #
-# Registered as 8 shards because the runner is serial AND suite weights are
+# Registered as 16 shards because the runner is serial AND suite weights are
 # lopsided (amp suites carry 10-20 sub-tests each): `ctest --parallel 4`
-# starts the first 4 shards and backfills as short ones finish, so the
-# makespan tracks total-work/4 instead of the single heaviest quarter —
-# the first 4-shard attempt stalled on a >40 min straggler shard.
-foreach (shard RANGE 0 7)
+# backfills as short shards finish, so the makespan tracks total-work/4
+# instead of the heaviest 1/N-th — 4 shards stalled on a >40 min straggler,
+# 8 still left a ~39 min tail; finer packing shrinks the straggler bound.
+foreach (shard RANGE 0 15)
   add_test(NAME OpenGuitarMultiFx_UnitTests_NoPerf.shard${shard}
-           COMMAND OpenGuitarMultiFx_Tests --shard ${shard}/8
+           COMMAND OpenGuitarMultiFx_Tests --shard ${shard}/16
                    --skip-category Bench --skip-category Probe)
 endforeach()

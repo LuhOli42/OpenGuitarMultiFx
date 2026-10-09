@@ -99,7 +99,7 @@ jobs:
             ctest --test-dir build-x86_64 --output-on-failure \
                   -R '^OpenGuitarMultiFx_UnitTests$'
 
-      - name: Test (aarch64, qemu — NoPerf suite, 4-way parallel over 8 shards)
+      - name: Test (aarch64, qemu — NoPerf suite, 4-way parallel over 16 shards)
         if: matrix.arch == 'aarch64'
         run: |
           docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
