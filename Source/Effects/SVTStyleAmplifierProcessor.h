@@ -65,6 +65,7 @@ public:
     void debugSetFeedbackResistance (double ohms);
     /** Test hook: replaces the speaker by a plain resistor. */
     void debugSetResistiveLoad (double ohms);
+
     double debugIterations (int block) const noexcept;
     long long debugPreFailures() const noexcept { return failuresPre; }
     long long debugPowerFailures() const noexcept { return failuresPower; }

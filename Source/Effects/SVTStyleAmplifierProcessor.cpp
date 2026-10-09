@@ -289,10 +289,13 @@ namespace
         b.rMasterTop = c.addResistor (mtop, mw, 25.0e3); // P5 50k linear
         b.rMasterBot = c.addResistor (mw, gnd, 25.0e3);
         c.addCapacitor (mw, g4, 0.1e-6);                 // C6
-        c.addResistor (g4, gnd, 220.0e3);                // R14
 
-        // V2:A -- output cathode follower (plate to rail, cathode ~100 V into R15+R16).
+        // V2:A -- output cathode follower (plate to rail, cathode ~100 V into R15+R16). R14 returns
+        // to the kx tap, not ground: bootstrapped self-bias holds the grid a couple volts under the
+        // cathode. Returned to ground the stage idles with the cathode near 5 V instead of ~100 V,
+        // parked on the grid-current knee.
         const auto p4 = c.addNode(), k4 = c.addNode(), kx = c.addNode(), po = c.addNode();
+        c.addResistor (g4, kx, 220.0e3);                 // R14
         c.addTriode (p4, g4, k4, triode12AX7());
         c.addCapacitor (g4, p4, cgp);
         c.addResistor (vcc, p4, 1.0e-3);                 // plate straight to +345 V
@@ -481,10 +484,15 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         const double ls = lh / (halfToSecondaryTurns * halfToSecondaryTurns);
         const double m12 = -couplingHalves * lh;
         const double mps = couplingSecondary * std::sqrt (lh * ls);
+        // Secondary polarity is chosen so the global feedback returned to the second PI grid is
+        // NEGATIVE. With the opposite winding sense the 150k NFB path becomes positive feedback:
+        // through the 0.1uF feedback cap the loop sustains a ~9 Hz relaxation oscillation (classic
+        // motorboating) that buries the output under low rumble -- measured on a zero-signal input
+        // 2026-10-09 and fixed by this sign choice.
         c.addCoupledInductors ({ { a1, pp1 }, { a2, pp2 }, { sw, gnd } },
-                               { lh,  m12, -mps,
-                                 m12, lh,   mps,
-                                 -mps, mps, ls });
+                               { lh,  m12,  mps,
+                                 m12, lh,  -mps,
+                                 mps, -mps, ls });
         ch.wOut = c.addNode();
         c.addResistor (sw, ch.wOut, secondaryResistance);
         ch.wPP1 = pp1;

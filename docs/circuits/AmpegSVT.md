@@ -114,6 +114,13 @@ Speaker (2/4/8 ohm) and Output (plug-in level — the real amp has no output-lev
   into grid current (measured: 228 failed solves in a 1.7 s clean-tone run before adding them, 0 after).
 - Bias-indicator/protection op-amps, per-cathode 10 ohm sense resistors, 1N3070 clamps: metering
   only, no signal-path effect — omitted.
+- The OT secondary's winding sense in the coupled-inductor matrix is chosen so the global feedback
+  returned to the second PI grid is NEGATIVE. Built the other way the 150k NFB path becomes positive
+  feedback and the amp self-oscillates a ~9 Hz relaxation (motorboating) that buries the output —
+  measured 2026-10-09 as 0.109 RMS of low rumble on a zero-signal input; caught by the
+  `AmpAudibleOutput` silence regression test.
+- V2:A's grid leak R14 returns to the kx cathode-resistor tap, not ground (bootstrapped bias): the
+  follower idles with its cathode ~100 V. Wired to ground it idles near 5 V on the grid-current knee.
 
 ## Verification targets
 
