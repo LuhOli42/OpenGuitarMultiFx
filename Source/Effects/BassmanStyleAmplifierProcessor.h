@@ -46,6 +46,8 @@ public:
     /** Amplifier output (speaker-terminal volts) is scaled by this to get a signal level. */
     static constexpr double outputScale = 1.0 / 18.8; // 8 ohm secondary level mapping -- rescaled with the reduced
                                                 // power stage's retuned drive law (keeps the unity trim the registry was calibrated for)
+    /** Full-order netlist keeps the original 8 ohm mapping -- the rescale above only compensates the reduced path. */
+    static constexpr double fullOutputScale = 1.0 / 40.0;
 
     // ---- reduced-order power stage (2026-09-27) ----
     // Same mechanism as SuperLeadStyleAmplifierProcessor (see that header's own note for the full reasoning, the

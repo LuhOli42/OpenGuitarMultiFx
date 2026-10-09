@@ -960,7 +960,7 @@ void BassmanStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out; // continuity with the last sample that went out
