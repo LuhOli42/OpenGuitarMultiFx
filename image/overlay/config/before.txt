@@ -1,0 +1,23 @@
+# rsetup first-boot script (runs once from the /config FAT partition, then the
+# rsetup-config-first-boot package removes itself). Replaces Radxa's stock
+# before.txt: same mechanism, OGMFX policy. Edit on any PC before first boot.
+#
+# Commands: https://github.com/radxa-pkg/rsetup (src/usr/lib/rsetup/cli/)
+no_fail
+log "Running OGMFX before.txt as first boot configuration"
+
+# Admin account for Phase 6 bring-up/benchmarks (ssh + sudo). CHANGE THE
+# PASSWORD on first login. The kiosk user "ogmfx" is created in the image and
+# has no sudo.
+add_user radxa radxa
+user_append_group radxa sudo
+user_append_group radxa audio
+user_append_group radxa video
+user_append_group radxa plugdev
+user_append_group radxa render
+
+resize_root
+regenerate_ssh_hostkey
+update_locale en_US.UTF-8
+enable_service ssh
+remove_packages rsetup-config-first-boot

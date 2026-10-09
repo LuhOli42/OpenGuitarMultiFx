@@ -1,0 +1,16 @@
+# Periodic update check (docs/Phase6Plan.md, "Update flow (v1)").
+# Image baseline; W4's updater/ogmfx-updater.service replaces it at this path.
+[Unit]
+Description=OpenGuitarMultiFx update check
+Documentation=https://github.com/LuhOli42/OpenGuitarMultiFx/blob/main/docs/Phase6Plan.md
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/usr/local/sbin/ogmfx-update.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ogmfx-update.sh
+# Stay out of the audio thread's way. Per-process niceness only -- no
+# CPUWeight= (see ogmfx.service for why the cgroup cpu controller must stay off).
+Nice=19
+IOSchedulingClass=idle
