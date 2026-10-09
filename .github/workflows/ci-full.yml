@@ -1,0 +1,162 @@
+# Full CI: the complete test suite on both arches. Runs on every PR (as a
+# separate, non-blocking signal — only ci.yml's fast gate is meant to be
+# required), on every push to main, weekly, and on demand.
+#
+#   x86_64  — full serial ctest suite (wall-clock perf asserts flake
+#             under parallel contention, so this stays serial).
+#   aarch64 — the emulated NoPerf suite is the long pole (~3 h of serial
+#             qemu work): the build job uploads the ~19 MB test binary as
+#             an artifact, then 4 test-aarch64 jobs run 4 `--shard i/16`
+#             slices each in parallel — 16 qemu processes on 16 vCPUs
+#             instead of 4 on 4. "Bench"/"Probe" category suites are
+#             skipped (real-time bounds emulation can't hold); perf
+#             asserts inside normal suites go log-only via
+#             OGMFX_TESTS_UNDER_EMULATION (Tests/TestEnvironment.h).
+#             On-device perf runs are W6's on-board benchmark job.
+name: CI (full)
+
+on:
+  pull_request:
+    paths-ignore: ['docs/**', '**.md']
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**.md']
+  schedule:
+    - cron: '0 4 * * 1'  # Monday 04:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ci-full-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    env:
+      BUILD_JOBS: 4  # 4 vCPU / 16GB runners; cap for memory-hungry TUs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build toolchain image (layer-cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/toolchain
+          build-args: TARGET=${{ matrix.arch }}
+          tags: ogmfx-toolchain:latest
+          load: true
+          cache-from: type=gha,scope=ogmfx-toolchain-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=ogmfx-toolchain-${{ matrix.arch }}
+
+      - name: Restore FetchContent deps (JUCE, Eigen, json, NAM)
+        uses: actions/cache@v4
+        with:
+          path: build-${{ matrix.arch }}/_deps
+          key: ogmfx-deps-${{ matrix.arch }}-${{ hashFiles('CMakeLists.txt', 'Tests/CMakeLists.txt', 'cmake/**', 'tools/toolchain/**') }}
+          restore-keys: ogmfx-deps-${{ matrix.arch }}-
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ogmfx-ccache-${{ matrix.arch }}-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            ogmfx-ccache-${{ matrix.arch }}-${{ github.ref }}-
+            ogmfx-ccache-${{ matrix.arch }}-
+
+      - name: Build ${{ matrix.arch }}
+        run: scripts/cross-build.sh ${{ matrix.arch }}
+
+      - name: Test (x86_64, native ctest — full suite, serial)
+        if: matrix.arch == 'x86_64'
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
+            ctest --test-dir build-x86_64 --output-on-failure \
+                  -R '^OpenGuitarMultiFx_UnitTests$'
+
+      - name: Upload test binary (aarch64)
+        if: matrix.arch == 'aarch64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogmfx-tests-aarch64-${{ github.run_id }}-${{ github.run_attempt }}
+          # Single-file upload: the artifact root holds just the binary.
+          path: build-aarch64/Tests/OpenGuitarMultiFx_Tests_artefacts/Release/OpenGuitarMultiFx_Tests
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Verify install() payload (x86_64)
+        if: matrix.arch == 'x86_64'
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
+            bash -ec '
+              rm -rf /tmp/stage
+              cmake --install build-x86_64 --prefix /tmp/stage
+              for f in bin/OpenGuitarMultiFx systemd/ogmfx.service \
+                       systemd/ogmfx-updater.service systemd/ogmfx-updater.timer \
+                       install.sh etc/ogmfx/updater.conf; do
+                [ -f "/tmp/stage/$f" ] || { echo "missing payload file: $f"; exit 1; }
+              done
+              echo "install() payload OK"'
+
+  # aarch64 test fan-out: 4 jobs x 4 shards, each job with its own 4 vCPUs.
+  # `needs: build` waits for the whole matrix; `if: always()` keeps the
+  # tests running even when the x86_64 leg fails, so the aarch64 signal is
+  # never masked (a missing artifact still fails this leg explicitly).
+  test-aarch64:
+    name: test-aarch64 shards ${{ matrix.group }}*4..+3/16
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build toolchain image (aarch64 — gha cache hit)
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/toolchain
+          build-args: TARGET=aarch64
+          tags: ogmfx-toolchain:latest
+          load: true
+          cache-from: type=gha,scope=ogmfx-toolchain-aarch64
+          cache-to: type=gha,mode=max,scope=ogmfx-toolchain-aarch64
+
+      - name: Download test binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ogmfx-tests-aarch64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-bin
+
+      - name: Test (qemu — 4 parallel shards)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
+            bash -ec '
+              bin=/src/test-bin/OpenGuitarMultiFx_Tests
+              chmod +x "$bin"
+              first=$(( ${{ matrix.group }} * 4 )); last=$(( first + 3 ))
+              for i in $(seq "$first" "$last"); do
+                timeout 2400 qemu-aarch64-static -L /opt/sysroots/aarch64 \
+                  -E OGMFX_TESTS_UNDER_EMULATION=1 \
+                  "$bin" --shard "$i/16" \
+                        --skip-category Bench --skip-category Probe \
+                  > "/tmp/shard_$i.log" 2>&1 &
+              done
+              rc=0
+              for pid in $(jobs -p); do wait "$pid" || rc=1; done
+              for i in $(seq "$first" "$last"); do
+                echo "===== shard $i ====="
+                cat "/tmp/shard_$i.log"
+              done
+              exit "$rc"
+            '

@@ -6,10 +6,12 @@
 // Each test file registers its juce::UnitTest classes through a static
 // global instance (the pattern JUCE's own test framework expects). This
 // main() just needs to trigger the runner.
-// Usage: OpenGuitarMultiFx_Tests [--skip-category <cat>...] [--shard i/n] [name-substring]
+// Usage: OpenGuitarMultiFx_Tests [--skip-category <cat>...] [--shard i/n] [name-substring]...
 //
 //   (no args)                    run every registered suite (takes minutes)
-//   <name-substring>             run only suites whose name contains it
+//   <name-substring>...          run only suites whose name contains any of
+//                                the given substrings (repeatable, OR match —
+//                                used by CI's smoke job to run a fast subset)
 //   --skip-category <cat>        skip all suites in a juce::UnitTest category;
 //                                repeatable. Added for W2's CI: the wall-clock
 //                                perf suites (categories "Bench" and "Probe")
@@ -26,8 +28,7 @@ int main (int argc, char* argv[])
     juce::UnitTestRunner runner;
     runner.setPassesAreLogged (false);
 
-    juce::StringArray skipCategories;
-    juce::String nameFilter;
+    juce::StringArray skipCategories, nameFilters;
     int shardIndex = 0, numShards = 1;
 
     for (int i = 1; i < argc; ++i)
@@ -51,7 +52,7 @@ int main (int argc, char* argv[])
         }
         else
         {
-            nameFilter = argv[i];
+            nameFilters.add (argv[i]);
         }
     }
 
@@ -66,7 +67,11 @@ int main (int argc, char* argv[])
     {
         if (skipCategories.contains (test->getCategory()))
             continue;
-        if (nameFilter.isNotEmpty() && ! test->getName().containsIgnoreCase (nameFilter))
+        bool matches = nameFilters.isEmpty();
+        for (const auto& f : nameFilters)
+            if (test->getName().containsIgnoreCase (f))
+                matches = true;
+        if (! matches)
             continue;
         selected.add (test);
     }
