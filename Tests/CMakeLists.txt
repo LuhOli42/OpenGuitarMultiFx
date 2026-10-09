@@ -31,6 +31,8 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   JCM800StyleAmplifierProcessorTests.cpp
   AC15StyleAmplifierProcessorTests.cpp
   AC30StyleAmplifierProcessorTests.cpp
+  TrainwreckExpressStyleAmplifierProcessorTests.cpp
+  KometConcordeStyleAmplifierProcessorTests.cpp
   SLO100StyleAmplifierProcessorTests.cpp
   MarkIICPlusStyleAmplifierProcessorTests.cpp
   DualRectifierStyleAmplifierProcessorTests.cpp
@@ -168,6 +170,8 @@ set(OGMFX_SOURCES
   ../Source/Effects/ENGLPowerballStyleAmplifierProcessor.cpp
   ../Source/Effects/RockerverbStyleAmplifierProcessor.cpp
   ../Source/Effects/SVTStyleAmplifierProcessor.cpp
+  ../Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
+  ../Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp

@@ -169,6 +169,7 @@ palette now for effects that don't exist yet.
 | JCM800StyleAmplifierProcessor ("JCM800-Style Amplifier") | Amplifiers | Same `overdrive.svg` placeholder as the other modelled amps | `Source/Effects/JCM800StyleAmplifierProcessor.cpp` |
 | AC15StyleAmplifierProcessor ("AC15-Style Amplifier") | Amplifiers | Same `overdrive.svg` placeholder as the other modelled amps | `Source/Effects/AC15StyleAmplifierProcessor.cpp` |
 | AC30StyleAmplifierProcessor ("AC30-Style Amplifier") | Amplifiers | Same `overdrive.svg` placeholder as the other modelled amps | `Source/Effects/AC30StyleAmplifierProcessor.cpp` |
+| TrainwreckExpressStyleAmplifierProcessor ("Trainwreck Express-Style Amplifier") / KometConcordeStyleAmplifierProcessor ("Komet Concorde-Style Amplifier") | Amplifiers | Same `overdrive.svg` placeholder as the other modelled amps (the Concorde inherits the Express's `drawIcon`) | `Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp` |
 | SLO100StyleAmplifierProcessor ("SLO-100-Style Amplifier") | Amplifiers | Same `overdrive.svg` placeholder as the other modelled amps | `Source/Effects/SLO100StyleAmplifierProcessor.cpp` |
 | MarkIICPlusStyleAmplifierProcessor ("Mark IIC+-Style Amplifier") | Amplifiers | Same `overdrive.svg` placeholder as the other modelled amps | `Source/Effects/MarkIICPlusStyleAmplifierProcessor.cpp` |
 | DualRectifierStyleAmplifierProcessor ("Dual Rectifier-Style Amplifier") | Amplifiers | Same `overdrive.svg` placeholder as the other modelled amps | `Source/Effects/DualRectifierStyleAmplifierProcessor.cpp` |

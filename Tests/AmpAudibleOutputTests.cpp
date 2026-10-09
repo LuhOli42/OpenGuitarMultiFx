@@ -33,7 +33,7 @@ public:
                                  "JCM800StyleAmplifier", "AC15StyleAmplifier", "AC30StyleAmplifier",
                                  "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier", "DualRectifierStyleAmplifier",
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
-                                 "SVTStyleAmplifier" })
+                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
@@ -101,16 +101,16 @@ public:
                                  "JCM800StyleAmplifier", "AC15StyleAmplifier", "AC30StyleAmplifier",
                                  "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier", "DualRectifierStyleAmplifier",
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
-                                 "SVTStyleAmplifier" })
+                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
             juce::AudioBuffer<float> buf (1, 512);
-            buf.clear();
             const int warmBlocks = (int) (1.5 * sr) / 512, measBlocks = (int) (1.0 * sr) / 512;
             double sum = 0.0, sumSq = 0.0; long long n = 0; bool finite = true;
             for (int b = 0; b < warmBlocks + measBlocks; ++b)
             {
+                buf.clear(); // process() is in-place: without this the previous block's output is the next block's input
                 amp->process (buf);
                 if (b >= warmBlocks)
                     for (int i = 0; i < buf.getNumSamples(); ++i)
@@ -130,6 +130,8 @@ public:
             // separate investigation, not gated here.
             if (juce::String (key) == "SVTStyleAmplifier")
                 expect (acRms < 0.02, juce::String (key) + ": self-oscillates on silence");
+            if (juce::String (key) == "TrainwreckExpressStyleAmplifier" || juce::String (key) == "KometConcordeStyleAmplifier")
+                expect (acRms < 0.01, juce::String (key) + ": self-oscillates on silence");
         }
     }
 };
