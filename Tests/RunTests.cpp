@@ -44,6 +44,10 @@ int main (int argc, char* argv[])
                 shardIndex = parts[0].getIntValue();
                 numShards = parts[1].getIntValue();
             }
+            else
+            {
+                numShards = 0; // malformed value: fail the range check below
+            }
         }
         else
         {
