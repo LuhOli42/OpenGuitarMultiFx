@@ -33,7 +33,8 @@ public:
                                  "JCM800StyleAmplifier", "AC15StyleAmplifier", "AC30StyleAmplifier",
                                  "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier", "DualRectifierStyleAmplifier",
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
-                                 "SVTStyleAmplifier" })
+                                 "SVTStyleAmplifier", "MatchlessHC30StyleAmplifier", "HotCat30StyleAmplifier",
+                                 "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
@@ -101,7 +102,8 @@ public:
                                  "JCM800StyleAmplifier", "AC15StyleAmplifier", "AC30StyleAmplifier",
                                  "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier", "DualRectifierStyleAmplifier",
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
-                                 "SVTStyleAmplifier" })
+                                 "SVTStyleAmplifier", "MatchlessHC30StyleAmplifier", "HotCat30StyleAmplifier",
+                                 "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
@@ -111,6 +113,7 @@ public:
             double sum = 0.0, sumSq = 0.0; long long n = 0; bool finite = true;
             for (int b = 0; b < warmBlocks + measBlocks; ++b)
             {
+                buf.clear();
                 amp->process (buf);
                 if (b >= warmBlocks)
                     for (int i = 0; i < buf.getNumSamples(); ++i)
