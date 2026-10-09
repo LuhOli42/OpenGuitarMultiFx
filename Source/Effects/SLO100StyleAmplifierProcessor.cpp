@@ -532,6 +532,10 @@ void SLO100StyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rBass, bassR);
         ch.power.setResistance (ch.rMidTop, midTop);
         ch.power.setResistance (ch.rMidBottom, midBottom);
+        // reducedOrder: the Presence pot's physical resistors don't exist in the tone-stack-only power circuit, so
+        // its effect is reproduced inside behavioralPowerStage() instead -- presenceMix is the measured closed-loop
+        // gain law of opening the feedback divider by the pot's cap-bypassed fraction (see the header's bmPres* note).
+        ch.presenceMix = bmPresMixK * k.presence / juce::jmax (1.0e-3, 1.0 - bmPresMixR * k.presence);
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
@@ -624,7 +628,16 @@ void SLO100StyleAmplifierProcessor::updateSupply (Channel& ch) const
 double SLO100StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept
 {
     constexpr double attackMs = 8.0, releaseMs = 45.0;
-    const double absDrive = std::abs (toneVoltage);
+    // Presence first: the 25K + .1 uF leg in the feedback path opens the loop progressively at HF -- modelled as a
+    // resonant high-pass fitted to the reference's measured presence law, adding effective drive at the power
+    // section's input. Putting it BEFORE the knee keeps the total bounded by the rail like the real amp (and below
+    // the 150 V sanity limit -- a post-saturation add blew past it and tripped recoveries every sample).
+    const double hpIn = bmHpB0 * toneVoltage + bmHpB1 * ch.bmHpX1 + bmHpB2 * ch.bmHpX2
+                      - bmHpA1 * ch.bmHpY1 - bmHpA2 * ch.bmHpY2;
+    ch.bmHpX2 = ch.bmHpX1; ch.bmHpX1 = toneVoltage;
+    ch.bmHpY2 = ch.bmHpY1; ch.bmHpY1 = hpIn;
+    const double drive = toneVoltage + ch.presenceMix * hpIn;
+    const double absDrive = std::abs (drive);
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
@@ -633,12 +646,56 @@ double SLO100StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double 
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double u = absDrive / juce::jmax (1.0e-9, k);
     const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, toneVoltage);
+    const double raw = std::copysign (y * ch.bmRail, drive);
 
-    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
-    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    // The frequency response the removed stages used to provide: two fixed biquads fitted to the reference netlist's
+    // own measured transfer (LF cone-resonance bump + ~flat mids + presence ridge, NOT the single falling shelf it
+    // replaces -- see the header).
+    const double lf = bmAB0 * raw + bmAB1 * ch.bmAX1 + bmAB2 * ch.bmAX2
+                    - bmAA1 * ch.bmAY1 - bmAA2 * ch.bmAY2;
+    ch.bmAX2 = ch.bmAX1; ch.bmAX1 = raw;
+    ch.bmAY2 = ch.bmAY1; ch.bmAY1 = lf;
+    const double top = bmBB0 * lf + bmBB1 * ch.bmBX1 + bmBB2 * ch.bmBX2
+                     - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
+    ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
+    ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
+    ch.bmOutput = top * bmLevelTrim;
     return ch.bmOutput;
+}
+
+void SLO100StyleAmplifierProcessor::designPowerFilters()
+{
+    // Bilinear transform (s = c(1-z^-1)/(1+z^-1), c = 2*fs) of an analog biquad n2 s^2 + n1 s + n0 over d2 s^2 + d1 s + d0.
+    const auto bilinear = [] (double n2, double n1, double n0, double d2, double d1, double d0, double fs,
+                              double& b0, double& b1, double& b2, double& a1, double& a2)
+    {
+        const double c = 2.0 * fs;
+        const double A0 = d2 * c * c + d1 * c + d0;
+        a1 = 2.0 * (d0 - d2 * c * c) / A0;
+        a2 = (d2 * c * c - d1 * c + d0) / A0;
+        b0 = (n2 * c * c + n1 * c + n0) / A0;
+        b1 = 2.0 * (n0 - n2 * c * c) / A0;
+        b2 = (n2 * c * c - n1 * c + n0) / A0;
+    };
+    const double wb = 2.0 * juce::MathConstants<double>::pi * bmBumpHz;
+    bilinear (1.0 / (wb * wb), 1.0 / (bmBumpQz * wb), 1.0,
+              1.0 / (wb * wb), 1.0 / (bmBumpQp * wb), 1.0,
+              sampleRate, bmAB0, bmAB1, bmAB2, bmAA1, bmAA2);
+    const double wz = 2.0 * juce::MathConstants<double>::pi * bmTopZHz, wp = 2.0 * juce::MathConstants<double>::pi * bmTopPHz;
+    bilinear (0.0, 1.0 / wz, 1.0,
+              1.0 / (wp * wp), 1.0 / (bmTopQp * wp), 1.0,
+              sampleRate, bmBB0, bmBB1, bmBB2, bmBA1, bmBA2);
+    const double wc = 2.0 * juce::MathConstants<double>::pi * bmPresHz, wzp = 2.0 * juce::MathConstants<double>::pi * bmPresZeroHz;
+    bilinear (1.0, wzp, 0.0,
+              1.0, wc / bmPresQ, wc * wc,
+              sampleRate, bmHpB0, bmHpB1, bmHpB2, bmHpA1, bmHpA2);
+    // Normalize the presence section to unity at 6 kHz so presenceMix is the measured gain law directly.
+    const double w6 = 2.0 * juce::MathConstants<double>::pi * 6000.0 / sampleRate;
+    const double c1 = std::cos (w6), s1n = std::sin (w6), c2 = std::cos (2.0 * w6), s2 = std::sin (2.0 * w6);
+    const double nr = bmHpB0 + bmHpB1 * c1 + bmHpB2 * c2, ni = -bmHpB1 * s1n - bmHpB2 * s2;
+    const double dr = 1.0 + bmHpA1 * c1 + bmHpA2 * c2, di = -bmHpA1 * s1n - bmHpA2 * s2;
+    const double mag = std::sqrt ((nr * nr + ni * ni) / (dr * dr + di * di));
+    bmHpB0 /= mag; bmHpB1 /= mag; bmHpB2 /= mag;
 }
 
 double SLO100StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
@@ -826,8 +883,11 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmRail = railPlatesNominal;
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
-        ch.bmToneState = 0.0;
+        ch.bmAX1 = ch.bmAX2 = ch.bmAY1 = ch.bmAY2 = 0.0;
+        ch.bmBX1 = ch.bmBX2 = ch.bmBY1 = ch.bmBY2 = 0.0;
+        ch.bmHpX1 = ch.bmHpX2 = ch.bmHpY1 = ch.bmHpY2 = 0.0;
     }
+    designPowerFilters();
     updatePots (lastKnobs);
 
     controlCounter = 0;
