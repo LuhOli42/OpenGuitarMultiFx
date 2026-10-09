@@ -38,6 +38,10 @@ const RatStyleDistortionProcessor::Spec& RatStyleDistortionProcessor::specFor (M
     // Original: Rev P of the reverse-engineered schematic (150K Distortion, 360 ohm, 1K6 -- three of the other sources say
     // 100K / 560 / 1K5, see the doc). RAT 2 and Turbo RAT: the Effects Layouts bill of materials, whose columns differ in
     // R4/R5 (2M2), C13 (10 uF) and, for the Turbo, the LEDs and the OP07.
+    // Both variant fields reach the netlist (ledClipping/opAmp below; inputBiasOhms -> R4). Verified 2026-10: at low
+    // Distortion the Turbo is clean where the RAT 2 clips hard (THD 0.99 % vs 25.3 % at knob 0.10 on the audit probe)
+    // and it runs ~9 dB hotter internally (unity trims -7.85 vs +1.25 dB); at high Distortion both clip deep into the
+    // same filter and post-trim THD/FR converge -- that convergence is the real pedals, not an unwired flag.
     static const Spec original { "RAT-Style Distortion", 1.0e6, 360.0, 150.0e3, 1.6e3, 1.0e-6, false, lm308 };
     static const Spec rat2 { "RAT 2-Style Distortion", 2.2e6, 560.0, 100.0e3, 1.5e3, 10.0e-6, false, lm308 };
     static const Spec turbo { "Turbo RAT-Style Distortion", 2.2e6, 560.0, 100.0e3, 1.5e3, 10.0e-6, true, op07 };

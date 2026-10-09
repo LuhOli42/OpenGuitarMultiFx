@@ -76,6 +76,9 @@ const BigMuffStyleFuzzProcessor::ModelSpec& BigMuffStyleFuzzProcessor::specFor (
     // value Kit Rae's trace gives, except the three feedback/filter caps: 430 pF instead of two 1 nF in series (500 pF).
     // That cap sets the corner of each stage's feedback low-pass with its 470k (1/(2 pi 470k C): 787 Hz here, 677 Hz
     // with 500 pF), so this one is a touch brighter than the Green Russian. KT3102E transistors (hFE 400-1000).
+    // Selection verified 2026-10: on a normalized sweep the Russians read a *deeper* absolute scoop than the US only
+    // because their whole midband shelf sits ~6 dB lower (the lower-gain 12k/390R stages, see the doc) -- relative
+    // to its own shelf the Russian notch is shallower (R8 20k vs 39k), which is the real pedal's direction.
     static const ModelSpec sovtek {
         "Sovtek Big Muff-Style Fuzz", "bmpsv",
         39.0e3, 0.1e-6, 100.0e3, 430.0e-12, 12.0e3, 390.0, 390.0, 0.1e-6, 0.047e-6, 0.0039e-6, 20.0e3, 470.0e3, 10.0e3, 2.7e3, 500.0

@@ -21,6 +21,11 @@ TubeScreamerStyleOverdriveProcessor::specFor (Model model) noexcept
     // AC-equivalent to the TS9's arrangement, DC-different); and the Level
     // wiper feeds the bypass JFET through an extra 1uF with 510K bias
     // resistors at the JFET's two terminals.
+    // Every field below reaches process(): q1BiasVoltage -> Q1's base divider, clipperInputSeriesResistance -> the
+    // (+) pin's ~0.978 input divider, toneBiasRail -> op-amp 2's R10 return, levelBottomVoltage -> the Level pot's
+    // bottom end, hasWiperCoupling -> cWiper + the two JFET-bias resistors, outputSeries/ShuntResistance -> the
+    // output network. The TS10 measuring almost identical to the TS9 on a sine probe is the schematic talking --
+    // the real differences are mostly DC and that small divider -- not an unwired spec field.
     static const ModelSpec ts808 { "TS808-Style Overdrive", "ts808", "ts808", 100.0f, 10.0e3f, 4.5f, 0.0f,   4.5f, 0.0f, false };
     static const ModelSpec ts9   { "TS9-Style Overdrive",   "ts9",   "ts9",   470.0f, 100.0e3f, 4.5f, 0.0f,   4.5f, 0.0f, false };
     static const ModelSpec ts10  { "TS10-Style Overdrive",  "ts10",  "ts10",  470.0f, 100.0e3f, 6.346f, 220.0f, 9.0f, 4.5f, true };
