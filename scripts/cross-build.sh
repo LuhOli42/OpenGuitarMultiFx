@@ -42,8 +42,15 @@ fi
 # The build runs as a heredoc'd script inside the container so quoting stays
 # simple; the repo is mounted at /src (the image's WORKDIR). `-i` is required:
 # without it docker drops stdin and bash -s reads an empty script.
+#
+# .ccache is mounted into the container and exported as CCACHE_DIR so CI can
+# persist it across runs (compiles are cache hits even when the build tree is
+# cold — see ci.yml). Harmless locally.
 docker run --rm -i \
   -v "$PWD:/src" \
+  -v "$PWD/.ccache:/ccache" \
+  -e CCACHE_DIR=/ccache \
+  -e CCACHE_COMPRESS=1 \
   -w /src \
   "$IMAGE" \
   bash -s -- "$ARCH" "$BUILD_DIR" "$BUILD_JOBS" <<'EOS'
@@ -54,6 +61,13 @@ arch="$1"; build_dir="$2"; jobs="$3"
 # "dubious ownership" guard so FetchContent/juceaide git probes work.
 git config --global --add safe.directory /src
 git config --global --add safe.directory /src/.git
+
+# ccache is baked into the toolchain image; the env-var launchers propagate
+# into the nested juceaide configure too. Skip silently on older images.
+if command -v ccache >/dev/null 2>&1; then
+  export CMAKE_C_COMPILER_LAUNCHER=ccache
+  export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+fi
 
 cmake_args=(-DCMAKE_BUILD_TYPE=Release -DOGMFX_NATIVE_TUNING=OFF)
 if [ "$arch" = "aarch64" ]; then

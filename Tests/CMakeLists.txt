@@ -213,13 +213,20 @@ target_link_libraries(OpenGuitarMultiFx_Tests PRIVATE
   OpenGuitarMultiFx_Icons
 )
 
+# The full suite runs as ONE serial ctest entry on purpose: normal suites
+# contain wall-clock perf asserts (realTimeFactor / %CPU bounds) that go
+# flaky under parallel CPU contention — keep the native run uncontended.
 add_test(NAME OpenGuitarMultiFx_UnitTests COMMAND OpenGuitarMultiFx_Tests)
 
 # Everything except the wall-clock perf suites (categories "Bench" and
 # "Probe"): they measure real-time bounds and cannot hold them under
-# qemu-aarch64 emulation — W2's aarch64 CI job skips them for that reason
-# (documented in .github/workflows/ci.yml). On native hardware run the full
-# OpenGuitarMultiFx_UnitTests instead.
-add_test(NAME OpenGuitarMultiFx_UnitTests_NoPerf
-         COMMAND OpenGuitarMultiFx_Tests
-                 --skip-category Bench --skip-category Probe)
+# qemu-aarch64 emulation — the aarch64 CI job runs this set, and perf
+# asserts elsewhere go log-only under emulation (Tests/TestEnvironment.h),
+# which is what makes parallel sharding safe there. Registered as 4 shards
+# because the runner is serial: `ctest --parallel 4` cuts the ~75 min
+# emulated run to roughly a quarter on a 4-vCPU runner.
+foreach (shard RANGE 0 3)
+  add_test(NAME OpenGuitarMultiFx_UnitTests_NoPerf.shard${shard}
+           COMMAND OpenGuitarMultiFx_Tests --shard ${shard}/4
+                   --skip-category Bench --skip-category Probe)
+endforeach()

@@ -42,22 +42,35 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # Same caching scheme as ci.yml (see that file's header): per-arch
+      # slim/full toolchain variants, FetchContent _deps via actions/cache,
+      # objects via ccache — a tag built right after a main-branch CI run is
+      # a near-total cache hit.
       - name: Build toolchain image (layer-cached)
         uses: docker/build-push-action@v6
         with:
           context: tools/toolchain
-          build-args: TARGET=aarch64
+          build-args: TARGET=${{ matrix.arch }}
           tags: ogmfx-toolchain:latest
           load: true
-          cache-from: type=gha,scope=ogmfx-toolchain
-          cache-to: type=gha,mode=max,scope=ogmfx-toolchain
+          cache-from: type=gha,scope=ogmfx-toolchain-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=ogmfx-toolchain-${{ matrix.arch }}
 
-      - name: Restore build tree (deps + objects)
+      - name: Restore FetchContent deps (JUCE, Eigen, json, NAM)
         uses: actions/cache@v4
         with:
-          path: build-${{ matrix.arch }}
-          key: ogmfx-build-${{ matrix.arch }}-${{ hashFiles('CMakeLists.txt', 'Tests/CMakeLists.txt', 'cmake/**', 'tools/toolchain/**') }}
-          restore-keys: ogmfx-build-${{ matrix.arch }}-
+          path: build-${{ matrix.arch }}/_deps
+          key: ogmfx-deps-${{ matrix.arch }}-${{ hashFiles('CMakeLists.txt', 'Tests/CMakeLists.txt', 'cmake/**', 'tools/toolchain/**') }}
+          restore-keys: ogmfx-deps-${{ matrix.arch }}-
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ogmfx-ccache-${{ matrix.arch }}-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            ogmfx-ccache-${{ matrix.arch }}-${{ github.ref }}-
+            ogmfx-ccache-${{ matrix.arch }}-
 
       - name: Build ${{ matrix.arch }}
         run: scripts/cross-build.sh ${{ matrix.arch }}
