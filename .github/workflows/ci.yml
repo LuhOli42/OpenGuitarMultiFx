@@ -99,12 +99,12 @@ jobs:
             ctest --test-dir build-x86_64 --output-on-failure \
                   -R '^OpenGuitarMultiFx_UnitTests$'
 
-      - name: Test (aarch64, qemu — NoPerf suite, 4 parallel shards)
+      - name: Test (aarch64, qemu — NoPerf suite, 4-way parallel over 8 shards)
         if: matrix.arch == 'aarch64'
         run: |
           docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
             ctest --test-dir build-aarch64 --output-on-failure \
-                  --parallel 4 --timeout 1800 -R 'NoPerf\.shard'
+                  --parallel 4 --timeout 2700 -R 'NoPerf\.shard'
 
       - name: Verify install() payload (x86_64)
         if: matrix.arch == 'x86_64'

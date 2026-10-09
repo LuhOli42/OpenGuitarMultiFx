@@ -222,11 +222,15 @@ add_test(NAME OpenGuitarMultiFx_UnitTests COMMAND OpenGuitarMultiFx_Tests)
 # "Probe"): they measure real-time bounds and cannot hold them under
 # qemu-aarch64 emulation — the aarch64 CI job runs this set, and perf
 # asserts elsewhere go log-only under emulation (Tests/TestEnvironment.h),
-# which is what makes parallel sharding safe there. Registered as 4 shards
-# because the runner is serial: `ctest --parallel 4` cuts the ~75 min
-# emulated run to roughly a quarter on a 4-vCPU runner.
-foreach (shard RANGE 0 3)
+# which is what makes parallel sharding safe there.
+#
+# Registered as 8 shards because the runner is serial AND suite weights are
+# lopsided (amp suites carry 10-20 sub-tests each): `ctest --parallel 4`
+# starts the first 4 shards and backfills as short ones finish, so the
+# makespan tracks total-work/4 instead of the single heaviest quarter —
+# the first 4-shard attempt stalled on a >40 min straggler shard.
+foreach (shard RANGE 0 7)
   add_test(NAME OpenGuitarMultiFx_UnitTests_NoPerf.shard${shard}
-           COMMAND OpenGuitarMultiFx_Tests --shard ${shard}/4
+           COMMAND OpenGuitarMultiFx_Tests --shard ${shard}/8
                    --skip-category Bench --skip-category Probe)
 endforeach()
