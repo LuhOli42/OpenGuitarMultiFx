@@ -1,11 +1,10 @@
 # Fast CI gate (~5 min): build both arches + a small smoke test subset.
 #
-# The full test suite lives in ci-full.yml — it runs on every PR too, but
-# as a separate workflow so it never blocks this gate (mark only these
-# jobs required in branch protection). The whole-suite qemu run is ~3 h
-# of CPU work; no amount of sharding makes it fit in a 5-min gate, so the
-# gate's job is: does it still compile on both arches, and do the core
-# paths still pass a quick sanity subset.
+# The whole-suite qemu run is ~3 h of CPU work — no amount of sharding
+# makes it fit in a 5-min gate, so CI's job is: does it still compile on
+# both arches, and do the core paths still pass a quick sanity subset.
+# The full suite is run on-device (W6 benchmark job) or locally via
+# scripts/test.sh — not on every PR.
 #
 # Each arch leg builds the image variant matching matrix.arch — x86_64
 # uses the slim TARGET=x86_64 image (no arm64 sysroot), which is far
@@ -17,7 +16,8 @@
 #             level, no solver loops — ~1 min). The smoke alone can't hold
 #             wall-clock perf bounds under emulation, so
 #             OGMFX_TESTS_UNDER_EMULATION=1 makes them log-only
-#             (Tests/TestEnvironment.h).
+#             (Tests/TestEnvironment.h). The 16 `--shard i/16` ctest
+#             registrations stay for local/on-device full-suite runs.
 #
 # Caching: image layers via buildx type=gha (per-arch scope); FetchContent
 # sources under build-<arch>/_deps via actions/cache; objects via ccache
