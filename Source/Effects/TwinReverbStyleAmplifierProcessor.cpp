@@ -96,12 +96,12 @@ namespace
     // Output protection, the delivered-level counterpart of TubeAmpCommon's inputLimit(): the registry wraps
     // this processor in a fixed +4.19 dB unity trim, so the delivered signal is emitted*1.619 and the emit path
     // has to leave headroom for it -- plus more for the 2x oversampler's downsample filter, which overshoots
-    // ~1.5x on the near-Nyquist transients a saturated amp emits at the top of a sweep. The amp's own ceiling
-    // is the power-stage saturation (~38 V = ~1.03 FS emitted here, plus shelf overshoot) -- all physically
-    // correct volts -- but past ~0.62 FS emitted, every further volt squared off digitally at the delivered
-    // +-1.0 rail instead of rounding like tube saturation. Below the knee nothing changes; above it the
-    // waveform folds smoothly into a ~0.35 FS asymptote, which delivers <= ~0.97 FS worst-case at HF.
-    constexpr double outputKnee = 0.23, outputSpan = 0.12;
+    // up to ~2x on the near-Nyquist transients a saturated amp emits at the top of a sweep. The amp's own
+    // ceiling is the power-stage saturation (~38 V = ~1.03 FS emitted here, plus shelf overshoot) -- all
+    // physically correct volts -- but past ~0.62 FS emitted, every further volt squared off digitally at the
+    // delivered +-1.0 rail instead of rounding like tube saturation. Below the knee nothing changes; above it
+    // the waveform folds smoothly into a ~0.28 FS asymptote, which delivers <= ~0.93 FS worst-case at HF.
+    constexpr double outputKnee = 0.20, outputSpan = 0.08;
     inline double outputLimit (double v) noexcept
     {
         const double a = std::abs (v);
