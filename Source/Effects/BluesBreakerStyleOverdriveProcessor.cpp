@@ -69,7 +69,7 @@ void BluesBreakerStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (minus, nm, 33.0e3);
         c.addCapacitor (nm, n40, 10.0e-9);
         c.addCapacitor (n40, nb, 10.0e-9);
-        c.addCapacitor (minus, out, 100.0e-12);
+        c.addCapacitor (minus, out, 47.0e-12);
         ch.rDriveFeedback = c.addResistor (minus, out, 1.0e3);
 
         ch.nOp1 = out;
@@ -101,7 +101,7 @@ void BluesBreakerStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addDiode (out2, m2, siIs, siNVt, 4.0e-9);
         c.addDiode (m2, pf, siIs, siNVt, 4.0e-9);
 
-        // 1K -> Tone (25K log; its bottom end through 10 nF to the bias) -> wiper 6.8K -> 10 nF to the bias -> Volume
+        // 1K -> Tone (25K linear; its bottom end through 10 nF to the bias) -> wiper 6.8K -> 10 nF to the bias -> Volume
         c.addResistor (out2, t0, 1.0e3);
         ch.rToneTop = c.addResistor (t0, tw, 1.0e3);
         ch.rToneBottom = c.addResistor (tw, tb, 1.0e3);
@@ -127,8 +127,8 @@ void BluesBreakerStyleOverdriveProcessor::updatePots (double driveKnob, double t
     const double dFb = juce::jmax (1.0, drivePotMax * driveKnob);
     const double dSer = juce::jmax (1.0, drivePotMax - dFb);
 
-    // Tone: 25K log, wiper-to-cap-end segment (wiper at the top = bright).
-    const double tBottom = juce::jmax (1.0, tonePotMax * pots::audio (toneKnob));
+    // Tone: 25K linear (GGG/Apollo and Aion BOMs agree), wiper-to-cap-end segment (wiper at the top = bright).
+    const double tBottom = juce::jmax (1.0, tonePotMax * toneKnob);
     const double tTop = juce::jmax (1.0, tonePotMax - tBottom);
 
     // Volume: 100K log, wiper-to-bias segment.

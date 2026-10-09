@@ -103,11 +103,13 @@ void ODR1StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addDiode (nD, nb, siIs, siNVt, 4.0e-9);   // D3
         c.addDiode (nb, nD, siIs, siNVt, 4.0e-9);   // D4
 
-        // R21 39K, then 82 nF into (1 nF and 12K to ground), and R23 10K into U2A's (+)
+        // R21 39K into the node that feeds R23 10K into U2A's (+); a shunt branch off that node is
+        // C22 82 nF into (C23 1 nF || R22 12K). The 12K returns to the mid-rail (the schematic's V-
+        // is the op-amps' ground-referenced midpoint), matching the real DC operating point.
         c.addResistor (nD, nA2, 39.0e3);
         c.addCapacitor (nA2, nB2, 82.0e-9);
         c.addCapacitor (nB2, gnd, 1.0e-9);
-        c.addResistor (nB2, gnd, 12.0e3);
+        c.addResistor (nB2, nb, 12.0e3);
         c.addResistor (nA2, nPl, 10.0e3);
 
         // U2A. (+): R24 43K to ground, and (R25 5K1 || C24 22 nF) to the Spectrum pot's pin 6. (-): R27 10K to ground,
