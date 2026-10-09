@@ -104,6 +104,11 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PingPongDelayProcessorTests.cpp
   ReverseDelayProcessorTests.cpp
   HoldProcessorTests.cpp
+)
+
+# Every production source the processors need -- shared by the unit-test runner and the
+# offline RenderFx tool below.
+set(OGMFX_SOURCES
   ../Source/EffectRegistry.cpp
   ../Source/Engine/SignalGraph.cpp
   ../Source/Engine/PitchDetector.cpp
@@ -192,6 +197,8 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ../Source/Effects/HoldProcessor.cpp
 )
 
+target_sources(OpenGuitarMultiFx_Tests PRIVATE ${OGMFX_SOURCES})
+
 target_include_directories(OpenGuitarMultiFx_Tests PRIVATE ../Source)
 
 target_compile_definitions(OpenGuitarMultiFx_Tests PRIVATE
@@ -223,3 +230,36 @@ add_test(NAME OpenGuitarMultiFx_UnitTests COMMAND OpenGuitarMultiFx_Tests)
 add_test(NAME OpenGuitarMultiFx_UnitTests_NoPerf
          COMMAND OpenGuitarMultiFx_Tests
                  --skip-category Bench --skip-category Probe)
+
+# Offline renderer: WAV in -> one registered effect -> WAV out, for listening sessions
+# without launching the app (see RenderFx.cpp for usage).
+juce_add_console_app(OpenGuitarMultiFx_RenderFx
+  PRODUCT_NAME "OpenGuitarMultiFx RenderFx"
+  BUNDLE_ID "com.openguitarmultifx.RenderFx"
+)
+
+target_sources(OpenGuitarMultiFx_RenderFx PRIVATE
+  RenderFx.cpp
+  ${OGMFX_SOURCES}
+)
+
+target_include_directories(OpenGuitarMultiFx_RenderFx PRIVATE ../Source)
+
+target_compile_definitions(OpenGuitarMultiFx_RenderFx PRIVATE
+  JUCE_WEB_BROWSER=0
+  JUCE_USE_CURL=0
+)
+
+target_link_libraries(OpenGuitarMultiFx_RenderFx PRIVATE
+  juce::juce_audio_basics
+  juce::juce_audio_formats
+  juce::juce_audio_processors
+  juce::juce_core
+  juce::juce_dsp
+  juce::juce_events
+  juce::juce_recommended_config_flags
+  juce::juce_recommended_warning_flags
+  nam_core
+  chowdsp::chowdsp_wdf
+  OpenGuitarMultiFx_Icons
+)
