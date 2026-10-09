@@ -68,13 +68,26 @@ public:
     static constexpr double bmYmax = 0.198;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
     static constexpr double bmKneeN = 6.0;   // knee sharpness of the saturating curve (fitted, see the .cpp)
     // The removed phase inverter / power tubes / output transformer / feedback loop have their OWN frequency response
-    // beyond the tone stack (Miller capacitances, OT bandwidth, the loop's own frequency-dependent gain) -- a real,
-    // measured effect (2026-09-27, found by PedalUnityLevelTests failing at "noon"): the full reference model's
-    // small-signal gain is ~2-4 dB lower from 500 Hz-1.65 kHz than at 100 Hz. A flat memoryless curve has none of this, so
-    // a high-shelf cut restores it approximately (not exactly -- the real curve dips more than a single shelf can match,
-    // see the .cpp for the measured points). Fitted, not guessed: see behavioralPowerStage()'s own comment.
-    static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.55; // ~-5.2 dB above the shelf
+    // beyond the tone stack (Miller capacitances, OT bandwidth, the loop's own frequency-dependent gain). The earlier
+    // one-pole shelf fit (bmShelfHz/bmShelfHfGain) was calibrated only up to 1.65 kHz and wrongly kept falling: the
+    // reference model's response dips ~1.5 dB around 500 Hz but then RISES, ending ~+2 dB at 12 kHz -- the -5.2 dB
+    // shelf is what made the shipped amp so much darker than its own reference. Refitted 2026-10-09 as the exact
+    // analog section the measurement shows (two real poles, two real zeros; DC sane, 100 Hz unity so the level
+    // calibration is unchanged), discretized in prepare() at whatever rate the host runs.
+    static constexpr double bmBaseDc = 1.1387;                        // section gain at DC (~+1.1 dB, keeps 100 Hz at unity)
+    static constexpr double bmBaseZ1Hz = 118.0, bmBaseZ2Hz = 3226.0;  // zeros
+    static constexpr double bmBaseP1Hz = 86.0,  bmBaseP2Hz = 4888.0;  // poles
+    // Presence: the 5k pot + 100 nF leg in the feedback path opens the loop progressively at HF -- measured on the
+    // reference model as a resonant high-pass contribution peaking around 6-9 kHz and reaching ~+19 dB over the
+    // presence-0 response at full knob. Fitted as a fixed 2nd-order section (corner, finite zero) whose output is
+    // mixed in by presenceMix -- the mix law m(p) = K*p/(1-R*p) is the measured closed-loop gain of opening the
+    // feedback divider by the pot's bypassed fraction (matches the reference within ~1 dB at every knob setting).
+    static constexpr double bmPresHz = 4684.0, bmPresQ = 0.67, bmPresZeroHz = 3205.0;
+    static constexpr double bmPresMixK = 0.727, bmPresMixR = 0.909;   // m(p) saturates at ~8x (~19 dB) at p = 1
+    // Level re-trim (2026-10-09): the refit section is ~2.5 dB hotter at noon than the shelf it replaced, and
+    // PedalUnityLevel needs noon at unity while the registry's -18.99 dB trim stays put. This folds the re-derived
+    // -2.56 dB (measured by that same test) into the stage; bump the registry trim to -21.55 dB if it is ever moved.
+    static constexpr double bmLevelTrim = 0.745;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -146,8 +159,11 @@ private:
         double vScreen = 470.0;
 
         // reducedOrder only: behavioural power stage state (see behavioralPowerStage()); bmRail is set to the real
-        // nominal rail in prepare().
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        // nominal rail in prepare(). The four pairs are the two fitted biquads' direct-form-I histories.
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        double bmBaseX1 = 0.0, bmBaseX2 = 0.0, bmBaseY1 = 0.0, bmBaseY2 = 0.0;
+        double bmHpX1 = 0.0, bmHpX2 = 0.0, bmHpY1 = 0.0, bmHpY2 = 0.0;
+        double presenceMix = 0.0; // set in updatePots from the (smoothed) Presence knob
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, srcVoc = 0;
@@ -181,6 +197,12 @@ private:
         "reduced-order power stage" comment and the .cpp for the calibration data). Updates ch.bmRail/ch.bmEnvelope
         (a slow envelope follower driving a measured sag lookup) and returns this sample's speaker-equivalent voltage. */
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
+    /** prepare() only: discretizes the two fitted analog sections (bmBase*, bmPres*) into biquad coefficients at the
+        current sample rate. The presence section's numerator is normalized to unity at 6 kHz so presenceMix is the
+        measured gain law directly. */
+    void designPowerFilters();
+    double bmBaseB0 = 0.0, bmBaseB1 = 0.0, bmBaseB2 = 0.0, bmBaseA1 = 0.0, bmBaseA2 = 0.0;
+    double bmHpB0 = 0.0, bmHpB1 = 0.0, bmHpB2 = 0.0, bmHpA1 = 0.0, bmHpA2 = 0.0;
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;

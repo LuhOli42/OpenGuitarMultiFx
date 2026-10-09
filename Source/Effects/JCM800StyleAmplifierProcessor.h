@@ -71,14 +71,21 @@ public:
     static constexpr double bmGain0 = 9.5;
     static constexpr double bmYmax = 0.198;
     static constexpr double bmKneeN = 6.0;
-    // The removed phase inverter / power tubes / output transformer / feedback loop have their OWN frequency response
-    // beyond the tone stack (Miller capacitances, OT bandwidth, the loop's own frequency-dependent gain) -- a real,
-    // measured effect (2026-09-27, found by PedalUnityLevelTests failing at "noon"): the full reference model's
-    // small-signal gain is ~2-4 dB lower from 500 Hz-1.65 kHz than at 100 Hz. A flat memoryless curve has none of this, so
-    // a high-shelf cut restores it approximately (not exactly -- the real curve dips more than a single shelf can match,
-    // see the .cpp for the measured points). Fitted, not guessed: see behavioralPowerStage()'s own comment.
-    static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.55; // ~-5.2 dB above the shelf
+    // Same fitted-from-measurement sections as SuperLeadStyleAmplifierProcessor (same topology, same documented
+    // placeholder choice to share the Super Lead's fit -- see the bmGain0 note above). 2026-10-09: this amp's own
+    // full reference power netlist measured a dead Presence and a non-physical ~40 dB midband notch, so fitting
+    // against the structurally identical, healthy Super Lead reference is the right call until the J8 power
+    // model's known stability compromise is resolved. The constants below replace the old 90 Hz shelf, which
+    // under-measured the real response by ~7-9 dB toward the top (the dark, dead-presence audit symptom).
+    static constexpr double bmBaseDc = 1.1387;                        // section gain at DC (~+1.1 dB, keeps 100 Hz at unity)
+    static constexpr double bmBaseZ1Hz = 118.0, bmBaseZ2Hz = 3226.0;  // zeros
+    static constexpr double bmBaseP1Hz = 86.0,  bmBaseP2Hz = 4888.0;  // poles
+    static constexpr double bmPresHz = 4684.0, bmPresQ = 0.67, bmPresZeroHz = 3205.0;
+    static constexpr double bmPresMixK = 0.727, bmPresMixR = 0.909;   // m(p) saturates at ~8x (~19 dB) at p = 1
+    // Level re-trim (2026-10-09): the refit section is ~2.7 dB hotter at noon than the shelf it replaced, and
+    // PedalUnityLevel needs noon at unity while the registry's -17.47 dB trim stays put. This folds the re-derived
+    // -2.69 dB (measured by that same test) into the stage; bump the registry trim to -20.16 dB if it is ever moved.
+    static constexpr double bmLevelTrim = 0.734;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -157,8 +164,11 @@ private:
         double vScreen = 470.0;
 
         // reducedOrder only: behavioural power stage state (see behavioralPowerStage()); bmRail is set to the real
-        // nominal rail in prepare().
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        // nominal rail in prepare(). The four pairs are the two fitted biquads' direct-form-I histories.
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        double bmBaseX1 = 0.0, bmBaseX2 = 0.0, bmBaseY1 = 0.0, bmBaseY2 = 0.0;
+        double bmHpX1 = 0.0, bmHpX2 = 0.0, bmHpY1 = 0.0, bmHpY2 = 0.0;
+        double presenceMix = 0.0; // set in updatePots from the (smoothed) Presence knob
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, srcVoc = 0;
@@ -193,6 +203,12 @@ private:
         "reduced-order power stage" comment and the .cpp for the calibration data). Updates ch.bmRail/ch.bmEnvelope
         (a slow envelope follower driving a measured sag lookup) and returns this sample's speaker-equivalent voltage. */
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
+    /** prepare() only: discretizes the two fitted analog sections (bmBase*, bmPres*) into biquad coefficients at the
+        current sample rate. The presence section's numerator is normalized to unity at 6 kHz so presenceMix is the
+        measured gain law directly. */
+    void designPowerFilters();
+    double bmBaseB0 = 0.0, bmBaseB1 = 0.0, bmBaseB2 = 0.0, bmBaseA1 = 0.0, bmBaseA2 = 0.0;
+    double bmHpB0 = 0.0, bmHpB1 = 0.0, bmHpB2 = 0.0, bmHpA1 = 0.0, bmHpA2 = 0.0;
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;

@@ -476,9 +476,10 @@ void SuperLeadStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rBass, bassR);
         ch.power.setResistance (ch.rMidTop, midTop);
         ch.power.setResistance (ch.rMidBottom, midBottom);
-        // reducedOrder: Presence/feedback/bias-trim resistors don't exist in the tone-stack-only power circuit (see the
-        // header's "reduced-order power stage" note) -- Presence isn't reproduced by behavioralPowerStage() yet (a
-        // documented gap), and Bias/Tube Feel only ever moved these same removed nodes.
+        // reducedOrder: the Presence pot's physical resistors don't exist in the tone-stack-only power circuit, so
+        // its effect is reproduced inside behavioralPowerStage() instead -- presenceMix is the measured closed-loop
+        // gain of opening the feedback divider by the pot's cap-bypassed fraction (see the header's bmPres* note).
+        ch.presenceMix = bmPresMixK * k.presence / juce::jmax (1.0e-3, 1.0 - bmPresMixR * k.presence);
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
@@ -581,8 +582,17 @@ double SuperLeadStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, doub
     // Envelope follower driving the sag lookup: fast attack (a rail sags quickly under a sudden hard hit), slower release
     // (a real capacitor bank recharges through the rectifier's resistance over tens of ms) -- matches the amp's documented
     // ~13 Hz supply ring (~12 ms) better than a single symmetric time constant.
+    // Presence first: the 5k+100nF leg in the feedback path opens the loop progressively at HF -- modelled as the
+    // resonant high-pass fitted to the reference's measured presence law, adding effective drive at the power
+    // section's input. Putting it BEFORE the knee keeps the total bounded by the rail like the real amp (and below
+    // the 150 V sanity limit -- a post-saturation add blew past it and tripped recoveries every sample).
+    const double hpIn = bmHpB0 * toneVoltage + bmHpB1 * ch.bmHpX1 + bmHpB2 * ch.bmHpX2
+                      - bmHpA1 * ch.bmHpY1 - bmHpA2 * ch.bmHpY2;
+    ch.bmHpX2 = ch.bmHpX1; ch.bmHpX1 = toneVoltage;
+    ch.bmHpY2 = ch.bmHpY1; ch.bmHpY1 = hpIn;
+    const double drive = toneVoltage + ch.presenceMix * hpIn;
     constexpr double attackMs = 8.0, releaseMs = 45.0;
-    const double absDrive = std::abs (toneVoltage);
+    const double absDrive = std::abs (drive);
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
@@ -594,15 +604,48 @@ double SuperLeadStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, doub
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double u = absDrive / juce::jmax (1.0e-9, k);
     const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, toneVoltage);
+    const double raw = std::copysign (y * ch.bmRail, drive);
 
-    // High-shelf cut for the frequency response the removed stages used to provide (see the header's own comment):
-    // ch.bmToneState is a one-pole lowpass of the curve's raw output; blending it back in at bmShelfHfGain leaves DC/LF
-    // at unity and cuts everything above the shelf frequency.
-    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
-    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    // The frequency response the removed stages used to provide: a fixed biquad fitted to the reference netlist's own
+    // measured transfer (mid dip + rising top, NOT the single falling shelf it replaces -- see the header).
+    const double base = bmBaseB0 * raw + bmBaseB1 * ch.bmBaseX1 + bmBaseB2 * ch.bmBaseX2
+                      - bmBaseA1 * ch.bmBaseY1 - bmBaseA2 * ch.bmBaseY2;
+    ch.bmBaseX2 = ch.bmBaseX1; ch.bmBaseX1 = raw;
+    ch.bmBaseY2 = ch.bmBaseY1; ch.bmBaseY1 = base;
+    ch.bmOutput = base * bmLevelTrim;
     return ch.bmOutput;
+}
+
+void SuperLeadStyleAmplifierProcessor::designPowerFilters()
+{
+    // Bilinear transform (s = c(1-z^-1)/(1+z^-1), c = 2*fs) of an analog biquad n2 s^2 + n1 s + n0 over d2 s^2 + d1 s + d0.
+    const auto bilinear = [] (double n2, double n1, double n0, double d2, double d1, double d0, double fs,
+                              double& b0, double& b1, double& b2, double& a1, double& a2)
+    {
+        const double c = 2.0 * fs;
+        const double A0 = d2 * c * c + d1 * c + d0;
+        a1 = 2.0 * (d0 - d2 * c * c) / A0;
+        a2 = (d2 * c * c - d1 * c + d0) / A0;
+        b0 = (n2 * c * c + n1 * c + n0) / A0;
+        b1 = 2.0 * (n0 - n2 * c * c) / A0;
+        b2 = (n2 * c * c - n1 * c + n0) / A0;
+    };
+    const double z1 = 2.0 * juce::MathConstants<double>::pi * bmBaseZ1Hz, z2 = 2.0 * juce::MathConstants<double>::pi * bmBaseZ2Hz;
+    const double p1 = 2.0 * juce::MathConstants<double>::pi * bmBaseP1Hz, p2 = 2.0 * juce::MathConstants<double>::pi * bmBaseP2Hz;
+    bilinear (bmBaseDc / (z1 * z2), bmBaseDc * (1.0 / z1 + 1.0 / z2), bmBaseDc,
+              1.0 / (p1 * p2), 1.0 / p1 + 1.0 / p2, 1.0,
+              sampleRate, bmBaseB0, bmBaseB1, bmBaseB2, bmBaseA1, bmBaseA2);
+    const double wc = 2.0 * juce::MathConstants<double>::pi * bmPresHz, wz = 2.0 * juce::MathConstants<double>::pi * bmPresZeroHz;
+    bilinear (1.0, wz, 0.0,
+              1.0, wc / bmPresQ, wc * wc,
+              sampleRate, bmHpB0, bmHpB1, bmHpB2, bmHpA1, bmHpA2);
+    // Normalize the presence section to unity at 6 kHz so presenceMix is the measured gain law directly.
+    const double w6 = 2.0 * juce::MathConstants<double>::pi * 6000.0 / sampleRate;
+    const double c1 = std::cos (w6), s1n = std::sin (w6), c2 = std::cos (2.0 * w6), s2 = std::sin (2.0 * w6);
+    const double nr = bmHpB0 + bmHpB1 * c1 + bmHpB2 * c2, ni = -bmHpB1 * s1n - bmHpB2 * s2;
+    const double dr = 1.0 + bmHpA1 * c1 + bmHpA2 * c2, di = -bmHpA1 * s1n - bmHpA2 * s2;
+    const double mag = std::sqrt ((nr * nr + ni * ni) / (dr * dr + di * di));
+    bmHpB0 /= mag; bmHpB1 /= mag; bmHpB2 /= mag;
 }
 
 double SuperLeadStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
@@ -764,6 +807,7 @@ void SuperLeadStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             ch.screenDropB = screenResistor * isB;
         }
         dcOk = passOk && ch.supply.prepare (supplyRate) && dcOk;
+        designPowerFilters();
         ch.vScreen = ch.supply.voltage (ch.sB);
         if (! reducedOrder)
         {
@@ -779,7 +823,8 @@ void SuperLeadStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmRail = railPlatesNominal;
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
-        ch.bmToneState = 0.0;
+        ch.bmBaseX1 = ch.bmBaseX2 = ch.bmBaseY1 = ch.bmBaseY2 = 0.0;
+        ch.bmHpX1 = ch.bmHpX2 = ch.bmHpY1 = ch.bmHpY2 = 0.0;
     }
     updatePots (lastKnobs);
 
