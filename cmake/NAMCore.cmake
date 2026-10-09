@@ -73,14 +73,33 @@ target_compile_definitions(nam_core PUBLIC NAM_SAMPLE_FLOAT)
 target_compile_features(nam_core PUBLIC cxx_std_17)
 
 # Speed: NAM's convolutions are Eigen matrix products; with the default x86-64 baseline (SSE2, no FMA) they run at a
-# fraction of what this machine can do. OGMFX_NATIVE_TUNING builds nam_core for the CPU that compiles it (AVX2/FMA here,
-# NEON on the target board) with fast-math (NAM has no NaN/Inf handling to lose). It makes the binary machine-specific:
-# turn it off (-DOGMFX_NATIVE_TUNING=OFF) for a build that must run elsewhere.
+# fraction of what this machine can do. Two independent knobs tune nam_core, both with -ffast-math (NAM has no NaN/Inf
+# handling to lose):
+#
+#   OGMFX_TARGET_CPU (empty by default) — explicit CPU name; when set it WINS over OGMFX_NATIVE_TUNING.
+#     aarch64 -> -mcpu=<cpu>, x86_64 -> -march=<cpu>. This is the cross-compile knob: -mcpu=native under a cross
+#     compiler describes the *build host*, not the target, so scripts/cross-build.sh passes
+#     -DOGMFX_TARGET_CPU=cortex-a76 for the A7S (A733: 2xCortex-A76 + 6xA55; A76+NEON is the right tuning for the
+#     NAM hot path) while leaving x86_64 at the generic baseline.
+#   OGMFX_NATIVE_TUNING (default ON) — genuine native builds only: -mcpu/-march=native for the machine that
+#     compiles it (AVX2/FMA on the dev bench). Ignored when OGMFX_TARGET_CPU is set.
+#
+# For a portable generic-baseline binary: -DOGMFX_TARGET_CPU= -DOGMFX_NATIVE_TUNING=OFF.
+set(OGMFX_TARGET_CPU "" CACHE STRING
+    "Tune nam_core for this CPU (e.g. cortex-a76, skylake). Overrides OGMFX_NATIVE_TUNING when set.")
 option(OGMFX_NATIVE_TUNING "Tune nam_core for the build machine's CPU" ON)
-if(OGMFX_NATIVE_TUNING AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
-    target_compile_options(nam_core PRIVATE -mcpu=native -ffast-math)
-  else()
-    target_compile_options(nam_core PRIVATE -march=native -ffast-math)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  if(OGMFX_TARGET_CPU)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+      target_compile_options(nam_core PRIVATE -mcpu=${OGMFX_TARGET_CPU} -ffast-math)
+    else()
+      target_compile_options(nam_core PRIVATE -march=${OGMFX_TARGET_CPU} -ffast-math)
+    endif()
+  elseif(OGMFX_NATIVE_TUNING)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+      target_compile_options(nam_core PRIVATE -mcpu=native -ffast-math)
+    else()
+      target_compile_options(nam_core PRIVATE -march=native -ffast-math)
+    endif()
   endif()
 endif()

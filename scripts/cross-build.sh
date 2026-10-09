@@ -13,9 +13,10 @@
 #
 # OGMFX_NATIVE_TUNING is forced OFF: it expands to -mcpu=native, which under
 # a cross compiler describes the *build host*, silently mistuning the target
-# binary (and making even native x86_64 output non-portable). W6 adds an
-# explicit OGMFX_TARGET_CPU option for real per-SoC tuning; until then the
-# release pipeline builds for each arch's generic baseline.
+# binary (and making even native x86_64 output non-portable). aarch64 instead
+# gets OGMFX_TARGET_CPU=cortex-a76 — the A733 is 2xCortex-A76 + 6xA55, so A76
+# + NEON is the right tuning for the NAM hot path; x86_64 stays on the generic
+# baseline until there's a reason to tune it.
 #
 # The dev-bench path is still scripts/build.sh — untouched on purpose.
 set -euo pipefail
@@ -57,6 +58,7 @@ git config --global --add safe.directory /src/.git
 cmake_args=(-DCMAKE_BUILD_TYPE=Release -DOGMFX_NATIVE_TUNING=OFF)
 if [ "$arch" = "aarch64" ]; then
   cmake_args+=(-DCMAKE_TOOLCHAIN_FILE=/src/cmake/toolchains/aarch64-linux-gnu.cmake)
+  cmake_args+=(-DOGMFX_TARGET_CPU=cortex-a76)
 fi
 
 cmake -S . -B "$build_dir" "${cmake_args[@]}"
