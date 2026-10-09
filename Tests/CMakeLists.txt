@@ -74,6 +74,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RePrepareTransparencyTests.cpp
   OversampledEffectTests.cpp
   PedalUnityLevelTests.cpp
+  AmpAudibleOutputTests.cpp
   PedalDiagnostics.cpp
   NamPedalCompare.cpp
   MixLawTests.cpp
