@@ -102,6 +102,13 @@ namespace
     // against the source impedances here and cost solver state).
     constexpr double cgp = 1.7e-12;
 
+    // Follower-drive conditioner: one-pole corner for the fs/2 weave cleanup (see process()). Set at the real
+    // power-stage input bandwidth -- the LTPI grid stopper + Miller capacitance and the output transformer all
+    // roll off well below fs/2, so nothing this fast ever reaches the power tubes in the analog amp.
+    constexpr double cfDriveHz = 9000.0;
+    constexpr double cfDriveDcHz = 2.0;   // tracks (and removes) the solve-state DC error on the follower
+
+
     // Output transformer (not printed, unlike the Bassman's own part number): sized for a similar ~4k plate-to-plate
     // load for two KT66, into an 8 ohm secondary.
     constexpr double primaryHalfInductance = 6.25;        // H per half (25 H plate to plate)
@@ -577,13 +584,32 @@ double JTM45StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double t
     ch.bmRail = sagRailLookup (ch.bmEnvelope);
 
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = absDrive / juce::jmax (1.0e-9, k);
-    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, toneVoltage);
+    // The LTP input grid clamps the delivered signal once it pulls the grid into conduction -- in the
+    // full netlist that load lives inside the power block; the reduced model has only the linear tone
+    // stack there, so the clamp is folded into the drive law itself (soft limit at the conduction
+    // threshold, matching where the reference starts to compress).
+    const double xOver = toneVoltage / bmGridClampV;
+    const double clamped = toneVoltage / std::sqrt (1.0 + xOver * xOver);
+    const auto knee = [k, rail = ch.bmRail] (double x)
+    {
+        return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax;
+    };
+    // Push-pull asymmetry: the pair's bias point isn't centred in the saturating curve (the
+    // half-cycle toward grid conduction clips earlier than the cutoff half), so even harmonics grow
+    // with drive -- the real amp's second-harmonic content at breakup. The shipped copysign knee was
+    // perfectly odd-symmetric (audit: even/odd ~0.01). Evaluating the knee around a fixed offset and
+    // referencing the output back to that point reproduces it; the OT DC-block below removes the
+    // resulting mean.
+    const double dcShift = bmAsym * k;
+    const double raw = knee (clamped + dcShift) - knee (dcShift);
 
+    // Asymmetric clip produces a net DC offset the output transformer cannot pass -- block it.
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / juce::jmax (1.0, sampleRate));
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double rawAc = raw - ch.bmDcState;
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
-    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
     return ch.bmOutput;
 }
 
@@ -758,6 +784,10 @@ void JTM45StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.cfDrivePrev = 0.0;
+        ch.cfDriveLp = 0.0;
+        ch.cfDriveDc = 0.0;
+        ch.bmDcState = 0.0;
     }
 
     controlCounter = 0;
@@ -842,6 +872,8 @@ void JTM45StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         // Power Drive: a master volume between the preamp and the tone stack / phase inverter (amplitude = knob^2, audio
         // taper). The excursion of the cathode follower scales; its DC and the tone stack's impedances do not.
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
+        const double cfLpCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cfDriveHz / sampleRate);
+        const double cfDcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cfDriveDcHz / sampleRate);
 
         // Output control: -30 dB .. 0 dB at noon .. +12 dB.
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
@@ -862,7 +894,15 @@ void JTM45StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * (ch.pre.voltage (ch.pFollower) - ch.followerDc));
+            // Same fs/2 weave + solve-state DC cleanup as the Bassman's drive conditioner: no analog node
+            // carries a Nyquist-rate component, and the PI grid-leak holds the grid at its own bias, so only
+            // the follower's conditioned AC excursion is signal.
+            const double cfAc = ch.pre.voltage (ch.pFollower) - ch.followerDc;
+            const double cfNotched = 0.5 * (cfAc + ch.cfDrivePrev);
+            ch.cfDrivePrev = cfAc;
+            ch.cfDriveLp += cfLpCoeff * (cfNotched - ch.cfDriveLp);
+            ch.cfDriveDc += cfDcCoeff * (ch.cfDriveLp - ch.cfDriveDc);
+            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * (ch.cfDriveLp - ch.cfDriveDc));
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
@@ -941,7 +981,7 @@ void JTM45StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out; // continuity with the last sample that went out
