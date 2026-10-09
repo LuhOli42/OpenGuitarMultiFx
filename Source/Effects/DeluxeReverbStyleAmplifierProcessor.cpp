@@ -116,6 +116,19 @@ namespace
         const double t = (drivePeak - bmSagDrive[i]) / (bmSagDrive[i + 1] - bmSagDrive[i]);
         return bmSagRail[i] + t * (bmSagRail[i + 1] - bmSagRail[i]);
     }
+
+    // Output protection, the delivered-level counterpart of TubeAmpCommon's inputLimit() -- same guard as the
+    // Twin Reverb's, guarding the emitted signal itself (the registry's -0.06 dB trim is a no-op here, so
+    // emitted = delivered). Dormant in normal operation: this amp's own saturation plateau is ~0.63 FS, so the
+    // knee sits just above where real tube compression already lives; an excursion past it (full-netlist
+    // flyback, recovery transients) rounds smoothly toward ~0.85 FS emitted instead of squaring digitally at
+    // +-1.0.
+    constexpr double outputKnee = 0.55, outputSpan = 0.30;
+    inline double outputLimit (double v) noexcept
+    {
+        const double a = std::abs (v);
+        return a <= outputKnee ? v : std::copysign (outputKnee + outputSpan * std::tanh ((a - outputKnee) / outputSpan), v);
+    }
 }
 
 DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
@@ -794,6 +807,7 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
                 }
                 out += ch.declick;
                 ch.declick *= declickDecay;
+                out = outputLimit (out);
             }
             ch.lastEmitted = out;
             data[i] = (float) out;
