@@ -233,7 +233,21 @@ void JC120StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (gnd, distOut, 470.0e3);
         c.addDiode (distOut, gnd, distortionDiodeIs, distortionDiodeNVt);
         c.addDiode (gnd, distOut, distortionDiodeIs, distortionDiodeNVt);
-        c.addResistor (distOut, driverAc, 10.0e3);
+
+        // Recovery: the diode-clipped ~0.6 V signal reaches the power stage's summing node through the same 1k
+        // coupling the clean path uses (was 10k -- ~20 dB weaker), so it arrives at comparable strength. On the
+        // real amp the clipper's small output is restored to full level by the high-gain E-412 driver stage
+        // (helped by the DIST pot's second "VOL" gang, which compensates output level as the drive gang opens);
+        // this model's saturating power stage runs at only ~3x, so without an explicit recovery the clipped
+        // path lands ~20 dB under the clean one -- the near-silent distortion the audit flagged. The op-amp
+        // buffers distOut so its load stays light (4.7k, same order as the old 10k) and the clipper's own
+        // character is unchanged. Same ideal-op-amp technique as the master `rec` stage above.
+        const auto distRecInv = c.addNode(), distRec = c.addNode();
+        c.addResistor (distOut, distRecInv, 4.7e3);
+        c.addOpAmp (gnd, distRecInv, distRec);
+        c.addResistor (distRecInv, distRec, 4.7e3);
+        c.setInitialGuess (distRec, 0.0);
+        c.addResistor (distRec, driverAc, 1.0e3); // same engaged coupling as the clean path's rCleanCouple
         c.setInitialGuess (distColl, 0.0);
 
         ch.rCleanCouple = c.addResistor (rec, driverAc, 1.0e9); // bypass path; updatePots() trades this off against rDistCouple
