@@ -34,6 +34,7 @@
 #include "Effects/EVH5150StyleAmplifierProcessor.h"
 #include "Effects/ENGLPowerballStyleAmplifierProcessor.h"
 #include "Effects/RockerverbStyleAmplifierProcessor.h"
+#include "Effects/SVTStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -384,6 +385,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     RockerverbStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("RockerverbStyleAmplifier");
     registry.registerType ("RockerverbStyleAmplifier", [] { return trimmed (oversampled<RockerverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.74f); });
+
+    // The Ampeg SVT-CL bass head, modelled from its service schematic (docs/circuits/AmpegSVT.md): four 12AX7
+    // in the preamp, Baxandall + tapped-inductor mid section, a 12AX7 phase splitter, two 12AU7 drivers and
+    // six 6550s. No reducedOrder yet: the full reference netlist always runs (trim measured by PedalUnityLevelTests).
+    registry.registerType ("SVTStyleAmplifier", [] { return trimmed (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.69f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
