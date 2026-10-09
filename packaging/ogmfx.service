@@ -1,0 +1,51 @@
+# OpenGuitarMultiFx kiosk: rootless Xorg on vt7 + the app fullscreen.
+#
+# This is the packaged copy: install.sh drops it at
+# /etc/systemd/system/ogmfx.service, replacing the image baseline at the
+# same path (see image/overlay/etc/systemd/system/ogmfx.service — keep the
+# two in sync). Name, user and autostart target are fixed by
+# docs/Phase6Plan.md ("Versioning and services").
+[Unit]
+Description=OpenGuitarMultiFx (kiosk)
+Documentation=https://github.com/LuhOli42/OpenGuitarMultiFx/blob/main/docs/Phase6Plan.md
+After=systemd-user-sessions.service sound.target getty@tty7.service
+Conflicts=getty@tty7.service
+ConditionPathExists=/opt/ogmfx/current/bin/OpenGuitarMultiFx
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ogmfx
+Group=ogmfx
+SupplementaryGroups=audio video input render
+WorkingDirectory=/var/lib/ogmfx
+Environment=OGMFX_DATA_DIR=/var/lib/ogmfx
+Environment=OGMFX_KIOSK=1
+# A PAM "login" session on tty7 registers a logind seat session, which is what
+# lets Xorg take DRM master and open input devices without running as root.
+PAMName=login
+TTYPath=/dev/tty7
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty7
+UtmpMode=user
+# The kiosk wrapper (/usr/local/bin/ogmfx-kiosk, shipped by the system image)
+# brings up Xorg and then execs /opt/ogmfx/current/bin/OpenGuitarMultiFx —
+# the `current` symlink swap is what actually moves the app between releases.
+ExecStart=/usr/local/bin/ogmfx-kiosk
+# Realtime limits independent of PAM. Deliberately no CPUWeight=/CPUQuota=:
+# the A733 BSP kernel has CONFIG_RT_GROUP_SCHED=y, and an enabled cgroup cpu
+# controller makes SCHED_FIFO fail with EPERM for the audio thread.
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+LimitNICE=-19
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=ogmfx.target

@@ -214,3 +214,12 @@ target_link_libraries(OpenGuitarMultiFx_Tests PRIVATE
 )
 
 add_test(NAME OpenGuitarMultiFx_UnitTests COMMAND OpenGuitarMultiFx_Tests)
+
+# Everything except the wall-clock perf suites (categories "Bench" and
+# "Probe"): they measure real-time bounds and cannot hold them under
+# qemu-aarch64 emulation — W2's aarch64 CI job skips them for that reason
+# (documented in .github/workflows/ci.yml). On native hardware run the full
+# OpenGuitarMultiFx_UnitTests instead.
+add_test(NAME OpenGuitarMultiFx_UnitTests_NoPerf
+         COMMAND OpenGuitarMultiFx_Tests
+                 --skip-category Bench --skip-category Probe)

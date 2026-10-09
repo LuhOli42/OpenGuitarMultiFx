@@ -1,5 +1,6 @@
 #include "EffectRegistry.h"
 #include "Effects/MarkIICPlusStyleAmplifierProcessor.h"
+#include "TestEnvironment.h"
 
 #include <juce_core/juce_core.h>
 
@@ -257,7 +258,8 @@ public:
             const double avgPct = 100.0 * seconds / 10.0;
             logMessage ("reducedOrder cost: avg " + juce::String (avgPct, 2) + "%, worst block " + juce::String (worstPct, 1)
                         + "%, failures " + juce::String (amp.getSolveFailureRate(), 6) + ", recoveries " + juce::String (amp.debugRecoveries()));
-            expectLessThan (avgPct, 15.0);
+            if (! testEnvironment::underEmulation())
+                expectLessThan (avgPct, 15.0);
             MarkIICPlusStyleAmplifierProcessor::reducedOrder = false;
         }
 

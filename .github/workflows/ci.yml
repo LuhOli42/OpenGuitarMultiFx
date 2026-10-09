@@ -1,0 +1,103 @@
+# Phase 6 W2: CI for both release targets (docs/Phase6Plan.md).
+#
+# One parametrized pipeline for both arches, per the locked decision in the
+# plan: everything builds inside the W1 toolchain image
+# (tools/toolchain/Dockerfile) via scripts/cross-build.sh.
+#
+#   x86_64  — native build in the image, native ctest (full suite).
+#   aarch64 — cross build against the image's arm64 sysroot; the Tests binary
+#             runs under qemu-aarch64 (already inside the image at
+#             /opt/sysroots/aarch64/usr/bin/qemu-aarch64) with the "Bench" and
+#             "Probe" category suites SKIPPED: they assert wall-clock
+#             real-time bounds that emulation cannot hold (W1 verified the
+#             rest of the suite passes under qemu). The same applies to the
+#             wall-clock perf asserts embedded inside normal suites
+#             (real-time factors / %CPU bounds): OGMFX_TESTS_UNDER_EMULATION
+#             makes them log-only there — see Tests/TestEnvironment.h.
+#             On-device runs of the perf suites are W6's on-board benchmark
+#             job.
+#
+# Caching: the toolchain image layers go through buildx's type=gha cache
+# (scope shared by both matrix legs); the build-<arch> tree (FetchContent
+# _deps — JUCE, Eigen, nlohmann/json, NAM core — plus compiled objects) goes
+# through actions/cache. The first uncached JUCE build is the dominant cost.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    env:
+      # ubuntu-latest runners: 4 vCPU / 16GB. Above the scripts' default of 2,
+      # but keep a ceiling — heavy nam_core/Eigen TUs are memory-hungry
+      # (see scripts/build.sh for the crash that motivated the cap).
+      BUILD_JOBS: 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build toolchain image (layer-cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/toolchain
+          build-args: TARGET=aarch64
+          tags: ogmfx-toolchain:latest
+          load: true
+          cache-from: type=gha,scope=ogmfx-toolchain
+          cache-to: type=gha,mode=max,scope=ogmfx-toolchain
+
+      - name: Restore build tree (deps + objects)
+        uses: actions/cache@v4
+        with:
+          path: build-${{ matrix.arch }}
+          key: ogmfx-build-${{ matrix.arch }}-${{ hashFiles('CMakeLists.txt', 'Tests/CMakeLists.txt', 'cmake/**', 'tools/toolchain/**') }}
+          restore-keys: ogmfx-build-${{ matrix.arch }}-
+
+      - name: Build ${{ matrix.arch }}
+        run: scripts/cross-build.sh ${{ matrix.arch }}
+
+      - name: Test (x86_64, native ctest)
+        if: matrix.arch == 'x86_64'
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
+            ctest --test-dir build-x86_64 --output-on-failure
+
+      - name: Test (aarch64, qemu — Bench/Probe skipped, perf asserts log-only)
+        if: matrix.arch == 'aarch64'
+        run: |
+          tests_bin="$(find build-aarch64 -name OpenGuitarMultiFx_Tests -type f -print -quit)"
+          [ -n "$tests_bin" ] || { echo "Tests binary not found"; exit 1; }
+          docker run --rm -v "$PWD:/src" -w /src \
+            -e OGMFX_TESTS_UNDER_EMULATION=1 \
+            ogmfx-toolchain:latest \
+            /opt/sysroots/aarch64/usr/bin/qemu-aarch64 -L /opt/sysroots/aarch64 \
+            "/src/$tests_bin" --skip-category Bench --skip-category Probe
+
+      - name: Verify install() payload (x86_64)
+        if: matrix.arch == 'x86_64'
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src ogmfx-toolchain:latest \
+            bash -ec '
+              rm -rf /tmp/stage
+              cmake --install build-x86_64 --prefix /tmp/stage
+              for f in bin/OpenGuitarMultiFx systemd/ogmfx.service \
+                       systemd/ogmfx-updater.service systemd/ogmfx-updater.timer \
+                       install.sh etc/ogmfx/updater.conf; do
+                [ -f "/tmp/stage/$f" ] || { echo "missing payload file: $f"; exit 1; }
+              done
+              echo "install() payload OK"'

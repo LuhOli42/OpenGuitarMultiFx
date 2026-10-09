@@ -73,6 +73,11 @@ public:
                 // physical half-way point a real knob would have. Leave those at their own default instead of forcing 0.5.
                 if (f->range.interval >= 1.0f)
                     continue;
+                // A modulation-depth param (the Fender amps' vibrato "Intensity") has no neutral "noon" either: at half
+                // depth the effect is genuinely ON and its amplitude modulation's RMS drop is correct physics, not a
+                // unity calibration error. Leave it at its own default (0 = off).
+                if (juce::String (f->paramID).endsWith ("_intensity"))
+                    continue;
                 *f = juce::jlimit (f->range.start, f->range.end, 0.5f); // "noon", whatever a pedal's own default is
             }
             const double gainDb = referenceGainDb (*pedal);

@@ -1,5 +1,6 @@
 #include "EffectRegistry.h"
 #include "Effects/SLO100StyleAmplifierProcessor.h"
+#include "TestEnvironment.h"
 
 #include <juce_core/juce_core.h>
 
@@ -271,7 +272,8 @@ public:
                         + "%, failures " + juce::String (amp.getSolveFailureRate(), 6) + ", recoveries " + juce::String (amp.debugRecoveries()));
             // The SLO-100 has FIVE preamp gain stages (the most of any amp on the roadmap), so its
             // reducedOrder cost is higher than a 3-4 stage amp. Allow up to 15% avg.
-            expectLessThan (avgPct, 15.0);
+            if (! testEnvironment::underEmulation())
+                expectLessThan (avgPct, 15.0);
             SLO100StyleAmplifierProcessor::reducedOrder = false;
         }
 

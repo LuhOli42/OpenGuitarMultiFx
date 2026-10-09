@@ -3,24 +3,43 @@
 // Each test file registers its juce::UnitTest classes through a static
 // global instance (the pattern JUCE's own test framework expects). This
 // main() just needs to trigger the runner.
+// Usage: OpenGuitarMultiFx_Tests [--skip-category <cat>...] [name-substring]
+//
+//   (no args)                    run every registered suite (takes minutes)
+//   <name-substring>             run only suites whose name contains it
+//   --skip-category <cat>        skip all suites in a juce::UnitTest category;
+//                                repeatable. Added for W2's CI: the wall-clock
+//                                perf suites (categories "Bench" and "Probe")
+//                                cannot hold their real-time bounds under
+//                                qemu-aarch64 emulation, so the aarch64 CI job
+//                                runs the suite with them skipped.
 int main (int argc, char* argv[])
 {
     juce::UnitTestRunner runner;
     runner.setPassesAreLogged (false);
 
-    // Optional first argument: only run the suites whose name contains it (the full suite takes minutes).
-    if (argc > 1)
+    juce::StringArray skipCategories;
+    juce::String nameFilter;
+
+    for (int i = 1; i < argc; ++i)
     {
-        juce::Array<juce::UnitTest*> selected;
-        for (auto* test : juce::UnitTest::getAllTests())
-            if (test->getName().containsIgnoreCase (argv[1]))
-                selected.add (test);
-        runner.runTests (selected);
+        if (juce::String (argv[i]) == "--skip-category" && i + 1 < argc)
+            skipCategories.add (argv[++i]);
+        else
+            nameFilter = argv[i];
     }
-    else
+
+    juce::Array<juce::UnitTest*> selected;
+    for (auto* test : juce::UnitTest::getAllTests())
     {
-        runner.runAllTests();
+        if (skipCategories.contains (test->getCategory()))
+            continue;
+        if (nameFilter.isNotEmpty() && ! test->getName().containsIgnoreCase (nameFilter))
+            continue;
+        selected.add (test);
     }
+
+    runner.runTests (selected);
 
     int numFailures = 0;
     for (int i = 0; i < runner.getNumResults(); ++i)
