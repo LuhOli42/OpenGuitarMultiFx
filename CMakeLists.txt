@@ -128,6 +128,10 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/CentaurStyleOverdriveProcessor.cpp
   Source/Effects/BD2StyleOverdriveProcessor.cpp
   Source/Effects/BigMuffStyleFuzzProcessor.cpp
+  Source/Effects/BassBigMuffStyleFuzzProcessor.cpp
+  Source/Effects/DarkglassB7KStyleOverdriveProcessor.cpp
+  Source/Effects/SansAmpBDDIStyleOverdriveProcessor.cpp
+  Source/Effects/BossOC2StyleOctaverProcessor.cpp
   Source/Effects/DT1StyleDistortionProcessor.cpp
   Source/Effects/ODR1StyleOverdriveProcessor.cpp
   Source/Effects/OverdriverStyleOverdriveProcessor.cpp
