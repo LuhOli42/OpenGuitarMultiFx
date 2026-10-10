@@ -330,6 +330,19 @@ void BassmanStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rMid = c.addResistor (n2, gnd, 12.5e3);
     }
 
+    // ================================================================ Power Drive (reducedOrder only): a real
+    // two-leg divider across the tone-stack output -- the behavioural stage's "master" (a master between the PI and
+    // the power tubes is post-tonestack, and dividing a linear stack's output is algebraically the same as scaling
+    // its input). It also restores the ~1M load the full netlist's LTP grid leaks put on wTone, which the reduced
+    // power block otherwise leaves unloaded.
+    if (reducedOrder)
+    {
+        auto& c = ch.power;
+        ch.wPowerDrive = c.addNode();
+        ch.rPowerTop = c.addResistor (ch.wTone, ch.wPowerDrive, 500.0e3);
+        ch.rPowerBottom = c.addResistor (ch.wPowerDrive, gnd, 500.0e3);
+    }
+
     // ================================================================ phase inverter, power amp -- the FULL reference
     // netlist only (reducedOrder replaces all of this with behavioralPowerStage(), fitted to this same circuit's own
     // measured output -- docs/circuits/Bassman5F6A.md)
@@ -486,9 +499,17 @@ void BassmanStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
         ch.power.setResistance (ch.rBass, bassR);
         ch.power.setResistance (ch.rMid, midR);
-        // reducedOrder: Presence/feedback/bias don't exist in the tone-stack-only power circuit (see the header's
-        // "reduced-order power stage" note) -- none of Presence, Bias or Tube Feel are reproduced yet (a documented gap).
-        if (! reducedOrder)
+        // Presence/feedback/bias exist only in the full netlist; the Power Drive divider only in the reduced one.
+        // Dispatch on the handles actually built into this instance's circuit, not the static flag -- a full-netlist
+        // instance processed while reducedOrder is on (the regression test does exactly that) must not get writes
+        // through zero handles, which would silently corrupt resistor/source 0.
+        if (ch.rPowerBottom != 0)
+        {
+            const double pdBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.powerDrive));
+            ch.power.setResistance (ch.rPowerTop, juce::jmax (1.0, 1.0e6 - pdBottom));
+            ch.power.setResistance (ch.rPowerBottom, pdBottom);
+        }
+        if (ch.rPresTop != 0)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
             ch.power.setResistance (ch.rPresBottom, presBottom);
@@ -557,7 +578,11 @@ double BassmanStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    // Tube Feel folds in the supply's sag depth (the canonical rail law: railPlatesNominal - feel * sag depth).
+    // At the shipped default (feel = 1) this is exactly the fitted lookup; toward 0 the rail stiffens the way the
+    // full model's reduced rectifier resistance makes it.
+    const double feel = juce::jlimit (0.0, 1.0, lastKnobs.tubeFeel);
+    ch.bmRail = railPlatesNominal - feel * (railPlatesNominal - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
     // The LTP input grid clamps the delivered signal once it pulls the grid into conduction -- in the
@@ -566,18 +591,18 @@ double BassmanStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double
     // threshold, matching where the reference starts to compress).
     const double xOver = toneVoltage / bmGridClampV;
     const double clamped = toneVoltage / std::sqrt (1.0 + xOver * xOver);
-    const auto knee = [k, rail = ch.bmRail] (double x)
-    {
-        return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax;
-    };
-    // Push-pull asymmetry: the pair's bias point isn't centred in the saturating curve (the
-    // half-cycle toward grid conduction clips earlier than the cutoff half), so even harmonics grow
-    // with drive -- the real amp's second-harmonic content at breakup. The shipped copysign knee was
-    // perfectly odd-symmetric (audit: even/odd ~0.01). Evaluating the knee around a fixed offset and
-    // referencing the output back to that point reproduces it; the OT DC-block below removes the
-    // resulting mean.
-    const double dcShift = bmAsym * k;
-    const double raw = knee (clamped + dcShift) - knee (dcShift);
+    // Signed odd saturator f(x) = copysign(knee(|x|/k), x), evaluated about the bias offset and referenced
+    // back: (f(drive) - f(asym)) * rail -- the canonical recipe (the PR #41 form). With this amp's fitted
+    // tanh knee, f(x) = bmYmax * tanh(x/k), so at Bias = noon the stage is identical to the previous
+    // dcShift form and the published calibration carries over unchanged.
+    const auto knee = [] (double u) { return bmYmax * std::tanh (u); };
+    const auto f = [&] (double x) { return std::copysign (knee (std::abs (x) / juce::jmax (1.0e-9, k)), x); };
+    // Bias folds into the operating-point offset: noon reproduces the fitted push-pull asymmetry bmAsym
+    // (the half-cycle toward grid conduction clips earlier than the cutoff half, so even harmonics grow
+    // with drive -- the real amp's second-harmonic content at breakup); sweeping the knob moves the
+    // operating point the way the full model's grid-bias source does.
+    const double asym = (bmAsym + 0.3 * (juce::jlimit (0.0, 1.0, lastKnobs.bias) - 0.5)) * k;
+    const double raw = (f (clamped + asym) - f (asym)) * ch.bmRail;
 
     // Asymmetric clip produces a net DC offset the output transformer cannot pass -- block it.
     const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / juce::jmax (1.0, sampleRate));
@@ -585,7 +610,11 @@ double BassmanStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double
     const double rawAc = raw - ch.bmDcState;
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
+    // Presence scales the fitted HF shelf -- it stands in for the global feedback network the reduced
+    // stage lacks (the canonical recipe's presence fold). Normalised so the shipped default (0.3)
+    // reproduces the calibrated bmShelfHfGain exactly.
+    const double presenceScale = (0.4 + 1.2 * juce::jlimit (0.0, 1.0, lastKnobs.presence)) / 0.76;
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * presenceScale * (rawAc - ch.bmToneState);
     return ch.bmOutput;
 }
 
@@ -845,9 +874,15 @@ void BassmanStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             updatePots ({ vn, vb, tr, mi, ba, pr, pw, bi, fe, speakerChoice });
         }
 
-        // Power Drive: a master volume between the preamp and the tone stack / phase inverter (amplitude = knob^2, audio
+        // Power Drive: a master volume between the preamp and the tone stack / phase inverter (amplitude = knob's audio
         // taper). The excursion of the cathode follower scales; its DC and the tone stack's impedances do not.
-        const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
+        // reducedOrder applies the same attenuation as a real two-leg divider AFTER the tone stack instead (identical
+        // through the linear stack -- see buildChannel), so the follower drive stays full-scale here. Dispatch purely
+        // on the divider's handle, not the flag: the flag can flip either way after construction, so the divider owns
+        // the attenuation whenever it exists and the scalar owns it whenever it does not -- otherwise a reduced
+        // instance run with the flag off would get BOTH (double attenuation).
+        const bool pdDividerBuilt = ! channels.empty() && channels[0].rPowerBottom != 0;
+        const double masterGain = pdDividerBuilt ? 1.0 : juce::jmax (0.002, pots::audio ((double) pw));
         const double cfLpCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cfDriveHz / sampleRate);
         const double cfDcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cfDriveDcHz / sampleRate);
 
@@ -919,7 +954,11 @@ void BassmanStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             // plate below ground): the output stage has run away between two samples. Such a sample is a failure, and
             // the output holds its last value instead of printing the excursion. reducedOrder's behavioralPowerStage() is
             // a bounded saturating function -- there is no Newton solve left to have a bad day.
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone)) : ch.power.voltage (ch.wOut);
+            // wPowerDrive exists only on instances built with reducedOrder on; a full-netlist instance processed while
+            // the static flag is on (the regression test measures exactly that) falls back to its own wTone -- the
+            // same node the behavioural stage read before the divider existed.
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wPowerDrive != 0 ? ch.wPowerDrive : ch.wTone))
+                                                     : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

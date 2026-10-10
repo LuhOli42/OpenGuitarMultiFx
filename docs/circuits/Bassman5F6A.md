@@ -380,8 +380,19 @@ on for the real app in `EffectRegistry.cpp`'s factory).
   compensation (a `z^-0.8` law, fitted to cancel a real physical mismatch effect that only exists in the full reference
   netlist) is now `1.0` unconditionally in reducedOrder mode -- applying the reference's factor here would have made 4 ohm
   louder than 16 instead of matching them (verified: bit-identical volts across 4/8/16 now).
-* **Known, documented gaps**: same list as the Super Lead's -- Presence, Bias and Tube Feel have no effect; the speaker's
-  own resonance/HF lift isn't reproduced (level still matches across 4/8/16, tone doesn't change with the choice).
+* **Control folding (2026-10-10, the canonical recipe of the PR #31/#41 amps)**: the power-side controls now act inside
+  the behavioural stage -- Tube Feel scales the sag depth (`rail = railPlatesNominal - feel*(railPlatesNominal - sagRail(env))`),
+  Bias shifts the saturator's operating point (`asym = (bmAsym + 0.3*(bias - 0.5)) * k`), Presence scales the fitted HF
+  shelf (`0.4 + 1.2*presence`, normalised to the shipped 0.3 default), and Power Drive is a real two-leg divider across
+  the tone-stack output (which also restores the ~1M load the full netlist's LTP grid leaks put on `wTone`, and matches
+  the documented "master between PI and power tubes" placement -- post-tonestack division of a linear stack is the same
+  attenuation as the previous pre-stack scalar). Every fold is centred on the shipped defaults, so default-knob output is
+  unchanged from the calibrated fit above.
+* **Remaining documented gaps**: the saturator keeps this amp's own fitted tanh knee plus the LTP grid-conduction clamp
+  (the restaged drive law of the 2026-09-27 fit), not the power-law `bmKneeN` knee of the newer amps -- the signed-odd
+  `f(drive) - f(asym)` wrapper is shared; only the knee shape differs (moving to the power-law knee would need a fresh
+  `BM_POWERCAL` pass). The speaker's own resonance/HF lift isn't reproduced (level still matches across 4/8/16, tone
+  doesn't change with the choice).
 * **A pre-existing, unrelated finding from the same investigation**: `PedalUnityLevelTests`' generic "every page-1 knob at
   0.5 (noon)" loop was landing a 3-way discrete selector (Input: Normal/Jumped/Bright) on an ambiguous exact-midpoint
   rounding boundary, not a real physical "half-way" point a knob would have (a real switch has no such position) --
