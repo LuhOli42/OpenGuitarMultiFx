@@ -45,7 +45,6 @@
 #include "Effects/SunnModelTStyleAmplifierProcessor.h"
 #include "Effects/FryetteDeliveranceD120StyleAmplifierProcessor.h"
 #include "Effects/BognerUberschallStyleAmplifierProcessor.h"
-||||||| parent of 14b92e8 (feat: register 4 bass amps, add test suites + circuit docs)
 #include "Effects/AmpegB15StyleAmplifierProcessor.h"
 #include "Effects/AmpegV4BStyleAmplifierProcessor.h"
 #include "Effects/MesaBass400PlusStyleAmplifierProcessor.h"
@@ -446,7 +445,6 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("BognerUberschallStyleAmplifier");
     registry.registerType ("BognerUberschallStyleAmplifier", [] { return trimmed (oversampled<BognerUberschallStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.72f); });
 
-||||||| parent of 14b92e8 (feat: register 4 bass amps, add test suites + circuit docs)
     // The bass heads (docs/circuits/AmpegB15.md, AmpegV4B.md, MesaBass400Plus.md, Acoustic360.md):
     // B-15 Portaflex (3x6SL7, paraphase PI, 2x6L6GC, 25 W), V4B (SVT-family preamp, 4x7027A, 100 W),
     // Bass 400+ (Mesa preamp + 7-band graphic EQ, 12x6L6GC) and the solid-state Acoustic 360
