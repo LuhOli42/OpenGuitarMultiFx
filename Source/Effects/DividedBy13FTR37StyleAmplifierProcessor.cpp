@@ -573,21 +573,27 @@ double DividedBy13FTR37StyleAmplifierProcessor::preampOutput (const Channel& ch)
 double DividedBy13FTR37StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double driveVoltage) const noexcept
 {
     constexpr double attackMs = 8.0, releaseMs = 45.0;
-    // Half power lifts one 6V6 pair's cathodes in the full-order model: less idle current,
-    // earlier clip, a little less output. The behavioural model gets reduced drive plus a
-    // lower ceiling below.
-    if (lastKnobs.halfPower == 1)
-        driveVoltage *= 0.85;
     const double absDrive = std::abs (driveVoltage);
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope) * (lastKnobs.halfPower == 1 ? 0.8 : 1.0);
+    // reducedOrder folds the power-only controls into the fit: tube feel scales sag depth, bias
+    // shifts the knee's operating point, and Half power (the lifted 6V6 pair in the full-order
+    // model) lowers drive plus ceiling (all centred on the shipped defaults).
+    const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
+    const double biasTrim = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
+    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
+    if (lastKnobs.halfPower == 1)
+        ch.bmRail *= 0.8;
 
+    const double asym = 0.3 * (biasTrim - 0.5) * bmYmax;
+    const double drive = (lastKnobs.halfPower == 1 ? 0.85 : 1.0) * driveVoltage + asym;
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = absDrive / juce::jmax (1.0e-9, k);
-    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, driveVoltage);
+    const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
+    // signed odd saturator f(x)=copysign(knee(|x|),x) — the form the other amps moved to.
+    const auto f = [&] (double x) { const double ux = std::abs (x) / juce::jmax (1.0e-9, k);
+                                    return std::copysign (knee (ux), x); };
+    const double raw = (f (drive) - f (asym)) * ch.bmRail;
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);

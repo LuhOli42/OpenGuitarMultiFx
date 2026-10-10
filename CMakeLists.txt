@@ -161,6 +161,11 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/JCM800StyleAmplifierProcessor.cpp
   Source/Effects/AC15StyleAmplifierProcessor.cpp
   Source/Effects/AC30StyleAmplifierProcessor.cpp
+  Source/Effects/EL84BoutiqueAmpCore.cpp
+  Source/Effects/MatchlessHC30StyleAmplifierProcessor.cpp
+  Source/Effects/HotCat30StyleAmplifierProcessor.cpp
+  Source/Effects/CarmenGhiaStyleAmplifierProcessor.cpp
+  Source/Effects/Astroverb16StyleAmplifierProcessor.cpp
   Source/Effects/SLO100StyleAmplifierProcessor.cpp
   Source/Effects/MarkIICPlusStyleAmplifierProcessor.cpp
   Source/Effects/DualRectifierStyleAmplifierProcessor.cpp
@@ -172,6 +177,10 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
   Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
   Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
+  Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp
+  Source/Effects/SunnModelTStyleAmplifierProcessor.cpp
+  Source/Effects/FryetteDeliveranceD120StyleAmplifierProcessor.cpp
+  Source/Effects/BognerUberschallStyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp

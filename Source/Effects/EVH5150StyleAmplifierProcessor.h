@@ -53,8 +53,20 @@ public:
     static constexpr double bmGain0 = 9.5;
     static constexpr double bmYmax = 0.198;
     static constexpr double bmKneeN = 6.0;
-    static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.55;
+    // Fitted to THIS amp's own full-order lock-in sweep (toneStackOut -> speaker): LF bump ~+5 dB at ~80-90 Hz
+    // falling ~15 dB/oct below (resonant high-pass + one-pole low cut at bmCutHz), flat mids, +2.5 dB ridge at
+    // ~4-5 kHz into the top rolloff (-13 dB @ 10.8 kHz). The V3B recovery triode the reduced path removes is
+    // absorbed into the knee/filter fit; the reference's presence/resonance pots sit in the dead NFB loop
+    // (kg1 collapse) and measure ~0.1 dB at every setting, so there is no presence feed here.
+    static constexpr double bmBumpHz = 80.0, bmBumpQp = 2.0;
+    static constexpr double bmCutHz = 15.0;
+    static constexpr double bmTopZHz = 4000.0, bmTopPHz = 6500.0, bmTopQp = 1.4;
+    // the OT/NFB path has a real notch at ~12 kHz in this amp's own sweep -- a third (notch) biquad reproduces it.
+    static constexpr double bmNotchHz = 12000.0, bmNotchQ = 1.0;
+    // physical ceiling: same rail-clip rationale as the other fitted amps -- keeps the resonant overshoot
+    // of a saturated LF signal inside the sanity bound (also the unity-at-noon trim point).
+    static constexpr double bmOutMax = 115.0;
+    static constexpr double bmLevelTrim = 0.91;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -107,7 +119,7 @@ private:
         int wSrcCf = 0, wSrcRecovery = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rPost = 0, rResonancePot = 0;
+            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rPostTop = 0, rPostBottom = 0, rResonancePot = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wTone = 0, wRecoveryPlate = 0, wOut = 0, wPlateA = 0,
                            wPlateB = 0, wGridA = 0, wTail = 0, wPP1 = 0, wPP2 = 0,
@@ -116,7 +128,11 @@ private:
         double vScreen = 465.0;
 
         // reducedOrder behavioural power stage state
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
+        double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
+        double bmCX1 = 0.0, bmCX2 = 0.0, bmCY1 = 0.0, bmCY2 = 0.0;
+        double bmCutState = 0.0;
         tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
         // supply
@@ -149,6 +165,11 @@ private:
     bool supplyCurrentFrozen = false;
     void updateSupply (Channel& ch) const;
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
+    void designPowerFilters();
+    // power-stage biquads (bilinear-transformed in designPowerFilters())
+    double bmAB0 = 1.0, bmAB1 = 0.0, bmAB2 = 0.0, bmAA1 = 0.0, bmAA2 = 0.0;
+    double bmBB0 = 1.0, bmBB1 = 0.0, bmBB2 = 0.0, bmBA1 = 0.0, bmBA2 = 0.0;
+    double bmCB0 = 1.0, bmCB1 = 0.0, bmCB2 = 0.0, bmCA1 = 0.0, bmCA2 = 0.0;
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ChannelKnobMemory.h"
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
@@ -12,43 +11,41 @@ namespace openguitarmultifx
 {
 
 /**
-    A Mesa/Boogie Dual Rectifier-style guitar amplifier, modelled at component level on NodalCircuit from
-    the factory Mesa Boogie schematic (2-channel, dated 6-93 GEO. M.; docs/circuits/DualRectifier.md -- read
-    that file to understand this processor). The Dual Rectifier is one of the defining high-gain amplifiers of
-    the 1990s--2000s metal and hard rock era, known for its massive low-end, saturated gain and chunky rhythm tone.
+    A Sunn Model T-style guitar amplifier, modelled at component level on NodalCircuit from the 1973
+    factory schematic (ECN441; docs/circuits/SunnModelT.md -- read that file to understand this
+    processor). The Model T is Sunn's ~140 W flagship: two preamp channels (Brite and Normal) that can be
+    run together, a small 270pF treble-cap tone stack, and FOUR 6550 beam tetrodes in an ULTRALINEAR
+    output stage -- the screens ride taps on the output transformer, which is the amp's loud-clean
+    signature. Favoured for stoner/doom walls of volume.
 
-    All three channels are modelled: CLEAN bypasses both V2A and V2B (signal goes V1A -> Gain pot ->
-    bypass -> V3A -> follower); ORANGE bypasses V2B only (V1A -> V2A -> bypass -> V3A); RED uses all
-    four preamp gain stages (V1A -> V2A -> V2B -> V3A) for maximum saturation. Channel switching is
-    via switchable series resistors in the netlist. The LDR switching circuitry, tube/diode rectifier
-    select, and FX loop are not implemented. Solid-state rectification only is modelled.
+    Modelled: the Brite and Normal input stages (each with its own Volume, mixed into the shared second
+    stage), one more 12AX7 gain stage + cathode follower into the TMB stack, the 12AX7 long-tailed-pair
+    phase inverter with global negative feedback and presence, four 6550s as two push-pull pairs in fixed
+    bias with ultralinear screens, and the output transformer into a resonant speaker load. The reverb
+    circuit, the polarity/voltage-selector wiring and the hum-balance pot are not modelled; both input
+    jacks are driven by the one input (as the "both" jack does).
 
-    Architecture: up to FIVE cascaded 12AX7 gain stages (V1A -> [V2A] -> [V2B] -> V3A -> V3D follower),
-    a Fender-derived TMB tone stack, a 12AX7 long-tailed-pair phase inverter with global negative feedback,
-    and four 6L6GC beam tetrodes as two push-pull pairs in a fixed-bias output stage.
-
-    Controls, page 1: Channel (Clean / Orange / Red), Gain (1MA), Treble, Mid, Bass, Presence, Master -- each channel
-    keeps its own full set (ChannelKnobMemory.h), like the real amp's three rows of pots. Page 2 (synthetic): Power
-    Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
+    Controls, page 1 (mirrors the front panel): Volume Brite, Volume Normal, Treble, Mid, Bass,
+    Presence, Master. Page 2 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
-class DualRectifierStyleAmplifierProcessor : public EffectProcessor
+class SunnModelTStyleAmplifierProcessor : public EffectProcessor
 {
 public:
-    DualRectifierStyleAmplifierProcessor();
+    SunnModelTStyleAmplifierProcessor();
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    std::unique_ptr<juce::XmlElement> getState() const override;
-    void setState (const juce::XmlElement& state) override;
-    const char* getName() const override { return "Dual Rectifier-Style Amplifier"; }
-    juce::Colour getAccentColour() const override { return juce::Colour (0xff1a1a2e); } // deep navy (Mesa chrome/dark)
+    std::unique_ptr<juce::XmlElement> getState() const override { return EffectProcessor::getState(); }
+    void setState (const juce::XmlElement& state) override { EffectProcessor::setState (state); }
+    const char* getName() const override { return "Sunn Model T-Style Amplifier"; }
+    juce::Colour getAccentColour() const override { return juce::Colour (0xff5a4a00); } // Sunn ochre
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
-    /** 100 W into 16 ohm is ~57 V peak. */
-    static constexpr double outputScale = 1.0 / 56.0;
+    /** ~140 W into 16 ohm is ~67 V peak. */
+    static constexpr double outputScale = 1.0 / 67.0;
 
     // ---- reduced-order power stage ----
     static inline bool reducedOrder = false;
@@ -56,25 +53,12 @@ public:
     static constexpr double bmGain0 = 9.5;
     static constexpr double bmYmax = 0.198;
     static constexpr double bmKneeN = 6.0;
-    // The frequency response the reduced path's removed stages used to provide, fitted to THIS amp's own
-    // full-order lock-in sweep (toneStackOut -> speaker): an LF bump peaking ~+6 dB at ~80 Hz that rolls off
-    // below (resonant high-pass, bmBumpQp = resonance height), a one-pole low cut at bmCutHz finishing
-    // the steep sub-30 Hz fall the reference measures, and a zero/pole pair for the ~3-4 kHz presence ridge into
-    // the top rolloff. The earlier one-pole shelf (bmShelfHz/bmShelfHfGain) could not reproduce the bump.
-    // The reference's presence pot is inside the dead NFB loop (kg1 collapse) and measures 0.0 dB at every
-    // setting, so there is no presence feed here -- the knob only matters in the full model.
-    static constexpr double bmBumpHz = 80.0, bmBumpQp = 2.0;
-    static constexpr double bmCutHz = 15.0;
-    static constexpr double bmTopZHz = 2000.0, bmTopPHz = 5000.0, bmTopQp = 0.9;
-    // physical ceiling: the stages this replaces clip at the rail, and the fitted filters' resonance can
-    // overshoot the knee's bound ~2x on saturated LF -- the cap keeps emitted volts inside the sanity bound.
-    static constexpr double bmOutMax = 62.0;
-    // re-trim to unity at noon after the fitted sections changed the broadband level.
-    static constexpr double bmLevelTrim = 0.55;
+    static constexpr double bmShelfHz = 90.0;
+    static constexpr double bmShelfHfGain = 0.55;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
-    enum class Probe { v1aPlate, v2aPlate, v2bPlate, v3aPlate, followerOut, toneStackOut,
+    enum class Probe { v1aPlate, v1bPlate, v2aPlate, followerOut, toneStackOut,
                        phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB, phaseInverterTail,
                        powerPlateA, powerPlateB, powerGridA, speaker, biasNode, feedbackNode };
     double debugVoltage (Probe p) const noexcept;
@@ -85,8 +69,8 @@ public:
     double railPlates() const noexcept { return channels[0].supply.voltage (channels[0].sA); }
     double railScreens() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
     double railPi() const noexcept { return channels[0].supply.voltage (channels[0].sC); }
-    double railV3() const noexcept { return channels[0].supply.voltage (channels[0].sD); }
-    double railV2() const noexcept { return channels[0].supply.voltage (channels[0].sE); }
+    double railV2() const noexcept { return channels[0].supply.voltage (channels[0].sD); }
+    double railV1() const noexcept { return channels[0].supply.voltage (channels[0].sE); }
     double debugIterations (int block) const noexcept;
     int debugLastPowerIterations() const noexcept;
     long long debugPreFailures() const noexcept { return failuresPre; }
@@ -111,28 +95,26 @@ private:
         double lastEmitted = 0.0, declick = 0.0;
         bool alignOutput = false;
 
-        // preamp: four cascaded 12AX7 gain stages + cathode follower
-        int pSrcV2 = 0, pSrcV3 = 0, pSrcE = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0, rV2aSeries = 0, rBypassV2a = 0, rV2bSeries = 0, rBypassV2b = 0;
-        NodalCircuit::Node pPlateV1a = 0, pPlateV2a = 0, pPlateV2b = 0, pPlateV3a = 0, pFollower = 0;
+        // preamp: Brite + Normal input stages mixed into one more gain stage + cathode follower
+        int pSrcV3 = 0, pSrcV2 = 0, pSrcE = 0, pSrcIn = 0;
+        int rVolBriteTop = 0, rVolBriteBot = 0, rVolNormTop = 0, rVolNormBot = 0;
+        NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pFollower = 0;
         double followerDc = 0.0;
 
         // power section
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMaster = 0;
+            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMasterTop = 0, rMasterBottom = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wOut = 0, wPlateA = 0, wPlateB = 0, wGridA = 0, wTail = 0,
                            wTone = 0, wPP1 = 0, wPP2 = 0, wPowerGridA = 0, wBias = 0, wFeedback = 0;
         double screenDropA = 0.0, screenDropB = 0.0;
         double vScreen = 460.0;
+        double vCt = 460.0;
 
         // reducedOrder behavioural power stage state
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
-        double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
-        double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
-        double bmCutState = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
         tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
         // supply
@@ -147,7 +129,7 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double gain, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
+        double volBrite, volNormal, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
         int speaker;
     };
     void updatePots (const Knobs& k);
@@ -165,17 +147,13 @@ private:
     bool supplyCurrentFrozen = false;
     void updateSupply (Channel& ch) const;
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
-    void designPowerFilters();
-    // power-stage biquads (bilinear-transformed in designPowerFilters())
-    double bmAB0 = 1.0, bmAB1 = 0.0, bmAB2 = 0.0, bmAA1 = 0.0, bmAA2 = 0.0;
-    double bmBB0 = 1.0, bmBB1 = 0.0, bmBB2 = 0.0, bmBA1 = 0.0, bmBA2 = 0.0;
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
-    juce::AudioParameterFloat* channelParam = nullptr;
-    juce::AudioParameterFloat* gainParam = nullptr;
+    juce::AudioParameterFloat* volBriteParam = nullptr;
+    juce::AudioParameterFloat* volNormalParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* midParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
@@ -187,7 +165,7 @@ private:
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
+    juce::SmoothedValue<float> smoothedVolBrite, smoothedVolNormal, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
         /** JUCE's reset() must return the circuit to its DC operating point -- an
@@ -203,8 +181,6 @@ private:
         sampleRate = 0.0;
         prepare (sr, 0, 0);
     }
-
-    std::unique_ptr<ChannelKnobMemory> channelMemory;
 
     double sampleRate = 0.0;
     int controlCounter = 0;

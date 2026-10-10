@@ -28,6 +28,10 @@
 #include "Effects/JCM800StyleAmplifierProcessor.h"
 #include "Effects/AC15StyleAmplifierProcessor.h"
 #include "Effects/AC30StyleAmplifierProcessor.h"
+#include "Effects/MatchlessHC30StyleAmplifierProcessor.h"
+#include "Effects/HotCat30StyleAmplifierProcessor.h"
+#include "Effects/CarmenGhiaStyleAmplifierProcessor.h"
+#include "Effects/Astroverb16StyleAmplifierProcessor.h"
 #include "Effects/SLO100StyleAmplifierProcessor.h"
 #include "Effects/MarkIICPlusStyleAmplifierProcessor.h"
 #include "Effects/DualRectifierStyleAmplifierProcessor.h"
@@ -39,6 +43,10 @@
 #include "Effects/KometConcordeStyleAmplifierProcessor.h"
 #include "Effects/CarrRamblerStyleAmplifierProcessor.h"
 #include "Effects/DividedBy13FTR37StyleAmplifierProcessor.h"
+#include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
+#include "Effects/SunnModelTStyleAmplifierProcessor.h"
+#include "Effects/FryetteDeliveranceD120StyleAmplifierProcessor.h"
+#include "Effects/BognerUberschallStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -358,6 +366,22 @@ void registerBuiltInEffects (EffectRegistry& registry)
     AC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AC30StyleAmplifier");
     registry.registerType ("AC30StyleAmplifier", [] { return trimmed (oversampled<AC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -11.63f); });
+    // docs/circuits/MatchlessHC30.md.
+    MatchlessHC30StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("MatchlessHC30StyleAmplifier");
+    registry.registerType ("MatchlessHC30StyleAmplifier", [] { return trimmed (oversampled<MatchlessHC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 31.54f); });
+    // docs/circuits/BadCatHotCat30.md.
+    HotCat30StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("HotCat30StyleAmplifier");
+    registry.registerType ("HotCat30StyleAmplifier", [] { return trimmed (oversampled<HotCat30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.83f); });
+    // docs/circuits/DrZCarmenGhia.md.
+    CarmenGhiaStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("CarmenGhiaStyleAmplifier");
+    registry.registerType ("CarmenGhiaStyleAmplifier", [] { return trimmed (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -15.05f); });
+    // docs/circuits/SoldanoAstroverb16.md.
+    Astroverb16StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("Astroverb16StyleAmplifier");
+    registry.registerType ("Astroverb16StyleAmplifier", [] { return trimmed (oversampled<Astroverb16StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -16.63f); });
     // docs/circuits/SLO100.md. Soldano SLO-100 OD channel. Five cascaded 12AX7 gain stages, TMB tone stack,
     // LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated placeholder (Twin Reverb's 6L6GC constants).
     SLO100StyleAmplifierProcessor::reducedOrder = true;
@@ -378,12 +402,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // post-tonestack gain recovery, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     EVH5150StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("EVH5150StyleAmplifier");
-    registry.registerType ("EVH5150StyleAmplifier", [] { return trimmed (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.28f); });
+    registry.registerType ("EVH5150StyleAmplifier", [] { return trimmed (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.38f); });
     // docs/circuits/ENGLPowerball.md. ENGL Powerball Hi Lead channel. Six cascaded 12AX7 gain stages
     // (3 pre-tonestack + 3 post-tonestack), FMV tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     ENGLPowerballStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("ENGLPowerballStyleAmplifier");
-    registry.registerType ("ENGLPowerballStyleAmplifier", [] { return trimmed (oversampled<ENGLPowerballStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.53f); });
+    registry.registerType ("ENGLPowerballStyleAmplifier", [] { return trimmed (oversampled<ENGLPowerballStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -18.37f); });
     // Orange Rockerverb 50 MK1 Dirty channel. Four cascaded 12AX7 gain stages, FMV tone stack,
     // LTP PI, 4x6V6 fixed-bias push-pull.
     RockerverbStyleAmplifierProcessor::reducedOrder = true;
@@ -413,6 +437,21 @@ void registerBuiltInEffects (EffectRegistry& registry)
     DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DividedBy13FTR37StyleAmplifier");
     registry.registerType ("DividedBy13FTR37StyleAmplifier", [] { return trimmed (oversampled<DividedBy13FTR37StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.9f); });
+
+    // Four new big-iron heads (docs/circuits/{DumbleSteelString,SunnModelT,FryetteDeliveranceD120,
+    // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
+    DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DumbleSteelStringStyleAmplifier");
+    registry.registerType ("DumbleSteelStringStyleAmplifier", [] { return trimmed (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.05f); });
+    SunnModelTStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("SunnModelTStyleAmplifier");
+    registry.registerType ("SunnModelTStyleAmplifier", [] { return trimmed (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 17.12f); });
+    FryetteDeliveranceD120StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("FryetteDeliveranceD120StyleAmplifier");
+    registry.registerType ("FryetteDeliveranceD120StyleAmplifier", [] { return trimmed (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.46f); });
+    BognerUberschallStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("BognerUberschallStyleAmplifier");
+    registry.registerType ("BognerUberschallStyleAmplifier", [] { return trimmed (oversampled<BognerUberschallStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.72f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
