@@ -12,6 +12,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PitchDetectorTests.cpp
   PresetManagerTests.cpp
   MidiLearnPresetXmlTests.cpp
+  SnapshotPresetXmlTests.cpp
   GateProcessorTests.cpp
   CompressorProcessorTests.cpp
   PositiveGroundBoosterProcessorTests.cpp
@@ -146,6 +147,7 @@ set(OGMFX_SOURCES
   ../Source/Engine/PitchDetector.cpp
   ../Source/Engine/ParameterManager.cpp
   ../Source/Presets/PresetManager.cpp
+  ../Source/UI/SnapshotPresetXml.cpp
   ../Source/Effects/GateProcessor.cpp
   ../Source/Effects/CompressorProcessor.cpp
   ../Source/Effects/PositiveGroundBoosterProcessor.cpp

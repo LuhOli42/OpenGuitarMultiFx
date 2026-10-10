@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "MidiLearnPresetXml.h"
 #include "PromptCards.h"
+#include "SnapshotPresetXml.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "TunerOverlay.h"
@@ -121,6 +122,14 @@ MainComponent::MainComponent()
     addAndMakeVisible (presetBadge);
     presetBadge.onClicked = [this] { showPresetsPanel(); };
 
+    // The A-H snapshot strip: tap a letter to recall that snapshot (see
+    // selectSnapshot()). Shown from the start -- an unsaved chain still has
+    // an active snapshot, same as a hardware pedalboard before you save.
+    addAndMakeVisible (snapshotBar);
+    snapshotBar.setCurrent (currentSnapshot);
+    snapshotBar.onSnapshotSelected = [this] (int index) { selectSnapshot (index); };
+    presetBadge.setSnapshotIndex (currentSnapshot);
+
     addChildComponent (quickSaveButton); // only shown once a preset is actually loaded -- see updatePresetDisplay()
     quickSaveButton.onClick = [this] { if (currentPresetName.isNotEmpty()) savePresetAs (currentPresetName); };
 
@@ -135,6 +144,7 @@ MainComponent::MainComponent()
     if (auto* laf = dynamic_cast<OpenGuitarMultiFxLookAndFeel*> (&juce::LookAndFeel::getDefaultLookAndFeel()))
     {
         presetBadge.setDisplayTypeface (laf->getExtraBoldTypeface());
+        snapshotBar.setDisplayTypeface (laf->getExtraBoldTypeface());
         titleLabel.setFont (juce::Font (juce::FontOptions (42.0f).withTypeface (laf->getExtraBoldTypeface())));
     }
 
@@ -316,6 +326,13 @@ void MainComponent::addEffect (const juce::String& registryName, int targetGridS
 
     chain.insert (chain.begin() + arrayIndex, std::move (processor));
 
+    // Every snapshot gains a slot for the new block at the same position --
+    // its default state, in every snapshot (a snapshot can never change
+    // which blocks exist; they all hold the same chain). See
+    // normaliseSnapshots().
+    for (auto& snapshot : snapshots)
+        snapshot.blocks.insert (snapshot.blocks.begin() + arrayIndex, snapshotxml::captureBlock (*raw));
+
     auto block = std::make_unique<EffectBlockComponent> (*raw);
     block->gridSlot = slot;
     // Tapping the already-open block closes the drawer instead of just
@@ -347,6 +364,10 @@ void MainComponent::removeEffect (EffectProcessor* processor)
     {
         if (it->get() == processor)
         {
+            const int index = (int) std::distance (chain.begin(), it);
+            for (auto& snapshot : snapshots)
+                snapshot.blocks.erase (snapshot.blocks.begin() + index);
+
             graveyard.push_back ({ std::move (*it), juce::Time::getMillisecondCounter() });
             chain.erase (it);
             break;
@@ -819,6 +840,20 @@ void MainComponent::handleBlockDragEnded (EffectBlockComponent& blockComp)
         }
         chain = std::move (newChain);
 
+        // Snapshots store block state by chain POSITION, so the same
+        // permutation has to be applied to every snapshot's block list or a
+        // reorder would silently move each block's saved values onto the
+        // wrong block.
+        for (auto& snapshot : snapshots)
+        {
+            std::vector<snapshotxml::BlockSnapshot> reordered;
+            reordered.reserve (snapshot.blocks.size());
+            for (int i : order)
+                if (i < (int) snapshot.blocks.size())
+                    reordered.push_back (std::move (snapshot.blocks[(size_t) i]));
+            snapshot.blocks = std::move (reordered);
+        }
+
         blocks.clearQuick (false); // releases ownership without deleting -- newBlockOrder already holds every pointer
         for (auto* b : newBlockOrder)
             blocks.add (b);
@@ -1187,8 +1222,74 @@ void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::Mid
     }
 }
 
+void MainComponent::selectSnapshot (int index)
+{
+    index = juce::jlimit (0, snapshotxml::maxSnapshots - 1, index);
+    if (index == currentSnapshot)
+        return;
+
+    // Recall semantics (docs/PresetsAndSnapshots.md): edits made in the
+    // outgoing snapshot stay stored in it -- write the live state back
+    // BEFORE loading the incoming one, so a knob tweak survives the
+    // round-trip away and back even if the preset is never saved.
+    storeCurrentSnapshot();
+
+    // Params + bypass flags only, written into the SAME processors -- the
+    // graph is never rebuilt, so delay/reverb tails keep ringing through
+    // the switch and every enable/disable rides processWithBypass()'s
+    // crossfade + trails exactly like a hand-toggled bypass.
+    const auto& target = snapshots[(size_t) index];
+    for (int i = 0; i < (int) chain.size() && i < (int) target.blocks.size(); ++i)
+        snapshotxml::applyBlock (*chain[(size_t) i], target.blocks[(size_t) i]);
+
+    currentSnapshot = index;
+
+    // A pure snapshot switch isn't an unsaved preset change -- keep the
+    // baseline's recorded `current` in step so isPresetDirty() only flags
+    // real content edits (which already differ inside the stored blocks).
+    if (presetBaseline != nullptr)
+        if (auto* snapshotsXml = presetBaseline->getChildByName ("Snapshots"))
+            snapshotsXml->setAttribute ("current", currentSnapshot);
+
+    updatePresetDisplay();
+}
+
+void MainComponent::storeCurrentSnapshot()
+{
+    auto& snapshot = snapshots[(size_t) currentSnapshot];
+    snapshot.blocks.resize (chain.size());
+    for (int i = 0; i < (int) chain.size(); ++i)
+        snapshot.blocks[(size_t) i] = snapshotxml::captureBlock (*chain[(size_t) i]);
+}
+
+void MainComponent::normaliseSnapshots()
+{
+    for (auto& snapshot : snapshots)
+    {
+        const int stored = (int) snapshot.blocks.size();
+        snapshot.blocks.resize (chain.size());
+        // Slots the XML never stored (an old preset, or blocks added since)
+        // get the live state as their default -- switching onto them then
+        // changes nothing, which is exactly what "no snapshot data" means.
+        for (int i = stored; i < (int) chain.size(); ++i)
+            snapshot.blocks[(size_t) i] = snapshotxml::captureBlock (*chain[(size_t) i]);
+    }
+}
+
 void MainComponent::handleMidiCc (int ccNumber, int ccValue)
 {
+    // CC 69 is reserved for snapshot selection (docs/PresetsAndSnapshots.md
+    // -- the Line 6 convention: value 0-7 = A-H). It always switches
+    // snapshots, is never learnable onto a parameter, and ignores
+    // out-of-range values.
+    if (ccNumber == snapshotxml::snapshotSelectCcNumber)
+    {
+        const int index = snapshotxml::indexForCcValue (ccValue);
+        if (index >= 0)
+            selectSnapshot (index);
+        return;
+    }
+
     // A knob armed for MIDI Learn takes priority over an existing binding
     // on the same CC -- the next CC message received while armed is what
     // gets learned, even if that CC number was already bound to something
@@ -1260,6 +1361,8 @@ void MainComponent::savePresetAs (const juce::String& name)
 void MainComponent::updatePresetDisplay()
 {
     presetBadge.setNumber (currentPresetNumber);
+    presetBadge.setSnapshotIndex (currentSnapshot);
+    snapshotBar.setCurrent (currentSnapshot);
     titleLabel.setText (currentPresetName.isNotEmpty() ? currentPresetName + (presetDirty ? " *" : "") : "No preset loaded",
                          juce::dontSendNotification);
     quickSaveButton.setVisible (currentPresetName.isNotEmpty());
@@ -1291,6 +1394,18 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
     }
 
     midilearnxml::write (*xml, midiCcBindings, savedBlockGroups);
+
+    // Snapshots (docs/PresetsAndSnapshots.md, stage 3): the current slot's
+    // stored copy is refreshed from the LIVE chain here -- a knob edit only
+    // lives in the current snapshot until a switch or a save, so capturing
+    // it inline is what lets a save persist the latest edits AND keeps
+    // isPresetDirty() seeing them against the baseline.
+    auto snapshotsToWrite = snapshots;
+    auto& currentToWrite = snapshotsToWrite[(size_t) currentSnapshot];
+    currentToWrite.blocks.resize (chain.size());
+    for (int i = 0; i < (int) chain.size(); ++i)
+        currentToWrite.blocks[(size_t) i] = snapshotxml::captureBlock (*chain[(size_t) i]);
+    snapshotxml::write (*xml, snapshotsToWrite, currentSnapshot);
 
     // The FULL per-row routing (device I/O, splits, merges), not just a
     // single global in/out pair -- see the class-level bug this fixes:
@@ -1404,6 +1519,16 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     // Per-preset, like a hardware pedalboard's controller assignments: a preset saved without any leaves none active.
     midiCcBindings = midilearnxml::read (xml, loadedBlockGroups);
 
+    // Snapshots: read them if the file has them (current = whichever was
+    // live at save time), else default every slot to the just-loaded state
+    // -- a preset saved before this feature loads identically to how it
+    // always did, as a single-state preset.
+    int savedCurrent = 0;
+    if (! snapshotxml::read (xml, snapshots, savedCurrent))
+        snapshots = {};
+    normaliseSnapshots();
+    currentSnapshot = savedCurrent;
+
     refreshRowEndpoints();
     rebuildSignalGraph();
     layoutChain();
@@ -1467,7 +1592,14 @@ void MainComponent::resized()
     settingsButton.setBounds (top.removeFromRight (touch::minTapTarget)
                                    .withSizeKeepingCentre (touch::minTapTarget, touch::minTapTarget));
     top.removeFromRight (8);
-    presetBadge.setBounds (top.removeFromLeft (80));
+    // A little wider than it used to be -- the badge draws number+letter
+    // ("12B") now, not just a bare number.
+    presetBadge.setBounds (top.removeFromLeft (88));
+    top.removeFromLeft (8);
+    // The A-H snapshot strip, one minTapTarget cell per snapshot.
+    snapshotBar.setBounds (top.removeFromLeft (snapshotxml::maxSnapshots * touch::minTapTarget)
+                             .withSizeKeepingCentre (snapshotxml::maxSnapshots * touch::minTapTarget,
+                                                     touch::minTapTarget));
     top.removeFromLeft (8);
     if (quickSaveButton.isVisible())
     {
