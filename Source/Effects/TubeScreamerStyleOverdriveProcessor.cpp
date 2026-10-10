@@ -71,6 +71,9 @@ TubeScreamerStyleOverdriveProcessor::TubeScreamerStyleOverdriveProcessor (Model 
         // SYMMETRIC clipping. (AsymmetricDiodePair with 1/1 diodes is the
         // symmetric case -- see that class's doc comment.)
         ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage * diodeIdealityFactor, 1.0, 1.0);
+        // 1N914/1N4148-class: ~4 ns forward transit time (the value NodalCircuit's
+        // diodeDynamics uses project-wide) + ~4 pF junction capacitance.
+        ch.clipper.setDynamics (diodeTransitTime, diodeJunctionCap);
     }
 }
 
@@ -112,6 +115,7 @@ void TubeScreamerStyleOverdriveProcessor::prepare (double newSampleRate, int, in
         // Warm-start the transistors near their DC operating points: with
         // a ~510K base bias to 4.5V, base sits ~0.6V under the rail and
         // the emitter a further ~0.65V below that.
+        ch.clipper.setSampleRate (newSampleRate);
         ch.clipper.reset (0.0);
     }
 

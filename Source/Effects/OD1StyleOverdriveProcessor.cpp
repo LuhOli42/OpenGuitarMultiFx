@@ -34,6 +34,7 @@ OD1StyleOverdriveProcessor::OD1StyleOverdriveProcessor()
         // Positive swing of the output = forward direction of the feedback network = TWO diodes (clips at ~1.2 V), the
         // negative swing ONE (~0.6 V): 'two diodes clip the positive peak, one the negative' (the SD-1/OD-1 arrangement).
         ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage * diodeIdealityFactor, 2.0, 1.0);
+        ch.clipper.setDynamics (diodeTransitTime, diodeJunctionCap);
     }
 }
 
@@ -74,6 +75,7 @@ void OD1StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         // operating point -- same rationale as the DS-1/booster's
         // prepare(). Q6/Q7 mirror the DS-1's Q1/Q3 emitter followers
         // exactly (base near BIAS1, emitter ~0.6V below).
+        ch.clipper.setSampleRate (newSampleRate);
         ch.clipper.reset (0.0);
     }
 

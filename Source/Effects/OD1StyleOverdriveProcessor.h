@@ -145,6 +145,8 @@ private:
     static constexpr double diodeSaturationCurrent = 2.52e-9; // 1N4148-class, matches D5/D6/D7's schematic role
     static constexpr double diodeIdealityFactor = 1.752; // emission coefficient of a real 1N4148/1S1588 (N = 1 would clip at half the real voltage)
     static constexpr double diodeThermalVoltage = 25.85e-3;
+    static constexpr double diodeTransitTime = 4.0e-9;
+    static constexpr double diodeJunctionCap = 4.0e-12;
 };
 
 } // namespace openguitarmultifx

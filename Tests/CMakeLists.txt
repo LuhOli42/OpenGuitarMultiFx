@@ -31,6 +31,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ReductionProbe.cpp
   ReducedOrderEquivalenceTests.cpp
   EffectCostBench.cpp
+  PowerStageAsymBench.cpp
   SagEmulatorTests.cpp
   BassmanStyleAmplifierProcessorTests.cpp
   SuperLeadStyleAmplifierProcessorTests.cpp

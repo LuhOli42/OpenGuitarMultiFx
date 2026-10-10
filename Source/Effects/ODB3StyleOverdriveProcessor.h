@@ -128,6 +128,8 @@ private:
     static constexpr double diodeSaturationCurrent = 2.52e-9;
     static constexpr double diodeIdealityFactor = 1.752;
     static constexpr double diodeThermalVoltage = 25.85e-3;
+    static constexpr double diodeTransitTime = 4.0e-9;
+    static constexpr double diodeJunctionCap = 4.0e-12;
 
     // The shunt LEDs: Vf ~1.7 V at ~1 mA. Is = 6e-12, nVt = 0.09 reproduces that knee.
     static constexpr double ledSaturationCurrent = 6.0e-12;

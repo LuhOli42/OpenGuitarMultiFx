@@ -74,6 +74,7 @@ ODB3StyleOverdriveProcessor::ODB3StyleOverdriveProcessor()
     for (auto& ch : channels)
     {
         ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage * diodeIdealityFactor, 1.0, 1.0);
+        ch.clipper.setDynamics (diodeTransitTime, diodeJunctionCap);
     }
 }
 
@@ -111,6 +112,7 @@ void ODB3StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         ch.c7.prepare (newSampleRate, c7Value);
         ch.c8.prepare (newSampleRate, c8Value);
         ch.c9.prepare (newSampleRate, c9Value);
+        ch.clipper.setSampleRate (newSampleRate);
         ch.clipper.reset (0.0);
         ch.ledV = 0.0;
     }

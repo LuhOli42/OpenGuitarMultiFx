@@ -62,7 +62,16 @@ public:
     static constexpr double bmYmax = 0.096;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
     static constexpr double bmKneeN = 6.0;
     static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.7; // not yet re-measured against PedalUnityLevelTests -- see the doc
+    static constexpr double bmShelfHfGain = 0.7;
+    // Real push-pull output stages never clip exactly symmetrically at centre bias (uneven
+    // tube matching + cathode-bias drift); the saturator is a signed odd function, so without
+    // a baseline offset it produces ZERO even harmonics at noon. bmAsym is the static offset
+    // fitted against this amp's own full-order netlist (Tests/PowerStageAsymBench.cpp); bmDcHz
+    // models the output transformer, which cannot pass the rectified DC component the offset
+    // creates. JTM45StyleAmplifierProcessor uses the same recipe.
+    static constexpr double bmAsym = 0.0;   // fitted 0.0: at a moderate crunch the reference's even/odd is fully
+                                        // explained by the preamp's asymmetric drive (PowerStageAsymBench); plumbing stays for the bias control
+    static constexpr double bmDcHz = 8.0; // not yet re-measured against PedalUnityLevelTests -- see the doc
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -114,7 +123,7 @@ private:
         double screenDropA = 0.0, screenDropB = 0.0;
         double vScreen = 458.0;
 
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, srcVoc = 0;
