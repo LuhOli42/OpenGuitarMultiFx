@@ -430,16 +430,16 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
     DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DumbleSteelStringStyleAmplifier");
-    registry.registerType ("DumbleSteelStringStyleAmplifier", [] { return trimmed (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -16.76f); });
+    registry.registerType ("DumbleSteelStringStyleAmplifier", [] { return trimmed (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.05f); });
     SunnModelTStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SunnModelTStyleAmplifier");
-    registry.registerType ("SunnModelTStyleAmplifier", [] { return trimmed (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.66f); });
+    registry.registerType ("SunnModelTStyleAmplifier", [] { return trimmed (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 17.12f); });
     FryetteDeliveranceD120StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("FryetteDeliveranceD120StyleAmplifier");
-    registry.registerType ("FryetteDeliveranceD120StyleAmplifier", [] { return trimmed (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -18.57f); });
+    registry.registerType ("FryetteDeliveranceD120StyleAmplifier", [] { return trimmed (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.46f); });
     BognerUberschallStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("BognerUberschallStyleAmplifier");
-    registry.registerType ("BognerUberschallStyleAmplifier", [] { return trimmed (oversampled<BognerUberschallStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -15.05f); });
+    registry.registerType ("BognerUberschallStyleAmplifier", [] { return trimmed (oversampled<BognerUberschallStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.72f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

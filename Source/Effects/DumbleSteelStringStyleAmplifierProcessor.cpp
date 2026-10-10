@@ -313,7 +313,8 @@ void DumbleSteelStringStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rMidTop = c.addResistor (nM, nMw, 12.5e3);      // MID 25K, split
         ch.rMidBottom = c.addResistor (nMw, gnd, 12.5e3);
         c.addCapacitor (nB, nMw, 0.022e-6);                // mid cap
-        ch.rMaster = c.addResistor (masterNode, ch.wTone, 500.0e3);
+        ch.rMasterTop = c.addResistor (masterNode, ch.wTone, 500.0e3);
+        ch.rMasterBottom = c.addResistor (ch.wTone, gnd, 500.0e3);
     }
 
     // ================================================================ phase inverter, power amp (full reference only)
@@ -450,7 +451,8 @@ void DumbleSteelStringStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rBass, bassR);
         ch.power.setResistance (ch.rMidTop, midTop);
         ch.power.setResistance (ch.rMidBottom, midBottom);
-        ch.power.setResistance (ch.rMaster, masterR);
+        ch.power.setResistance (ch.rMasterBottom, masterR);
+        ch.power.setResistance (ch.rMasterTop, juce::jmax (1.0, 1.0e6 - masterR));
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
@@ -464,7 +466,7 @@ void DumbleSteelStringStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
     }
     appliedSpeaker = k.speaker;
-    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
+    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
 }
 
 void DumbleSteelStringStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -477,8 +479,8 @@ void DumbleSteelStringStyleAmplifierProcessor::applySpeaker (Channel& ch, int in
     ch.power.setResistance (ch.rSpkRp, sm.rp);
     ch.power.setResistance (ch.rSpkEddy, speakerEddyLoss * nominal / speakerNominal[matchedSpeaker]);
     ch.power.setCapacitance (ch.capSpkCp, sm.cp);
-    ch.power.setInductorInverse (ch.grpSpkLe, { 1.0 / sm.le });
-    ch.power.setInductorInverse (ch.grpSpkLp, { 1.0 / sm.lp });
+    ch.power.setInductorInverse (ch.grpSpkLe, 1.0 / sm.le);
+    ch.power.setInductorInverse (ch.grpSpkLp, 1.0 / sm.lp);
 }
 
 void DumbleSteelStringStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
@@ -490,8 +492,8 @@ void DumbleSteelStringStyleAmplifierProcessor::debugSetResistiveLoad (double ohm
         ch.power.setResistance (ch.rSpkRe, ohms);
         ch.power.setResistance (ch.rSpkRp, 1.0e-3);
         ch.power.setResistance (ch.rSpkEddy, 1.0e9);
-        ch.power.setInductorInverse (ch.grpSpkLe, { 1.0e6 });
-        ch.power.setInductorInverse (ch.grpSpkLp, { 1.0 });
+        ch.power.setInductorInverse (ch.grpSpkLe, 1.0e6);
+        ch.power.setInductorInverse (ch.grpSpkLp, 1.0);
         ch.power.setCapacitance (ch.capSpkCp, 1.0e-9);
     }
     appliedSpeaker = -2;
@@ -545,16 +547,25 @@ double DumbleSteelStringStyleAmplifierProcessor::behavioralPowerStage (Channel& 
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    // reducedOrder folds the power-only controls into the fit: tube feel scales sag depth,
+    // bias shifts the knee's operating point, presence scales the HF shelf (all centred on
+    // the shipped defaults so the calibrated response is unchanged at noon).
+    const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
+    const double biasTrim = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
+    const double presence = juce::jlimit (0.0, 1.0, (double) lastKnobs.presence);
+    ch.bmRail = 1.0 - (0.4 + 1.2 * feel) * (1.0 - sagRailLookup (ch.bmEnvelope));
 
+    const double asym = 0.3 * (biasTrim - 0.5) * bmYmax;
+    const double drive = toneVoltage + asym;
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = absDrive / juce::jmax (1.0e-9, k);
-    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, toneVoltage);
+    const double u = std::abs (drive) / juce::jmax (1.0e-9, k);
+    const double u0 = std::abs (asym) / juce::jmax (1.0e-9, k);
+    const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
+    const double raw = std::copysign ((knee (u) - knee (u0)) * ch.bmRail, drive);
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (0.4 + 1.2 * presence) * (raw - ch.bmToneState);
     return ch.bmOutput;
 }
 
