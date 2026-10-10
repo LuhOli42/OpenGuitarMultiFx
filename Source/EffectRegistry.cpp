@@ -37,6 +37,8 @@
 #include "Effects/SVTStyleAmplifierProcessor.h"
 #include "Effects/TrainwreckExpressStyleAmplifierProcessor.h"
 #include "Effects/KometConcordeStyleAmplifierProcessor.h"
+#include "Effects/CarrRamblerStyleAmplifierProcessor.h"
+#include "Effects/DividedBy13FTR37StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -401,6 +403,16 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TrainwreckExpressStyleAmplifier", [] { return trimmed (oversampled<TrainwreckExpressStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.03f); });
     registry.markQualityDependent ("KometConcordeStyleAmplifier");
     registry.registerType ("KometConcordeStyleAmplifier", [] { return trimmed (oversampled<KometConcordeStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.31f); });
+    // Carr Rambler (docs/circuits/CarrRambler.md): blackface-like single-channel preamp, LTP PI, cathode-biased
+    // 2x6L6GC, zero global feedback, bias-vary tremolo, pentode/triode switch. reducedOrder behavioral power stage.
+    CarrRamblerStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("CarrRamblerStyleAmplifier");
+    registry.registerType ("CarrRamblerStyleAmplifier", [] { return trimmed (oversampled<CarrRamblerStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.9f); });
+    // Divided by 13 FTR 37 (docs/circuits/DividedBy13FTR37.md): 5879 pentode "click" channel + blackface-like clean
+    // channel mixed into an LTP PI and a fixed-bias 4x6V6 push-pull (Full/Half power). reducedOrder power stage.
+    DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DividedBy13FTR37StyleAmplifier");
+    registry.registerType ("DividedBy13FTR37StyleAmplifier", [] { return trimmed (oversampled<DividedBy13FTR37StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.9f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

@@ -170,6 +170,8 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/SVTStyleAmplifierProcessor.cpp
   Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
+  Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
+  Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp

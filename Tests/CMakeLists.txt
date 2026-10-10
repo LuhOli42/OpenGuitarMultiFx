@@ -41,6 +41,8 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ENGLPowerballStyleAmplifierProcessorTests.cpp
   RockerverbStyleAmplifierProcessorTests.cpp
   SVTStyleAmplifierProcessorTests.cpp
+  CarrRamblerStyleAmplifierProcessorTests.cpp
+  DividedBy13FTR37StyleAmplifierProcessorTests.cpp
   ChannelKnobMemoryTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
@@ -173,6 +175,8 @@ set(OGMFX_SOURCES
   ../Source/Effects/SVTStyleAmplifierProcessor.cpp
   ../Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   ../Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
+  ../Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
+  ../Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp
