@@ -3,6 +3,7 @@
 #include "DeferredReclaimer.h"
 #include "PitchDetector.h"
 #include "SignalGraph.h"
+#include "Spillover.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_events/juce_events.h>
@@ -36,6 +37,14 @@ public:
 
     /** Control thread. The engine takes ownership of the graph. */
     void setSignalGraph (std::unique_ptr<SignalGraph> newGraph);
+
+    /** Control thread. Hands an outgoing preset's trail-capable processors
+        to the engine as a spill unit: they keep processing on silence in
+        parallel with the new chain until their tails die (preset
+        spillover -- see Spillover.h and docs/PresetsAndSnapshots.md).
+        Prepared for the current stream here; a no-op while no device is
+        running. */
+    void addSpillover (std::unique_ptr<Spillover::Unit> unit);
 
     /** Safe to read from any thread (it's just telemetry). The AVERAGE share of the block budget over the last ~0.5 s --
         "how loaded am I". */
@@ -125,13 +134,18 @@ private:
 
     void timerCallback() override;
 
-    /** Audio thread. Runs the current graph; when a new one has just been published (a block was moved, added, removed, a
+    /** Audio thread. Runs the current graph plus any ringing preset
+        spillovers on top of it. */
+    void processGraph (juce::AudioBuffer<float>& buffer, int numSamples);
+
+    /** Audio thread. The graph itself: when a new one has just been published (a block was moved, added, removed, a
         row re-routed) the old graph plays one more moment with a short fade-out and the new one fades in, instead of
         switching the signal path between two samples. */
-    void processGraph (juce::AudioBuffer<float>& buffer, int numSamples);
+    void processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples);
 
     juce::AudioDeviceManager deviceManager;
     DeferredReclaimer<SignalGraph> graphSlot;
+    Spillover spillover;
 
     std::atomic<double> sampleRate { 0.0 };
     std::atomic<int> blockSize { 0 };
