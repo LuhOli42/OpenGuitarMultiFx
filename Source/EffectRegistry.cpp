@@ -46,6 +46,10 @@
 #include "Effects/OpAmpClipperDistortionProcessor.h"
 #include "Effects/RatStyleDistortionProcessor.h"
 #include "Effects/GE7StyleEqualizerProcessor.h"
+#include "Effects/BassBigMuffStyleFuzzProcessor.h"
+#include "Effects/DarkglassB7KStyleOverdriveProcessor.h"
+#include "Effects/SansAmpBDDIStyleOverdriveProcessor.h"
+#include "Effects/BossOC2StyleOctaverProcessor.h"
 #include "Effects/ParametricEQProcessor.h"
 #include "Effects/RingModProcessor.h"
 #include "Effects/DS201StyleNoiseGateProcessor.h"
@@ -235,6 +239,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("SovtekBigMuffStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<BigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }, MuffModel::sovtekFirstEdition), 65000.0), -9.72f); });
     registry.markQualityDependent ("RussianBigMuffStyleFuzz");
     registry.registerType ("RussianBigMuffStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<BigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }, MuffModel::russianGreen), 65000.0), -9.71f); });
+    // The bass variant of the same circuit family: Sovtek voicing + Bass Boost / DRY switches
+    // (docs/circuits/BassBigMuffStyleFuzz.md). Same input loading as the other muffs' ~100k.
+    registry.markQualityDependent ("BassBigMuffStyleFuzz");
+    registry.registerType ("BassBigMuffStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<BassBigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }), 100000.0), -8.40f); });
     using FFModel = FuzzFaceStyleFuzzProcessor::Model;
     registry.markQualityDependent ("FuzzFaceStyleFuzz");
     registry.registerType ("FuzzFaceStyleFuzz", [] { return trimmed (pickupLoaded (oversampled<FuzzFaceStyleFuzzProcessor> (Orders { 1, 1, 2 }, FFModel::germanium), 15000.0), 13.40f); });
@@ -297,6 +305,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // The diode bridge's harmonics fall only 20 dB per octave (Parker): oversampled like the clipping pedals (tiers set from the alias measurement).
     registry.markQualityDependent ("RingMod");
     registry.registerType ("RingMod", [] { return oversampled<RingModProcessor> (Orders { 1, 2, 3 }); });
+    // The OC-2's +-0.5 choppers are hard-switched multipliers: oversampled like the other non-linear pedals
+    // (docs/circuits/BossOC2StyleOctaver.md).
+    registry.markQualityDependent ("BossOC2StyleOctaver");
+    registry.registerType ("BossOC2StyleOctaver", [] { return trimmed (pickupLoaded (oversampled<BossOC2StyleOctaverProcessor> (Orders { 1, 2, 3 }), 470000.0), -1.39f); });
     registry.markQualityDependent ("CrunchBoxStyleDistortion");
     registry.registerType ("CrunchBoxStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<CrunchBoxStyleDistortionProcessor> (Orders { 1, 1, 2 }, 7.0), 1000000.0), -14.25f); });
     registry.markQualityDependent ("ZendriveStyleOverdrive");
@@ -305,6 +317,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("OCDStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<OCDStyleOverdriveProcessor> (Orders { 1, 1, 2 }, 13.0), 1000000.0), -14.37f); });
     registry.markQualityDependent ("BD2StyleOverdrive");
     registry.registerType ("BD2StyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<BD2StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 2.0), 1000000.0), -4.42f); });
+    // Bass overdrives modelled from traced schematics (docs/circuits/): the Darkglass's 4049 CMOS clipper and
+    // the SansAmp's op-amp-saturating drive both produce odd-order harmonics past Nyquist at 1x.
+    registry.markQualityDependent ("DarkglassB7KStyleOverdrive");
+    registry.registerType ("DarkglassB7KStyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<DarkglassB7KStyleOverdriveProcessor> (Orders { 1, 2, 3 }), 500000.0), 4.13f); });
+    registry.markQualityDependent ("SansAmpBDDIStyleOverdrive");
+    registry.registerType ("SansAmpBDDIStyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<SansAmpBDDIStyleOverdriveProcessor> (Orders { 1, 2, 3 }), 470000.0), 19.30f); });
     registry.registerType ("CentaurStyleOverdrive", [] { return trimmed (pickupLoaded (std::make_unique<CentaurStyleOverdriveProcessor>(), 1000000.0), -12.09f); });
     registry.markQualityDependent ("TS10StyleOverdrive");
     registry.registerType ("TS10StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 500000.0), 11.34f); });
