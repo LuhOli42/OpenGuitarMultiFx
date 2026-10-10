@@ -47,6 +47,10 @@
 #include "Effects/SunnModelTStyleAmplifierProcessor.h"
 #include "Effects/FryetteDeliveranceD120StyleAmplifierProcessor.h"
 #include "Effects/BognerUberschallStyleAmplifierProcessor.h"
+#include "Effects/AmpegB15StyleAmplifierProcessor.h"
+#include "Effects/AmpegV4BStyleAmplifierProcessor.h"
+#include "Effects/MesaBass400PlusStyleAmplifierProcessor.h"
+#include "Effects/Acoustic360StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -452,6 +456,23 @@ void registerBuiltInEffects (EffectRegistry& registry)
     BognerUberschallStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("BognerUberschallStyleAmplifier");
     registry.registerType ("BognerUberschallStyleAmplifier", [] { return trimmed (oversampled<BognerUberschallStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.72f); });
+
+    // The bass heads (docs/circuits/AmpegB15.md, AmpegV4B.md, MesaBass400Plus.md, Acoustic360.md):
+    // B-15 Portaflex (3x6SL7, paraphase PI, 2x6L6GC, 25 W), V4B (SVT-family preamp, 4x7027A, 100 W),
+    // Bass 400+ (Mesa preamp + 7-band graphic EQ, 12x6L6GC) and the solid-state Acoustic 360
+    // (2-stage BJT preamp, Variamp EQ, saturating-op-amp 200 W stage). Full netlists; no reducedOrder.
+    AmpegB15StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("AmpegB15StyleAmplifier");
+    registry.registerType ("AmpegB15StyleAmplifier", [] { return trimmed (oversampled<AmpegB15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 8.8f); });
+    AmpegV4BStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("AmpegV4BStyleAmplifier");
+    registry.registerType ("AmpegV4BStyleAmplifier", [] { return trimmed (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.5f); });
+    MesaBass400PlusStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("MesaBass400PlusStyleAmplifier");
+    registry.registerType ("MesaBass400PlusStyleAmplifier", [] { return trimmed (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.3f); });
+    Acoustic360StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("Acoustic360StyleAmplifier");
+    registry.registerType ("Acoustic360StyleAmplifier", [] { return trimmed (oversampled<Acoustic360StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.5f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
