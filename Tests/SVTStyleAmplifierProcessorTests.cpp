@@ -140,6 +140,59 @@ private:
                                "idle plate current hot " + juce::String (hot) + " vs cold " + juce::String (cold));
         }
 
+        beginTest ("master at minimum gives silence, turning it does not thump");
+        {
+            SVTStyleAmplifierProcessor amp;
+            amp.prepare (48000.0, 128, 1);
+            setParam (amp, "svt_gain", 1.0f);
+            setParam (amp, "svt_master", 0.0f);
+            juce::AudioBuffer<float> buf (1, 128);
+            const double sr = 48000.0;
+            double mean = 0.0, sq = 0.0, peak = 0.0;
+            int n = 0;
+            for (int i = 0; i < (int) (3.0 * sr); ++i)
+            {
+                buf.setSample (0, i % 128, (float) (0.3 * std::sin (2.0 * juce::MathConstants<double>::pi * 200.0 * i / sr)));
+                if (i % 128 == 127)
+                {
+                    amp.process (buf);
+                    if (i >= (int) (1.5 * sr))
+                        for (int s = 0; s < 128; ++s)
+                        {
+                            const double v = buf.getSample (0, s);
+                            mean += v;
+                            sq += v * v;
+                            peak = juce::jmax (peak, std::abs (v));
+                            ++n;
+                        }
+                }
+            }
+            mean /= n;
+            const double rms = std::sqrt (sq / n);
+            logMessage ("master=0 steady state: mean " + juce::String (mean, 6) + ", rms " + juce::String (rms, 6) + ", peak " + juce::String (peak, 6)
+                        + ", followerOut " + juce::String (amp.debugVoltage (P::followerOut), 4) + " V, speaker " + juce::String (amp.debugVoltage (P::speaker), 4) + " V");
+            expect (std::abs (mean) < 1.0e-3, "DC on output " + juce::String (mean));
+            expect (rms < 1.0e-3, "residual level " + juce::String (rms));
+
+            // Turn master 0 -> 1 with the same input running: track the worst sample-to-sample step.
+            double prev = buf.getSample (0, 127), worstStep = 0.0;
+            setParam (amp, "svt_master", 1.0f);
+            for (int i = 0; i < (int) (0.5 * sr); ++i)
+            {
+                buf.setSample (0, i % 128, (float) (0.3 * std::sin (2.0 * juce::MathConstants<double>::pi * 200.0 * i / sr)));
+                if (i % 128 == 127)
+                {
+                    amp.process (buf);
+                    for (int s = 0; s < 128; ++s)
+                    {
+                        worstStep = juce::jmax (worstStep, std::abs ((double) buf.getSample (0, s) - prev));
+                        prev = buf.getSample (0, s);
+                    }
+                }
+            }
+            logMessage ("master 0->1: worst sample step " + juce::String (worstStep, 4));
+        }
+
         beginTest ("hot input still terminates: bounded output, low failure rate");
         {
             SVTStyleAmplifierProcessor amp;
