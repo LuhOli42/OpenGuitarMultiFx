@@ -82,7 +82,8 @@ namespace
             || displayName == "Dumble Steel String-Style Amplifier" || displayName == "Sunn Model T-Style Amplifier"
             || displayName == "Fryette Deliverance D120-Style Amplifier" || displayName == "Bogner Uberschall-Style Amplifier"
             || displayName == "B-15-Style Amplifier" || displayName == "V4B-Style Amplifier"
-            || displayName == "Bass 400+-Style Amplifier" || displayName == "360-Style Amplifier")
+            || displayName == "Bass 400+-Style Amplifier" || displayName == "360-Style Amplifier"
+            || displayName == "Trace Elliot GP12-Style Amplifier")
             return "Modeled Amps";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")
             return "Neural";
@@ -100,7 +101,8 @@ namespace
             || displayName == "Uni-Vibe" || displayName == "Pitch Mod")
             return "Modulation";
         if (displayName == "Pitch Shift" || displayName == "Octaver" || displayName == "Harmonizer"
-            || displayName == "Parametric EQ" || displayName == "Ring Mod" || displayName.endsWith (" Equalizer"))
+            || displayName == "Parametric EQ" || displayName == "Ring Mod" || displayName.endsWith (" Equalizer")
+            || displayName == "Mu-Tron III-Style Filter")
             return "Filter/FX";
         return "Other"; // shouldn't normally happen -- a new effect type that hasn't been categorised yet
     }

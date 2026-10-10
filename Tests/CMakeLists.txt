@@ -17,6 +17,10 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   DS1StyleDistortionProcessorTests.cpp
   OD1StyleOverdriveProcessorTests.cpp
   TubeScreamerStyleOverdriveProcessorTests.cpp
+  TS9BStyleOverdriveProcessorTests.cpp
+  ODB3StyleOverdriveProcessorTests.cpp
+  MuTronIIIStyleFilterProcessorTests.cpp
+  TraceElliotGP12StyleAmplifierProcessorTests.cpp
   NodalCircuitTests.cpp
   TubeCircuitTests.cpp
   ReductionProbe.cpp
@@ -72,6 +76,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   BluesBreakerStyleOverdriveProcessorTests.cpp
   RatStyleDistortionProcessorTests.cpp
   GE7StyleEqualizerProcessorTests.cpp
+  GEB7StyleEqualizerProcessorTests.cpp
   ParametricEQProcessorTests.cpp
   RingModProcessorTests.cpp
   NoiseGateTests.cpp
@@ -137,6 +142,9 @@ set(OGMFX_SOURCES
   ../Source/Effects/DS1StyleDistortionProcessor.cpp
   ../Source/Effects/OD1StyleOverdriveProcessor.cpp
   ../Source/Effects/TubeScreamerStyleOverdriveProcessor.cpp
+  ../Source/Effects/TS9BStyleOverdriveProcessor.cpp
+  ../Source/Effects/ODB3StyleOverdriveProcessor.cpp
+  ../Source/Effects/MuTronIIIStyleFilterProcessor.cpp
   ../Source/Effects/CentaurStyleOverdriveProcessor.cpp
   ../Source/Effects/BD2StyleOverdriveProcessor.cpp
   ../Source/Effects/BigMuffStyleFuzzProcessor.cpp
@@ -154,6 +162,7 @@ set(OGMFX_SOURCES
   ../Source/Effects/BluesBreakerStyleOverdriveProcessor.cpp
   ../Source/Effects/RatStyleDistortionProcessor.cpp
   ../Source/Effects/GE7StyleEqualizerProcessor.cpp
+  ../Source/Effects/GEB7StyleEqualizerProcessor.cpp
   ../Source/Effects/ParametricEQProcessor.cpp
   ../Source/Effects/RingModProcessor.cpp
   ../Source/Effects/DS201StyleNoiseGateProcessor.cpp
@@ -188,6 +197,7 @@ set(OGMFX_SOURCES
   ../Source/Effects/ENGLPowerballStyleAmplifierProcessor.cpp
   ../Source/Effects/RockerverbStyleAmplifierProcessor.cpp
   ../Source/Effects/SVTStyleAmplifierProcessor.cpp
+  ../Source/Effects/TraceElliotGP12StyleAmplifierProcessor.cpp
   ../Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   ../Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
   ../Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp

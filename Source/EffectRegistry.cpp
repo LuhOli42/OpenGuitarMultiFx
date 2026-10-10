@@ -17,6 +17,10 @@
 #include "Effects/DS1StyleDistortionProcessor.h"
 #include "Effects/OD1StyleOverdriveProcessor.h"
 #include "Effects/TubeScreamerStyleOverdriveProcessor.h"
+#include "Effects/TS9BStyleOverdriveProcessor.h"
+#include "Effects/ODB3StyleOverdriveProcessor.h"
+#include "Effects/MuTronIIIStyleFilterProcessor.h"
+#include "Effects/TraceElliotGP12StyleAmplifierProcessor.h"
 #include "Effects/CentaurStyleOverdriveProcessor.h"
 #include "Effects/BD2StyleOverdriveProcessor.h"
 #include "Effects/BassmanStyleAmplifierProcessor.h"
@@ -54,6 +58,7 @@
 #include "Effects/OpAmpClipperDistortionProcessor.h"
 #include "Effects/RatStyleDistortionProcessor.h"
 #include "Effects/GE7StyleEqualizerProcessor.h"
+#include "Effects/GEB7StyleEqualizerProcessor.h"
 #include "Effects/ParametricEQProcessor.h"
 #include "Effects/RingModProcessor.h"
 #include "Effects/DS201StyleNoiseGateProcessor.h"
@@ -289,6 +294,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TurboRatStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<RatStyleDistortionProcessor> (Orders { 1, 1, 2 }, 0.17, RatModel::turbo), 1000000.0), -7.85f); });
     // Linear circuit (no clipping stage worth oversampling): a graphic equaliser from the manufacturer's diagram.
     registry.registerType ("GE7StyleEqualizer", [] { return trimmed (std::make_unique<GE7StyleEqualizerProcessor>(), 0.65f); }); // its own -0.65 dB at flat, trimmed to unity
+    // Bass graphic, same gyrator topology retuned to the GEB-7's centres (docs/circuits/GEB7StyleEqualizer.md).
+    registry.registerType ("GEB7StyleEqualizer", [] { return trimmed (std::make_unique<GEB7StyleEqualizerProcessor>(), 0.0f); });
+    // Envelope-followed resonant filter (docs/circuits/MuTronIIIStyleFilter.md); the only nonlinearity is the summer's soft rail.
+    registry.markQualityDependent ("MuTronIIIStyleFilter");
+    registry.registerType ("MuTronIIIStyleFilter", [] { return trimmed (pickupLoaded (oversampled<MuTronIIIStyleFilterProcessor> (Orders { 0, 1, 1 }), 500000.0), -10.0f); });
+    // Solid-state bass preamp: dual-band compressor + 12-band gyrator graphic EQ (docs/circuits/TraceElliotGP12StyleAmplifier.md).
+    registry.registerType ("TraceElliotGP12StyleAmplifier", [] { return trimmed (pickupLoaded (std::make_unique<TraceElliotGP12StyleAmplifierProcessor>(), 500000.0), 3.1f); });
     registry.registerType ("ParametricEQ", [] { return std::make_unique<ParametricEQProcessor>(); });
     registry.registerType ("DS201StyleNoiseGate", [] { return std::make_unique<DS201StyleNoiseGateProcessor>(); });
     registry.registerType ("NS2StyleNoiseSuppressor", [] { return std::make_unique<NS2StyleNoiseSuppressorProcessor>(); });
@@ -316,6 +328,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("CentaurStyleOverdrive", [] { return trimmed (pickupLoaded (std::make_unique<CentaurStyleOverdriveProcessor>(), 1000000.0), -12.09f); });
     registry.markQualityDependent ("TS10StyleOverdrive");
     registry.registerType ("TS10StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 500000.0), 11.34f); });
+    // Bass variants of the family (docs/circuits/TS9BStyleOverdrive.md, ODB3StyleOverdrive.md).
+    registry.markQualityDependent ("TS9BStyleOverdrive");
+    registry.registerType ("TS9BStyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TS9BStyleOverdriveProcessor> (Orders { 0, 0, 1 }), 500000.0), 13.8f); });
+    registry.markQualityDependent ("ODB3StyleOverdrive");
+    registry.registerType ("ODB3StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<ODB3StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 500000.0), 16.3f); });
 
     // A full tube amplifier modelled from its schematic (docs/circuits/Bassman5F6A.md): 8 tubes, an output transformer,
     // global feedback and a sagging supply. Quality tiers: 1x, 1x, 2x (the tubes' clipping is soft; see the doc).
