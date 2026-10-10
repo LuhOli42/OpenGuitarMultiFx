@@ -1244,12 +1244,33 @@ void MainComponent::selectSnapshot (int index)
 
     currentSnapshot = index;
 
-    // A pure snapshot switch isn't an unsaved preset change -- keep the
-    // baseline's recorded `current` in step so isPresetDirty() only flags
-    // real content edits (which already differ inside the stored blocks).
+    // A pure snapshot switch isn't an unsaved preset change, so the
+    // baseline has to move with it in BOTH places a switch shows up in
+    // buildPresetXml()'s output: the <Snapshots> element's `current`
+    // attribute, and the top-level <Block> elements' live-state mirror
+    // (bypassed flag + EffectState params now holding the incoming
+    // snapshot's values). Without the second sync, isPresetDirty() would
+    // flag every switch onto a snapshot whose stored values differ --
+    // i.e. virtually every switch. Real edits still flag dirty through
+    // the stored <Snapshots> content, which is NOT rebaselined here.
     if (presetBaseline != nullptr)
+    {
         if (auto* snapshotsXml = presetBaseline->getChildByName ("Snapshots"))
             snapshotsXml->setAttribute ("current", currentSnapshot);
+
+        int blockIndex = 0;
+        for (auto* blockXml : presetBaseline->getChildWithTagNameIterator ("Block"))
+        {
+            if (blockIndex >= (int) target.blocks.size())
+                break;
+            const auto& stored = target.blocks[(size_t) blockIndex++];
+            blockXml->setAttribute ("bypassed", stored.bypassed);
+            if (auto* stateXml = blockXml->getChildByName ("EffectState"))
+                for (const auto& [id, value] : stored.params)
+                    if (stateXml->hasAttribute (id))
+                        stateXml->setAttribute (id, (double) value);
+        }
+    }
 
     updatePresetDisplay();
 }
