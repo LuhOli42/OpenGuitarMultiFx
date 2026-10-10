@@ -250,7 +250,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("EPStyleBooster");
     // Same missing treble limit as the Rangemaster-style booster above (docs/circuits/EPStyleBooster.md's own
     // netlist has no collector/output shunt capacitor either): 7 kHz is an estimate.
-    registry.registerType ("EPStyleBooster", [] { return trimmed (pickupLoaded (std::make_unique<TransistorBandwidthEffect> (oversampled<EPStyleBoosterProcessor> (Orders { 0, 1, 1 }), 7000.0), 1000000.0), -18.11f); });
+    registry.registerType ("EPStyleBooster", [] { return trimmed (pickupLoaded (std::make_unique<TransistorBandwidthEffect> (oversampled<EPStyleBoosterProcessor> (Orders { 0, 1, 1 }), 7000.0), 1000000.0), -6.66f); });
     registry.markQualityDependent ("ODR1StyleOverdrive");
     registry.registerType ("ODR1StyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<ODR1StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), -1.77f); });
     registry.markQualityDependent ("DT1StyleDistortion");
@@ -265,7 +265,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("GuvnorStyleDistortion");
     registry.registerType ("GuvnorStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<GuvnorStyleDistortionProcessor> (Orders { 0, 0, 1 }, 13.0), 1000000.0), 4.43f); });
     registry.markQualityDependent ("BluesBreakerStyleOverdrive");
-    registry.registerType ("BluesBreakerStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<BluesBreakerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, 13.0), 1000000.0), 9.95f); });
+    registry.registerType ("BluesBreakerStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<BluesBreakerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, 13.0), 1000000.0), 8.89f); });
     registry.markQualityDependent ("RatStyleDistortion");
     registry.registerType ("RatStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<RatStyleDistortionProcessor> (Orders { 1, 2, 3 }, 0.3), 1000000.0), 1.17f); });
     // The RAT 2 and the Turbo RAT share the RAT's class (docs/circuits/RatStyleDistortion.md, "Versions"); trims are

@@ -46,13 +46,16 @@ void EPStyleBoosterProcessor::buildChannel (Channel& ch)
     c.addJfet (nD, nG, nS, tis58);
     c.addResistor (nS, gnd, 3.3e3);
 
-    // ---- 0.1 uF into the Record Level pot; wiper -> 47K, with 2 nF from the pot's top to that node ----
+    // ---- 0.1 uF into the Record Level pot; wiper -> 47K ----
+    // The tape deck's 2 nF pre-emphasis across the 47K is deliberately NOT modelled: it is record-side
+    // EQ that the playback chain de-emphasizes, so the standalone booster voicing (what an EP-style
+    // booster pedal reproduces) leaves it out -- keeping it adds a +13 dB presence shelf at 3-6 kHz
+    // the pedal never had.
     const auto nP = c.addNode(), nW = c.addNode(), n20 = c.addNode();
     c.addCapacitor (nD, nP, 0.1e-6);
     ch.rLevelTop = c.addResistor (nP, nW, levelPotMax * 0.5);
     ch.rLevelBottom = c.addResistor (nW, gnd, levelPotMax * 0.5);
     c.addResistor (nW, n20, 47.0e3);
-    c.addCapacitor (nP, n20, 2.0e-9);
 
     // ---- Q3: 0.1 uF to the base (47K to ground, 470K from the collector), emitter 1K || 100 uF, collector 22K, 0.1 uF out ----
     const auto nB = c.addNode(), nC = c.addNode(), nE = c.addNode(), nOut = c.addNode();

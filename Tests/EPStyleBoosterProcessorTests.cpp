@@ -86,12 +86,13 @@ public:
             expect (previous > 10.0, "a real boost at full Level");
         }
 
-        beginTest ("frequency response at full Level: the input high-pass, and the 2 nF bypass's treble emphasis (the drawing's record pre-emphasis)");
+        beginTest ("frequency response at full Level: the input high-pass, and a flat-to-warm top (the record pre-emphasis 2 nF is record-side EQ, deliberately not modelled)");
         {
             const double lo = gainDb (1.0f, 30.0), mid = gainDb (1.0f, 300.0), hi = gainDb (1.0f, 8000.0);
             logMessage ("Level 1: 30 Hz " + juce::String (lo, 1) + " dB, 300 Hz " + juce::String (mid, 1) + " dB, 8 kHz " + juce::String (hi, 1) + " dB");
             expect (lo < mid - 3.0, "rolls off below the mids");
-            expect (hi > mid, "treble is emphasised, as the drawing's bypass capacitor makes it");
+            expect (hi <= mid, "no treble emphasis -- only the transistors' natural top roll");
+            expect (hi > mid - 8.0, "not muffled either: mid-forward boost stays audible at 8 kHz");
         }
 
         beginTest ("hot input and random Level moves: finite, and the solver never fails");
