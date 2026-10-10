@@ -2661,6 +2661,20 @@ private:
         }
 
         knownVoltage = targetVoltage;
+
+        // The stepping solve treats rail-limited op-amps as ideal (see stampNonlinear), so the
+        // converged point can leave an output outside its rails -- an impossible DC that the first
+        // transient sample then snaps away from. Pull the final point inside the rails; nearby
+        // nodes keep their ideal values (the physical offset is tiny) but the impossible output
+        // itself is gone. -- Devin Review #59
+        if (ok)
+            for (const auto& r : railDevices)
+                if (r.out > 0 && indexOf[(size_t) r.out] >= 0)
+                {
+                    double& v = x[(size_t) indexOf[(size_t) r.out]];
+                    v = std::min (std::max (v, r.lo), r.hi);
+                }
+
         xPrev = x;
         dcMode = savedDc;
         rebuildLinearMatrix (true);
