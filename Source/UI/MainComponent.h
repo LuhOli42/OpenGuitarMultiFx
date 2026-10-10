@@ -12,6 +12,7 @@
 #include "../EffectRegistry.h"
 #include "../Engine/AudioEngine.h"
 #include "../Presets/PresetManager.h"
+#include "../Presets/PresetLibrary.h"
 #include "../Tone3000/Tone3000Manager.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -110,8 +111,10 @@ private:
         or MIDI Learn change). Shown as " *" after the preset name. */
     bool isPresetDirty() const;
     /** Loads `name`, first asking Save / Discard / Cancel if the current preset has unsaved changes. Only for the
-        on-screen list: a MIDI Program Change discards silently, like a hardware pedalboard does on stage. */
-    void loadPresetAskingToSave (const juce::String& name);
+        on-screen browser: a MIDI Program Change discards silently, like a hardware pedalboard does on stage.
+        `onLoaded` (optional) fires only once the target is actually loaded -- which can be on the ChoiceCard's
+        callback, not this call, when the prompt shows. */
+    void loadPresetAskingToSave (const juce::String& name, std::function<void()> onLoaded = nullptr);
 
     /** Recalls snapshot `index` (0-7 = A-H) on the live chain: stores the
         live param/bypass state into the OUTGOING snapshot first (the doc's
@@ -304,6 +307,10 @@ private:
 
     ParameterPanel parameterPanel;
     PresetManager presets { getPresetsDirectory() };
+    // The browser's organisational view over the same presets directory
+    // (tags, bank slots, setlists) -- see Source/Presets/PresetLibrary.h.
+    // savePresetAs() carries its fields forward on every resave.
+    PresetLibrary presetLibrary { getPresetsDirectory() };
     juce::String currentPresetName;   // empty = no preset loaded/saved since the last change
     int currentPresetNumber = 0;      // 0 = none yet; a real preset's number is always >= 1
     std::unique_ptr<juce::XmlElement> presetBaseline; // see capturePresetBaseline()
@@ -314,7 +321,7 @@ private:
     // presetBadge shows the preset NUMBER + snapshot letter, big (see
     // PresetBadge.h -- this is a stage instrument, has to be readable from
     // a few feet away, not just a toolbar). titleLabel shows its NAME,
-    // same size class. Tapping the badge opens PresetListDialog (see
+    // same size class. Tapping the badge opens the preset browser (see
     // showPresetsPanel()).
     PresetBadge presetBadge;
     // Snapshots A-H of the live chain (docs/PresetsAndSnapshots.md, stage
