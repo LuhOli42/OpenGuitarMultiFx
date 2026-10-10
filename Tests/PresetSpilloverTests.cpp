@@ -201,6 +201,48 @@ public:
             expectWithinAbsoluteError (out[(size_t) longDelay - blockSize], 1.0f, 1.0e-4f);
         }
 
+        beginTest ("serial delays' combined latency keeps a repeat pending in the last one");
+        {
+            // Two 1.0 s echoes in one lane's chain: the impulse's first
+            // repeat leaves echo1 at ~1 s, enters echo2, and only reaches
+            // the output at ~2 s -- past 0.5 + max(1.0) but inside
+            // 0.5 + 1.0 + 1.0.
+            constexpr int oneSec = (int) sampleRate; // 48000
+            std::unique_ptr<EffectProcessor> echo1 = std::make_unique<EchoProcessor> (oneSec, 1.0);
+            std::unique_ptr<EffectProcessor> echo2 = std::make_unique<EchoProcessor> (oneSec, 1.0);
+            auto* echo1Raw = static_cast<EchoProcessor*> (echo1.get());
+            echo1->prepareIfNeeded (sampleRate, blockSize, 1);
+            echo2->prepareIfNeeded (sampleRate, blockSize, 1);
+            chargeTail (echo1Raw);
+
+            Lanes lanes;
+            lanes[0].processors = { echo1Raw, echo2.get() };
+            lanes[0].writesDeviceOutput = true;
+
+            std::vector<std::unique_ptr<EffectProcessor>> retired;
+            retired.push_back (std::move (echo1));
+            retired.push_back (std::move (echo2));
+
+            auto unit = Spillover::build (lanes, {}, retired);
+            unit->prepare (sampleRate, blockSize, 1);
+            auto* unitRaw = unit.get();
+
+            Spillover spill;
+            spill.add (std::move (unit));
+
+            std::vector<float> out;
+            runSpill (spill, (int) (1.6 * sampleRate) / blockSize, out);
+            expect (! unitRaw->finished); // a max-only window would have retired it
+
+            runSpill (spill, (int) (0.8 * sampleRate) / blockSize, out);
+            // Impulse spent one block in the live graph before the switch,
+            // so echo2 releases the stored repeat 2*oneSec - blockSize into
+            // the spill -- the same block where echo1's own 0.5-feedback
+            // second repeat fires. Output = echo1 passthrough (0.5) +
+            // echo2's echo (1.0) = 1.5. The point: it isn't silence.
+            expectWithinAbsoluteError (out[(size_t) oneSec * 2 - blockSize], 1.5f, 1.0e-4f);
+        }
+
         beginTest ("a tail relays through an emptied lane that writes device output");
         {
             // Outgoing preset: lane0 echo -> lane1 amp (non-trail) -> device.

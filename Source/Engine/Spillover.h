@@ -47,8 +47,9 @@ public:
             the audio thread wraps a non-owning view of it, never resizes. */
         juce::AudioBuffer<float> scratch;
         /** Quiet-output window before this unit is done: trailsSilenceSeconds
-            + the retained processors' worst trailLatencySeconds(), so a
-            long delay's pending repeat can't be mistaken for a dead tail.
+            + the retained processors' summed trailLatencySeconds(), so a
+            long delay's pending repeat -- including one still sitting in
+            the last of serial delays -- can't be mistaken for a dead tail.
             Computed in build() on the control thread. */
         double silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds;
 

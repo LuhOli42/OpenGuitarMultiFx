@@ -12,7 +12,10 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
 {
     auto graph = std::make_unique<SignalGraph>();
     std::vector<std::unique_ptr<EffectProcessor>> owners;
-    double maxTrailLatency = 0.0;
+    // Sum, not max: a repeat inside the LAST of two serial delays waits for
+    // both lines. The forward-only lane graph means no path sums a
+    // processor twice, so the total covers the longest serial wait.
+    double totalTrailLatency = 0.0;
     bool anyTrails = false;
 
     for (int lane = 0; lane < SignalGraph::numLanes; ++lane)
@@ -29,7 +32,7 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
                 continue; // a non-trail block's output dies with the switch
 
             kept.push_back (p);
-            maxTrailLatency = juce::jmax (maxTrailLatency, p->trailLatencySeconds());
+            totalTrailLatency += p->trailLatencySeconds();
             for (auto& slot : retired)
                 if (slot.get() == p)
                 {
@@ -54,7 +57,7 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
     auto unit = std::make_unique<Unit>();
     unit->graph = std::move (graph);
     unit->owners = std::move (owners);
-    unit->silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds + maxTrailLatency;
+    unit->silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds + totalTrailLatency;
     return unit;
 }
 
