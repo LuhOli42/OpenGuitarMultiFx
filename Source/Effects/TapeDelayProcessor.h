@@ -27,6 +27,8 @@ public:
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Tape Delay"; }
     bool hasTrails() const override { return true; }
+    // wow/flutter wobbles the delay time by up to wowDepthMs.
+    double trailLatencySeconds() const override { return (juce::jmin (maxDelayMs, timeMs->get()) + wowDepthMs) * 0.001; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff5a8fd0); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

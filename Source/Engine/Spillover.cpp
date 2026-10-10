@@ -12,10 +12,16 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
 {
     auto graph = std::make_unique<SignalGraph>();
     std::vector<std::unique_ptr<EffectProcessor>> owners;
+    double maxTrailLatency = 0.0;
     bool anyTrails = false;
 
     for (int lane = 0; lane < SignalGraph::numLanes; ++lane)
     {
+        // Every lane's output flag, even one whose blocks were all dropped:
+        // an emptied lane still relays an upstream tail to the device -- a
+        // lane1 delay feeding an emptied lane2 amp lane must stay audible.
+        graph->setLaneWritesDeviceOutput (lane, lanes[(size_t) lane].writesDeviceOutput);
+
         std::vector<EffectProcessor*> kept;
         for (auto* p : lanes[(size_t) lane].processors)
         {
@@ -23,6 +29,7 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
                 continue; // a non-trail block's output dies with the switch
 
             kept.push_back (p);
+            maxTrailLatency = juce::jmax (maxTrailLatency, p->trailLatencySeconds());
             for (auto& slot : retired)
                 if (slot.get() == p)
                 {
@@ -33,10 +40,7 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
         }
 
         if (! kept.empty())
-        {
             graph->setLaneProcessors (lane, std::move (kept));
-            graph->setLaneWritesDeviceOutput (lane, lanes[(size_t) lane].writesDeviceOutput);
-        }
     }
 
     if (! anyTrails)
@@ -50,6 +54,7 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
     auto unit = std::make_unique<Unit>();
     unit->graph = std::move (graph);
     unit->owners = std::move (owners);
+    unit->silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds + maxTrailLatency;
     return unit;
 }
 
@@ -113,13 +118,7 @@ void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate) no
         for (int c = 0; c < ch; ++c)
             buffer.addFrom (c, 0, tail, c, 0, n);
 
-        unit->elapsedSamples += n;
-        const bool silent = tail.getMagnitude (0, n) < EffectProcessor::trailsSilenceThreshold;
-        unit->silentSamples = silent ? unit->silentSamples + n : 0;
-
-        if (unit->silentSamples >= (int) (EffectProcessor::trailsSilenceSeconds * sampleRate)
-            || unit->elapsedSamples >= (juce::int64) (maxSpillSeconds * sampleRate))
-            unit->finished = true;
+        unit->updateFinished (tail.getMagnitude (0, n), n, sampleRate);
     }
 
     // Retire the finished. done is stored only when a unit drops out of

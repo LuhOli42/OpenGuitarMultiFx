@@ -46,6 +46,11 @@ public:
         /** Process-on-silence scratch, sized once on the control thread --
             the audio thread wraps a non-owning view of it, never resizes. */
         juce::AudioBuffer<float> scratch;
+        /** Quiet-output window before this unit is done: trailsSilenceSeconds
+            + the retained processors' worst trailLatencySeconds(), so a
+            long delay's pending repeat can't be mistaken for a dead tail.
+            Computed in build() on the control thread. */
+        double silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds;
 
         /** Control thread. prepareIfNeeded() keeps every processor's tail
             state (same sample rate/block size/channels = no-op), and the
@@ -60,6 +65,20 @@ public:
         bool finished = false;            // audio thread only
         int silentSamples = 0;            // audio thread only
         juce::int64 elapsedSamples = 0;   // audio thread only
+
+        /** Audio thread: the tail's output stayed under
+            trailsSilenceThreshold for a whole silence window, or the hard
+            cap was hit -- the unit can stop processing. */
+        void updateFinished (float tailMagnitude, int numSamples, double sampleRate) noexcept
+        {
+            elapsedSamples += numSamples;
+            silentSamples = (tailMagnitude < EffectProcessor::trailsSilenceThreshold)
+                            ? silentSamples + numSamples
+                            : 0;
+            if (silentSamples >= (int) (silenceWindowSeconds * sampleRate)
+                || elapsedSamples >= (juce::int64) (Spillover::maxSpillSeconds * sampleRate))
+                finished = true;
+        }
     };
 
     /** The processors of an outgoing chain for one lane, in chain order. */
@@ -74,8 +93,11 @@ public:
         out of `retired` into the unit; a non-trail block stays in `retired`
         and dies with the switch, per the spec), reconnecting every old
         lane->lane edge so a tail still flows through an emptied lane into
-        a downstream trails block. Returns nullptr when nothing on the
-        outgoing chain has trails -- then there is simply nothing to spill. */
+        a downstream trails block. Every lane's writesDeviceOutput flag is
+        copied too -- including an emptied one -- or the passthrough
+        contract leaves the buffer untouched and an upstream tail never
+        reaches the device. Returns nullptr when nothing on the outgoing
+        chain has trails -- then there is simply nothing to spill. */
     static std::unique_ptr<Unit> build (
         const std::array<LaneSpec, SignalGraph::numLanes>& lanes,
         const std::vector<std::pair<int, int>>& connections,

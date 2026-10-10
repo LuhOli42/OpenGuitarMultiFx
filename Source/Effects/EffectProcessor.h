@@ -106,7 +106,7 @@ public:
 
             const bool silent = buffer.getMagnitude (0, numSamples) < trailsSilenceThreshold;
             silentSamples = silent ? silentSamples + numSamples : 0;
-            if (silentSamples >= (int) (trailsSilenceSeconds * preparedRate))
+            if (silentSamples >= (int) ((trailsSilenceSeconds + trailLatencySeconds()) * preparedRate))
                 tailRunning = false;
 
             for (int ch = 0; ch < numChannels; ++ch)
@@ -169,6 +169,19 @@ public:
 
     /** True for delays and reverbs: bypassing them lets the repeats/tail ring out (see processWithBypass()). */
     virtual bool hasTrails() const { return false; }
+
+    /** For a trails processor: how long its output may sit silent while a
+        repeat is still pending inside -- a delay emits nothing between
+        repeats, so a 1 s delay legitimately goes quiet for 1 s mid-tail.
+        0 for tails that decay continuously (every reverb, which never
+        goes silent before it's done). The tail-dead check counts
+        trailsSilenceSeconds + trailLatencySeconds() of quiet output, not
+        trailsSilenceSeconds alone -- otherwise a delay longer than 0.5 s
+        would be killed before its next repeat could play (Devin Review
+        finding on the preset-spillover PR). Overrides return the
+        processor's CURRENT latency (its delay-time knob), not the max
+        possible -- a short-set delay retires early like a short tail. */
+    virtual double trailLatencySeconds() const { return 0.0; }
 
     static constexpr double bypassRampSeconds = 0.010;
     /** Ramp every smoothed float parameter applies on the audio thread:

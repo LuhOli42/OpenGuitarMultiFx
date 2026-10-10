@@ -38,9 +38,12 @@ namespace
     class EchoProcessor : public EffectProcessor
     {
     public:
-        static constexpr int delaySamples = 2400;
+        EchoProcessor (int delay = 2400, double latency = 0.0)
+            : delaySamples (delay), latencySeconds (latency)
+        {
+        }
 
-        void prepare (double, int, int) override { line.assign (delaySamples, 0.0f); }
+        void prepare (double, int, int) override { line.assign ((size_t) delaySamples, 0.0f); }
         void process (juce::AudioBuffer<float>& buffer) override
         {
             ++processCalls;
@@ -57,10 +60,13 @@ namespace
         juce::AudioProcessorParameterGroup* getParameters() override { return nullptr; }
         const char* getName() const override { return "Echo"; }
         bool hasTrails() const override { return true; }
+        double trailLatencySeconds() const override { return latencySeconds; }
 
+        const int delaySamples;
         int processCalls = 0;
 
     private:
+        const double latencySeconds;
         std::vector<float> line;
         int pos = 0;
     };
@@ -154,8 +160,8 @@ public:
             // the tail resumes mid-line, so the first echo lands
             // delaySamples - blockSize samples into the spill, then every
             // delaySamples after that, halving each time.
-            expectWithinAbsoluteError (out[(size_t) EchoProcessor::delaySamples - blockSize], 1.0f, 1.0e-4f);
-            expectWithinAbsoluteError (out[(size_t) EchoProcessor::delaySamples * 2 - blockSize], 0.5f, 1.0e-4f);
+            expectWithinAbsoluteError (out[(size_t) echoRaw->delaySamples - blockSize], 1.0f, 1.0e-4f);
+            expectWithinAbsoluteError (out[(size_t) echoRaw->delaySamples * 2 - blockSize], 0.5f, 1.0e-4f);
 
             // Then it went silent, the unit retired, and the processor
             // stopped being called (a dead spill costs nothing).
@@ -165,6 +171,65 @@ public:
 
             spill.sweep();
             expectEquals (spill.numUnitsForTesting(), 0);
+        }
+
+        beginTest ("a delay longer than trailsSilenceSeconds keeps its pending repeat (trailLatencySeconds)");
+        {
+            // 1.2 s echo: the output sits quiet for a whole second mid-tail
+            // -- longer than the plain 0.5 s window -- but the repeat is
+            // still pending inside the delay line and must be played.
+            constexpr int longDelay = (int) (1.2 * sampleRate); // 57600
+            std::unique_ptr<EffectProcessor> echo = std::make_unique<EchoProcessor> (longDelay, 1.2);
+            auto* echoRaw = static_cast<EchoProcessor*> (echo.get());
+            echo->prepareIfNeeded (sampleRate, blockSize, 1);
+            chargeTail (echoRaw);
+
+            Spillover spill;
+            auto unit = makeUnit (echo);
+            auto* unitRaw = unit.get();
+            spill.add (std::move (unit));
+
+            // 0.7 s in: older code would already have retired this unit.
+            std::vector<float> out;
+            runSpill (spill, (int) (0.7 * sampleRate) / blockSize, out);
+            expect (! unitRaw->finished);
+            expect (! unitRaw->done.load());
+
+            // The repeat lands delaySamples - blockSize into the spill
+            // (the charged block already consumed 128 positions).
+            runSpill (spill, (int) (0.7 * sampleRate) / blockSize, out);
+            expectWithinAbsoluteError (out[(size_t) longDelay - blockSize], 1.0f, 1.0e-4f);
+        }
+
+        beginTest ("a tail relays through an emptied lane that writes device output");
+        {
+            // Outgoing preset: lane0 echo -> lane1 amp (non-trail) -> device.
+            // The amp is cut at the switch, but lane1 kept its output flag:
+            // the echo's tail must still reach the device through it.
+            std::unique_ptr<EffectProcessor> echo = std::make_unique<EchoProcessor>();
+            std::unique_ptr<EffectProcessor> gain = std::make_unique<GainProcessor>();
+            auto* echoRaw = static_cast<EchoProcessor*> (echo.get());
+            echo->prepareIfNeeded (sampleRate, blockSize, 1);
+            chargeTail (echoRaw);
+
+            Lanes lanes;
+            lanes[0].processors = { echoRaw };
+            lanes[1].processors = { gain.get() }; // dropped: no trails
+            lanes[1].writesDeviceOutput = true;
+
+            std::vector<std::unique_ptr<EffectProcessor>> retired;
+            retired.push_back (std::move (echo));
+            retired.push_back (std::move (gain));
+
+            auto unit = Spillover::build (lanes, { { 0, 1 } }, retired);
+            unit->prepare (sampleRate, blockSize, 1);
+
+            Spillover spill;
+            spill.add (std::move (unit));
+
+            std::vector<float> out;
+            runSpill (spill, (int) (0.3 * sampleRate) / blockSize, out);
+            expectWithinAbsoluteError (out[(size_t) echoRaw->delaySamples - blockSize], 1.0f, 1.0e-4f);
         }
 
         beginTest ("the new preset's output is added to the tail, not fed through the old chain");
@@ -258,7 +323,7 @@ public:
             // echo2 kept processing and passed it through (its own echo
             // line was empty, so the first repeat comes out unchanged).
             expectGreaterThan (static_cast<EchoProcessor*> (echo2Raw)->processCalls, 0);
-            expectWithinAbsoluteError (out[(size_t) EchoProcessor::delaySamples - blockSize], 1.0f, 1.0e-4f);
+            expectWithinAbsoluteError (out[(size_t) static_cast<EchoProcessor*> (echo2Raw)->delaySamples - blockSize], 1.0f, 1.0e-4f);
         }
 
         beginTest ("only maxActiveUnits spills run at once -- the oldest is retired");
