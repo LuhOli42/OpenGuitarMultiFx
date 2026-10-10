@@ -76,7 +76,8 @@ namespace
             || displayName == "Deluxe Reverb-Style Amplifier" || displayName == "JC-120-Style Amplifier" || displayName == "JTM45-Style Amplifier"
             || displayName == "JCM800-Style Amplifier" || displayName == "AC15-Style Amplifier" || displayName == "AC30-Style Amplifier"
             || displayName == "SLO-100-Style Amplifier" || displayName == "Mark IIC+-Style Amplifier" || displayName == "Dual Rectifier-Style Amplifier" || displayName == "5150-Style Amplifier" || displayName == "Powerball-Style Amplifier" || displayName == "Rockerverb-Style Amplifier" || displayName == "SVT-Style Amplifier"
-            || displayName == "Trainwreck Express-Style Amplifier" || displayName == "Komet Concorde-Style Amplifier")
+            || displayName == "Trainwreck Express-Style Amplifier" || displayName == "Komet Concorde-Style Amplifier"
+            || displayName == "Divided by 13 FTR 37-Style Amplifier" || displayName == "Carr Rambler-Style Amplifier")
             return "Modeled Amps";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")
             return "Neural";
