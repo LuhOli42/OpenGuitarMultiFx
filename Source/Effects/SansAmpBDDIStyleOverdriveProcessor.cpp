@@ -74,9 +74,9 @@ void SansAmpBDDIStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addCapacitor (t1, nb, 20.0e-9);
         c.addResistor (t2, nb, 10.6e3);
 
-        // First-order HPF @ ~72 Hz (the cab's low-end roll-off)
+        // First-order HPF @ ~72 Hz (the cab's low-end roll-off): 2.2 uF into 1k
         c.addCapacitor (nt, hpf, 2.2e-6);
-        c.addResistor (hpf, nb, 100.0e3);
+        c.addResistor (hpf, nb, 1.0e3);
         ch.nNotch = hpf;
         ch.nBuf = buf;
 
@@ -97,7 +97,7 @@ void SansAmpBDDIStyleOverdriveProcessor::buildChannel (Channel& ch)
         // feedback 10k with C 68n -> LP pole ~ 2.2 kHz; presence pot straddles (+)/(-): wiper -> 1k -> C -> bias,
         // moving both gain and the high-pass knee together (see the doc for the measured law this mirrors).
         c.addResistor (minus, out, 10.0e3);
-        c.addCapacitor (minus, out, 68.0e-9);
+        c.addCapacitor (minus, out, 6.8e-9);   // ~2.3 kHz LP over the 10k feedback R
         ch.rPresUp = c.addResistor (plus, wiper, 5.0e3);
         ch.rPresDown = c.addResistor (wiper, minus, 5.0e3);
         c.addResistor (wiper, wr, 1.0e3);
@@ -120,7 +120,7 @@ void SansAmpBDDIStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addOpAmpMacro (plus, minus, out, tlc2264);
         c.addResistor (minus, nb, 1.0e3);
         ch.rFb = c.addResistor (minus, out, 4.7e3 + 47.5e3);
-        c.addCapacitor (minus, out, 68.0e-9);   // 2.2 kHz LP in the feedback, same as the real stage
+        c.addCapacitor (minus, out, 680.0e-12); // ~2.2 kHz LP across max feedback R, opens up at low drive
         ch.nDrive = out;
 
         for (auto n : { plus, minus, out })
