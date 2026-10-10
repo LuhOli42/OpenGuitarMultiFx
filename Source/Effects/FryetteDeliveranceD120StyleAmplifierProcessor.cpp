@@ -622,7 +622,7 @@ double FryetteDeliveranceD120StyleAmplifierProcessor::behavioralPowerStage (Chan
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (0.4 + 1.2 * presence) * (raw - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (0.4 + 1.2 * presence) * (raw - ch.bmToneState));
     return ch.bmOutput;
 }
 
@@ -697,6 +697,10 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::prepare (double newSampleRat
     {
         ch = Channel {};
         buildChannel (ch);
+        auto bmVoicing = voicings::highGain;
+        bmVoicing.resDb = 1.0; // shelf path carries no fitted LF bump -- a hint of the real resonance back
+        bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)

@@ -70,7 +70,7 @@ public:
     // overshoot the knee's bound ~2x on saturated LF -- the cap keeps emitted volts inside the sanity bound.
     static constexpr double bmOutMax = 62.0;
     // re-trim to unity at noon after the fitted sections changed the broadband level.
-    static constexpr double bmLevelTrim = 0.55;
+    static constexpr double bmLevelTrim = 0.59; // +0.6 dB: the OT tail's HF rolloff puts the noon level back at unity
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -130,6 +130,7 @@ private:
 
         // reducedOrder behavioural power stage state
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
         double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
         double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
         double bmCutState = 0.0;

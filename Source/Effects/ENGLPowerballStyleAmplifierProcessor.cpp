@@ -653,7 +653,7 @@ double ENGLPowerballStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     const double effTop = presShelf + (juce::jlimit (0.0, 1.0, (double) lastKnobs.depth) - 0.3) * 0.8 * (lf - raw);
     const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmCutHz / juce::jmax (1.0, sampleRate));
     ch.bmCutState += cut * (effTop - ch.bmCutState);
-    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (effTop - ch.bmCutState) * bmLevelTrim);
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, ch.bmTail.process ((effTop - ch.bmCutState) * bmLevelTrim));
     return ch.bmOutput;
 }
 
@@ -718,6 +718,7 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.prepare (sampleRate, voicings::highGain, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)

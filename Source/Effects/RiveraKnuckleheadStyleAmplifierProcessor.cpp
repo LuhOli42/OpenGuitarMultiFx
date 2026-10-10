@@ -585,7 +585,7 @@ double RiveraKnuckleheadStyleAmplifierProcessor::behavioralPowerStage (Channel& 
     // when no sag is engaged, so it rides a ~120 Hz LP band, not the sag depth alone.
     const double lowCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 120.0 / juce::jmax (1.0, sampleRate));
     ch.bmLowState += lowCoeff * (raw - ch.bmLowState);
-    ch.bmOutput = ch.bmToneState + hfGain * (raw - ch.bmToneState) + (focus - 0.5) * 1.6 * ch.bmLowState;
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + hfGain * (raw - ch.bmToneState) + (focus - 0.5) * 1.6 * ch.bmLowState);
     return ch.bmOutput;
 }
 
@@ -637,6 +637,9 @@ void RiveraKnuckleheadStyleAmplifierProcessor::prepare (double newSampleRate, in
     {
         ch = Channel {};
         buildChannel (ch);
+        auto bmVoicing = voicings::highGain;
+        bmVoicing.resDb = 1.0; // shelf path carries no fitted LF bump -- a hint of the real resonance back
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& sv, juce::AudioParameterFloat* p, double seconds)

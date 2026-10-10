@@ -757,7 +757,7 @@ double MarkIICPlusStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     // Pull Deep is dead in reducedOrder (its NFB bypass leg exists only in the full power block):
     // lean the output toward the LF cone bump the top section otherwise removes.
     const double deepTop = pullDeepParam->get() >= 0.5f ? top + 0.8 * (lf - raw) : top;
-    ch.bmOutput = deepTop * bmLevelTrim;
+    ch.bmOutput = ch.bmTail.process (deepTop * bmLevelTrim);
     return ch.bmOutput;
 }
 
@@ -868,6 +868,7 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.prepare (sampleRate, voicings::highGain, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)

@@ -646,7 +646,7 @@ double DualRectifierStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     const double presShelf = ch.bmPresState + (0.64 + 1.2 * juce::jlimit (0.0, 1.0, (double) lastKnobs.presence)) * (top - ch.bmPresState);
     const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmCutHz / juce::jmax (1.0, sampleRate));
     ch.bmCutState += cut * (presShelf - ch.bmCutState);
-    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (presShelf - ch.bmCutState) * bmLevelTrim);
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, ch.bmTail.process ((presShelf - ch.bmCutState) * bmLevelTrim));
     return ch.bmOutput;
 }
 
@@ -746,6 +746,7 @@ void DualRectifierStyleAmplifierProcessor::prepare (double newSampleRate, int, i
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.prepare (sampleRate, voicings::highGain, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)
