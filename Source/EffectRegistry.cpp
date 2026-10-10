@@ -17,6 +17,10 @@
 #include "Effects/DS1StyleDistortionProcessor.h"
 #include "Effects/OD1StyleOverdriveProcessor.h"
 #include "Effects/TubeScreamerStyleOverdriveProcessor.h"
+#include "Effects/TS9BStyleOverdriveProcessor.h"
+#include "Effects/ODB3StyleOverdriveProcessor.h"
+#include "Effects/MuTronIIIStyleFilterProcessor.h"
+#include "Effects/TraceElliotGP12StyleAmplifierProcessor.h"
 #include "Effects/CentaurStyleOverdriveProcessor.h"
 #include "Effects/BD2StyleOverdriveProcessor.h"
 #include "Effects/BassmanStyleAmplifierProcessor.h"
@@ -41,11 +45,22 @@
 #include "Effects/SVTStyleAmplifierProcessor.h"
 #include "Effects/TrainwreckExpressStyleAmplifierProcessor.h"
 #include "Effects/KometConcordeStyleAmplifierProcessor.h"
+#include "Effects/CarrRamblerStyleAmplifierProcessor.h"
+#include "Effects/DividedBy13FTR37StyleAmplifierProcessor.h"
+#include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
+#include "Effects/SunnModelTStyleAmplifierProcessor.h"
+#include "Effects/FryetteDeliveranceD120StyleAmplifierProcessor.h"
+#include "Effects/BognerUberschallStyleAmplifierProcessor.h"
+#include "Effects/AmpegB15StyleAmplifierProcessor.h"
+#include "Effects/AmpegV4BStyleAmplifierProcessor.h"
+#include "Effects/MesaBass400PlusStyleAmplifierProcessor.h"
+#include "Effects/Acoustic360StyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
 #include "Effects/RatStyleDistortionProcessor.h"
 #include "Effects/GE7StyleEqualizerProcessor.h"
+#include "Effects/GEB7StyleEqualizerProcessor.h"
 #include "Effects/BassBigMuffStyleFuzzProcessor.h"
 #include "Effects/DarkglassB7KStyleOverdriveProcessor.h"
 #include "Effects/SansAmpBDDIStyleOverdriveProcessor.h"
@@ -289,6 +304,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TurboRatStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<RatStyleDistortionProcessor> (Orders { 1, 1, 2 }, 0.17, RatModel::turbo), 1000000.0), -7.85f); });
     // Linear circuit (no clipping stage worth oversampling): a graphic equaliser from the manufacturer's diagram.
     registry.registerType ("GE7StyleEqualizer", [] { return trimmed (std::make_unique<GE7StyleEqualizerProcessor>(), 0.65f); }); // its own -0.65 dB at flat, trimmed to unity
+    // Bass graphic, same gyrator topology retuned to the GEB-7's centres (docs/circuits/GEB7StyleEqualizer.md).
+    registry.registerType ("GEB7StyleEqualizer", [] { return trimmed (std::make_unique<GEB7StyleEqualizerProcessor>(), 0.0f); });
+    // Envelope-followed resonant filter (docs/circuits/MuTronIIIStyleFilter.md); the only nonlinearity is the summer's soft rail.
+    registry.markQualityDependent ("MuTronIIIStyleFilter");
+    registry.registerType ("MuTronIIIStyleFilter", [] { return trimmed (pickupLoaded (oversampled<MuTronIIIStyleFilterProcessor> (Orders { 0, 1, 1 }), 500000.0), -10.0f); });
+    // Solid-state bass preamp: dual-band compressor + 12-band gyrator graphic EQ (docs/circuits/TraceElliotGP12StyleAmplifier.md).
+    registry.registerType ("TraceElliotGP12StyleAmplifier", [] { return trimmed (pickupLoaded (std::make_unique<TraceElliotGP12StyleAmplifierProcessor>(), 500000.0), 3.1f); });
     registry.registerType ("ParametricEQ", [] { return std::make_unique<ParametricEQProcessor>(); });
     registry.registerType ("DS201StyleNoiseGate", [] { return std::make_unique<DS201StyleNoiseGateProcessor>(); });
     registry.registerType ("NS2StyleNoiseSuppressor", [] { return std::make_unique<NS2StyleNoiseSuppressorProcessor>(); });
@@ -326,6 +348,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("CentaurStyleOverdrive", [] { return trimmed (pickupLoaded (std::make_unique<CentaurStyleOverdriveProcessor>(), 1000000.0), -12.09f); });
     registry.markQualityDependent ("TS10StyleOverdrive");
     registry.registerType ("TS10StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 500000.0), 11.34f); });
+    // Bass variants of the family (docs/circuits/TS9BStyleOverdrive.md, ODB3StyleOverdrive.md).
+    registry.markQualityDependent ("TS9BStyleOverdrive");
+    registry.registerType ("TS9BStyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TS9BStyleOverdriveProcessor> (Orders { 0, 0, 1 }), 500000.0), 13.8f); });
+    registry.markQualityDependent ("ODB3StyleOverdrive");
+    registry.registerType ("ODB3StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<ODB3StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 500000.0), 16.3f); });
 
     // A full tube amplifier modelled from its schematic (docs/circuits/Bassman5F6A.md): 8 tubes, an output transformer,
     // global feedback and a sagging supply. Quality tiers: 1x, 1x, 2x (the tubes' clipping is soft; see the doc).
@@ -439,6 +466,48 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TrainwreckExpressStyleAmplifier", [] { return trimmed (oversampled<TrainwreckExpressStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.03f); });
     registry.markQualityDependent ("KometConcordeStyleAmplifier");
     registry.registerType ("KometConcordeStyleAmplifier", [] { return trimmed (oversampled<KometConcordeStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.31f); });
+    // Carr Rambler (docs/circuits/CarrRambler.md): blackface-like single-channel preamp, LTP PI, cathode-biased
+    // 2x6L6GC, zero global feedback, bias-vary tremolo, pentode/triode switch. reducedOrder behavioral power stage.
+    CarrRamblerStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("CarrRamblerStyleAmplifier");
+    registry.registerType ("CarrRamblerStyleAmplifier", [] { return trimmed (oversampled<CarrRamblerStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.9f); });
+    // Divided by 13 FTR 37 (docs/circuits/DividedBy13FTR37.md): 5879 pentode "click" channel + blackface-like clean
+    // channel mixed into an LTP PI and a fixed-bias 4x6V6 push-pull (Full/Half power). reducedOrder power stage.
+    DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DividedBy13FTR37StyleAmplifier");
+    registry.registerType ("DividedBy13FTR37StyleAmplifier", [] { return trimmed (oversampled<DividedBy13FTR37StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.9f); });
+
+    // Four new big-iron heads (docs/circuits/{DumbleSteelString,SunnModelT,FryetteDeliveranceD120,
+    // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
+    DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DumbleSteelStringStyleAmplifier");
+    registry.registerType ("DumbleSteelStringStyleAmplifier", [] { return trimmed (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.05f); });
+    SunnModelTStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("SunnModelTStyleAmplifier");
+    registry.registerType ("SunnModelTStyleAmplifier", [] { return trimmed (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 17.12f); });
+    FryetteDeliveranceD120StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("FryetteDeliveranceD120StyleAmplifier");
+    registry.registerType ("FryetteDeliveranceD120StyleAmplifier", [] { return trimmed (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.46f); });
+    BognerUberschallStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("BognerUberschallStyleAmplifier");
+    registry.registerType ("BognerUberschallStyleAmplifier", [] { return trimmed (oversampled<BognerUberschallStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.72f); });
+
+    // The bass heads (docs/circuits/AmpegB15.md, AmpegV4B.md, MesaBass400Plus.md, Acoustic360.md):
+    // B-15 Portaflex (3x6SL7, paraphase PI, 2x6L6GC, 25 W), V4B (SVT-family preamp, 4x7027A, 100 W),
+    // Bass 400+ (Mesa preamp + 7-band graphic EQ, 12x6L6GC) and the solid-state Acoustic 360
+    // (2-stage BJT preamp, Variamp EQ, saturating-op-amp 200 W stage). Full netlists; no reducedOrder.
+    AmpegB15StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("AmpegB15StyleAmplifier");
+    registry.registerType ("AmpegB15StyleAmplifier", [] { return trimmed (oversampled<AmpegB15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 8.8f); });
+    AmpegV4BStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("AmpegV4BStyleAmplifier");
+    registry.registerType ("AmpegV4BStyleAmplifier", [] { return trimmed (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.5f); });
+    MesaBass400PlusStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("MesaBass400PlusStyleAmplifier");
+    registry.registerType ("MesaBass400PlusStyleAmplifier", [] { return trimmed (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.3f); });
+    Acoustic360StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("Acoustic360StyleAmplifier");
+    registry.registerType ("Acoustic360StyleAmplifier", [] { return trimmed (oversampled<Acoustic360StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.5f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

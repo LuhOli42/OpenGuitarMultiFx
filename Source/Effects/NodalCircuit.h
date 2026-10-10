@@ -408,6 +408,8 @@ public:
     void setCapacitance (int handle, double farads) noexcept
     {
         auto& c = capacitors[(size_t) handle];
+        if (c.farads == farads) // unchanged (switch-style control at rest): keep the factorisation
+            return;
         c.farads = farads;
         c.g = farads * sampleRate / theta;
         matrixDirty = true;
@@ -423,6 +425,8 @@ public:
         for (auto& grp : inductorGroups)
             if (grp.first == firstState && grp.inverse.size() == inverse.size())
             {
+                if (std::equal (grp.inverse.begin(), grp.inverse.end(), inverse.begin()))
+                    return;
                 std::copy (inverse.begin(), inverse.end(), grp.inverse.begin());
                 matrixDirty = true;
                 modelsDirty = true;
@@ -437,6 +441,8 @@ public:
         for (auto& grp : inductorGroups)
             if (grp.first == firstState && grp.inverse.size() == 1)
             {
+                if (grp.inverse[0] == inverse)
+                    return;
                 grp.inverse[0] = inverse;
                 matrixDirty = true;
                 modelsDirty = true;

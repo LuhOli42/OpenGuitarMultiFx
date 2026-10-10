@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "MidiLearnPresetXml.h"
+#include "PromptCards.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "TunerOverlay.h"
@@ -77,8 +78,14 @@ namespace
             || displayName == "JCM800-Style Amplifier" || displayName == "AC15-Style Amplifier" || displayName == "AC30-Style Amplifier"
             || displayName == "SLO-100-Style Amplifier" || displayName == "Mark IIC+-Style Amplifier" || displayName == "Dual Rectifier-Style Amplifier" || displayName == "5150-Style Amplifier" || displayName == "Powerball-Style Amplifier" || displayName == "Rockerverb-Style Amplifier" || displayName == "SVT-Style Amplifier"
             || displayName == "Trainwreck Express-Style Amplifier" || displayName == "Komet Concorde-Style Amplifier"
+            || displayName == "Divided by 13 FTR 37-Style Amplifier" || displayName == "Carr Rambler-Style Amplifier"
             || displayName == "HC-30-Style Amplifier" || displayName == "Hot Cat 30-Style Amplifier"
-            || displayName == "Carmen Ghia-Style Amplifier" || displayName == "Astroverb 16-Style Amplifier")
+            || displayName == "Carmen Ghia-Style Amplifier" || displayName == "Astroverb 16-Style Amplifier"
+            || displayName == "Dumble Steel String-Style Amplifier" || displayName == "Sunn Model T-Style Amplifier"
+            || displayName == "Fryette Deliverance D120-Style Amplifier" || displayName == "Bogner Uberschall-Style Amplifier"
+            || displayName == "B-15-Style Amplifier" || displayName == "V4B-Style Amplifier"
+            || displayName == "Bass 400+-Style Amplifier" || displayName == "360-Style Amplifier"
+            || displayName == "Trace Elliot GP12-Style Amplifier")
             return "Modeled Amps";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")
             return "Neural";
@@ -97,7 +104,8 @@ namespace
             return "Modulation";
         if (displayName == "Pitch Shift" || displayName == "Octaver" || displayName == "Boss OC-2-Style Octaver"
             || displayName == "Harmonizer" || displayName == "Parametric EQ" || displayName == "Ring Mod"
-            || displayName.endsWith (" Equalizer"))
+            || displayName.endsWith (" Equalizer")
+            || displayName == "Mu-Tron III-Style Filter")
             return "Filter/FX";
         return "Other"; // shouldn't normally happen -- a new effect type that hasn't been categorised yet
     }
@@ -981,32 +989,148 @@ void MainComponent::showPresetsPanel()
 
     dialog->onSaveRequested = [this] (juce::String name)
     {
-        savePresetAs (name);
-        overlayHost.popOverlay();
+        if (! presets.presetExists (name) || name == currentPresetName)
+        {
+            savePresetAs (name);
+            overlayHost.popOverlay();
+            return;
+        }
+
+        overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
+            "Replace preset?", "\"" + name + "\" already exists. Saving will overwrite it with the current sound.",
+            juce::StringArray { "Replace", "Cancel" },
+            [this, name] (int choice)
+            {
+                overlayHost.popOverlay(); // this card
+                if (choice != 0)
+                    return;
+                savePresetAs (name);
+                overlayHost.popOverlay(); // the list
+            }));
     };
 
     dialog->onPresetChosen = [this] (juce::String name)
     {
-        loadPresetByName (name);
         overlayHost.popOverlay();
+        loadPresetAskingToSave (name);
     };
 
     dialog->onDeleteRequested = [this] (juce::String name)
     {
-        presets.deletePreset (name);
-        if (currentPresetName == name)
-        {
-            currentPresetName.clear();
-            currentPresetNumber = 0;
-            updatePresetDisplay();
-        }
-        overlayHost.popOverlay();
-        showPresetsPanel(); // reopen with a refreshed list -- simplest way to reflect the deletion
+        overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
+            "Delete preset?", "\"" + name + "\" will be deleted. This can't be undone.",
+            juce::StringArray { "Delete", "Cancel" },
+            [this, name] (int choice)
+            {
+                if (choice != 0)
+                {
+                    overlayHost.popOverlay();
+                    return;
+                }
+
+                presets.deletePreset (name);
+                if (currentPresetName == name)
+                {
+                    currentPresetName.clear();
+                    currentPresetNumber = 0;
+                    presetBaseline.reset();
+                    updatePresetDisplay();
+                }
+                closePresetCardsAndReopenList();
+            }));
+    };
+
+    dialog->onRenameRequested = [this] (juce::String name)
+    {
+        overlayHost.pushOverlay (std::make_unique<TextPromptCard> (
+            "Rename preset", name,
+            [this, name] (juce::String newName)
+            {
+                if (newName == name)
+                {
+                    overlayHost.popOverlay();
+                    return;
+                }
+                if (! presets.renamePreset (name, newName))
+                {
+                    overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
+                        "Can't rename", "A preset called \"" + newName + "\" already exists.",
+                        juce::StringArray { "OK" }, [this] (int) { overlayHost.popOverlay(); }));
+                    return;
+                }
+                if (currentPresetName == name)
+                {
+                    currentPresetName = newName;
+                    updatePresetDisplay();
+                }
+                closePresetCardsAndReopenList();
+            },
+            [this] { overlayHost.popOverlay(); }));
+    };
+
+    dialog->onDuplicateRequested = [this] (juce::String name)
+    {
+        overlayHost.pushOverlay (std::make_unique<TextPromptCard> (
+            "Duplicate preset", name + " copy",
+            [this, name] (juce::String newName)
+            {
+                if (! presets.duplicatePreset (name, newName))
+                {
+                    overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
+                        "Can't duplicate", "A preset called \"" + newName + "\" already exists.",
+                        juce::StringArray { "OK" }, [this] (int) { overlayHost.popOverlay(); }));
+                    return;
+                }
+                closePresetCardsAndReopenList();
+            },
+            [this] { overlayHost.popOverlay(); }));
     };
 
     dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
 
     overlayHost.pushOverlay (std::move (dialog));
+}
+
+void MainComponent::closePresetCardsAndReopenList()
+{
+    // Pops the card(s) on top AND the list under them, then shows a fresh list -- the simplest way to reflect a
+    // delete/rename/duplicate. The list is the bottom of this stack: presets are only reached from the badge.
+    while (! overlayHost.isEmpty())
+        overlayHost.popOverlay();
+    showPresetsPanel();
+}
+
+void MainComponent::loadPresetAskingToSave (const juce::String& name)
+{
+    if (! isPresetDirty())
+    {
+        loadPresetByName (name);
+        return;
+    }
+
+    overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
+        "Unsaved changes", "\"" + currentPresetName + "\" has changes that aren't saved.",
+        juce::StringArray { "Save", "Discard", "Cancel" },
+        [this, name] (int choice)
+        {
+            overlayHost.popOverlay();
+            if (choice == 2)
+                return;
+            if (choice == 0)
+                savePresetAs (currentPresetName);
+            loadPresetByName (name);
+        }));
+}
+
+void MainComponent::capturePresetBaseline()
+{
+    presetBaseline = currentPresetName.isNotEmpty() ? buildPresetXml() : nullptr;
+    presetDirty = false;
+}
+
+bool MainComponent::isPresetDirty() const
+{
+    return presetBaseline != nullptr && ! buildPresetXml()->isEquivalentTo (presetBaseline.get(), false);
 }
 
 void MainComponent::loadPresetByName (const juce::String& name)
@@ -1016,6 +1140,7 @@ void MainComponent::loadPresetByName (const juce::String& name)
         applyPresetXml (*xml);
         currentPresetName = name;
         currentPresetNumber = xml->getIntAttribute ("number", 0);
+        capturePresetBaseline();
         updatePresetDisplay();
     }
 }
@@ -1126,13 +1251,14 @@ void MainComponent::savePresetAs (const juce::String& name)
 
     currentPresetName = name;
     currentPresetNumber = number;
+    capturePresetBaseline();
     updatePresetDisplay();
 }
 
 void MainComponent::updatePresetDisplay()
 {
     presetBadge.setNumber (currentPresetNumber);
-    titleLabel.setText (currentPresetName.isNotEmpty() ? currentPresetName : "No preset loaded",
+    titleLabel.setText (currentPresetName.isNotEmpty() ? currentPresetName + (presetDirty ? " *" : "") : "No preset loaded",
                          juce::dontSendNotification);
     quickSaveButton.setVisible (currentPresetName.isNotEmpty());
     resized(); // quickSaveButton's visibility changes how much room titleLabel gets
@@ -1306,6 +1432,16 @@ void MainComponent::timerCallback()
                       graveyard.end());
 
     parameterPanel.refresh();
+
+    if (--ticksUntilDirtyCheck <= 0)
+    {
+        ticksUntilDirtyCheck = dirtyCheckIntervalTicks;
+        if (const bool dirty = isPresetDirty(); dirty != presetDirty)
+        {
+            presetDirty = dirty;
+            updatePresetDisplay();
+        }
+    }
 }
 
 void MainComponent::resized()
