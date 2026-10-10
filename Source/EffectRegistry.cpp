@@ -376,12 +376,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // post-tonestack gain recovery, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     EVH5150StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("EVH5150StyleAmplifier");
-    registry.registerType ("EVH5150StyleAmplifier", [] { return trimmed (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.28f); });
+    registry.registerType ("EVH5150StyleAmplifier", [] { return trimmed (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.38f); });
     // docs/circuits/ENGLPowerball.md. ENGL Powerball Hi Lead channel. Six cascaded 12AX7 gain stages
     // (3 pre-tonestack + 3 post-tonestack), FMV tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     ENGLPowerballStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("ENGLPowerballStyleAmplifier");
-    registry.registerType ("ENGLPowerballStyleAmplifier", [] { return trimmed (oversampled<ENGLPowerballStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.53f); });
+    registry.registerType ("ENGLPowerballStyleAmplifier", [] { return trimmed (oversampled<ENGLPowerballStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -18.37f); });
     // Orange Rockerverb 50 MK1 Dirty channel. Four cascaded 12AX7 gain stages, FMV tone stack,
     // LTP PI, 4x6V6 fixed-bias push-pull.
     RockerverbStyleAmplifierProcessor::reducedOrder = true;

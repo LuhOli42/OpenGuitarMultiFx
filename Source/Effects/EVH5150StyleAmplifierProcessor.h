@@ -119,7 +119,7 @@ private:
         int wSrcCf = 0, wSrcRecovery = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rPost = 0, rResonancePot = 0;
+            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rPostTop = 0, rPostBottom = 0, rResonancePot = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wTone = 0, wRecoveryPlate = 0, wOut = 0, wPlateA = 0,
                            wPlateB = 0, wGridA = 0, wTail = 0, wPP1 = 0, wPP2 = 0,

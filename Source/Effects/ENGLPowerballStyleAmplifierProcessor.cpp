@@ -332,7 +332,11 @@ void ENGLPowerballStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rMidTop = c.addResistor (nM, nMw, 125.0e3);
         ch.rMidBottom = c.addResistor (nMw, gnd, 125.0e3);
         c.addCapacitor (nB, nMw, 0.047e-6);
-        ch.rMaster = c.addResistor (postNode, ch.tTone, 125.0e3);
+        // Master (250K) as a real two-leg divider, not a lone series leg: without a bottom leg to
+        // ground the wiper is an unloaded tap once the post-tonestack stages are gone (reducedOrder),
+        // and in the full path it divides against a fixed 1M load -- inverting and compressing the sweep.
+        ch.rMasterTop = c.addResistor (postNode, ch.tTone, 125.0e3);
+        ch.rMasterBottom = c.addResistor (ch.tTone, gnd, 125.0e3);
 
         // ---- post-tonestack gain stages: U6B → U7A → U7B ----
         // reducedOrder removes these three triodes too -- their response is folded into the behavioural
@@ -510,7 +514,8 @@ void ENGLPowerballStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double midTop = juce::jmax (1.0, 250.0e3 - midBottom);
     const double presBottom = juce::jmax (1.0, 50.0e3 * (1.0 - k.presence));
     const double presTop = juce::jmax (1.0, 50.0e3 - presBottom);
-    const double masterR = juce::jmax (1.0, 250.0e3 * pots::audio (k.master));
+    const double masterBottom = juce::jmax (1.0, 250.0e3 * pots::audio (k.master));
+    const double masterTop = juce::jmax (1.0, 250.0e3 - masterBottom);
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
@@ -526,7 +531,8 @@ void ENGLPowerballStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.tone.setResistance (ch.rBass, bassR);
         ch.tone.setResistance (ch.rMidTop, midTop);
         ch.tone.setResistance (ch.rMidBottom, midBottom);
-        ch.tone.setResistance (ch.rMaster, masterR);
+        ch.tone.setResistance (ch.rMasterTop, masterTop);
+        ch.tone.setResistance (ch.rMasterBottom, masterBottom);
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresTop, presTop);

@@ -82,7 +82,7 @@ private:
 
         // tone block: tone stack + 3 post-tonestack gain stages (U6B, U7A, U7B) + master
         int tSrcPre = 0, tSrcVcc = 0;
-        int rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0, rMaster = 0;
+        int rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0, rMasterTop = 0, rMasterBottom = 0;
         NodalCircuit::Node tToneIn = 0, tTone = 0, tPlateU6b = 0, tPlateU7a = 0, tPlateU7b = 0,
                            tMasterWiper = 0;
         double plateDcU7b = 0.0;

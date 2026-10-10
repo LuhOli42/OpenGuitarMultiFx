@@ -385,8 +385,11 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rMidTop = c.addResistor (nM, nMw, 25.0e3);      // MID 50K, split
         ch.rMidBottom = c.addResistor (nMw, gnd, 25.0e3);
         c.addCapacitor (nB, nMw, 0.022e-6);                // mid cap (.022µF)
-        // Post (master 1M) as a rheostat after the tone stack
-        ch.rPost = c.addResistor (postNode, ch.wTone, 500.0e3);
+        // Post (master 1M) as a real two-leg divider, not a lone series leg: without a bottom leg
+        // to ground the wiper is an unloaded tap once V3B is gone (reducedOrder), and in the full
+        // path it divides against a fixed 1M load -- inverting and compressing the sweep.
+        ch.rPostTop = c.addResistor (postNode, ch.wTone, 500.0e3);
+        ch.rPostBottom = c.addResistor (ch.wTone, gnd, 500.0e3);
 
         // V3B: post-tone-stack gain recovery (12AX7). 100K plate (V3/PI rail), 1M grid leak,
         // 1K cathode bypassed with 1µF. Coupling from tone stack wiper through .047µF.
@@ -543,7 +546,8 @@ void EVH5150StyleAmplifierProcessor::updatePots (const Knobs& k)
     const double midTop = juce::jmax (1.0, 50.0e3 - midBottom);
     const double presBottom = juce::jmax (1.0, 10.0e3 * (1.0 - k.presence));
     const double presTop = juce::jmax (1.0, 10.0e3 - presBottom);
-    const double postR = juce::jmax (1.0, 1.0e6 * pots::audio (k.post));
+    const double postBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.post));
+    const double postTop = juce::jmax (1.0, 1.0e6 - postBottom);
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
@@ -559,7 +563,8 @@ void EVH5150StyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rBass, bassR);
         ch.power.setResistance (ch.rMidTop, midTop);
         ch.power.setResistance (ch.rMidBottom, midBottom);
-        ch.power.setResistance (ch.rPost, postR);
+        ch.power.setResistance (ch.rPostTop, postTop);
+        ch.power.setResistance (ch.rPostBottom, postBottom);
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
