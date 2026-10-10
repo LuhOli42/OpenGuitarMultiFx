@@ -13,9 +13,16 @@ namespace
     constexpr double vcc = 8.0; // the audio circuit runs from ~8 V (capacitance-multiplier output), see the doc
     constexpr double vb = 4.0;  // the +4 V reference every "arrow" resistor returns to
 
-    // Assumed device parameters (documented in the doc; the circuit is closed-loop biased).
+    // Device parameters per the service-manual parts list + the manufacturers' datasheets (documented in the
+    // doc; the circuit is closed-loop biased, so DC is forgiving inside each part's spread):
+    //   2SK184GR (Q3/Q10/Q11/Q13/Q14, Toshiba): Idss GR rank 2.6-6.5 mA -> 4.5 mA midpoint; Vgs(off) -0.2..-1.5 V
+    //     -> -1.2 V (matches the standard SPICE model for this part; keeps the Q3 follower drop consistent).
+    //   2SA1049-GR (Q9/Q12, Toshiba): hFE GR 200-400 -> 300. Was modelled as a 2SA1335 at beta 200 -- wrong part
+    //     AND the bottom of the rank; the real gain stage PNP is the 2SA1049, 2SC2459's complement.
     const NodalCircuit::JfetParams jfet2SK184 { 4.5e-3, -1.2, 0.02 };
-    const NodalCircuit::BjtParams pnp2SA1335 { 1.0e-14, 25.85e-3, 200.0, 4.0 };
+    const NodalCircuit::BjtParams pnp2SA1049 { 1.0e-14, 25.85e-3, 300.0, 4.0 };
+    // Q1/Q5/Q7 (2SC2459-GR, hFE GR 200-400 -> 300) are emitter followers modelled ideally (addFollower); kept
+    // here so the datasheet value still lives with the netlist that stands in for them.
     const NodalCircuit::BjtParams npn2SC2459 { 1.0e-14, 25.85e-3, 300.0, 4.0 };
 
     // 1SS133 silicon switching diode ~ 1N4148 class (same SPICE parameters as the Tube Screamer model).
@@ -25,11 +32,12 @@ namespace
     // Macro-model of the discrete gain stages. Starting point: the transistor-level stage's open loop measured at 192 kHz
     // with the feedback broken (DC gain 244 into 80k = 251 unloaded; poles at 15.1 kHz / 7.6 kHz; output = a source
     // behind the 2.2k collector load, DC 4.16 V). Then FITTED (a coordinate search on the closed-loop small-signal
-    // response of the whole pedal, full vs macro, 4 Gain settings x 6 frequencies, rms error 0.27 dB): gain x1.11,
+    // response of the whole pedal, full vs macro, 4 Gain settings x 6 frequencies, rms error 0.27 dB): gain x1.11
+    // (re-fitted to x1.147 when the PNP gain-stage beta moved 200 -> 300, the real 2SA1049-GR midrank),
     // poles x0.72 / x0.65 (the closed loop sees a heavier load than the 80k of the open-loop measurement, which moves
     // the pole), and a common-mode term of 0.0228 = a CMRR of ~22 (the JFET pair with a 4.7k resistor tail: the input
     // signal is common-mode too, since the feedback holds the other gate at the same voltage).
-    constexpr double macroGain = 251.0 * 1.112;
+    constexpr double macroGain = 251.0 * 1.147;
     constexpr double macroDc = 4.16;
     constexpr double macroPole1 = 15.1e3 * 0.722, macroPole2 = 7.6e3 * 0.652;
     constexpr double macroCommonMode = 0.0228;
@@ -128,7 +136,7 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
             c.addResistor (v8, d10, 2.2e3);           // R28
             c.addResistor (s10, gnd, 4.7e3);          // R30 (tail)
             c.addJfet (v8, g11, s10, jfet2SK184, 5.0); // Q11 (drain straight to the rail: always saturated, vds ~ 5 V)
-            c.addBjt (c9, d10, v8, true, pnp2SA1335); // Q9 2SA1335R PNP
+            c.addBjt (c9, d10, v8, true, pnp2SA1049); // Q9 2SA1049-GR PNP
             c.addCapacitor (d10, c9, 47.0e-12);       // C21 (Miller)
             c.addResistor (c9, gnd, 2.2e3);           // R32
         }
@@ -195,7 +203,7 @@ void BD2StyleOverdriveProcessor::buildChannel (Channel& ch)
             c.addResistor (v8, d14, 2.2e3);           // R33
             c.addResistor (s14, gnd, 4.7e3);          // R36 (tail)
             c.addJfet (v8, g13, s14, jfet2SK184, 5.0); // Q13 (drain on the rail)
-            c.addBjt (s2, d14, v8, true, pnp2SA1335); // Q12 2SA1335R PNP
+            c.addBjt (s2, d14, v8, true, pnp2SA1049); // Q12 2SA1049-GR PNP
             c.addCapacitor (d14, s2, 100.0e-12);      // C20 (Miller)
             c.addResistor (s2, gnd, 2.2e3);           // R25
         }

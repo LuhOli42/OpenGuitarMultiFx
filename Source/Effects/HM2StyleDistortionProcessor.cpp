@@ -12,10 +12,14 @@ namespace
     constexpr double v9 = 9.0;
     constexpr double v45 = 4.5; // 10K/10K divider + 47uF, treated as an ideal 4.5 V rail
 
-    // Assumed device parameters (see the doc; both transistor stages are self-biased, so DC is forgiving).
-    const NodalCircuit::JfetParams jfet2SK30 { 4.0e-3, -1.5, 0.02 };
-    const NodalCircuit::BjtParams npn2SC2240 { 1.0e-14, 25.85e-3, 400.0, 4.0 };
-    const NodalCircuit::BjtParams pnp2SA970 { 1.0e-14, 25.85e-3, 400.0, 4.0 };
+    // Device parameters per the service-manual parts list + Toshiba's datasheets (see the doc; both transistor
+    // stages are self-biased, so DC is forgiving inside each part's spread):
+    //   2SK30A-Y (Q1, Toshiba): Idss Y rank 1.2-3.0 mA -> 2.1 mA midpoint; Vgs(off) -0.4..-5.0 -> -1.0 V
+    //     (typical for the Y grade; the Q1 follower is modelled ideally, this stays for the full netlist).
+    //   2SC2240-GR (Q6) / 2SA970-GR (Q7): hFE GR 200-400 -> 300 midpoint (was 400, the top edge).
+    const NodalCircuit::JfetParams jfet2SK30 { 2.1e-3, -1.0, 0.02 };
+    const NodalCircuit::BjtParams npn2SC2240 { 1.0e-14, 25.85e-3, 300.0, 4.0 };
+    const NodalCircuit::BjtParams pnp2SA970 { 1.0e-14, 25.85e-3, 300.0, 4.0 };
 
     // 1N4148-class silicon; germanium ("GE.DIOD") ~ 1N34A-class as in the Centaur model.
     constexpr double siIs = 2.52e-9;
@@ -81,7 +85,9 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addResistor (in, xin, 10.0e3);
         c.addCapacitor (xin, g1, 47.0e-9);
         c.addResistor (g1, nv45, 1.0e6);
-        c.addFollower (g1, s1, -0.964);           // Q1 2SK30 / BF245 source follower (vgs -0.96 V at DC): a buffer
+        c.addFollower (g1, s1, -0.51);            // Q1 2SK30A-Y source follower (vgs ~ -0.5 V at this bias: gate 4.5 V,
+                                                // source settles ~5.0 V through its 10K -- was -0.96 V from the old
+                                                // 4 mA / -1.5 V guess, before the part's real Y grade was checked): a buffer
         c.addResistor (s1, gnd, 10.0e3);
 
         // Filtered supply for the transistor stages: 1K + 47uF.

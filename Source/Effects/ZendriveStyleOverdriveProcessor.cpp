@@ -19,9 +19,11 @@ namespace
     // 1N34A germanium (the Centaur's model).
     constexpr DiodeModel germanium { 200.0e-9, 1.3 * 25.85e-3 };
 
-    // The 2N7000's body diode (source to drain): ~0.64 V at 0.1 mA, 0.73 V at 1 mA (Is 2 pA, N 1.4). An assumption; the
-    // datasheet gives only VSD < 1.5 V at 0.4 A.
-    constexpr DiodeModel body { 2.0e-12, 1.4 * 25.85e-3 };
+    // The 2N7000's body diode (source to drain), the same model as the OCD's: Is 12.6 pA, N 1.4, anchored on the
+    // manufacturer's TYPICAL (Supertex/Microchip 2N7000-G and NXP: VSD = 0.85 V at ISD = 200-300 mA, VGS = 0),
+    // extrapolated to this circuit's currents: ~0.58 V at 0.1 mA, ~0.66 V at 1 mA -- inside the 0.5-0.7 V published
+    // curve-tracer measurements show (docs/circuits/OCDStyleOverdrive.md). Replaces an Is 2 pA guess.
+    constexpr DiodeModel body { 12.6e-12, 1.4 * 25.85e-3 };
 
     // AD712 (JFET input): 106 dB, 4 MHz gain-bandwidth, swing ~2 V short of each rail of a 9 V supply.
     const NodalCircuit::OpAmpMacro ad712 { 2.0e5, 4.0e6, 75.0, 2.0, 7.0, 0.0, 0.0 };

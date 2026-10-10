@@ -106,20 +106,21 @@ public:
             expectLessThan (std::abs (20.0 * std::log10 (measured / expected)), 0.6);
         }
 
-        beginTest ("MOSFET clipping: the 2N7000 body diodes hold the node within ~0.8-1.1 V of the bias, symmetrically");
+        beginTest ("MOSFET clipping: the 2N7000 body diodes hold the node within ~0.5-0.9 V of the bias, symmetrically");
         {
             P p;
             p.prepare (sr, 512, 1);
             setParams (p, { 1.0f, 0.5f, 0.5f, 0.0f, 1.0f });
             const auto m = run (p, 440.0, 0.1);
             logMessage ("clipper node vs bias: " + juce::String (m.tapMin[1], 3) + " .. +" + juce::String (m.tapMax[1], 3) + " V");
-            // Since 2026-09-27 the body diode's Is is fit to the 2N7000 datasheet's own operating point (VSD <= 1.2 V
-            // at 200 mA) extrapolated down to this circuit's ~mA range, not a small-signal-diode guess: ~1.0 V at
-            // 1 mA (docs/circuits/OCDStyleOverdrive.md), not ~0.65-0.73 V.
-            expectGreaterThan (m.tapMax[1], 0.8);
-            expectLessThan (m.tapMax[1], 1.1);
-            expectGreaterThan (-m.tapMin[1], 0.8);
-            expectLessThan (-m.tapMin[1], 1.1);
+            // The body diode's Is is anchored on the manufacturers' TYPICAL VSD = 0.85 V at 200-300 mA (Supertex/
+            // Microchip 2N7000-G, NXP) extrapolated to this circuit's ~mA range: ~0.66 V at 1 mA, matching the
+            // 0.5-0.7 V published measurements show (docs/circuits/OCDStyleOverdrive.md). Earlier anchors were
+            // ~0.65-0.73 V (a 2 pA guess) then ~1.0 V (Fairchild's 1.2 V worst-case MAX, misread as the typical).
+            expectGreaterThan (m.tapMax[1], 0.5);
+            expectLessThan (m.tapMax[1], 0.9);
+            expectGreaterThan (-m.tapMin[1], 0.5);
+            expectLessThan (-m.tapMin[1], 0.9);
             // the 2N7000 channels (not in the netlist) need 2 V across gate-source: they never turn on
             expectLessThan (std::max (m.tapMax[1], -m.tapMin[1]), 1.9);
         }

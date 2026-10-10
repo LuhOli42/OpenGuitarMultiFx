@@ -30,19 +30,22 @@ second op-amp's (+) input draws nothing). 1x cost 5.3% of a core; tiers `{0, 1, 
 ## The 2N7000s: body diodes clip, the channels never turn on
 A diode-connected NMOS is a two-terminal device: its **channel** conducts forward (drain to source) above the gate threshold (~2 V), its
 **body diode** conducts the other way (source to drain) above ~0.65 V. Wired as above, Q1 and Q2 are antiparallel across the clipper node
-and the bias: the node going up is held by Q2's body diode, going down by Q1's -- **at +-0.67 V from the bias** -- and a channel would need
+and the bias: the node going up is held by Q2's body diode, going down by Q1's -- **at ~+-0.6 V from the bias** -- and a channel would need
 2 V. So in stock mode the 2N7000s behave as two silicon diodes (with a slightly different knee), which matches Aion's statement that "the stock
 clipping mode has a lower clipping threshold than the LED pair" (the red LEDs' 1.7 V). The channels are therefore not in the netlist (they
-would cost two Newton ports, 6.8% instead of 5.3% of a core, with the output unchanged: +-0.673 V both ways; a test asserts the node stays
-below the threshold). In the versions with germanium diodes (1.4, the Custom Shop) the Ge diode is in series with a body diode, not a
+would cost two Newton ports, 6.8% instead of 5.3% of a core; a test asserts the node stays below the threshold). In the versions with germanium diodes (1.4, the Custom Shop) the Ge diode is in series with a body diode, not a
 channel: Aion's warning that a reversed diode "blocks the path to ground and only half the waveform is clipped" is that polarity rule.
 With the Clipping switch open (LED mode) the MOSFETs' common node floats between their body diodes and the LEDs clip at +-1.70 V.
 
 ## Model
 * TL082: A0 2e5, 3 MHz gain-bandwidth, 100 ohm, swing 1.5-7.5 V. (The real part's output stops ~1.5 V short of each rail on 9 V: "the op-amps
   get into saturation" in AIND's words, which the macro's rails reproduce.)
-* Red LEDs: the project's. 2N7000 body diode: Is 2 pA, N 1.4 (0.64 V at 0.1 mA, 0.73 V at 1 mA) -- **an assumption** (datasheet: V_SD < 1.5 V at
-  0.4 A only); a factor 10 in Is moves the clip level by 83 mV.
+* Red LEDs: the project's. **2N7000 body diode: Is 12.6 pA, N 1.4** (0.58 V at 0.1 mA, 0.66 V at 1 mA): anchored on
+  the manufacturers' TYPICAL -- Supertex/Microchip's 2N7000-G and NXP's datasheets both give VSD = 0.85 V at
+  ISD = 200-300 mA, VGS = 0 -- extrapolated down with the diode equation; inside the 0.5-0.7 V that published
+  curve-tracer measurements show for this part (PedalPCB forum #9047). The interim model anchored on Fairchild's
+  1.2 V MAX spec (~1.0 V at 1 mA) was high, and the 2 pA guess before it (~0.65-0.73 V) was undocumented; this is
+  the same model the Zendrive uses.
 * Pots: Drive 1MA (`pots::audio`), Tone and Volume linear ("B"). Tone: clockwise = more resistance in the shunt = brighter (Aion: "Tone fully
   up ... just a slight volume boost"). HP/LP: **High peak** = R10 connected in parallel with the 33K (13.2K), **Low peak** = 33K alone; from the
   schematic (the switch's other throw loops back to its own pole). Defaults: High peak, MOSFET clipping.
@@ -53,7 +56,7 @@ With the Clipping switch open (LED mode) the MOSFETs' common node floats between
 * DC: stage 1, the clipper node and stage 2 at 4.500 V.
 * **Stage 1 gain against the closed form** (input divider, TL082 pole, 2K2 + 68 nF leg, (18K + Drive) || 220 pF), Drive 0.1 / 0.5 / 1 x 200 Hz /
   1 kHz / 4 kHz: within 0.12 dB up to 1 kHz, -0.42 dB at 4 kHz (bandwidth limit at 1x). **Stage 2**: 4.739x against 4.752x.
-* Clipper: +-0.673 V (MOSFET mode) and +-1.701 V (LED mode). Tone 5 kHz / 200 Hz: 0.386 (Tone 0) -> 2.146 (Tone 1). HP vs LP at noon Tone,
+* Clipper: +-0.607 V (MOSFET mode) and +-1.701 V (LED mode). Tone 5 kHz / 200 Hz: 0.386 (Tone 0) -> 2.146 (Tone 1). HP vs LP at noon Tone,
   Volume max: 2.05x (+6.2 dB) at 1 kHz.
 * Bounded and converging under a hot sine at every Drive setting in both clipping modes; stress with random knobs *and* switches (no failed
   solves); stereo independence.
