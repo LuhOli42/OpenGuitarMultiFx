@@ -600,7 +600,9 @@ void TwinReverbStyleAmplifierProcessor::prepare (double newSampleRate, int maxBl
     {
         ch = Channel {};
         buildChannel (ch);
-        ch.bmTail.prepare (sampleRate, voicings::fenderClean, 1.0 / outputScale);
+        auto bmVoicing = voicings::fenderClean;
+        bmVoicing.asym = 0.0; // the bench fit carries zero static asym (it lives in the preamp drive) — a quadratic tail term would double-count even content
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
     const auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double time)
