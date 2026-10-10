@@ -181,6 +181,23 @@ public:
             // The second rail-limited stage also stops at the high rail: it is NOT 10x (4.5 - 1.5).
             expect (bufTop > 7.5 && bufTop < 7.5 + 0.2);
             expectGreaterThan (worstFollowError, 0.5);
+
+            // Rail crossings: an amplitude-decaying sine crosses in and out of clipping on every
+            // cycle — the solve must stay converged and the output continuous (no step discontinuity
+            // at the rail boundary).
+            double prevOut = c.voltage (out), maxStep = 0.0;
+            for (int n = 0; n < (int) (0.1 * sr); ++n)
+            {
+                const double amp = 2.0 * std::pow (0.05 / 2.0, (double) n / (0.1 * sr));
+                const double vin = 4.5 + amp * std::sin (2.0 * juce::MathConstants<double>::pi * 200.0 * (double) n / sr);
+                c.setSource (src, vin);
+                solved = c.solveSample() && solved;
+                maxStep = juce::jmax (maxStep, std::abs (c.voltage (out) - prevOut));
+                prevOut = c.voltage (out);
+            }
+            logMessage ("rail-crossing max sample step = " + juce::String (maxStep, 3) + " V");
+            expect (solved);
+            expectLessThan (maxStep, 0.75);
         }
 
         beginTest ("anti-parallel diode clipper DC point matches an independent scalar solve");
