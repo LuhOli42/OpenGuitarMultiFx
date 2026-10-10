@@ -37,6 +37,9 @@
 #include "Effects/SVTStyleAmplifierProcessor.h"
 #include "Effects/TrainwreckExpressStyleAmplifierProcessor.h"
 #include "Effects/KometConcordeStyleAmplifierProcessor.h"
+#include "Effects/GibsonEH150StyleAmplifierProcessor.h"
+#include "Effects/GarnetHerzogStyleAmplifierProcessor.h"
+#include "Effects/RiveraKnuckleheadStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -401,6 +404,22 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TrainwreckExpressStyleAmplifier", [] { return trimmed (oversampled<TrainwreckExpressStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.03f); });
     registry.markQualityDependent ("KometConcordeStyleAmplifier");
     registry.registerType ("KometConcordeStyleAmplifier", [] { return trimmed (oversampled<KometConcordeStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.31f); });
+    // Gibson EH-150 Style 4 (docs/circuits/GibsonEH150.md): 6SQ7 octal preamp, 6N7 paraphase PI, 2x 6L6
+    // cathode-biased, no global feedback, 5U4G sag. Full netlist, behavioural power stage in reducedOrder.
+    GibsonEH150StyleAmplifierProcessor::reducedOrder = true; // behavioural power stage, same as the other heavy amps
+    registry.markQualityDependent ("GibsonEH150StyleAmplifier");
+    registry.registerType ("GibsonEH150StyleAmplifier", [] { return trimmed (oversampled<GibsonEH150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -17.25f); });
+    // Garnet Herzog (docs/circuits/GarnetHerzog.md): two 12AX7 stages -> single-ended 6V6 -> ~6R dummy load ->
+    // instrument-level tap. Full netlist, behavioural power stage in reducedOrder.
+    GarnetHerzogStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("GarnetHerzogStyleAmplifier");
+    registry.registerType ("GarnetHerzogStyleAmplifier", [] { return trimmed (oversampled<GarnetHerzogStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.24f); });
+    // Rivera Knucklehead Reverb K100 (docs/circuits/RiveraKnucklehead.md): CH1 clean + CH2 high-gain channel
+    // paths, TMB EQs, LTP PI, 4x6L6GC, global NFB with Presence + Focus. Full netlist, behavioural power stage
+    // in reducedOrder; the preamp is two netlists so only the selected channel is solved per sample.
+    RiveraKnuckleheadStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("RiveraKnuckleheadStyleAmplifier");
+    registry.registerType ("RiveraKnuckleheadStyleAmplifier", [] { return trimmed (oversampled<RiveraKnuckleheadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 13.74f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

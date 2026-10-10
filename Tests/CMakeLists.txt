@@ -34,6 +34,9 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   AC30StyleAmplifierProcessorTests.cpp
   TrainwreckExpressStyleAmplifierProcessorTests.cpp
   KometConcordeStyleAmplifierProcessorTests.cpp
+  GibsonEH150StyleAmplifierProcessorTests.cpp
+  GarnetHerzogStyleAmplifierProcessorTests.cpp
+  RiveraKnuckleheadStyleAmplifierProcessorTests.cpp
   SLO100StyleAmplifierProcessorTests.cpp
   MarkIICPlusStyleAmplifierProcessorTests.cpp
   DualRectifierStyleAmplifierProcessorTests.cpp
@@ -173,6 +176,9 @@ set(OGMFX_SOURCES
   ../Source/Effects/SVTStyleAmplifierProcessor.cpp
   ../Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   ../Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
+  ../Source/Effects/GibsonEH150StyleAmplifierProcessor.cpp
+  ../Source/Effects/GarnetHerzogStyleAmplifierProcessor.cpp
+  ../Source/Effects/RiveraKnuckleheadStyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp
