@@ -631,15 +631,25 @@ double JCM800StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double 
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    // reducedOrder folds the page-2 controls that only exist in the full power netlist into the
+    // behavioural stage: Tube Feel scales the available sag depth, Bias shifts the saturator's
+    // operating point the way the full model's bias trim does.
+    const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
+    const double bias = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
+    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     // Saturating curve fitted to the real closed-loop transfer (docs/circuits/JCM8002203.md): small-signal gain bmGain0,
     // peak output bmYmax of the (sagged) rail at full saturation, knee sharpness bmKneeN. K is the knee's location in
     // absolute volts AT THE CURRENT RAIL (a lighter-sagged rail clips later, in volts, exactly like the real amp).
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = absDrive / juce::jmax (1.0e-9, k);
-    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, drive);
+    const double shift = 0.6 * (bias - 0.5) * k;
+    const auto sat = [k, rail = ch.bmRail] (double xx)
+    {
+        const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
+        const double yx = bmYmax * ux / std::pow (1.0 + std::pow (ux, bmKneeN), 1.0 / bmKneeN);
+        return std::copysign (yx * rail, xx);
+    };
+    const double raw = sat (drive + shift) - sat (shift);
 
     // The frequency response the removed stages used to provide: a fixed biquad fitted to the (structurally
     // identical, healthy) Super Lead reference netlist's measured transfer -- this amp's own reference power

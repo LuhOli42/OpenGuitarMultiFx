@@ -23,8 +23,9 @@ namespace openguitarmultifx
     amp's channel switching). Then Master -> phase inverter (4x6L6, global feedback with Presence and Pull Deep).
 
     Controls, page 1 -- the real panel: Channel (Rhythm / Lead), Volume 1, Pull Bright, Treble, Pull Shift, Bass,
-    Middle, Master, Pull Deep, Lead Drive, Lead Master, Presence. Page 2 (synthetic): Power Drive, Bias, Tube Feel,
-    Speaker (4 / 8 / 16 ohm), Output. Page 3: the 5-band graphic EQ.
+    Middle, Master, Pull Deep, Lead Drive, Lead Master, Presence, then the footswitchable 5-band graphic EQ
+    (on/off + 80/240/750/2200/6600 Hz) that sits between preamp and power amp on the real unit.
+    Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class MarkIICPlusStyleAmplifierProcessor : public EffectProcessor
 {
@@ -197,6 +198,7 @@ private:
     juce::AudioParameterFloat* masterParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* geqParams[5] {};
+    juce::AudioParameterFloat* geqOnParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;

@@ -487,12 +487,22 @@ double TwinReverbStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, dou
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    // reducedOrder folds the page-2 controls that only exist in the full power netlist into the
+    // behavioural stage: Tube Feel scales the available sag depth, Bias shifts the saturator's
+    // operating point the way the full model's bias trim does.
+    const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
+    const double bias = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
+    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = absDrive / juce::jmax (1.0e-9, k);
-    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, driveVoltage);
+    const double shift = 0.6 * (bias - 0.5) * k;
+    const auto sat = [k, rail = ch.bmRail] (double xx)
+    {
+        const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
+        const double yx = bmYmax * ux / std::pow (1.0 + std::pow (ux, bmKneeN), 1.0 / bmKneeN);
+        return std::copysign (yx * rail, xx);
+    };
+    const double raw = sat (driveVoltage + shift) - sat (shift);
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);

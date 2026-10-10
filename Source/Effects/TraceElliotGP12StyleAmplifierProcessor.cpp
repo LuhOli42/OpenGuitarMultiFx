@@ -106,8 +106,8 @@ TraceElliotGP12StyleAmplifierProcessor::TraceElliotGP12StyleAmplifierProcessor()
     group->addChild (std::move (gLevelParam));
     group->addChild (std::move (outputParam));
 
-    // Page 2: the twelve graphic band sliders.
-    auto eqPage = std::make_unique<juce::AudioProcessorParameterGroup> ("tegp12_geq", "Graphic EQ", "|");
+    // The 12-band graphic EQ is a front-panel section on the real GP12 -> page 1 with the rest of
+    // the panel controls, not a sub-page.
     const char* bandNames[numBands] = { "30 Hz", "40 Hz", "60 Hz", "100 Hz", "180 Hz", "340 Hz",
                                         "660 Hz", "1.3 kHz", "2.6 kHz", "5 kHz", "10 kHz", "15 kHz" };
     for (int i = 0; i < numBands; ++i)
@@ -115,9 +115,8 @@ TraceElliotGP12StyleAmplifierProcessor::TraceElliotGP12StyleAmplifierProcessor()
         const juce::String id ("tegp12_eq_" + juce::String (i));
         auto p = makeSlider (id.toRawUTF8(), bandNames[i]);
         bands[(size_t) i] = p.get();
-        eqPage->addChild (std::move (p));
+        group->addChild (std::move (p));
     }
-    group->addChild (std::move (eqPage));
 
     parameters = std::move (group);
 }

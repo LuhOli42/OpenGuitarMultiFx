@@ -108,13 +108,13 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
     group->addChild (std::move (treble));
     group->addChild (std::move (bass));
     group->addChild (std::move (middle));
+    group->addChild (std::move (distortion));
+    group->addChild (std::move (effect));
+    group->addChild (std::move (speed));
+    group->addChild (std::move (depth));
     group->addChild (std::move (output));
 
-    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("jc120_page2", "Effects", "|", std::move (distortion));
-    page2->addChild (std::move (effect));
-    page2->addChild (std::move (speed));
-    page2->addChild (std::move (depth));
-    page2->addChild (std::move (speaker));
+    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("jc120_page2", "Page 2", "|", std::move (speaker));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }

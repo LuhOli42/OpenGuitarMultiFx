@@ -511,7 +511,7 @@ void JTM45StyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rBass, bassR);
         ch.power.setResistance (ch.rMid, midR);
         // reducedOrder: Presence/feedback/bias don't exist in the tone-stack-only power circuit (see the header's
-        // "reduced-order power stage" note) -- none of Presence, Bias or Tube Feel are reproduced yet (a documented gap).
+        // "reduced-order power stage" note) -- Presence, Bias and Tube Feel are folded into behaviouralPowerStage below.
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
@@ -581,7 +581,9 @@ double JTM45StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double t
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
+    const double bias = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
+    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
     // The LTP input grid clamps the delivered signal once it pulls the grid into conduction -- in the
@@ -600,7 +602,7 @@ double JTM45StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double t
     // perfectly odd-symmetric (audit: even/odd ~0.01). Evaluating the knee around a fixed offset and
     // referencing the output back to that point reproduces it; the OT DC-block below removes the
     // resulting mean.
-    const double dcShift = bmAsym * k;
+    const double dcShift = (bmAsym + 0.6 * (bias - 0.5)) * k;
     const double raw = knee (clamped + dcShift) - knee (dcShift);
 
     // Asymmetric clip produces a net DC offset the output transformer cannot pass -- block it.
@@ -609,7 +611,8 @@ double JTM45StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double t
     const double rawAc = raw - ch.bmDcState;
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
+    const double presScale = 0.9 + 0.34 * juce::jlimit (0.0, 1.0, lastKnobs.presence);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * presScale * (rawAc - ch.bmToneState);
     return ch.bmOutput;
 }
 

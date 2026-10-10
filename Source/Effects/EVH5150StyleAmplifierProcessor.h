@@ -133,6 +133,7 @@ private:
         double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
         double bmCX1 = 0.0, bmCX2 = 0.0, bmCY1 = 0.0, bmCY2 = 0.0;
         double bmCutState = 0.0;
+        double bmPresState = 0.0;   // presence HF-shelf lowpass state (reducedOrder only)
         tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
         // supply
