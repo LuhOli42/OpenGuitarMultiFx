@@ -12,10 +12,7 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
 {
     auto graph = std::make_unique<SignalGraph>();
     std::vector<std::unique_ptr<EffectProcessor>> owners;
-    // Sum, not max: a repeat inside the LAST of two serial delays waits for
-    // both lines. The forward-only lane graph means no path sums a
-    // processor twice, so the total covers the longest serial wait.
-    double totalTrailLatency = 0.0;
+    std::array<double, SignalGraph::numLanes> laneTrailLatency {};
     bool anyTrails = false;
 
     for (int lane = 0; lane < SignalGraph::numLanes; ++lane)
@@ -32,7 +29,7 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
                 continue; // a non-trail block's output dies with the switch
 
             kept.push_back (p);
-            totalTrailLatency += p->trailLatencySeconds();
+            laneTrailLatency[(size_t) lane] += p->trailLatencySeconds();
             for (auto& slot : retired)
                 if (slot.get() == p)
                 {
@@ -54,10 +51,39 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
             && connection.second < SignalGraph::numLanes)
             graph->addLaneConnection (connection.first, connection.second);
 
+    // Longest serial wait reaching the device, over the lane DAG: a repeat
+    // inside the LAST of two serial delays waits for both lines (add per
+    // lane, propagate the max incoming path at merges), but delays on
+    // parallel lanes ring concurrently -- summing them would hold the unit
+    // alive for their total. Connections are forward-only, so ascending
+    // lane order is already topological. A lane counts only when its tail
+    // can still reach an output lane.
+    std::array<double, SignalGraph::numLanes> longestWaitToLane {};
+    std::array<bool, SignalGraph::numLanes> reachesOutput {};
+    for (int lane = SignalGraph::numLanes - 1; lane >= 0; --lane)
+    {
+        reachesOutput[(size_t) lane] = lanes[(size_t) lane].writesDeviceOutput;
+        for (const auto& c : connections)
+            if (c.first == lane && c.second < SignalGraph::numLanes
+                && reachesOutput[(size_t) c.second])
+                reachesOutput[(size_t) lane] = true;
+    }
+    double longestWait = 0.0;
+    for (int lane = 0; lane < SignalGraph::numLanes; ++lane)
+    {
+        for (const auto& c : connections)
+            if (c.second == lane && c.first >= 0 && c.first < c.second)
+                longestWaitToLane[(size_t) lane]
+                    = juce::jmax (longestWaitToLane[(size_t) lane], longestWaitToLane[(size_t) c.first]);
+        longestWaitToLane[(size_t) lane] += laneTrailLatency[(size_t) lane];
+        if (reachesOutput[(size_t) lane])
+            longestWait = juce::jmax (longestWait, longestWaitToLane[(size_t) lane]);
+    }
+
     auto unit = std::make_unique<Unit>();
     unit->graph = std::move (graph);
     unit->owners = std::move (owners);
-    unit->silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds + totalTrailLatency;
+    unit->silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds + longestWait;
     return unit;
 }
 

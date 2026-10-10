@@ -226,6 +226,8 @@ public:
             auto unit = Spillover::build (lanes, {}, retired);
             unit->prepare (sampleRate, blockSize, 1);
             auto* unitRaw = unit.get();
+            expectWithinAbsoluteError (unitRaw->silenceWindowSeconds,
+                                       EffectProcessor::trailsSilenceSeconds + 2.0, 1.0e-9);
 
             Spillover spill;
             spill.add (std::move (unit));
@@ -241,6 +243,48 @@ public:
             // second repeat fires. Output = echo1 passthrough (0.5) +
             // echo2's echo (1.0) = 1.5. The point: it isn't silence.
             expectWithinAbsoluteError (out[(size_t) oneSec * 2 - blockSize], 1.5f, 1.0e-4f);
+        }
+
+        beginTest ("the silence window takes the longest lane path, not the total");
+        {
+            // Two 1.0 s echoes on PARALLEL lanes (both writing device
+            // output): they ring concurrently, so the window is
+            // 0.5 + max = 1.5 s -- a total-sum window would burn spill CPU
+            // for an extra second.
+            std::unique_ptr<EffectProcessor> echo1 = std::make_unique<EchoProcessor> ((int) sampleRate, 1.0);
+            std::unique_ptr<EffectProcessor> echo2 = std::make_unique<EchoProcessor> ((int) sampleRate, 1.0);
+
+            Lanes lanes;
+            lanes[0].processors = { echo1.get() };
+            lanes[0].writesDeviceOutput = true;
+            lanes[1].processors = { echo2.get() };
+            lanes[1].writesDeviceOutput = true;
+
+            std::vector<std::unique_ptr<EffectProcessor>> retired;
+            retired.push_back (std::move (echo1));
+            retired.push_back (std::move (echo2));
+
+            auto unit = Spillover::build (lanes, {}, retired);
+            expectWithinAbsoluteError (unit->silenceWindowSeconds,
+                                       EffectProcessor::trailsSilenceSeconds + 1.0, 1.0e-9);
+
+            // But echo1 -> echo2 ACROSS lanes is a serial path again:
+            // same two echoes now connected lane0 -> lane1.
+            std::unique_ptr<EffectProcessor> echo3 = std::make_unique<EchoProcessor> ((int) sampleRate, 1.0);
+            std::unique_ptr<EffectProcessor> echo4 = std::make_unique<EchoProcessor> ((int) sampleRate, 1.0);
+
+            Lanes lanes2;
+            lanes2[0].processors = { echo3.get() };
+            lanes2[1].processors = { echo4.get() };
+            lanes2[1].writesDeviceOutput = true;
+
+            std::vector<std::unique_ptr<EffectProcessor>> retired2;
+            retired2.push_back (std::move (echo3));
+            retired2.push_back (std::move (echo4));
+
+            auto unit2 = Spillover::build (lanes2, { { 0, 1 } }, retired2);
+            expectWithinAbsoluteError (unit2->silenceWindowSeconds,
+                                       EffectProcessor::trailsSilenceSeconds + 2.0, 1.0e-9);
         }
 
         beginTest ("a tail relays through an emptied lane that writes device output");
