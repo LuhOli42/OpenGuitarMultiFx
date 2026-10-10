@@ -67,6 +67,10 @@ private:
         int supplyCounter = 0, currentCount = 0;
         double currentSum = 0.0, preRailFiltered = 0.0, outputState = 0.0, envelope = 0.0;
         double preDc = 0.0, pre2Dc = 0.0;
+        int lastTonePosition = -1, lastSpeakerIndex = -1;
+        // reducedOrder control folding (see updatePots' else branch)
+        double bmDriveScale = 1.0, bmBias = 0.5, bmFeel = 1.0;
+        double bmCutAlpha = 1.0, bmLp = 0.0, bmShelf = 0.0, bmPresAlpha = 0.0, bmLpPres = 0.0;
         long long failures = 0;
     };
 

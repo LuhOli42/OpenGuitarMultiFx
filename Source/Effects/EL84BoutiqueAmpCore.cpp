@@ -211,7 +211,10 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         ch.toneOut = toneOut;
         ch.preVolumeTop = c.addResistor (toneOut, coupling, 1.0e6);
         ch.preVolumeBottom = c.addResistor (coupling, gnd, 1.0e6);
-        c.addCapacitor (plate, coupling, 0.022e-6);
+        // Full-range input cap feeding the tone network (in parallel with the 220pF bright
+        // path) -- it must land on the stack's input node, NOT the volume wiper: wired to
+        // 'coupling' it bypassed Bass/Treble/Volume entirely.
+        c.addCapacitor (plate, a, 0.022e-6);
         const auto second = addTriode (coupling, 100.0e3, 1.5e3, 0.0, 0.022e-6, false);
         ch.preOut = second.second;
         return;
@@ -464,8 +467,12 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         if (! reducedOrder)
             ch.power.setResistance (ch.rCut, boundedPot (1.0 - param (cutParam, 0.5), 100.0e3));
         const int tonePosition = juce::jlimit (0, 5, juce::roundToInt ((float) param (tone2Param, 0.0)));
-        constexpr double toneCaps[6] { 1.0e-12, 470.0e-12, 1.0e-9, 2.2e-9, 4.7e-9, 10.0e-9 };
-        ch.pre2.setCapacitance (ch.toneCap, toneCaps[tonePosition]);
+        if (tonePosition != ch.lastTonePosition)
+        {
+            ch.lastTonePosition = tonePosition;
+            constexpr double toneCaps[6] { 1.0e-12, 470.0e-12, 1.0e-9, 2.2e-9, 4.7e-9, 10.0e-9 };
+            ch.pre2.setCapacitance (ch.toneCap, toneCaps[tonePosition]);
+        }
     }
     else if (model == Model::hotCat30)
     {
@@ -508,10 +515,32 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
             ch.power.setResistance (ch.rMasterTopB, boundedPot (1.0 - master, 250.0e3));
         }
         const auto speakerIndex = juce::jlimit (0, 2, juce::roundToInt ((float) param (speakerParam, 2.0)));
-        const auto load = tubeamp::speakerModel (speakerNominal[speakerIndex]);
-        ch.power.setResistance (ch.rSpeakerRe, load.re);
-        ch.power.setResistance (ch.rSpeakerRp, load.rp);
-        ch.power.setCapacitance (ch.capSpeakerCp, load.cp);
+        if (speakerIndex != ch.lastSpeakerIndex)
+        {
+            ch.lastSpeakerIndex = speakerIndex;
+            const auto load = tubeamp::speakerModel (speakerNominal[speakerIndex]);
+            ch.power.setResistance (ch.rSpeakerRe, load.re);
+            ch.power.setResistance (ch.rSpeakerRp, load.rp);
+            ch.power.setResistance (ch.rSpeakerEddy, speakerEddyLoss * speakerNominal[speakerIndex] / speakerNominal[2]);
+            ch.power.setCapacitance (ch.capSpeakerCp, load.cp);
+            // allocating setter -- only on an actual speaker change, never per control tick
+            ch.power.setInductorInverse (ch.grpSpeakerLe, { 1.0 / load.le });
+            ch.power.setInductorInverse (ch.grpSpeakerLp, { 1.0 / load.lp });
+        }
+    }
+    else
+    {
+        // reducedOrder: the page-2 controls that live only in the power block are folded
+        // into the behavioural stage instead -- master attenuates the drive, bias shifts
+        // the knee's operating point, tube feel scales the sag depth, and cut/presence
+        // run as cheap one-poles on the output.
+        ch.bmDriveScale = param (masterParam, 1.0);
+        ch.bmBias = bias;
+        ch.bmFeel = feel;
+        const double cutHz = 20000.0 * std::pow (0.15, param (cutParam, 0.5));
+        ch.bmCutAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cutHz / juce::jmax (1.0, sampleRate));
+        ch.bmShelf = (param (presenceParam, 0.5) - 0.5) * 4.0;
+        ch.bmPresAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 3500.0 / juce::jmax (1.0, sampleRate));
     }
     (void) power;
 }
@@ -545,11 +574,13 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     const double magnitude = std::abs (drive);
     ch.envelope += (magnitude > ch.envelope ? attack : release) * (magnitude - ch.envelope);
     const double gain = model == Model::carmenGhia ? 10.0 : model == Model::astroverb16 ? 18.0 : 14.0;
-    const double level = model == Model::matchlessHC30 ? 0.97 :
+    const double level = model == Model::matchlessHC30 ? 1.17 :
                          model == Model::hotCat30 ? 9.5 :
                          model == Model::carmenGhia ? 22.4 : 21.4;
-    return level * std::tanh (drive * gain) * (model == Model::carmenGhia ? 0.65 : 0.8)
-        * (1.0 - 0.025 * juce::jlimit (0.0, 1.0, ch.envelope));
+    const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
+    const double sag = reducedOrder ? 0.03 * ch.bmFeel : 0.025;
+    return level * (std::tanh (drive * gain + asym) - std::tanh (asym)) * (model == Model::carmenGhia ? 0.65 : 0.8)
+        * (1.0 - sag * juce::jlimit (0.0, 1.0, ch.envelope));
 }
 
 void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
@@ -635,7 +666,17 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
                 auto& dc = useSecondChannel ? ch.pre2Dc : ch.preDc;
                 const double dcAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 5.0 / juce::jmax (1.0, sampleRate));
                 dc += dcAlpha * (preOut - dc);
-                speakerVolts = behavioralPowerStage (ch, (preOut - dc) * powerDrive);
+                speakerVolts = behavioralPowerStage (ch, (preOut - dc) * powerDrive * ch.bmDriveScale);
+                if (ch.bmCutAlpha < 0.999)
+                {
+                    ch.bmLp += ch.bmCutAlpha * (speakerVolts - ch.bmLp);
+                    speakerVolts = ch.bmLp;
+                }
+                if (ch.bmShelf != 0.0)
+                {
+                    ch.bmLpPres += ch.bmPresAlpha * (speakerVolts - ch.bmLpPres);
+                    speakerVolts = ch.bmLpPres + (1.0 + ch.bmShelf) * (speakerVolts - ch.bmLpPres);
+                }
             }
             else
             {
