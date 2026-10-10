@@ -145,8 +145,10 @@ def pairwise_spread(vals):
 divergence = {}
 for fam, variants in FAMILIES.items():
     keys = [k for k, _ in variants]
-    best_thd = {'spread': 0., 'drive': None}
-    best_band = {'spread': 0., 'drive': None}
+    # default the marker to the first drive so single-variant sweeps still
+    # print (spread stays 0 -- nothing pairwise to compare)
+    best_thd = {'spread': 0., 'drive': DRIVES[0]}
+    best_band = {'spread': 0., 'drive': DRIVES[0]}
     for d in DRIVES:
         s = pairwise_spread(results[k]['settings'][f'{d:g}']['thd_pct'] for k in keys)
         if s > best_thd['spread']: best_thd = {'spread': s, 'drive': d}
@@ -201,6 +203,12 @@ print('\nwrote', json_path)
 mp = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--update-metrics=')), None)
 if mp:
     m = json.load(open(mp)) if os.path.exists(mp) else {}
+    # merge per variant/family so a subset run (SWEEP_KEYS) refreshes only
+    # what it measured instead of wiping previously swept variants
+    prev = m.get('drive_sweep', {})
+    if prev:
+        sweep['results'] = {**prev.get('results', {}), **sweep['results']}
+        sweep['divergence'] = {**prev.get('divergence', {}), **sweep['divergence']}
     m['drive_sweep'] = sweep
     json.dump(m, open(mp, 'w'), indent=1)
     print('merged drive_sweep into', mp)
