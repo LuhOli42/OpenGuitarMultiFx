@@ -43,6 +43,36 @@ bool PresetManager::deletePreset (const juce::String& name) const
     return fileFor (name).deleteFile();
 }
 
+bool PresetManager::presetExists (const juce::String& name) const
+{
+    return fileFor (name).existsAsFile();
+}
+
+bool PresetManager::renamePreset (const juce::String& oldName, const juce::String& newName) const
+{
+    if (newName.trim().isEmpty() || presetExists (newName))
+        return false;
+
+    auto xml = loadPreset (oldName);
+    if (xml == nullptr || ! savePreset (newName, *xml))
+        return false;
+
+    return deletePreset (oldName);
+}
+
+bool PresetManager::duplicatePreset (const juce::String& sourceName, const juce::String& newName) const
+{
+    if (newName.trim().isEmpty() || presetExists (newName))
+        return false;
+
+    auto xml = loadPreset (sourceName);
+    if (xml == nullptr)
+        return false;
+
+    xml->setAttribute ("number", nextAvailableNumber());
+    return savePreset (newName, *xml);
+}
+
 int PresetManager::numberForExistingPreset (const juce::String& name) const
 {
     if (auto xml = loadPreset (name))

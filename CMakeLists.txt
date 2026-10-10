@@ -122,6 +122,9 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/DS1StyleDistortionProcessor.cpp
   Source/Effects/OD1StyleOverdriveProcessor.cpp
   Source/Effects/TubeScreamerStyleOverdriveProcessor.cpp
+  Source/Effects/TS9BStyleOverdriveProcessor.cpp
+  Source/Effects/ODB3StyleOverdriveProcessor.cpp
+  Source/Effects/MuTronIIIStyleFilterProcessor.cpp
   Source/Effects/CentaurStyleOverdriveProcessor.cpp
   Source/Effects/BD2StyleOverdriveProcessor.cpp
   Source/Effects/BigMuffStyleFuzzProcessor.cpp
@@ -139,6 +142,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/BluesBreakerStyleOverdriveProcessor.cpp
   Source/Effects/RatStyleDistortionProcessor.cpp
   Source/Effects/GE7StyleEqualizerProcessor.cpp
+  Source/Effects/GEB7StyleEqualizerProcessor.cpp
   Source/Effects/ParametricEQProcessor.cpp
   Source/Effects/RingModProcessor.cpp
   Source/Effects/DS201StyleNoiseGateProcessor.cpp
@@ -173,11 +177,22 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/ENGLPowerballStyleAmplifierProcessor.cpp
   Source/Effects/RockerverbStyleAmplifierProcessor.cpp
   Source/Effects/SVTStyleAmplifierProcessor.cpp
+  Source/Effects/TraceElliotGP12StyleAmplifierProcessor.cpp
   Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
   Source/Effects/GibsonEH150StyleAmplifierProcessor.cpp
   Source/Effects/GarnetHerzogStyleAmplifierProcessor.cpp
   Source/Effects/RiveraKnuckleheadStyleAmplifierProcessor.cpp
+  Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
+  Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
+  Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp
+  Source/Effects/SunnModelTStyleAmplifierProcessor.cpp
+  Source/Effects/FryetteDeliveranceD120StyleAmplifierProcessor.cpp
+  Source/Effects/BognerUberschallStyleAmplifierProcessor.cpp
+  Source/Effects/AmpegB15StyleAmplifierProcessor.cpp
+  Source/Effects/AmpegV4BStyleAmplifierProcessor.cpp
+  Source/Effects/MesaBass400PlusStyleAmplifierProcessor.cpp
+  Source/Effects/Acoustic360StyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp
@@ -220,6 +235,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/OpenGuitarMultiFxLookAndFeel.cpp
   Source/UI/PresetBadge.cpp
   Source/UI/PresetListDialog.cpp
+  Source/UI/PromptCards.cpp
   Source/UI/Tone3000Panel.cpp
   Source/UI/Tone3000SearchDialog.cpp
   Source/UI/OAuthLoginDialog.cpp
