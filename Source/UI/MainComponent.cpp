@@ -79,6 +79,8 @@ namespace
             || displayName == "Trainwreck Express-Style Amplifier" || displayName == "Komet Concorde-Style Amplifier"
             || displayName == "HC-30-Style Amplifier" || displayName == "Hot Cat 30-Style Amplifier"
             || displayName == "Carmen Ghia-Style Amplifier" || displayName == "Astroverb 16-Style Amplifier"
+            || displayName == "Dumble Steel String-Style Amplifier" || displayName == "Sunn Model T-Style Amplifier"
+            || displayName == "Fryette Deliverance D120-Style Amplifier" || displayName == "Bogner Uberschall-Style Amplifier"
             || displayName == "Trace Elliot GP12-Style Amplifier")
             return "Modeled Amps";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")

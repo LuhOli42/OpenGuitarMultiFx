@@ -180,6 +180,10 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/TraceElliotGP12StyleAmplifierProcessor.cpp
   Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
+  Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp
+  Source/Effects/SunnModelTStyleAmplifierProcessor.cpp
+  Source/Effects/FryetteDeliveranceD120StyleAmplifierProcessor.cpp
+  Source/Effects/BognerUberschallStyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
   Source/Effects/IRLoaderProcessor.cpp
   Source/Effects/DynamicCabProcessor.cpp

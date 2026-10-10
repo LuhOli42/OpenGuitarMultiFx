@@ -45,6 +45,10 @@
 #include "Effects/SVTStyleAmplifierProcessor.h"
 #include "Effects/TrainwreckExpressStyleAmplifierProcessor.h"
 #include "Effects/KometConcordeStyleAmplifierProcessor.h"
+#include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
+#include "Effects/SunnModelTStyleAmplifierProcessor.h"
+#include "Effects/FryetteDeliveranceD120StyleAmplifierProcessor.h"
+#include "Effects/BognerUberschallStyleAmplifierProcessor.h"
 #include "Effects/BluesBreakerStyleOverdriveProcessor.h"
 #include "Effects/GuvnorStyleDistortionProcessor.h"
 #include "Effects/OpAmpClipperDistortionProcessor.h"
@@ -438,6 +442,21 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TrainwreckExpressStyleAmplifier", [] { return trimmed (oversampled<TrainwreckExpressStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.03f); });
     registry.markQualityDependent ("KometConcordeStyleAmplifier");
     registry.registerType ("KometConcordeStyleAmplifier", [] { return trimmed (oversampled<KometConcordeStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.31f); });
+
+    // Four new big-iron heads (docs/circuits/{DumbleSteelString,SunnModelT,FryetteDeliveranceD120,
+    // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
+    DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DumbleSteelStringStyleAmplifier");
+    registry.registerType ("DumbleSteelStringStyleAmplifier", [] { return trimmed (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.05f); });
+    SunnModelTStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("SunnModelTStyleAmplifier");
+    registry.registerType ("SunnModelTStyleAmplifier", [] { return trimmed (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 17.12f); });
+    FryetteDeliveranceD120StyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("FryetteDeliveranceD120StyleAmplifier");
+    registry.registerType ("FryetteDeliveranceD120StyleAmplifier", [] { return trimmed (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.46f); });
+    BognerUberschallStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("BognerUberschallStyleAmplifier");
+    registry.registerType ("BognerUberschallStyleAmplifier", [] { return trimmed (oversampled<BognerUberschallStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.72f); });
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an
