@@ -594,10 +594,12 @@ double SunnModelTStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, dou
     const double asym = 0.3 * (biasTrim - 0.5) * bmYmax;
     const double drive = toneVoltage + asym;
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = std::abs (drive) / juce::jmax (1.0e-9, k);
-    const double u0 = std::abs (asym) / juce::jmax (1.0e-9, k);
     const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
-    const double raw = std::copysign ((knee (u) - knee (u0)) * ch.bmRail, drive);
+    // signed odd saturator f(x)=copysign(knee(|x|),x): the unsigned knee difference
+    // reversed the waveform near zero for off-centre bias (same fix as PR #39).
+    const auto f = [&] (double x) { const double ux = std::abs (x) / juce::jmax (1.0e-9, k);
+                                    return std::copysign (knee (ux), x); };
+    const double raw = (f (drive) - f (asym)) * ch.bmRail;
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
