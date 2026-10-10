@@ -159,6 +159,7 @@ private:
     double behavioralPowerStage (Channel& ch, double driveVoltage) const noexcept;
 
     int appliedSpeaker = -1;
+    int appliedClick = -1;
     double speakerGain = 1.0;
     bool resistiveLoadForced = false;
     mutable int recoveries = 0;

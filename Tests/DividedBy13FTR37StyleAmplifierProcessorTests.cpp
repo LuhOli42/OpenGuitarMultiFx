@@ -238,6 +238,34 @@ public:
             DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = false;
         }
 
+        {
+            beginTest ("Full/Half switch lowers the reduced-order power ceiling");
+            DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = true;
+            const double twoPi = 2.0 * juce::MathConstants<double>::pi;
+            auto level = [&] (float half)
+            {
+                DividedBy13FTR37StyleAmplifierProcessor amp;
+                setParam (amp, "f37_half_power", half);
+                setParam (amp, "f37_ch2_volume", 0.9f);
+                amp.prepare (sr, 128, 2);
+                juce::AudioBuffer<float> buf (2, 128);
+                double sum = 0.0;
+                int n = 0;
+                for (int i = 0; i < (int) (2.0 * sr / 128); ++i)
+                {
+                    for (int s = 0; s < 128; ++s)
+                        buf.setSample (0, s, (float) (0.5 * std::sin (twoPi * 220.0 * (i * 128 + s) / sr)));
+                    buf.copyFrom (1, 0, buf, 0, 0, 128);
+                    amp.process (buf); // in-place: buf now holds the output
+                    if (i * 128 >= (int) sr)
+                        for (int s = 0; s < 128; ++s) { const double v = buf.getSample (0, s); sum += v * v; ++n; }
+                }
+                return std::sqrt (sum / juce::jmax (1, n));
+            };
+            expect (level (1.0f) < level (0.0f));
+            DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = false;
+        }
+
         if (juce::SystemStats::getEnvironmentVariable ("F37_POWERCAL", {}).isNotEmpty())
         {
             beginTest ("power-stage calibration sweep (dev only)");

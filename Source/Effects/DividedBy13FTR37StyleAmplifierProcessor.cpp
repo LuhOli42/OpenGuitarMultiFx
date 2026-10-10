@@ -476,6 +476,14 @@ void DividedBy13FTR37StyleAmplifierProcessor::updatePots (const Knobs& k)
     const double boostR = k.boost == 1 ? 1.0 : 1.0e9;
     const double clickC = clickCaps[juce::jlimit (0, 5, k.click)];
 
+    // setCapacitance marks the circuit dirty (next solve refactorizes), so only touch it on real changes.
+    if (k.click != appliedClick)
+    {
+        for (auto& ch : channels)
+            ch.preCh1.setCapacitance (ch.capClick, clickC);
+        appliedClick = k.click;
+    }
+
     for (auto& ch : channels)
     {
         const double vol1Bottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volume1));
@@ -491,7 +499,6 @@ void DividedBy13FTR37StyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rTrebleBot, trebleBottom);
         ch.pre.setResistance (ch.rBass, bassR);
         ch.pre.setResistance (ch.rBoost, boostR);
-        ch.preCh1.setCapacitance (ch.capClick, clickC);
         if (! reducedOrder)
         {
             ch.power.setSource (ch.wSrcBias, biasVolts);
@@ -566,11 +573,16 @@ double DividedBy13FTR37StyleAmplifierProcessor::preampOutput (const Channel& ch)
 double DividedBy13FTR37StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double driveVoltage) const noexcept
 {
     constexpr double attackMs = 8.0, releaseMs = 45.0;
+    // Half power lifts one 6V6 pair's cathodes in the full-order model: less idle current,
+    // earlier clip, a little less output. The behavioural model gets reduced drive plus a
+    // lower ceiling below.
+    if (lastKnobs.halfPower == 1)
+        driveVoltage *= 0.85;
     const double absDrive = std::abs (driveVoltage);
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    ch.bmRail = sagRailLookup (ch.bmEnvelope) * (lastKnobs.halfPower == 1 ? 0.8 : 1.0);
 
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double u = absDrive / juce::jmax (1.0e-9, k);
@@ -666,6 +678,7 @@ void DividedBy13FTR37StyleAmplifierProcessor::prepare (double newSampleRate, int
 
     idleSupplyCurrent = idlePlateCurrent * 4.0 + idleScreenCurrent * 4.0 + piAndPreampCurrent;
     appliedSpeaker = matchedSpeaker;
+    appliedClick = -1;
     updatePots ({ ch1VolumeParam->get(), ch2VolumeParam->get(), trebleParam->get(), bassParam->get(), powerParam->get(),
                   biasParam->get(), tubeFeelParam->get(), juce::roundToInt (inputParam->get()),
                   juce::roundToInt (clickParam->get()), juce::roundToInt (boostParam->get()),

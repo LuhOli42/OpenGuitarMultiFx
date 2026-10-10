@@ -442,11 +442,17 @@ double CarrRamblerStyleAmplifierProcessor::preampOutput (const Channel& ch) cons
 double CarrRamblerStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double driveVoltage) const noexcept
 {
     constexpr double attackMs = 8.0, releaseMs = 45.0;
+    // Triode mode straps screens to plates in the full-order model: the stage loses gain and
+    // headroom. The behavioural model folds that into reduced drive plus a lower ceiling below.
+    if (lastKnobs.mode == 1)
+        driveVoltage *= 0.8;
     const double absDrive = std::abs (driveVoltage);
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    // Triode mode (screens strapped to plates in the full-order model) lowers the power ceiling
+    // the same way here: a lower effective rail clips earlier and quieter.
+    ch.bmRail = sagRailLookup (ch.bmEnvelope) * (lastKnobs.mode == 1 ? 0.75 : 1.0);
 
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double u = absDrive / juce::jmax (1.0e-9, k);
