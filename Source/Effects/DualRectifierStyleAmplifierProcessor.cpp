@@ -618,10 +618,45 @@ double DualRectifierStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
     const double raw = std::copysign (y * ch.bmRail, toneVoltage);
 
-    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
-    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    // The frequency response the removed stages used to provide: two fixed biquads fitted to the reference
+    // netlist's own measured transfer (resonant high-pass LF bump + zero/pole top section).
+    const double lf = bmAB0 * raw + bmAB1 * ch.bmAX1 + bmAB2 * ch.bmAX2
+                    - bmAA1 * ch.bmAY1 - bmAA2 * ch.bmAY2;
+    ch.bmAX2 = ch.bmAX1; ch.bmAX1 = raw;
+    ch.bmAY2 = ch.bmAY1; ch.bmAY1 = lf;
+    const double top = bmBB0 * lf + bmBB1 * ch.bmBX1 + bmBB2 * ch.bmBX2
+                     - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
+    ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
+    ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
+    const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmCutHz / juce::jmax (1.0, sampleRate));
+    ch.bmCutState += cut * (top - ch.bmCutState);
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (top - ch.bmCutState) * bmLevelTrim);
     return ch.bmOutput;
+}
+
+void DualRectifierStyleAmplifierProcessor::designPowerFilters()
+{
+    // Bilinear transform (s = c(1-z^-1)/(1+z^-1), c = 2*fs) of an analog biquad n2 s^2 + n1 s + n0 over d2 s^2 + d1 s + d0.
+    const auto bilinear = [] (double n2, double n1, double n0, double d2, double d1, double d0, double fs,
+                              double& b0, double& b1, double& b2, double& a1, double& a2)
+    {
+        const double c = 2.0 * fs;
+        const double A0 = d2 * c * c + d1 * c + d0;
+        a1 = 2.0 * (d0 - d2 * c * c) / A0;
+        a2 = (d2 * c * c - d1 * c + d0) / A0;
+        b0 = (n2 * c * c + n1 * c + n0) / A0;
+        b1 = 2.0 * (n0 - n2 * c * c) / A0;
+        b2 = (n2 * c * c - n1 * c + n0) / A0;
+    };
+    const double wb = 2.0 * juce::MathConstants<double>::pi * bmBumpHz;
+    // resonant high-pass: peaks +20log10(Qp) dB at bmBumpHz, -12 dB/oct below, unity above
+    bilinear (1.0 / (wb * wb), 0.0, 0.0,
+              1.0 / (wb * wb), 1.0 / (bmBumpQp * wb), 1.0,
+              sampleRate, bmAB0, bmAB1, bmAB2, bmAA1, bmAA2);
+    const double wz = 2.0 * juce::MathConstants<double>::pi * bmTopZHz, wp = 2.0 * juce::MathConstants<double>::pi * bmTopPHz;
+    bilinear (0.0, 1.0 / wz, 1.0,
+              1.0 / (wp * wp), 1.0 / (bmTopQp * wp), 1.0,
+              sampleRate, bmBB0, bmBB1, bmBB2, bmBA1, bmBA2);
 }
 
 double DualRectifierStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
@@ -797,9 +832,13 @@ void DualRectifierStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         ch.bmRail = railPlatesNominal;
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
-        ch.bmToneState = 0.0;
+        ch.bmOutput = 0.0;
+        ch.bmAX1 = ch.bmAX2 = ch.bmAY1 = ch.bmAY2 = 0.0;
+        ch.bmBX1 = ch.bmBX2 = ch.bmBY1 = ch.bmBY2 = 0.0;
+        ch.bmCutState = 0.0;
         ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6, ch.power.voltage (ch.wTone));
     }
+    designPowerFilters();
     updatePots (lastKnobs);
 
     controlCounter = 0;
