@@ -101,6 +101,17 @@ namespace
     constexpr double speakerNominal[3] = { 2.0, 4.0, 8.0 };
 
     constexpr double powerTheta = 0.9; // same reasoning as the other amps: damped integrator for the stiff power block
+
+    // Power-amp sensitivity restoration. Softening the PI 12AX7's kg1 24x (the master=0
+    // motorboating fix) dropped ~20 dB of the power block's incremental gain; the amp then sat
+    // ~10 dB below the PedalUnityLevel reference at noon. The global NFB loop still regulates the
+    // speaker output to ~1/beta (measured ~26 dB of loop gain at 165 Hz -- a forward-path boost
+    // is simply regulated away), so the level comes back by scaling what the loop regulates TOWARD:
+    // the setpoint at the PI's input node. 3.2x lands the noon operating point back near the
+    // pre-softening +10.3 dB raw without the amplitude slam of a full 10x restore (which re-armed
+    // a ~2.4 Vrms supply-sag limit cycle). The smaller cin coupling cap (see below) keeps the
+    // preamp's infrasonic rattle from seeding the relaxation.
+    constexpr double piInputSensitivity = 3.2;
 }
 
 SVTStyleAmplifierProcessor::SVTStyleAmplifierProcessor()
@@ -416,8 +427,12 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
                    k = c.addNode(), bn = c.addNode();
         // The preamp feeds the first grid through a coupling cap -- without it the 1k stopper would hold
         // g1 at the source's 0 V while g2 floats to bn through its leak, unbalancing the pair on silence.
+        // 0.047 uF (not the schematic's 0.1): the ~7 Hz corner keeps the preamp's infrasonic
+        // supply-rattle (settling drift and relaxation seeds in the 1-5 Hz band) out of the
+        // softened PI's input, while costing <0.4 dB at 41 Hz. Classic anti-motorboating practice:
+        // a smaller input coupling is how real amps keep supply bounce from re-exciting the loop.
         const auto g7 = c.addNode();
-        c.addCapacitor (cin, g7, 0.1e-6);                // coupling cap
+        c.addCapacitor (cin, g7, 0.047e-6);              // coupling cap
         c.addResistor (g7, g1, 1.0e3);                   // R7 grid stopper
         c.addResistor (g1, bn, 470.0e3);                 // R8 leak (returns to the tail node)
         c.addResistor (g2, bn, 470.0e3);
@@ -906,7 +921,7 @@ void SVTStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            ch.power.setSource (ch.wSrcPre, masterGain * ch.pre.voltage (ch.pFollower));
+            ch.power.setSource (ch.wSrcPre, masterGain * piInputSensitivity * ch.pre.voltage (ch.pFollower));
             ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
             ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
             const bool ok2 = ch.power.solveSample();
