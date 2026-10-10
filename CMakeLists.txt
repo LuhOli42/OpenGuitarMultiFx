@@ -238,12 +238,13 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/MainComponent.cpp
   Source/UI/OpenGuitarMultiFxLookAndFeel.cpp
   Source/UI/PresetBadge.cpp
-  Source/UI/PresetListDialog.cpp
+  Source/UI/PresetBrowserDialog.cpp
   Source/UI/PromptCards.cpp
   Source/UI/Tone3000Panel.cpp
   Source/UI/Tone3000SearchDialog.cpp
   Source/UI/OAuthLoginDialog.cpp
   Source/Presets/PresetManager.cpp
+  Source/Presets/PresetLibrary.cpp
   Source/Tone3000/LoopbackServer.cpp
   Source/Tone3000/Tone3000Manager.cpp
 )

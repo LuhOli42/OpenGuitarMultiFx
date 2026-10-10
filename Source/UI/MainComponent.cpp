@@ -5,7 +5,7 @@
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "TunerOverlay.h"
 #include "../Engine/InputGainSettings.h"
-#include "PresetListDialog.h"
+#include "PresetBrowserDialog.h"
 #include "Tone3000Panel.h"
 #include "TouchSizing.h"
 
@@ -987,7 +987,10 @@ void MainComponent::showTuner()
 
 void MainComponent::showPresetsPanel()
 {
-    auto dialog = std::make_unique<PresetListDialog> (presets.listPresetNames());
+    auto dialog = std::make_unique<PresetBrowserDialog> (presetLibrary);
+    auto* browser = dialog.get(); // for callbacks that reopen the card's own dialogs
+
+    dialog->getCurrentPresetName = [this] { return currentPresetName; };
 
     dialog->onSaveRequested = [this] (juce::String name)
     {
@@ -1083,9 +1086,95 @@ void MainComponent::showPresetsPanel()
                         juce::StringArray { "OK" }, [this] (int) { overlayHost.popOverlay(); }));
                     return;
                 }
+                // The copy is a different preset: it keeps the tags but must
+                // not inherit the original's bank slot or setlist seats.
+                presetLibrary.clearMemberships (newName);
                 closePresetCardsAndReopenList();
             },
             [this] { overlayHost.popOverlay(); }));
+    };
+
+    dialog->onEditTagsRequested = [this] (juce::String name)
+    {
+        juce::StringArray current;
+        for (auto& e : presetLibrary.entries())
+            if (e.name == name)
+                current = e.tags;
+
+        overlayHost.pushOverlay (std::make_unique<TextPromptCard> (
+            "Tags for \"" + name + "\" (comma separated)", current.joinIntoString (", "),
+            [this, name] (juce::String text)
+            {
+                juce::StringArray tags;
+                tags.addTokens (text, ",", "");
+                tags.trim();
+                tags.removeEmptyStrings();
+                presetLibrary.setTags (name, tags);
+                closePresetCardsAndReopenList();
+            },
+            [this] { overlayHost.popOverlay(); }));
+    };
+
+    dialog->onNewSetlistRequested = [this] (juce::String presetName)
+    {
+        overlayHost.pushOverlay (std::make_unique<TextPromptCard> (
+            "New setlist", "",
+            [this, presetName] (juce::String setlistName)
+            {
+                presetLibrary.addToSetlist (presetName, setlistName);
+                closePresetCardsAndReopenList();
+            },
+            [this] { overlayHost.popOverlay(); }));
+    };
+
+    dialog->onRenameSetlistRequested = [this] (juce::String setlistName)
+    {
+        overlayHost.pushOverlay (std::make_unique<TextPromptCard> (
+            "Rename setlist", setlistName,
+            [this, setlistName] (juce::String newName)
+            {
+                if (newName == setlistName)
+                {
+                    overlayHost.popOverlay();
+                    return;
+                }
+                if (! presetLibrary.renameSetlist (setlistName, newName))
+                {
+                    overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
+                        "Can't rename", "A setlist called \"" + newName + "\" already exists.",
+                        juce::StringArray { "OK" }, [this] (int) { overlayHost.popOverlay(); }));
+                    return;
+                }
+                closePresetCardsAndReopenList();
+            },
+            [this] { overlayHost.popOverlay(); }));
+    };
+
+    dialog->onDeleteSetlistRequested = [this] (juce::String setlistName)
+    {
+        overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
+            "Delete setlist?", "\"" + setlistName + "\" will be removed. The presets in it stay saved.",
+            juce::StringArray { "Delete", "Cancel" },
+            [this, setlistName] (int choice)
+            {
+                overlayHost.popOverlay();
+                if (choice != 0)
+                    return;
+                presetLibrary.deleteSetlist (setlistName);
+                closePresetCardsAndReopenList();
+            }));
+    };
+
+    // Stepping keeps the browser open -- it's the performance action the
+    // whole setlist mode exists for (the foot-switch up/down equivalent).
+    dialog->onStepSetlist = [this, browser] (juce::String setlistName, int delta)
+    {
+        const auto target = presetLibrary.stepSetlist (setlistName, currentPresetName, delta);
+        if (target.isEmpty())
+            return;
+        loadPresetAskingToSave (target);
+        if (! overlayHost.isEmpty())
+            browser->refresh();
     };
 
     dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
@@ -1249,6 +1338,12 @@ void MainComponent::savePresetAs (const juce::String& name)
 
     auto xml = buildPresetXml();
     xml->setAttribute ("number", number);
+    // buildPresetXml() only captures the sound -- carry the organisational
+    // metadata (tags, bank slot, setlists) forward from the file being
+    // overwritten, or a resave silently drops everything the browser set up.
+    if (existingNumber > 0)
+        if (auto existing = presets.loadPreset (name))
+            presetmeta::copyOrganisation (*existing, *xml);
     presets.savePreset (name, *xml);
 
     currentPresetName = name;

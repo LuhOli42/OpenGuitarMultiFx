@@ -10,6 +10,7 @@
 #include "../EffectRegistry.h"
 #include "../Engine/AudioEngine.h"
 #include "../Presets/PresetManager.h"
+#include "../Presets/PresetLibrary.h"
 #include "../Tone3000/Tone3000Manager.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -285,6 +286,10 @@ private:
 
     ParameterPanel parameterPanel;
     PresetManager presets { getPresetsDirectory() };
+    // The browser's organisational view over the same presets directory
+    // (tags, bank slots, setlists) -- see Source/Presets/PresetLibrary.h.
+    // savePresetAs() carries its fields forward on every resave.
+    PresetLibrary presetLibrary { getPresetsDirectory() };
     juce::String currentPresetName;   // empty = no preset loaded/saved since the last change
     int currentPresetNumber = 0;      // 0 = none yet; a real preset's number is always >= 1
     std::unique_ptr<juce::XmlElement> presetBaseline; // see capturePresetBaseline()
@@ -295,7 +300,7 @@ private:
     // presetBadge shows the preset NUMBER, big (see PresetBadge.h -- this
     // is a stage instrument, has to be readable from a few feet away, not
     // just a toolbar). titleLabel shows its NAME, same size class. Tapping
-    // the badge opens PresetListDialog (see showPresetsPanel()). Once
+    // the badge opens the preset browser (see showPresetsPanel()). Once
     // scenes exist (a preset's own internal variations, e.g. "1A"/"1B"),
     // the badge's text becomes number+letter in that same slot -- see
     // AGENT.md's UI/UX Design Philosophy -- this is deliberately not built
