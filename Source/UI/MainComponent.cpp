@@ -56,6 +56,31 @@ namespace
     const juce::StringArray categoryOrder { "Modeled Amps", "Neural", "Cabs", "Dynamics", "Overdrive", "Distortion", "Fuzz", "Modulation",
                                              "Delay", "Reverb", "Filter/FX", "Utility" };
 
+    /** The dirty-check view of a preset XML: everything EXCEPT the parts a
+        pure snapshot switch legitimately moves -- the <Snapshots> element's
+        `current` attribute, and each top-level <Block>'s live-state mirror
+        (its `bypassed` flag + EffectState child). The mirror always holds
+        the current snapshot's live state by construction, so comparing it
+        flags every switch; it also carries DERIVED state snapshots
+        deliberately don't store (an amp's per-channel knob memory, written
+        into EffectState by ChannelKnobMemory on a channel change).
+        Real edits still flag: buildPresetXml() refreshes the current
+        slot's stored blocks from the live chain, so an unsaved change
+        differs inside <Snapshots> itself, and structural changes still
+        differ in the Block skeleton (key/gridSlot, count, order). */
+    std::unique_ptr<juce::XmlElement> dirtyCompareForm (const juce::XmlElement& presetXml)
+    {
+        auto copy = std::make_unique<juce::XmlElement> (presetXml);
+        if (auto* snapshotsXml = copy->getChildByName ("Snapshots"))
+            snapshotsXml->removeAttribute ("current");
+        for (auto* blockXml : copy->getChildWithTagNameIterator ("Block"))
+        {
+            blockXml->removeAttribute ("bypassed");
+            blockXml->deleteAllChildElementsWithTagName ("EffectState");
+        }
+        return copy;
+    }
+
     juce::String categoryForDisplayName (const juce::String& displayName)
     {
         // "<Original>-Style Compressor / Noise Gate / Noise Suppressor" (pedals and studio units) sit with the plain ones.
@@ -1167,7 +1192,8 @@ void MainComponent::capturePresetBaseline()
 
 bool MainComponent::isPresetDirty() const
 {
-    return presetBaseline != nullptr && ! buildPresetXml()->isEquivalentTo (presetBaseline.get(), false);
+    return presetBaseline != nullptr
+           && ! dirtyCompareForm (*buildPresetXml())->isEquivalentTo (dirtyCompareForm (*presetBaseline).get(), false);
 }
 
 void MainComponent::loadPresetByName (const juce::String& name)
@@ -1244,34 +1270,10 @@ void MainComponent::selectSnapshot (int index)
 
     currentSnapshot = index;
 
-    // A pure snapshot switch isn't an unsaved preset change, so the
-    // baseline has to move with it in BOTH places a switch shows up in
-    // buildPresetXml()'s output: the <Snapshots> element's `current`
-    // attribute, and the top-level <Block> elements' live-state mirror
-    // (bypassed flag + EffectState params now holding the incoming
-    // snapshot's values). Without the second sync, isPresetDirty() would
-    // flag every switch onto a snapshot whose stored values differ --
-    // i.e. virtually every switch. Real edits still flag dirty through
-    // the stored <Snapshots> content, which is NOT rebaselined here.
-    if (presetBaseline != nullptr)
-    {
-        if (auto* snapshotsXml = presetBaseline->getChildByName ("Snapshots"))
-            snapshotsXml->setAttribute ("current", currentSnapshot);
-
-        int blockIndex = 0;
-        for (auto* blockXml : presetBaseline->getChildWithTagNameIterator ("Block"))
-        {
-            if (blockIndex >= (int) target.blocks.size())
-                break;
-            const auto& stored = target.blocks[(size_t) blockIndex++];
-            blockXml->setAttribute ("bypassed", stored.bypassed);
-            if (auto* stateXml = blockXml->getChildByName ("EffectState"))
-                for (const auto& [id, value] : stored.params)
-                    if (stateXml->hasAttribute (id))
-                        stateXml->setAttribute (id, (double) value);
-        }
-    }
-
+    // A pure snapshot switch isn't an unsaved preset change, and none is
+    // flagged: isPresetDirty()'s compare form excludes exactly the parts
+    // a switch moves (`current` + the live <Block> mirror), while real
+    // edits still differ inside <Snapshots> -- see dirtyCompareForm().
     updatePresetDisplay();
 }
 
@@ -1547,6 +1549,27 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     int savedCurrent = 0;
     if (! snapshotxml::read (xml, snapshots, savedCurrent))
         snapshots = {};
+
+    // Snapshot block entries are indexed by the SAVED <Block> order, so
+    // any blocks this build couldn't create (unknown keys skipped above,
+    // nullptr in loadedBlockGroups) must be dropped from every snapshot
+    // first -- otherwise each entry after a skipped block would apply its
+    // bypass/params to the wrong live block.
+    std::vector<size_t> loadedSavedIndices;
+    for (size_t i = 0; i < loadedBlockGroups.size(); ++i)
+        if (loadedBlockGroups[i] != nullptr)
+            loadedSavedIndices.push_back (i);
+
+    for (auto& snapshot : snapshots)
+    {
+        std::vector<snapshotxml::BlockSnapshot> aligned;
+        aligned.reserve (loadedSavedIndices.size());
+        for (const size_t saved : loadedSavedIndices)
+            aligned.push_back (saved < snapshot.blocks.size() ? std::move (snapshot.blocks[saved])
+                                                            : snapshotxml::BlockSnapshot {});
+        snapshot.blocks = std::move (aligned);
+    }
+
     normaliseSnapshots();
     currentSnapshot = savedCurrent;
 
