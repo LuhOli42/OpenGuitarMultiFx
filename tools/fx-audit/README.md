@@ -32,14 +32,34 @@ build/Tests/OpenGuitarMultiFx_RenderFx_artefacts/Release/OpenGuitarMultiFx_Rende
 FX_AUDIT_DIR=/tmp/fx-audit python3 tools/fx-audit/run_renders.py
 FX_AUDIT_DIR=/tmp/fx-audit python3 tools/fx-audit/run_probes.py
 FX_AUDIT_DIR=/tmp/fx-audit python3 tools/fx-audit/analyze.py   # writes metrics.json
+
+# drive-swept probe: variant discrimination (see caveat below)
+FX_AUDIT_DIR=/tmp/fx-audit python3 tools/fx-audit/run_drive_sweep.py \
+    --update-metrics=tools/fx-audit/metrics.json
 ```
 
 Deps: `numpy scipy soundfile` (`pip install` if missing). Env overrides:
 `RENDERFX_BIN`, `FX_AUDIT_DIR` (outputs), `DI_WAV`, `CAB_IR`, `NAM_FIXTURE`,
-`PROBE_WAV_DIR`.
+`PROBE_WAV_DIR`, plus `DRIVE_POINTS` / `SWEEP_KEYS` for the sweep.
 
 ## Reading the numbers
 
 - `band_delta_db`: 7 log-spaced bands, dB vs the same input unprocessed —
   the effect's "EQ signature". THD/even-odd from sine probes; `echo_lags` and
   `tail_rms` from clicks. Flat ≈0dB everywhere = passthrough/clean.
+- `drive_sweep` (metrics.json): per-variant measurements across the main
+  gain control's travel (0.1–0.9), `results[key].settings[drive]` →
+  THD/even-odd/rms/band-delta per setting, plus a `divergence` summary
+  (max pairwise spread per family + the drive where it occurs).
+
+## Caveat: fixed-drive probes hide variant differences
+
+A single-point probe at high drive can measure distinct circuits as
+"identical": variants converge at deep clipping (the real pedals do too),
+and the registry's unity trims normalize the internal level differences the
+metrics then look for. PR #17 hit exactly this — TS808/TS9/TS10 and
+RAT/RAT2/TurboRAT measured "nearly identical" at `*=0.85` while the circuits
+provably differ (clip knee, turbo diode set, level trims). **The drive-swept
+probe is the discriminating tool**: TurboRAT vs RAT2 shows 0.99% vs 25.28%
+THD at drive 0.1 (an 18 dB band-delta spread), where the fixed 0.85 point
+showed them equal.
