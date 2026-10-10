@@ -13,6 +13,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PitchDetectorTests.cpp
   PresetManagerTests.cpp
   PresetLibraryTests.cpp
+  PresetSpilloverTests.cpp
   MidiLearnPresetXmlTests.cpp
   SnapshotPresetXmlTests.cpp
   GateProcessorTests.cpp
@@ -146,6 +147,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
 set(OGMFX_SOURCES
   ../Source/EffectRegistry.cpp
   ../Source/Engine/SignalGraph.cpp
+  ../Source/Engine/Spillover.cpp
   ../Source/Engine/PitchDetector.cpp
   ../Source/Engine/ParameterManager.cpp
   ../Source/Presets/PresetManager.cpp

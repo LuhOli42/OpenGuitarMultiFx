@@ -1743,6 +1743,33 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
 
 void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 {
+    // Preset spillover (docs/PresetsAndSnapshots.md, stage 5): capture the
+    // outgoing chain's processors per lane and its routing BEFORE tearing
+    // down -- the trail-capable ones get a Spillover::Unit below and keep
+    // ringing on silence, the rest die with the switch as always.
+    const auto outgoingRouting = rowRouting;
+    std::array<Spillover::LaneSpec, SignalGraph::numLanes> spillLanes;
+    std::vector<std::pair<int, int>> spillConnections;
+    const auto graveyardMark = graveyard.size();
+
+    // Same lane grouping rebuildSignalGraph() uses: blocks are sorted by
+    // gridSlot and row == gridSlot / chainColumns, so an out-of-range slot
+    // simply lands on no lane.
+    for (auto* block : blocks)
+    {
+        const int row = block->gridSlot / chainColumns;
+        if (row >= 0 && row < numRows)
+            spillLanes[(size_t) row].processors.push_back (&block->processor);
+    }
+
+    for (int lane = 0; lane < numRows; ++lane)
+    {
+        spillLanes[(size_t) lane].writesDeviceOutput = outgoingRouting[(size_t) lane].toDevice;
+        for (int target = lane + 1; target < numRows; ++target)
+            if (outgoingRouting[(size_t) lane].toRows[(size_t) target])
+                spillConnections.push_back ({ lane, target });
+    }
+
     // Tear the current chain down the same way removeEffect() would, one
     // block at a time, so nothing bypasses the graveyard/DeferredReclaimer
     // discipline (rebuildSignalGraph()/layoutChain() re-run every
@@ -1750,6 +1777,24 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     // never the audio thread).
     while (! blocks.isEmpty())
         removeEffect (&blocks[0]->processor);
+
+    // The teardown retired every outgoing processor into the graveyard,
+    // which frees them ~600 ms from now -- nowhere near a reverb tail's
+    // lifetime. The trail-capable ones move on into a spill unit (handed
+    // to the audio engine, which rings them out on silence in parallel
+    // with the new chain); the rest go back to the normal graveyard
+    // lifecycle -- retired graphs from the teardown may still point at
+    // them for up to the DeferredReclaimer margin.
+    std::vector<std::unique_ptr<EffectProcessor>> outgoing;
+    for (auto it = graveyard.begin() + (std::ptrdiff_t) graveyardMark; it != graveyard.end(); ++it)
+        outgoing.push_back (std::move (it->processor));
+
+    if (auto unit = Spillover::build (spillLanes, spillConnections, outgoing))
+        audioEngine.addSpillover (std::move (unit));
+
+    for (auto& processor : outgoing)
+        if (processor != nullptr)
+            graveyard.push_back ({ std::move (processor), juce::Time::getMillisecondCounter() });
 
     midilearnxml::BlockGroups loadedBlockGroups; // one per <Block> element, nullptr where it was skipped
 

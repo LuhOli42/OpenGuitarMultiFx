@@ -45,6 +45,7 @@ AudioEngine::AudioEngine() = default;
 AudioEngine::~AudioEngine()
 {
     stop();
+    spillover.clear(); // the callback is off now: drop every unit on the control thread
 }
 
 bool AudioEngine::start()
@@ -235,6 +236,20 @@ void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph)
     graphSlot.publish (std::move (newGraph));
 }
 
+void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
+{
+    if (unit == nullptr || unit->graph == nullptr)
+        return;
+
+    const auto sr = sampleRate.load (std::memory_order_relaxed);
+    const auto bs = blockSize.load (std::memory_order_relaxed);
+    if (sr <= 0.0 || bs <= 0)
+        return; // no device running -- nothing to spill onto
+
+    unit->prepare (sr, bs, 2); // prepareIfNeeded keeps every processor's tail state
+    spillover.add (std::move (unit));
+}
+
 namespace
 {
     /** Multiplies the block by a linear ramp: gain(i) = from + (to - from) * i / numSamples ... clamped to [0, 1]. */
@@ -251,6 +266,18 @@ namespace
 }
 
 void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples)
+{
+    processCurrentGraph (buffer, numSamples);
+
+    // Spills never run while a retired graph is fading out: a preset-switch
+    // teardown can leave a fading graph still pointing at the very
+    // processors a pending spill owns, and one processor must never run
+    // twice in the same block. The tail just waits out the ~4 ms fade.
+    if (fadingOutGraph == nullptr)
+        spillover.process (buffer, sampleRate.load (std::memory_order_relaxed));
+}
+
+void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples)
 {
     auto* graph = graphSlot.currentRaw();
     const auto now = juce::Time::getHighResolutionTicks();
@@ -309,6 +336,7 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
     fadingOutGraph = nullptr;
     fadeOutSamplesLeft = fadeInSamplesLeft = 0;
+    spillover.reset(); // spills were prepared for the old stream's rate/block size -- cut them all
 
     sampleRate.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
     blockSize.store (device->getCurrentBufferSizeSamples(), std::memory_order_relaxed);
@@ -431,6 +459,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 void AudioEngine::timerCallback()
 {
     graphSlot.sweep();
+    spillover.sweep();
 
     // YIN's O(window x tauMax) pass, on the control thread where unbounded work is allowed -- see PitchDetector::analyse().
     if (tunerActive.load (std::memory_order_relaxed))

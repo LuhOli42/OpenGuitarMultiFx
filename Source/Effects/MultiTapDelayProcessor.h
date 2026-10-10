@@ -27,6 +27,7 @@ public:
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Multi Tap"; }
     bool hasTrails() const override { return true; }
+    double trailLatencySeconds() const override { return juce::jmin (maxDelayMs, timeMs->get()) * 0.001; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff3d72b8); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
