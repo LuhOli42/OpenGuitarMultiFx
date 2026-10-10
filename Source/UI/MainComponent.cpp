@@ -870,20 +870,45 @@ void MainComponent::showAddEffectMenu (int targetGridSlot)
     // ~120 effects on a touchscreen. Categories are registry metadata
     // (EffectRegistry::categoryForKey), so this dialog needs no name table.
     auto dialog = std::make_unique<AddEffectBrowserDialog> (registry);
+
+    juce::Component::SafePointer<AddEffectBrowserDialog> browser (dialog.get());
+    auto choiceMade = std::make_shared<std::atomic<bool>> (false);
+
     // The pop is deferred one message-loop tick: popOverlay() destroys the
     // card, and freeing a std::function's storage while it is still running
-    // (tile -> grid -> dialog -> this callback) is UB.
-    dialog->onEffectChosen = [this, targetGridSlot] (juce::String key)
+    // (tile -> grid -> dialog -> this callback) is UB. The deferred side
+    // guards on three things: aliveFlag (window may close before the tick
+    // runs -- same pattern as the MIDI callbacks below), `browser` (null
+    // once the card is dismissed by an outside tap, which invalidates the
+    // pending choice), and topLayer() (popOverlay() removes the TOP layer,
+    // so it only runs while this browser is still the top card).
+    dialog->onEffectChosen = [this, targetGridSlot, browser, choiceMade] (juce::String key)
     {
-        juce::MessageManager::callAsync ([this, key = std::move (key), targetGridSlot]
+        // The card stays on screen until the deferred pop -- a second tile
+        // tap in the same tick must not schedule a second addEffect.
+        if (choiceMade->exchange (true))
+            return;
+
+        juce::MessageManager::callAsync ([this, key = std::move (key), targetGridSlot,
+                                        browser, alive = aliveFlag]
         {
-            overlayHost.popOverlay();
+            if (! alive->load() || browser == nullptr)
+                return;
+
+            if (overlayHost.topLayer() == browser.getComponent())
+                overlayHost.popOverlay();
+
             addEffect (key, targetGridSlot);
         });
     };
-    dialog->onPopOverlay = [this]
+    dialog->onPopOverlay = [this, browser]
     {
-        juce::MessageManager::callAsync ([this] { overlayHost.popOverlay(); });
+        juce::MessageManager::callAsync ([this, browser, alive = aliveFlag]
+        {
+            if (alive->load() && browser != nullptr
+                && overlayHost.topLayer() == browser.getComponent())
+                overlayHost.popOverlay();
+        });
     };
     overlayHost.pushOverlay (std::move (dialog));
 }
