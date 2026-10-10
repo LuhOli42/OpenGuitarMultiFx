@@ -242,7 +242,6 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), preparedNumChannels);
     smoothedMix.setTargetValue (mixParam->get());
     smoothedBlend.setTargetValue (blend->get());
-    const float blendNow = smoothedBlend.skip (numSamples);
     smoothedDynamicsAmount.setTargetValue (dynamicsAmount->get());
     const float dynamicsNow = smoothedDynamicsAmount.skip (numSamples);
 
@@ -254,9 +253,9 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
     // Only one slot loaded -- behave exactly like a single-IR cab, ignoring
     // Blend/Dynamics entirely, rather than crossfading toward silence in
     // whichever slot is still empty.
-    // Blend only re-weights the two convolved outputs once per block, so a
-    // per-block stepped ramp suffices; same for the Dynamics depth.
-    float effectiveBlend = (convA == nullptr) ? 1.0f : (convB == nullptr) ? 0.0f : blendNow;
+    // Blend itself is crossfaded per sample below; only the Dynamics lift
+    // stays per-block because its input envelope is read per block anyway.
+    float dynamicsLift = 0.0f;
 
     if (convA != nullptr && convB != nullptr && dynamicsNow > 0.0f)
     {
@@ -266,7 +265,7 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
         // existing algorithm.
         const float peak = buffer.getMagnitude (0, numSamples);
         const float envelopeLevel = inputEnvelope.processSample (peak);
-        effectiveBlend = juce::jlimit (0.0f, 1.0f, effectiveBlend + dynamicsNow * envelopeLevel);
+        dynamicsLift = dynamicsNow * envelopeLevel;
     }
 
     if (convA != nullptr)
@@ -291,15 +290,30 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
 
     if (convA != nullptr && convB != nullptr)
     {
-        for (int ch = 0; ch < numChannels; ++ch)
+        // Sample-major so smoothedBlend.getNextValue() advances once per
+        // sample and every channel shares the same blend point.
+        std::array<float*, 8> outPtrs {};
+        std::array<const float*, 8> aPtrs {}, bPtrs {};
+        const int crossChannels = juce::jmin (numChannels, (int) outPtrs.size());
+        for (int ch = 0; ch < crossChannels; ++ch)
         {
-            buffer.copyFrom (ch, 0, scratchA, ch, 0, numSamples);
-            buffer.applyGain (ch, 0, numSamples, 1.0f - effectiveBlend);
-            buffer.addFrom (ch, 0, scratchB, ch, 0, numSamples, effectiveBlend);
+            outPtrs[(size_t) ch] = buffer.getWritePointer (ch);
+            aPtrs[(size_t) ch] = scratchA.getReadPointer (ch);
+            bPtrs[(size_t) ch] = scratchB.getReadPointer (ch);
+        }
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float b = juce::jlimit (0.0f, 1.0f, smoothedBlend.getNextValue() + dynamicsLift);
+            for (int ch = 0; ch < crossChannels; ++ch)
+                outPtrs[(size_t) ch][i] = aPtrs[(size_t) ch][i] * (1.0f - b) + bPtrs[(size_t) ch][i] * b;
         }
     }
     else
     {
+        // Keep the smoother's clock running while only one IR is loaded so a
+        // Blend turn during single-IR use doesn't land as a leftover jump
+        // the moment a second IR appears.
+        smoothedBlend.skip (numSamples);
         auto& onlyLoaded = (convA != nullptr) ? scratchA : scratchB;
         for (int ch = 0; ch < numChannels; ++ch)
             buffer.copyFrom (ch, 0, onlyLoaded, ch, 0, numSamples);
@@ -334,8 +348,8 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
         for (int i = 0; i < numSamples; ++i)
         {
             const float g = juce::Decibels::decibelsToGain (smoothedOutputGainDb.getNextValue());
-            for (int ch = 0; ch < mixChannels; ++ch)
-                cabDataPtrs[(size_t) ch][i] *= g;
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                buffer.setSample (ch, i, buffer.getSample (ch, i) * g);
         }
 }
 

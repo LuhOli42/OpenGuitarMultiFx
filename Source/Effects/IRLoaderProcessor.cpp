@@ -259,8 +259,8 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
         for (int i = 0; i < numSamples; ++i)
         {
             const float g = juce::Decibels::decibelsToGain (smoothedOutputGainDb.getNextValue());
-            for (int ch = 0; ch < mixChannels; ++ch)
-                irDataPtrs[(size_t) ch][i] *= g;
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                buffer.setSample (ch, i, buffer.getSample (ch, i) * g);
         }
 }
 

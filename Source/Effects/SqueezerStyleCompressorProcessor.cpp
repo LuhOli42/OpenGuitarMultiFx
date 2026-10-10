@@ -164,7 +164,10 @@ void SqueezerStyleCompressorProcessor::process (juce::AudioBuffer<float>& buffer
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots (v, (double) smoothedBias.getNextValue());
+            // Advance a whole tick per tick so the ramp still takes ~20 ms.
+            smoothedBias.setTargetValue (bias->get());
+            smoothedBias.skip (controlInterval);
+            updatePots (v, (double) smoothedBias.getCurrentValue());
         }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)

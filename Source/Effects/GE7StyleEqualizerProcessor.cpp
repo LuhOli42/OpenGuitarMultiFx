@@ -241,6 +241,12 @@ void GE7StyleEqualizerProcessor::prepare (double newSampleRate, int, int)
         buildChannel (ch);
     }
 
+    for (int k = 0; k <= numBands; ++k)
+    {
+        smoothedSliders[(size_t) k].reset (newSampleRate, paramRampSeconds);
+        smoothedSliders[(size_t) k].setCurrentAndTargetValue (k < numBands ? bands[(size_t) k]->get() : level->get());
+    }
+
     appliedSliders.fill (1.0e9f);
     updateSliders();
 
@@ -255,13 +261,6 @@ void GE7StyleEqualizerProcessor::prepare (double newSampleRate, int, int)
         ch.d.setSource (ch.srcD, ch.c.voltage (ch.nEqOut));
         dcOk = ch.d.prepare (newSampleRate) && dcOk;
     }
-
-    for (int k = 0; k <= numBands; ++k)
-    {
-        smoothedSliders[(size_t) k].reset (newSampleRate, paramRampSeconds);
-        smoothedSliders[(size_t) k].setCurrentAndTargetValue (k < numBands ? bands[(size_t) k]->get() : level->get());
-    }
-    updateSliders();
 
     controlCounter = 0;
     sampleCount = 0;
