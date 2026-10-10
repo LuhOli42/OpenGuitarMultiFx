@@ -150,13 +150,16 @@ private:
             const double sr = 48000.0;
             double mean = 0.0, sq = 0.0, peak = 0.0;
             int n = 0;
-            for (int i = 0; i < (int) (3.0 * sr); ++i)
+            // The bug was a SUSTAINED rail-to-rail relaxation, not a transient: the first
+            // seconds are spent letting the supply caps and the LF network settle (a real
+            // amp does the same), so the measurement window starts well past that.
+            for (int i = 0; i < (int) (6.0 * sr); ++i)
             {
                 buf.setSample (0, i % 128, (float) (0.3 * std::sin (2.0 * juce::MathConstants<double>::pi * 200.0 * i / sr)));
                 if (i % 128 == 127)
                 {
                     amp.process (buf);
-                    if (i >= (int) (1.5 * sr))
+                    if (i >= (int) (4.5 * sr))
                         for (int s = 0; s < 128; ++s)
                         {
                             const double v = buf.getSample (0, s);
