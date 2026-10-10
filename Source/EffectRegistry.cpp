@@ -462,12 +462,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // in the preamp, Baxandall + tapped-inductor mid section, a 12AX7 phase splitter, two 12AU7 drivers and
     // six 6550s. No reducedOrder yet: the full reference netlist always runs (trim measured by PedalUnityLevelTests).
     registry.markQualityDependent ("SVTStyleAmplifier");
-    // Measured -10.01 dB at noon for the PedalUnityLevel reference. The previous +10.32 dB figure was
-    // calibrated before the master=0 motorboating fix: softening the PI 12AX7's kg1 24x (plus the sub-Hz
-    // loop poles and driver grid stoppers) dropped the power block's incremental gain ~20 dB. The
-    // full-drive ceiling is unchanged -- the softened LTP still saturates into the drivers, so the
-    // ~49 V / 300 W territory is still reachable; only the noon operating point sits lower.
-    registry.registerType ("SVTStyleAmplifier", [] { return trimmed (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 10.01f); });
+    // Measured +0.15 dB at noon for the PedalUnityLevel reference. The ~20 dB the kg1-softened PI
+    // took out of the power block is restored inside the model by piInputSensitivity at the PI's
+    // input (see SVTStyleAmplifierProcessor.cpp) -- scaling the setpoint the global-NFB loop
+    // regulates toward, so the physical outputScale = 1/55 stays and the rated ~49 V output keeps
+    // its ~0.9 full-scale headroom instead of needing a >0 dB trim that would clip it.
+    registry.registerType ("SVTStyleAmplifier", [] { return trimmed (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.15f); });
     // Trainwreck Express (docs/circuits/TrainwreckExpress.md) and the Trainwreck-descended Komet Concorde
     // (docs/circuits/KometConcorde.md): three-12AX7 anode-driven preamps, LTP, 2x EL34, no global feedback. Full netlist.
     registry.markQualityDependent ("TrainwreckExpressStyleAmplifier");

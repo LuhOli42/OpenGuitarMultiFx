@@ -133,9 +133,14 @@ private:
             amp.prepare (48000.0, 128, 1);
             const double cold = amp.plateCurrentTotal();
             setParam (amp, "svt_bias", 1.0f);
-            juce::AudioBuffer<float> b (1, 128); // let the new bias settle
-            for (int i = 0; i < 20; ++i) amp.process (b);
-            const double hot = amp.plateCurrentTotal();
+            juce::AudioBuffer<float> b (1, 128);
+            // The hot-bias operating point rings on a ~4 s supply-sag relaxation (pre-existing:
+            // the raw plate current swings ~1.2-3.3 A for seconds after the bias step), so a single
+            // instantaneous read is phase luck. Average over ~1.3 s after a ~4 s settle instead.
+            for (int i = 0; i < 1500; ++i) amp.process (b);
+            double hot = 0.0;
+            for (int i = 0; i < 500; ++i) { amp.process (b); hot += amp.plateCurrentTotal(); }
+            hot /= 500.0;
             expectGreaterThan (hot / juce::jmax (1.0e-9, cold), 1.2,
                                "idle plate current hot " + juce::String (hot) + " vs cold " + juce::String (cold));
         }
