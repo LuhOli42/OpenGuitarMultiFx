@@ -77,6 +77,7 @@ namespace
             || displayName == "JCM800-Style Amplifier" || displayName == "AC15-Style Amplifier" || displayName == "AC30-Style Amplifier"
             || displayName == "SLO-100-Style Amplifier" || displayName == "Mark IIC+-Style Amplifier" || displayName == "Dual Rectifier-Style Amplifier" || displayName == "5150-Style Amplifier" || displayName == "Powerball-Style Amplifier" || displayName == "Rockerverb-Style Amplifier" || displayName == "SVT-Style Amplifier"
             || displayName == "Trainwreck Express-Style Amplifier" || displayName == "Komet Concorde-Style Amplifier"
+            || displayName == "Divided by 13 FTR 37-Style Amplifier" || displayName == "Carr Rambler-Style Amplifier"
             || displayName == "HC-30-Style Amplifier" || displayName == "Hot Cat 30-Style Amplifier"
             || displayName == "Carmen Ghia-Style Amplifier" || displayName == "Astroverb 16-Style Amplifier"
             || displayName == "Dumble Steel String-Style Amplifier" || displayName == "Sunn Model T-Style Amplifier"

@@ -49,6 +49,8 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ENGLPowerballStyleAmplifierProcessorTests.cpp
   RockerverbStyleAmplifierProcessorTests.cpp
   SVTStyleAmplifierProcessorTests.cpp
+  CarrRamblerStyleAmplifierProcessorTests.cpp
+  DividedBy13FTR37StyleAmplifierProcessorTests.cpp
   DumbleSteelStringStyleAmplifierProcessorTests.cpp
   SunnModelTStyleAmplifierProcessorTests.cpp
   FryetteDeliveranceD120StyleAmplifierProcessorTests.cpp
@@ -200,6 +202,8 @@ set(OGMFX_SOURCES
   ../Source/Effects/TraceElliotGP12StyleAmplifierProcessor.cpp
   ../Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   ../Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
+  ../Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
+  ../Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
   ../Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp
   ../Source/Effects/SunnModelTStyleAmplifierProcessor.cpp
   ../Source/Effects/FryetteDeliveranceD120StyleAmplifierProcessor.cpp
