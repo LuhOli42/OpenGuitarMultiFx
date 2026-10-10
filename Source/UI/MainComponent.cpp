@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "MidiLearnPresetXml.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "TunerOverlay.h"
@@ -1137,6 +1138,7 @@ void MainComponent::updatePresetDisplay()
 std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
 {
     auto xml = std::make_unique<juce::XmlElement> ("Preset");
+    midilearnxml::BlockGroups savedBlockGroups; // one per <Block> written, in order -- what a binding's "block" indexes
 
     for (int i = 0; i < (int) chain.size(); ++i)
     {
@@ -1154,7 +1156,10 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
         // EffectBlockComponent::gridSlot's comment.
         blockXml->setAttribute ("gridSlot", blocks[i]->gridSlot);
         blockXml->addChildElement (p->getState().release());
+        savedBlockGroups.push_back (p->getParameters());
     }
+
+    midilearnxml::write (*xml, midiCcBindings, savedBlockGroups);
 
     // The FULL per-row routing (device I/O, splits, merges), not just a
     // single global in/out pair -- see the class-level bug this fixes:
@@ -1193,6 +1198,8 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     while (! blocks.isEmpty())
         removeEffect (&blocks[0]->processor);
 
+    midilearnxml::BlockGroups loadedBlockGroups; // one per <Block> element, nullptr where it was skipped
+
     for (int i = 0; i < xml.getNumChildElements(); ++i)
     {
         auto* blockXml = xml.getChildElement (i);
@@ -1200,6 +1207,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
             continue;
 
         auto processor = registry.create (blockXml->getStringAttribute ("key"));
+        loadedBlockGroups.push_back (processor != nullptr ? processor->getParameters() : nullptr);
         if (processor == nullptr)
             continue; // an unknown key (e.g. a preset from a future build) -- skip, don't fail the whole load
 
@@ -1261,6 +1269,9 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         rowRouting[0].toDevice = true;
         rowRouting[0].deviceOutputPair = outPair;
     }
+
+    // Per-preset, like a hardware pedalboard's controller assignments: a preset saved without any leaves none active.
+    midiCcBindings = midilearnxml::read (xml, loadedBlockGroups);
 
     refreshRowEndpoints();
     rebuildSignalGraph();
