@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "MidiLearnPresetXml.h"
 #include "PromptCards.h"
+#include "SnapshotPresetXml.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "TunerOverlay.h"
@@ -54,6 +55,77 @@ namespace
     // nothing user-facing in the running app should be in Portuguese.
     const juce::StringArray categoryOrder { "Modeled Amps", "Neural", "Cabs", "Dynamics", "Overdrive", "Distortion", "Fuzz", "Modulation",
                                              "Delay", "Reverb", "Filter/FX", "Utility" };
+
+    /** <paramID>_ch<N>: ChannelKnobMemory's serialized per-channel slots.
+        Derived mirror state -- the snapshot format deliberately stores
+        only live float params, so hidden-channel values can't persist
+        through it and a pure channel switch must not flag dirty. */
+    bool isChannelMemoryAttribute (const juce::String& name, const juce::StringArray& paramIds)
+    {
+        const auto sep = name.lastIndexOf ("_ch");
+        return sep > 0 && name.substring (sep + 3).containsOnly ("0123456789")
+               && paramIds.contains (name.substring (0, sep));
+    }
+
+    /** The dirty-check view of a preset XML: everything EXCEPT the parts a
+        pure snapshot switch legitimately moves. The top-level <Block>
+        elements are a live-state mirror of the current snapshot by
+        construction, so their snapshot-controlled fields are stripped --
+        the `bypassed` flag, and every EffectState attribute whose name is
+        a captured paramID or channel-memory slot (`*_ch<N>`). Everything
+        else stays compared: a model/IR swap (modelPath/irPath), a
+        tempo-sync toggle (*_synced/*_subdiv), routing, MIDI Learn, and
+        the structural Block skeleton (key/gridSlot, count, order) -- all
+        real edits, all still flag dirty, alongside any change inside
+        <Snapshots> itself (which buildPresetXml() refreshes from live). */
+    std::unique_ptr<juce::XmlElement> dirtyCompareForm (const juce::XmlElement& presetXml)
+    {
+        auto copy = std::make_unique<juce::XmlElement> (presetXml);
+
+        // Captured param IDs per block position, read from <Snapshots>
+        // itself: whatever a snapshot switch can write is not
+        // dirty-check content on the live-state mirror.
+        std::vector<juce::StringArray> paramIds;
+        if (auto* snapshotsXml = copy->getChildByName ("Snapshots"))
+        {
+            snapshotsXml->removeAttribute ("current");
+            for (auto* snapshotXml : snapshotsXml->getChildWithTagNameIterator ("Snapshot"))
+            {
+                int blockIndex = 0;
+                for (auto* blockXml : snapshotXml->getChildWithTagNameIterator ("Block"))
+                {
+                    if (blockIndex >= (int) paramIds.size())
+                        paramIds.emplace_back();
+                    for (int a = 0; a < blockXml->getNumAttributes(); ++a)
+                    {
+                        const auto name = blockXml->getAttributeName (a);
+                        if (name != "bypassed")
+                            paramIds[(size_t) blockIndex].addIfNotAlreadyThere (name);
+                    }
+                    ++blockIndex;
+                }
+            }
+        }
+
+        int blockIndex = 0;
+        for (auto* blockXml : copy->getChildWithTagNameIterator ("Block"))
+        {
+            blockXml->removeAttribute ("bypassed");
+            if (auto* stateXml = blockXml->getChildByName ("EffectState"))
+            {
+                static const juce::StringArray none;
+                const auto& ids = blockIndex < (int) paramIds.size() ? paramIds[(size_t) blockIndex] : none;
+                for (int a = stateXml->getNumAttributes() - 1; a >= 0; --a)
+                {
+                    const auto name = stateXml->getAttributeName (a);
+                    if (ids.contains (name) || isChannelMemoryAttribute (name, ids))
+                        stateXml->removeAttribute (name);
+                }
+            }
+            ++blockIndex;
+        }
+        return copy;
+    }
 
     juce::String categoryForDisplayName (const juce::String& displayName)
     {
@@ -121,6 +193,14 @@ MainComponent::MainComponent()
     addAndMakeVisible (presetBadge);
     presetBadge.onClicked = [this] { showPresetsPanel(); };
 
+    // The A-H snapshot strip: tap a letter to recall that snapshot (see
+    // selectSnapshot()). Shown from the start -- an unsaved chain still has
+    // an active snapshot, same as a hardware pedalboard before you save.
+    addAndMakeVisible (snapshotBar);
+    snapshotBar.setCurrent (currentSnapshot);
+    snapshotBar.onSnapshotSelected = [this] (int index) { selectSnapshot (index); };
+    presetBadge.setSnapshotIndex (currentSnapshot);
+
     addChildComponent (quickSaveButton); // only shown once a preset is actually loaded -- see updatePresetDisplay()
     quickSaveButton.onClick = [this] { if (currentPresetName.isNotEmpty()) savePresetAs (currentPresetName); };
 
@@ -135,6 +215,7 @@ MainComponent::MainComponent()
     if (auto* laf = dynamic_cast<OpenGuitarMultiFxLookAndFeel*> (&juce::LookAndFeel::getDefaultLookAndFeel()))
     {
         presetBadge.setDisplayTypeface (laf->getExtraBoldTypeface());
+        snapshotBar.setDisplayTypeface (laf->getExtraBoldTypeface());
         titleLabel.setFont (juce::Font (juce::FontOptions (42.0f).withTypeface (laf->getExtraBoldTypeface())));
     }
 
@@ -316,6 +397,13 @@ void MainComponent::addEffect (const juce::String& registryName, int targetGridS
 
     chain.insert (chain.begin() + arrayIndex, std::move (processor));
 
+    // Every snapshot gains a slot for the new block at the same position --
+    // its default state, in every snapshot (a snapshot can never change
+    // which blocks exist; they all hold the same chain). See
+    // normaliseSnapshots().
+    for (auto& snapshot : snapshots)
+        snapshot.blocks.insert (snapshot.blocks.begin() + arrayIndex, snapshotxml::captureBlock (*raw));
+
     auto block = std::make_unique<EffectBlockComponent> (*raw);
     block->gridSlot = slot;
     // Tapping the already-open block closes the drawer instead of just
@@ -347,6 +435,10 @@ void MainComponent::removeEffect (EffectProcessor* processor)
     {
         if (it->get() == processor)
         {
+            const int index = (int) std::distance (chain.begin(), it);
+            for (auto& snapshot : snapshots)
+                snapshot.blocks.erase (snapshot.blocks.begin() + index);
+
             graveyard.push_back ({ std::move (*it), juce::Time::getMillisecondCounter() });
             chain.erase (it);
             break;
@@ -819,6 +911,20 @@ void MainComponent::handleBlockDragEnded (EffectBlockComponent& blockComp)
         }
         chain = std::move (newChain);
 
+        // Snapshots store block state by chain POSITION, so the same
+        // permutation has to be applied to every snapshot's block list or a
+        // reorder would silently move each block's saved values onto the
+        // wrong block.
+        for (auto& snapshot : snapshots)
+        {
+            std::vector<snapshotxml::BlockSnapshot> reordered;
+            reordered.reserve (snapshot.blocks.size());
+            for (int i : order)
+                if (i < (int) snapshot.blocks.size())
+                    reordered.push_back (std::move (snapshot.blocks[(size_t) i]));
+            snapshot.blocks = std::move (reordered);
+        }
+
         blocks.clearQuick (false); // releases ownership without deleting -- newBlockOrder already holds every pointer
         for (auto* b : newBlockOrder)
             blocks.add (b);
@@ -1166,19 +1272,29 @@ void MainComponent::showPresetsPanel()
     };
 
     // Stepping keeps the browser open -- it's the performance action the
-    // whole setlist mode exists for (the foot-switch up/down equivalent).
+    // whole setlist mode exists for (the foot-switch up/down equivalent). The
+    // refresh has to wait for the load to actually happen: with unsaved edits
+    // the target only loads once the Save/Discard prompt resolves, and the
+    // browser can meanwhile be closed -- hence the SafePointer, not raw `browser`.
     dialog->onStepSetlist = [this, browser] (juce::String setlistName, int delta)
     {
         const auto target = presetLibrary.stepSetlist (setlistName, currentPresetName, delta);
         if (target.isEmpty())
             return;
-        loadPresetAskingToSave (target);
-        if (! overlayHost.isEmpty())
-            browser->refresh();
+        juce::Component::SafePointer<PresetBrowserDialog> safeBrowser (browser);
+        loadPresetAskingToSave (target, [safeBrowser]
+        {
+            if (safeBrowser != nullptr)
+                safeBrowser->refresh();
+        });
     };
 
     dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
 
+    // The constructor's refresh() ran before getCurrentPresetName was wired,
+    // so rebuild once more now that every callback exists -- otherwise the
+    // loaded preset's tile opens unhighlighted.
+    dialog->refresh();
     overlayHost.pushOverlay (std::move (dialog));
 }
 
@@ -1191,18 +1307,20 @@ void MainComponent::closePresetCardsAndReopenList()
     showPresetsPanel();
 }
 
-void MainComponent::loadPresetAskingToSave (const juce::String& name)
+void MainComponent::loadPresetAskingToSave (const juce::String& name, std::function<void()> onLoaded)
 {
     if (! isPresetDirty())
     {
         loadPresetByName (name);
+        if (onLoaded)
+            onLoaded();
         return;
     }
 
     overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
         "Unsaved changes", "\"" + currentPresetName + "\" has changes that aren't saved.",
         juce::StringArray { "Save", "Discard", "Cancel" },
-        [this, name] (int choice)
+        [this, name, onLoaded = std::move (onLoaded)] (int choice)
         {
             overlayHost.popOverlay();
             if (choice == 2)
@@ -1210,6 +1328,8 @@ void MainComponent::loadPresetAskingToSave (const juce::String& name)
             if (choice == 0)
                 savePresetAs (currentPresetName);
             loadPresetByName (name);
+            if (onLoaded)
+                onLoaded();
         }));
 }
 
@@ -1221,7 +1341,8 @@ void MainComponent::capturePresetBaseline()
 
 bool MainComponent::isPresetDirty() const
 {
-    return presetBaseline != nullptr && ! buildPresetXml()->isEquivalentTo (presetBaseline.get(), false);
+    return presetBaseline != nullptr
+           && ! dirtyCompareForm (*buildPresetXml())->isEquivalentTo (dirtyCompareForm (*presetBaseline).get(), false);
 }
 
 void MainComponent::loadPresetByName (const juce::String& name)
@@ -1276,8 +1397,71 @@ void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::Mid
     }
 }
 
+void MainComponent::selectSnapshot (int index)
+{
+    index = juce::jlimit (0, snapshotxml::maxSnapshots - 1, index);
+    if (index == currentSnapshot)
+        return;
+
+    // Recall semantics (docs/PresetsAndSnapshots.md): edits made in the
+    // outgoing snapshot stay stored in it -- write the live state back
+    // BEFORE loading the incoming one, so a knob tweak survives the
+    // round-trip away and back even if the preset is never saved.
+    storeCurrentSnapshot();
+
+    // Params + bypass flags only, written into the SAME processors -- the
+    // graph is never rebuilt, so delay/reverb tails keep ringing through
+    // the switch and every enable/disable rides processWithBypass()'s
+    // crossfade + trails exactly like a hand-toggled bypass.
+    const auto& target = snapshots[(size_t) index];
+    for (int i = 0; i < (int) chain.size() && i < (int) target.blocks.size(); ++i)
+        snapshotxml::applyBlock (*chain[(size_t) i], target.blocks[(size_t) i]);
+
+    currentSnapshot = index;
+
+    // A pure snapshot switch isn't an unsaved preset change, and none is
+    // flagged: isPresetDirty()'s compare form excludes exactly the parts
+    // a switch moves (`current` + the live <Block> mirror), while real
+    // edits still differ inside <Snapshots> -- see dirtyCompareForm().
+    updatePresetDisplay();
+}
+
+void MainComponent::storeCurrentSnapshot()
+{
+    auto& snapshot = snapshots[(size_t) currentSnapshot];
+    snapshot.blocks.resize (chain.size());
+    for (int i = 0; i < (int) chain.size(); ++i)
+        snapshot.blocks[(size_t) i] = snapshotxml::captureBlock (*chain[(size_t) i]);
+}
+
+void MainComponent::normaliseSnapshots()
+{
+    for (auto& snapshot : snapshots)
+    {
+        const int stored = (int) snapshot.blocks.size();
+        snapshot.blocks.resize (chain.size());
+        // Slots the XML never stored (an old preset, or blocks added since)
+        // get the live state as their default -- switching onto them then
+        // changes nothing, which is exactly what "no snapshot data" means.
+        for (int i = stored; i < (int) chain.size(); ++i)
+            snapshot.blocks[(size_t) i] = snapshotxml::captureBlock (*chain[(size_t) i]);
+    }
+}
+
 void MainComponent::handleMidiCc (int ccNumber, int ccValue)
 {
+    // CC 69 is reserved for snapshot selection (docs/PresetsAndSnapshots.md
+    // -- the Line 6 convention: value 0-7 = A-H). It always switches
+    // snapshots, is never learnable onto a parameter, and ignores
+    // out-of-range values.
+    if (ccNumber == snapshotxml::snapshotSelectCcNumber)
+    {
+        const int index = snapshotxml::indexForCcValue (ccValue);
+        if (index >= 0)
+            selectSnapshot (index);
+        return;
+    }
+
     // A knob armed for MIDI Learn takes priority over an existing binding
     // on the same CC -- the next CC message received while armed is what
     // gets learned, even if that CC number was already bound to something
@@ -1341,7 +1525,9 @@ void MainComponent::savePresetAs (const juce::String& name)
     // buildPresetXml() only captures the sound -- carry the organisational
     // metadata (tags, bank slot, setlists) forward from the file being
     // overwritten, or a resave silently drops everything the browser set up.
-    if (existingNumber > 0)
+    // Check presetExists, not the number: an unnumbered preset file (e.g.
+    // one saved before numbering existed) still holds metadata worth keeping.
+    if (presets.presetExists (name))
         if (auto existing = presets.loadPreset (name))
             presetmeta::copyOrganisation (*existing, *xml);
     presets.savePreset (name, *xml);
@@ -1355,6 +1541,8 @@ void MainComponent::savePresetAs (const juce::String& name)
 void MainComponent::updatePresetDisplay()
 {
     presetBadge.setNumber (currentPresetNumber);
+    presetBadge.setSnapshotIndex (currentSnapshot);
+    snapshotBar.setCurrent (currentSnapshot);
     titleLabel.setText (currentPresetName.isNotEmpty() ? currentPresetName + (presetDirty ? " *" : "") : "No preset loaded",
                          juce::dontSendNotification);
     quickSaveButton.setVisible (currentPresetName.isNotEmpty());
@@ -1386,6 +1574,18 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
     }
 
     midilearnxml::write (*xml, midiCcBindings, savedBlockGroups);
+
+    // Snapshots (docs/PresetsAndSnapshots.md, stage 3): the current slot's
+    // stored copy is refreshed from the LIVE chain here -- a knob edit only
+    // lives in the current snapshot until a switch or a save, so capturing
+    // it inline is what lets a save persist the latest edits AND keeps
+    // isPresetDirty() seeing them against the baseline.
+    auto snapshotsToWrite = snapshots;
+    auto& currentToWrite = snapshotsToWrite[(size_t) currentSnapshot];
+    currentToWrite.blocks.resize (chain.size());
+    for (int i = 0; i < (int) chain.size(); ++i)
+        currentToWrite.blocks[(size_t) i] = snapshotxml::captureBlock (*chain[(size_t) i]);
+    snapshotxml::write (*xml, snapshotsToWrite, currentSnapshot);
 
     // The FULL per-row routing (device I/O, splits, merges), not just a
     // single global in/out pair -- see the class-level bug this fixes:
@@ -1499,6 +1699,50 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     // Per-preset, like a hardware pedalboard's controller assignments: a preset saved without any leaves none active.
     midiCcBindings = midilearnxml::read (xml, loadedBlockGroups);
 
+    // Snapshots: read them if the file has them (current = whichever was
+    // live at save time), else default every slot to the just-loaded state
+    // -- a preset saved before this feature loads identically to how it
+    // always did, as a single-state preset.
+    int savedCurrent = 0;
+    if (! snapshotxml::read (xml, snapshots, savedCurrent))
+        snapshots = {};
+
+    // Snapshot block entries are indexed by the SAVED <Block> order, so
+    // any blocks this build couldn't create (unknown keys skipped above,
+    // nullptr in loadedBlockGroups) must be dropped from every snapshot
+    // first -- otherwise each entry after a skipped block would apply its
+    // bypass/params to the wrong live block.
+    std::vector<size_t> loadedSavedIndices;
+    for (size_t i = 0; i < loadedBlockGroups.size(); ++i)
+        if (loadedBlockGroups[i] != nullptr)
+            loadedSavedIndices.push_back (i);
+
+    for (auto& snapshot : snapshots)
+    {
+        std::vector<snapshotxml::BlockSnapshot> aligned;
+        aligned.reserve (loadedSavedIndices.size());
+        for (const size_t saved : loadedSavedIndices)
+        {
+            if (saved < snapshot.blocks.size())
+            {
+                aligned.push_back (std::move (snapshot.blocks[saved]));
+            }
+            else
+            {
+                // The XML never stored this position -- an old preset with
+                // no <Snapshots> at all (every entry lands here) or a slot
+                // saved with fewer blocks. Seed it from the live chain:
+                // the "single-state" default where switching onto it
+                // changes nothing.
+                aligned.push_back (snapshotxml::captureBlock (*chain[aligned.size()]));
+            }
+        }
+        snapshot.blocks = std::move (aligned);
+    }
+
+    normaliseSnapshots();
+    currentSnapshot = savedCurrent;
+
     refreshRowEndpoints();
     rebuildSignalGraph();
     layoutChain();
@@ -1562,7 +1806,14 @@ void MainComponent::resized()
     settingsButton.setBounds (top.removeFromRight (touch::minTapTarget)
                                    .withSizeKeepingCentre (touch::minTapTarget, touch::minTapTarget));
     top.removeFromRight (8);
-    presetBadge.setBounds (top.removeFromLeft (80));
+    // A little wider than it used to be -- the badge draws number+letter
+    // ("12B") now, not just a bare number.
+    presetBadge.setBounds (top.removeFromLeft (88));
+    top.removeFromLeft (8);
+    // The A-H snapshot strip, one minTapTarget cell per snapshot.
+    snapshotBar.setBounds (top.removeFromLeft (snapshotxml::maxSnapshots * touch::minTapTarget)
+                             .withSizeKeepingCentre (snapshotxml::maxSnapshots * touch::minTapTarget,
+                                                     touch::minTapTarget));
     top.removeFromLeft (8);
     if (quickSaveButton.isVisible())
     {

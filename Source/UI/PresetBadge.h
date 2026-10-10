@@ -16,15 +16,21 @@ namespace openguitarmultifx
     proportional-to-height cap, same idea as EffectBlockComponent/
     RowEndpointBlock elsewhere in this UI.
 
-    Once scenes exist (a preset's own internal variations), this becomes
-    number+letter ("1A") in the same slot -- not built yet, see
-    MainComponent.h.
+    Shows number+snapshot letter ("3B") -- snapshots A-H are live now
+    (docs/PresetsAndSnapshots.md, stage 3). The letter is drawn whenever
+    one is set, even without a loaded preset (an unsaved chain still has
+    an active snapshot).
 */
 class PresetBadge : public juce::Component
 {
 public:
-    /** 0 = no preset loaded (shows a placeholder dash). */
+    /** 0 = no preset loaded (shows just the snapshot letter, or a
+        placeholder dash if no letter is set either). */
     void setNumber (int number);
+
+    /** Which snapshot letter to draw after the number ("3B"): -1 hides
+        it. Snapshots A-H map to indices 0-7 (see SnapshotPresetXml.h). */
+    void setSnapshotIndex (int index);
 
     /** The heavier display weight for the big number -- see
         OpenGuitarMultiFxLookAndFeel::getExtraBoldTypeface(). Falls back to the
@@ -38,6 +44,7 @@ public:
 
 private:
     int currentNumber = 0;
+    int snapshotIndex = -1;
     juce::Typeface::Ptr displayTypeface;
 };
 

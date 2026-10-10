@@ -358,30 +358,32 @@ void PresetBrowserDialog::rebuildTiles()
     bankTiles.clear (true);
     tileGrid.clearTiles();
 
+    const auto allEntries = library.entries(); // one directory scan per refresh
+
     if (allVisible)
     {
         const auto selectedTag = tagBox.getSelectedId() > 1 ? tagBox.getText() : juce::String {};
         const auto names = library.search (searchField.getText(), selectedTag);
-        for (auto& e : library.entries())
+        for (auto& e : allEntries)
             if (names.contains (e.name))
                 configureTile (tileGrid.addTile(), e, "#" + juce::String (e.number));
 
-        emptyStateLabel.setText (library.entries().empty() ? "No presets saved yet."
-                                 : names.isEmpty()        ? "No presets match."
-                                                          : juce::String {},
+        emptyStateLabel.setText (allEntries.empty() ? "No presets saved yet."
+                                 : names.isEmpty()   ? "No presets match."
+                                                     : juce::String {},
                                  juce::dontSendNotification);
         hintLabel.setText ("Tap to load -- long-press a tile for tags, setlists, bank slots", juce::dontSendNotification);
     }
     else if (bankVisible)
     {
-        rebuildBankTiles();
+        rebuildBankTiles (allEntries);
         emptyStateLabel.setText ({}, juce::dontSendNotification);
         hintLabel.setText ("Bank " + juce::String (currentBank + 1) + " -- tap a slot to load, tap + to assign a preset",
                            juce::dontSendNotification);
     }
     else
     {
-        rebuildSetlistTiles();
+        rebuildSetlistTiles (allEntries);
         hintLabel.setText ("Tap to load, Prev/Next to step through the setlist -- long-press to reorder or remove",
                            juce::dontSendNotification);
     }
@@ -390,7 +392,13 @@ void PresetBrowserDialog::rebuildTiles()
     resized();
 }
 
-void PresetBrowserDialog::rebuildBankTiles()
+presetmeta::BankSlot PresetBrowserDialog::storedSlotForTile (int tileIndex) const
+{
+    const int linear = currentBank * bankSize + tileIndex;
+    return { linear / PresetLibrary::maxSlotsPerBank, linear % PresetLibrary::maxSlotsPerBank };
+}
+
+void PresetBrowserDialog::rebuildBankTiles (const std::vector<PresetLibrary::Entry>& allEntries)
 {
     bankLabel.setText ("Bank " + juce::String (currentBank + 1), juce::dontSendNotification);
 
@@ -399,24 +407,26 @@ void PresetBrowserDialog::rebuildBankTiles()
         auto* tile = bankTiles.add (new PresetTile());
         addAndMakeVisible (*tile);
 
-        const auto occupant = library.presetInSlot (currentBank, slot);
-        if (occupant.isEmpty())
+        const auto stored = storedSlotForTile (slot);
+        const PresetLibrary::Entry* occupant = nullptr;
+        for (auto& e : allEntries)
+            if (e.bankSlot.bank == stored.bank && e.bankSlot.slot == stored.slot)
+            {
+                occupant = &e;
+                break;
+            }
+
+        if (occupant == nullptr)
         {
             tile->isEmpty = true;
             tile->name = {};
             tile->heading = "Slot " + juce::String (slot + 1);
-            tile->subline = juce::String (slot); // stashed so the "+" tap knows which slot was picked
-            tile->onTap = [this, slot] { showSlotPicker (slot); };
+            tile->onTap = [this, stored] { showSlotPicker (stored.bank, stored.slot); };
         }
         else
         {
-            for (auto& e : library.entries())
-                if (e.name == occupant)
-                {
-                    configureTile (*tile, e, juce::String (slot + 1));
-                    break;
-                }
-            const auto presetName = occupant;
+            configureTile (*tile, *occupant, juce::String (slot + 1));
+            const auto presetName = occupant->name;
             tile->onTap = [this, presetName] { if (onPresetChosen) onPresetChosen (presetName); };
             tile->onMenu = [this, presetName]
             {
@@ -431,9 +441,13 @@ void PresetBrowserDialog::rebuildBankTiles()
     }
 }
 
-void PresetBrowserDialog::rebuildSetlistTiles()
+void PresetBrowserDialog::rebuildSetlistTiles (const std::vector<PresetLibrary::Entry>& allEntries)
 {
-    const auto names = library.setlistNames();
+    juce::StringArray names;
+    for (auto& e : allEntries)
+        for (auto& m : e.setlists)
+            names.addIfNotAlreadyThere (m.name);
+    names.sort (true);
 
     if (names.isEmpty())
     {
@@ -449,20 +463,34 @@ void PresetBrowserDialog::rebuildSetlistTiles()
 
     setlistLabel.setText (currentSetlist, juce::dontSendNotification);
 
+    // Members in (index, preset number) order -- the same ordering
+    // PresetLibrary::setlistMembers computes, redone over the shared scan.
+    std::vector<const PresetLibrary::Entry*> members;
+    for (auto& e : allEntries)
+        if (e.isInSetlist (currentSetlist))
+            members.push_back (&e);
+    std::sort (members.begin(), members.end(), [this] (const PresetLibrary::Entry* a, const PresetLibrary::Entry* b)
+    {
+        auto indexOf = [this] (const PresetLibrary::Entry* e)
+        {
+            for (auto& m : e->setlists)
+                if (m.name == currentSetlist)
+                    return m.index;
+            return 0;
+        };
+        const auto ai = indexOf (a), bi = indexOf (b);
+        return ai != bi ? ai < bi : a->number < b->number;
+    });
+
     int position = 0;
-    for (auto& member : library.setlistMembers (currentSetlist))
-        for (auto& e : library.entries())
-            if (e.name == member)
-            {
-                configureTile (tileGrid.addTile(), e, juce::String (++position));
-                break;
-            }
+    for (auto* e : members)
+        configureTile (tileGrid.addTile(), *e, juce::String (++position));
 
     emptyStateLabel.setText (tileGrid.tiles.isEmpty() ? "This setlist is empty." : juce::String {},
                              juce::dontSendNotification);
 }
 
-void PresetBrowserDialog::showSlotPicker (int slot)
+void PresetBrowserDialog::showSlotPicker (int bank, int slot)
 {
     const auto all = library.entries();
     if (all.empty())
@@ -473,11 +501,11 @@ void PresetBrowserDialog::showSlotPicker (int slot)
         menu.addItem (i + 1, "#" + juce::String (all[(size_t) i].number) + "  " + all[(size_t) i].name);
 
     menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
-        [this, all, slot] (int result)
+        [this, all, bank, slot] (int result)
         {
             if (result <= 0 || result > (int) all.size())
                 return;
-            library.assignToSlot (all[(size_t) result - 1].name, currentBank, slot);
+            library.assignToSlot (all[(size_t) result - 1].name, bank, slot);
             refresh();
         });
 }
@@ -512,21 +540,35 @@ void PresetBrowserDialog::showAddToSetlistMenu (const juce::String& presetName)
 void PresetBrowserDialog::showAssignToBankMenu (const juce::String& presetName)
 {
     juce::PopupMenu menu;
+    const auto allEntries = library.entries();
 
+    // Bank numbers here are DISPLAYED pages like the bank view's, so a pick
+    // lands where the user just saw it: pages of `bankSize` tiles, linear
+    // over the same stored space (8 stored banks). See storedSlotForTile.
     int itemId = 0;
     std::vector<std::pair<int, int>> idToBankSlot;
-    for (int bank = 0; bank < 8; ++bank)
+    const int numPages = (8 * PresetLibrary::maxSlotsPerBank) / bankSize;
+    for (int page = 0; page < numPages; ++page)
     {
         juce::PopupMenu bankMenu;
-        for (int slot = 0; slot < PresetLibrary::maxSlotsPerBank; ++slot)
+        for (int slot = 0; slot < bankSize; ++slot)
         {
-            const auto occupant = library.presetInSlot (bank, slot);
+            const int linear = page * bankSize + slot;
+            const presetmeta::BankSlot stored { linear / PresetLibrary::maxSlotsPerBank,
+                                                linear % PresetLibrary::maxSlotsPerBank };
+            juce::String occupant;
+            for (auto& e : allEntries)
+                if (e.bankSlot.bank == stored.bank && e.bankSlot.slot == stored.slot)
+                {
+                    occupant = e.name;
+                    break;
+                }
             ++itemId;
-            idToBankSlot.push_back ({ bank, slot });
+            idToBankSlot.push_back ({ stored.bank, stored.slot });
             bankMenu.addItem (itemId, "Slot " + juce::String (slot + 1)
                                   + (occupant.isNotEmpty() ? "  (" + occupant + ")" : ""));
         }
-        menu.addSubMenu ("Bank " + juce::String (bank + 1), bankMenu);
+        menu.addSubMenu ("Bank " + juce::String (page + 1), bankMenu);
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),

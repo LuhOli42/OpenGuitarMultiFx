@@ -7,6 +7,8 @@
 #include "OverlayHost.h"
 #include "ParameterPanel.h"
 #include "PresetBadge.h"
+#include "SnapshotBar.h"
+#include "SnapshotPresetXml.h"
 #include "../EffectRegistry.h"
 #include "../Engine/AudioEngine.h"
 #include "../Presets/PresetManager.h"
@@ -109,8 +111,27 @@ private:
         or MIDI Learn change). Shown as " *" after the preset name. */
     bool isPresetDirty() const;
     /** Loads `name`, first asking Save / Discard / Cancel if the current preset has unsaved changes. Only for the
-        on-screen list: a MIDI Program Change discards silently, like a hardware pedalboard does on stage. */
-    void loadPresetAskingToSave (const juce::String& name);
+        on-screen browser: a MIDI Program Change discards silently, like a hardware pedalboard does on stage.
+        `onLoaded` (optional) fires only once the target is actually loaded -- which can be on the ChoiceCard's
+        callback, not this call, when the prompt shows. */
+    void loadPresetAskingToSave (const juce::String& name, std::function<void()> onLoaded = nullptr);
+
+    /** Recalls snapshot `index` (0-7 = A-H) on the live chain: stores the
+        live param/bypass state into the OUTGOING snapshot first (the doc's
+        Recall semantics -- an edit stays in the snapshot it was made in),
+        then writes the incoming snapshot's params + bypass flags into the
+        SAME processors. The SignalGraph is never rebuilt, so the switch is
+        gapless and bypass changes ride processWithBypass()'s crossfade +
+        trails (docs/PresetsAndSnapshots.md). */
+    void selectSnapshot (int index);
+    /** Captures the live chain into `snapshots[currentSnapshot]` -- where
+        unsaved knob edits live until the preset is saved or discarded. */
+    void storeCurrentSnapshot();
+    /** Re-fits every snapshot's block list to the chain's current size --
+        pads missing entries from live state (new blocks, or slots an old
+        preset never stored) and drops extras. Called after preset load and
+        every structural chain edit. */
+    void normaliseSnapshots();
     void closePresetCardsAndReopenList();
     static juce::File getModelsDirectory();
     static juce::File getPresetsDirectory();
@@ -297,15 +318,25 @@ private:
     int ticksUntilDirtyCheck = 0;
     static constexpr int dirtyCheckIntervalTicks = 10; // x 50ms timer: rebuilding the preset XML twice a second is plenty
 
-    // presetBadge shows the preset NUMBER, big (see PresetBadge.h -- this
-    // is a stage instrument, has to be readable from a few feet away, not
-    // just a toolbar). titleLabel shows its NAME, same size class. Tapping
-    // the badge opens the preset browser (see showPresetsPanel()). Once
-    // scenes exist (a preset's own internal variations, e.g. "1A"/"1B"),
-    // the badge's text becomes number+letter in that same slot -- see
-    // AGENT.md's UI/UX Design Philosophy -- this is deliberately not built
-    // yet, just planned for.
+    // presetBadge shows the preset NUMBER + snapshot letter, big (see
+    // PresetBadge.h -- this is a stage instrument, has to be readable from
+    // a few feet away, not just a toolbar). titleLabel shows its NAME,
+    // same size class. Tapping the badge opens the preset browser (see
+    // showPresetsPanel()).
     PresetBadge presetBadge;
+    // Snapshots A-H of the live chain (docs/PresetsAndSnapshots.md, stage
+    // 3): each stores every block's bypass + float params, kept in the same
+    // chain order so `snapshots[i].blocks[j]` is chain[j]'s saved state in
+    // snapshot i. All eight slots always exist; an old preset without a
+    // <Snapshots> element loads as a single-state preset (every slot holding
+    // the loaded values). Edits go into snapshots[currentSnapshot] on
+    // switch/save -- see storeCurrentSnapshot().
+    std::array<snapshotxml::Snapshot, snapshotxml::maxSnapshots> snapshots;
+    int currentSnapshot = 0;
+    // The A-H recall strip next to the badge -- tap a letter to call
+    // selectSnapshot(). This is the whole snapshot UI for stage 3; the
+    // per-snapshot editor (names/colours/knob markers) is a later card.
+    SnapshotBar snapshotBar;
     // Saves the currently loaded preset in place, no dialog -- only visible
     // once one is actually loaded (see updatePresetDisplay()).
     juce::TextButton quickSaveButton { "Save" };

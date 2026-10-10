@@ -113,17 +113,23 @@ private:
     int bankSize = 8;
     juce::String currentSetlist;
 
-    /** Rebuilds the visible tiles for the current mode from the library. */
+    /** Rebuilds the visible tiles for the current mode from the library.
+        `allEntries` is the one directory scan shared by the whole refresh. */
     void rebuildTiles();
-    void rebuildBankTiles();
-    void rebuildSetlistTiles();
+    void rebuildBankTiles (const std::vector<PresetLibrary::Entry>& allEntries);
+    void rebuildSetlistTiles (const std::vector<PresetLibrary::Entry>& allEntries);
     void setMode (Mode newMode);
 
     void configureTile (PresetTile& tile, const PresetLibrary::Entry& entry, const juce::String& heading);
     /** The long-press tile menu; what it offers depends on the mode. */
     void showTileMenu (const PresetLibrary::Entry& entry);
+    /** Which stored bank/slot a displayed tile stands for. Displayed pages
+        are linear over the stored space: in 8-slot mode page N = stored bank
+        N; in 4-slot mode pages 2N and 2N+1 show bank N's slots 0-3 and 4-7,
+        so a slot assigned in one size stays reachable in the other. */
+    presetmeta::BankSlot storedSlotForTile (int tileIndex) const;
     /** "+" slot tapped in bank mode: pick a preset to put there. */
-    void showSlotPicker (int slot);
+    void showSlotPicker (int bank, int slot);
     void showAddToSetlistMenu (const juce::String& presetName);
     void showAssignToBankMenu (const juce::String& presetName);
     void refreshTagFilter();

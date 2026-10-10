@@ -82,10 +82,13 @@ bool PresetLibrary::assignToSlot (const juce::String& name, int bank, int slot) 
         return false;
 
     // The slot can only mean one preset -- clear whoever held it (and this
-    // preset's old slot, so it isn't in two places at once).
+    // preset's old slot, so it isn't in two places at once). If an eviction
+    // write fails, bail BEFORE claiming the slot: returning success here
+    // would leave two presets both thinking they own it.
     for (auto& e : entries())
         if (e.bankSlot.bank >= 0 && (e.name == name || (e.bankSlot.bank == bank && e.bankSlot.slot == slot)))
-            editPresetXml (e.name, [] (juce::XmlElement& xml) { presetmeta::writeBankSlot (xml, -1, -1); });
+            if (! editPresetXml (e.name, [] (juce::XmlElement& xml) { presetmeta::writeBankSlot (xml, -1, -1); }))
+                return false;
 
     return editPresetXml (name, [bank, slot] (juce::XmlElement& xml) { presetmeta::writeBankSlot (xml, bank, slot); });
 }
@@ -197,37 +200,21 @@ bool PresetLibrary::moveInSetlist (const juce::String& setlist, const juce::Stri
     if (from < 0 || to < 0 || to >= members.size())
         return false;
 
-    // Swap the two members' stored indices -- each file keeps its own seat.
-    const auto other = members[(size_t) to];
-    int fromIndex = 0, otherIndex = 0;
-    for (auto& e : entries())
-    {
-        for (auto& m : e.setlists)
+    // Reindex EVERY member into the requested order rather than swapping the
+    // two stored indices -- swapping identical values no-ops when two members
+    // share an index (a legacy/duplicated index sorts by preset number, so an
+    // equal index doesn't prove same position).
+    members.move (from, to);
+    bool ok = true;
+    for (int i = 0; i < members.size(); ++i)
+        ok &= editPresetXml (members[i], [&setlist, i] (juce::XmlElement& xml)
         {
-            if (m.name != setlist)
-                continue;
-            if (e.name == preset)
-                fromIndex = m.index;
-            if (e.name == other)
-                otherIndex = m.index;
-        }
-    }
-
-    editPresetXml (preset, [&] (juce::XmlElement& xml)
-    {
-        rewriteMemberships (xml, [&] (std::vector<presetmeta::SetlistMember>& ms)
-        {
-            for (auto& m : ms) if (m.name == setlist) m.index = otherIndex;
+            rewriteMemberships (xml, [&setlist, i] (std::vector<presetmeta::SetlistMember>& ms)
+            {
+                for (auto& m : ms) if (m.name == setlist) m.index = i;
+            });
         });
-    });
-    editPresetXml (other, [&] (juce::XmlElement& xml)
-    {
-        rewriteMemberships (xml, [&] (std::vector<presetmeta::SetlistMember>& ms)
-        {
-            for (auto& m : ms) if (m.name == setlist) m.index = fromIndex;
-        });
-    });
-    return true;
+    return ok;
 }
 
 bool PresetLibrary::renameSetlist (const juce::String& oldName, const juce::String& newName) const
@@ -237,15 +224,16 @@ bool PresetLibrary::renameSetlist (const juce::String& oldName, const juce::Stri
     if (setlistNames().contains (newName) || ! setlistNames().contains (oldName))
         return false;
 
+    bool ok = true;
     for (auto& member : setlistMembers (oldName))
-        editPresetXml (member, [&] (juce::XmlElement& xml)
+        ok &= editPresetXml (member, [&] (juce::XmlElement& xml)
         {
             rewriteMemberships (xml, [&] (std::vector<presetmeta::SetlistMember>& ms)
             {
                 for (auto& m : ms) if (m.name == oldName) m.name = newName;
             });
         });
-    return true;
+    return ok;
 }
 
 bool PresetLibrary::deleteSetlist (const juce::String& setlist) const
@@ -253,9 +241,10 @@ bool PresetLibrary::deleteSetlist (const juce::String& setlist) const
     const auto members = setlistMembers (setlist);
     if (members.isEmpty())
         return false;
+    bool ok = true;
     for (auto& member : members)
-        removeFromSetlist (member, setlist);
-    return true;
+        ok &= removeFromSetlist (member, setlist);
+    return ok;
 }
 
 bool PresetLibrary::setTags (const juce::String& name, const juce::StringArray& tags) const
