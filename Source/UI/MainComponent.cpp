@@ -56,27 +56,73 @@ namespace
     const juce::StringArray categoryOrder { "Modeled Amps", "Neural", "Cabs", "Dynamics", "Overdrive", "Distortion", "Fuzz", "Modulation",
                                              "Delay", "Reverb", "Filter/FX", "Utility" };
 
+    /** <paramID>_ch<N>: ChannelKnobMemory's serialized per-channel slots.
+        Derived mirror state -- the snapshot format deliberately stores
+        only live float params, so hidden-channel values can't persist
+        through it and a pure channel switch must not flag dirty. */
+    bool isChannelMemoryAttribute (const juce::String& name, const juce::StringArray& paramIds)
+    {
+        const auto sep = name.lastIndexOf ("_ch");
+        return sep > 0 && name.substring (sep + 3).containsOnly ("0123456789")
+               && paramIds.contains (name.substring (0, sep));
+    }
+
     /** The dirty-check view of a preset XML: everything EXCEPT the parts a
-        pure snapshot switch legitimately moves -- the <Snapshots> element's
-        `current` attribute, and each top-level <Block>'s live-state mirror
-        (its `bypassed` flag + EffectState child). The mirror always holds
-        the current snapshot's live state by construction, so comparing it
-        flags every switch; it also carries DERIVED state snapshots
-        deliberately don't store (an amp's per-channel knob memory, written
-        into EffectState by ChannelKnobMemory on a channel change).
-        Real edits still flag: buildPresetXml() refreshes the current
-        slot's stored blocks from the live chain, so an unsaved change
-        differs inside <Snapshots> itself, and structural changes still
-        differ in the Block skeleton (key/gridSlot, count, order). */
+        pure snapshot switch legitimately moves. The top-level <Block>
+        elements are a live-state mirror of the current snapshot by
+        construction, so their snapshot-controlled fields are stripped --
+        the `bypassed` flag, and every EffectState attribute whose name is
+        a captured paramID or channel-memory slot (`*_ch<N>`). Everything
+        else stays compared: a model/IR swap (modelPath/irPath), a
+        tempo-sync toggle (*_synced/*_subdiv), routing, MIDI Learn, and
+        the structural Block skeleton (key/gridSlot, count, order) -- all
+        real edits, all still flag dirty, alongside any change inside
+        <Snapshots> itself (which buildPresetXml() refreshes from live). */
     std::unique_ptr<juce::XmlElement> dirtyCompareForm (const juce::XmlElement& presetXml)
     {
         auto copy = std::make_unique<juce::XmlElement> (presetXml);
+
+        // Captured param IDs per block position, read from <Snapshots>
+        // itself: whatever a snapshot switch can write is not
+        // dirty-check content on the live-state mirror.
+        std::vector<juce::StringArray> paramIds;
         if (auto* snapshotsXml = copy->getChildByName ("Snapshots"))
+        {
             snapshotsXml->removeAttribute ("current");
+            for (auto* snapshotXml : snapshotsXml->getChildWithTagNameIterator ("Snapshot"))
+            {
+                int blockIndex = 0;
+                for (auto* blockXml : snapshotXml->getChildWithTagNameIterator ("Block"))
+                {
+                    if (blockIndex >= (int) paramIds.size())
+                        paramIds.emplace_back();
+                    for (int a = 0; a < blockXml->getNumAttributes(); ++a)
+                    {
+                        const auto name = blockXml->getAttributeName (a);
+                        if (name != "bypassed")
+                            paramIds[(size_t) blockIndex].addIfNotAlreadyThere (name);
+                    }
+                    ++blockIndex;
+                }
+            }
+        }
+
+        int blockIndex = 0;
         for (auto* blockXml : copy->getChildWithTagNameIterator ("Block"))
         {
             blockXml->removeAttribute ("bypassed");
-            blockXml->deleteAllChildElementsWithTagName ("EffectState");
+            if (auto* stateXml = blockXml->getChildByName ("EffectState"))
+            {
+                static const juce::StringArray none;
+                const auto& ids = blockIndex < (int) paramIds.size() ? paramIds[(size_t) blockIndex] : none;
+                for (int a = stateXml->getNumAttributes() - 1; a >= 0; --a)
+                {
+                    const auto name = stateXml->getAttributeName (a);
+                    if (ids.contains (name) || isChannelMemoryAttribute (name, ids))
+                        stateXml->removeAttribute (name);
+                }
+            }
+            ++blockIndex;
         }
         return copy;
     }
@@ -1565,8 +1611,21 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         std::vector<snapshotxml::BlockSnapshot> aligned;
         aligned.reserve (loadedSavedIndices.size());
         for (const size_t saved : loadedSavedIndices)
-            aligned.push_back (saved < snapshot.blocks.size() ? std::move (snapshot.blocks[saved])
-                                                            : snapshotxml::BlockSnapshot {});
+        {
+            if (saved < snapshot.blocks.size())
+            {
+                aligned.push_back (std::move (snapshot.blocks[saved]));
+            }
+            else
+            {
+                // The XML never stored this position -- an old preset with
+                // no <Snapshots> at all (every entry lands here) or a slot
+                // saved with fewer blocks. Seed it from the live chain:
+                // the "single-state" default where switching onto it
+                // changes nothing.
+                aligned.push_back (snapshotxml::captureBlock (*chain[aligned.size()]));
+            }
+        }
         snapshot.blocks = std::move (aligned);
     }
 
