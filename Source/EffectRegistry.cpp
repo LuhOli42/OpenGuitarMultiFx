@@ -337,9 +337,9 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("CrunchBoxStyleDistortion");
     registry.registerType ("CrunchBoxStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<CrunchBoxStyleDistortionProcessor> (Orders { 1, 1, 2 }, 7.0), 1000000.0), -14.25f); });
     registry.markQualityDependent ("ZendriveStyleOverdrive");
-    registry.registerType ("ZendriveStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<ZendriveStyleOverdriveProcessor> (Orders { 0, 0, 1 }, 20.0), 1000000.0), -10.14f); });
+    registry.registerType ("ZendriveStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<ZendriveStyleOverdriveProcessor> (Orders { 0, 0, 1 }, 20.0), 1000000.0), -9.49f); });
     registry.markQualityDependent ("OCDStyleOverdrive");
-    registry.registerType ("OCDStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<OCDStyleOverdriveProcessor> (Orders { 1, 1, 2 }, 13.0), 1000000.0), -14.37f); });
+    registry.registerType ("OCDStyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<OCDStyleOverdriveProcessor> (Orders { 1, 1, 2 }, 13.0), 1000000.0), -13.52f); });
     registry.markQualityDependent ("BD2StyleOverdrive");
     registry.registerType ("BD2StyleOverdrive", [] { return trimmed (pickupLoaded (oversampledSlew<BD2StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 2.0), 1000000.0), -4.42f); });
     // Bass overdrives modelled from traced schematics (docs/circuits/): the Darkglass's 4049 CMOS clipper and

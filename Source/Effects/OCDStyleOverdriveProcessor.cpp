@@ -15,15 +15,16 @@ namespace
     constexpr double ledIs = 1.3e-19;
     constexpr double ledNVt = 1.9 * 25.85e-3;
 
-    // The 2N7000's body diode (source to drain). The datasheet's only spec is VSD <= 1.2 V at ISD = 200 mA -- nowhere
-    // near the ~0.1-1 mA this circuit actually runs it at. Extrapolated down with the diode equation at N = 1.4
-    // (Is = 200 mA / exp(1.2 / nVt)): ~1.0 V at 1 mA, ~0.9 V at 0.1 mA. The earlier estimate (Is 2 pA: ~0.65-0.73 V,
-    // 2026-09-21) clipped so early that the Clipping switch's MOSFET setting sounded the same regardless of
-    // Drive/level, a user-reported bug (docs/circuits/HarshnessDiagnosis.md, "does the Clipping switch change the
-    // sound?"); this Is is the same 1.4 ideality factor, recalibrated to the datasheet's own operating point instead
-    // of a small-signal-diode guess.
+    // The 2N7000's body diode (source to drain). The manufacturer's datasheet only specs the diode at hundreds of
+    // mA -- nowhere near the ~0.1-1 mA this circuit runs it at -- but two of them print a TYPICAL: Supertex/
+    // Microchip's 2N7000-G and NXP's both give VSD = 0.85 V typ at ISD = 200-300 mA, VGS = 0 (the earlier version
+    // of this comment anchored on Fairchild's 1.2 V MAX, a worst-case bound, which put ~1.0 V at 1 mA -- higher
+    // than any published curve-tracer measurement). Extrapolated down with the diode equation at N = 1.4
+    // (Is = 200 mA / exp(0.85 / nVt) = 12.6 pA): ~0.58 V at 0.1 mA, ~0.66 V at 1 mA -- matching the measured
+    // "0.5-0.7 V clearly into conduction" published for this part (PedalPCB forum #9047), and the same model the
+    // Zendrive uses (docs/circuits/OCDStyleOverdrive.md).
     constexpr double bodyNVt = 1.4 * 25.85e-3;
-    const double bodyIs = 0.2 / std::exp (1.2 / bodyNVt);
+    const double bodyIs = 0.2 / std::exp (0.85 / bodyNVt);
 
     // TL082: 106 dB, 3 MHz gain-bandwidth, ~100 ohm out, swing ~1.5 V short of each rail of a 9 V supply.
     const NodalCircuit::OpAmpMacro tl082 { 2.0e5, 3.0e6, 100.0, 1.5, 7.5, 0.0, 0.0 };

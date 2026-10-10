@@ -193,6 +193,8 @@ public:
                     const std::vector<std::pair<const char*, float>> knobs { { "bd2_gain", gain }, { "bd2_tone", 0.8f }, { "bd2_level", 0.5f } };
                     const double a = sineGainDb<BD2StyleOverdriveProcessor> (knobs, f, 0.002, false);
                     const double b = sineGainDb<BD2StyleOverdriveProcessor> (knobs, f, 0.002, true);
+                    if (juce::SystemStats::getEnvironmentVariable ("BDFIT", {}).isNotEmpty())
+                        logMessage ("gain " + juce::String (gain, 2) + " f " + juce::String (f, 0) + ": full " + juce::String (a, 3) + " macro " + juce::String (b, 3) + " diff " + juce::String (a - b, 3));
                     worst = std::max (worst, std::abs (a - b));
                 }
             logMessage ("BD-2 worst small-signal difference " + juce::String (worst, 2) + " dB");

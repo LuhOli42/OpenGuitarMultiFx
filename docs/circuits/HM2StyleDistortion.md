@@ -11,7 +11,7 @@ ambiguous thing (the DIST pot, below). The redraw omits the output transistors
 (Q3/Q10) and the LED/switch; the pedal's output is taken at the Level wiper.
 
 ## Topology
-1. **Q1 (2SK30/BF245) JFET source follower**: R 10K, C 47 nF, 1 M gate bias to
+1. **Q1 (2SK30A-Y) JFET source follower**: R 10K, C 47 nF, 1 M gate bias to
    4.5 V, 10K source.
 2. **Q6 (2SC2240, NPN)**: input C 47 nF + R 22K; base bias only through
    **470K || 10 pF from its own collector** plus 100K to ground; 22 ohm emitter,
@@ -81,13 +81,25 @@ timbre within 0.13 dB of the full model. Q6/Q7 (the self-biased stages that clip
 op-amp's diode network and the Ge/Si pairs remain devices; antiparallel pairs are single
 ports.
 
-## Assumptions
-2SK30 Idss 4 mA, Vp -1.5 V; both BJTs beta 400; silicon = 1N4148 (N 1.752); "GE.DIOD"
-= 1N34A-class as in the Centaur model; the 4.5 V bias rail treated as ideal.
+## Device parameters (service-manual parts list + Toshiba's datasheets)
+Parts list (hobby-hour's transcription of the Boss service docs): Q1/Q4/Q5/Q10 =
+**2SK30A-Y**, Q2/Q3 = 2SC732TM-GR, Q6 = **2SC2240-GR**, Q7 = **2SA970-GR**,
+Q8/Q9 = 2SC945-P; D1/D3/D5/D8-D12 = 1S2473 (Si switching), D6/D7 = 1S188FM (Ge).
+
+- **2SK30A-Y**: Idss Y rank 1.2-3.0 mA -> **2.1 mA** midpoint, Vgs(off) ~ -1.0 V
+  (was 4 mA / -1.5 V, a GR-grade guess -- the -Y grade is what the parts list
+  gives, and it sits Q1's source follower ~0.5 V above the 4.5 V bias, not ~1 V).
+- **2SC2240-GR / 2SA970-GR**: hFE GR 200-400 -> **beta 300** (was 400, the top
+  edge). Both stages are self-biased via 470K collector feedback, so DC barely
+  moves inside the rank.
+- Silicon clipper diodes = 1S2473 -> 1N4148-class (Is 2.52 nA, N 1.752);
+  "GE.DIOD" = 1S188FM -> 1N34A-class as in the Centaur model.
+- The 4.5 V bias rail is treated as ideal.
 
 ## Verification (Tests/HM2StyleDistortionProcessorTests.cpp)
-- DC: Q1 source 5.46 V (hand estimate 5.45), Q6 collector 4.12 V (~0.4 mA),
-  Q7 Veb 0.63 V, Q7 collector 3.92 V.
+- DC: Q1 source ~5.0 V (the Y-grade 2SK30A at this bias: gate 4.5 V, source a
+  Vgs of ~-0.5 V above it), Q6 collector 4.12 V (~0.4 mA),
+  Q7 Veb 0.63 V, Q7 collector 3.83 V.
 - Q6+Q7 gain at 1 kHz: 160x (44 dB).
 - Color: Low up/down = 87x at 90 Hz and High up/down = 136x at 1.2 kHz (small
   signal); Low at 1.2 kHz vs flat = 1.03x — each control acts in its own band.

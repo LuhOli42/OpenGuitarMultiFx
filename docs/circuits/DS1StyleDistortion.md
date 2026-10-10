@@ -51,6 +51,11 @@ the steady-state output did not repeat with a repeating input (non-periodic erro
   (ElectroSmash measures 1.4 Vpp after the DS-1's clipper) and has a knee twice as
   sharp -- harsher, quieter and out of scale with the other pedals. Fixed together with
   the same mistake in the OD-1.
+- **The real parts**: the DS-1's service parts list gives 1S1588 for the clipper
+  diodes -- Toshiba's high-speed Si switching diode, datasheet VF <= 1.0 V (max) at
+  IF = 100 mA, i.e. the same class the model's parameters come from (the canonical
+  1N4148 SPICE pair Is = 2.52 nA, N = 1.752 gives ~0.58 V at 1 mA, inside what the
+  datasheet's own forward curve shows).
 
 ## Not modelled: the footswitch/LED sub-circuit
 
@@ -359,7 +364,7 @@ bridge here, unlike Q2).
 | R14 | 2.2K | op-amp output -> Node MID (feedback tap + forward path) |
 | VR1 (DIST) | 100KB linear | op-amp feedback "Rf" |
 | C9 | 0.47uF NP | Node MID -> Node CLIP coupling |
-| D4, D5 | small-signal Si (1N4148-class) | anti-parallel hard clipper, to BIAS1 |
+| D4, D5 | 1S1588 (Si switching, 1N4148-class) | anti-parallel hard clipper, to BIAS1 |
 | C10 | 0.01uF | Node CLIP -> tone stack coupling |
 | R16 | 6.8K | tone bass branch series |
 | C12 | 0.1uF | tone bass branch shunt |

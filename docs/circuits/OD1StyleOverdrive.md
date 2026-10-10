@@ -185,3 +185,8 @@ the DS-1 and the booster.
 `AsymmetricDiodePair` is given nVt = N x Vt with N = 1.752 (a real 1N4148/1S1588 with
 Is = 2.52 nA). It used to get N = 1, which clipped at ~0.33 V (and ~0.66 V for the pair)
 instead of the ~0.6 V / ~1.2 V this document describes, with a knee twice as sharp.
+
+The real parts: the OD-1's service parts list gives **1S2473 or 1S1588** for D3-D10 --
+Toshiba Si switching diodes of the same class as the 1N4148 (1S1588 datasheet: VF <= 1.0 V
+max at IF = 100 mA), which is exactly what the model's Is = 2.52 nA / N = 1.752 pair
+represents.

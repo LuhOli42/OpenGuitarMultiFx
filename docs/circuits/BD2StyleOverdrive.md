@@ -48,7 +48,7 @@ bias). Audio rails are taken as +8 V (the supply's capacitance-multiplier output
    as its 100 ohm "on" resistance) -> C18 into stage 1's gate (R17/R22/R23 to 4 V).
 2. **Gain stage 1 — a discrete op-amp**: JFET pair Q10/Q11 (shared 4.7K tail R30;
    Q10 drain load R28 2.2K, Q11 drain straight to the rail) driving **PNP Q9
-   (2SA1335)**, collector load R32 2.2K, Miller cap C21 47 pF. Feedback: Q9's
+   (2SA1049-GR)**, collector load R32 2.2K, Miller cap C21 47 pF. Feedback: Q9's
    collector -> Gain rheostat (VR1A 250KA, wiper tied to one end) -> R29 22K ->
    Q11's gate, with R31 1.5K + C22 0.15 uF to ground as the shunt leg and C23 47 pF
    across. Closed-loop gain = 1 + (R29 + rheostat)/Z(R31+C22).
@@ -64,12 +64,24 @@ bias). Audio rails are taken as +8 V (the supply's capacitance-multiplier output
    simulated inductor giving the bass peak.
 7. **Output**: C7 -> switch (Q4) -> C6 -> Q1 emitter follower -> C1 -> R1 1K.
 
-## Assumptions (not printed on the schematic)
-2SK184GR: Idss 4.5 mA, Vp -1.2 V, lambda 0.02; 2SA1335 beta 200; 2SC2459 beta 300;
-1SS133 = 1N4148-class (Is 2.52 nA, N 1.752). The circuit is closed-loop biased, so
-DC is forgiving: the model's stage-1 collector lands at **4.158 V**, matching a
-hand solution (~4.18 V) that needs Q10/Q11 to carry unequal currents from a
-small input offset.
+## Device parameters (service-manual parts list + manufacturers' datasheets)
+The schematic prints designators only; the part numbers below come from the BD-2's
+service parts list (hobby-hour's transcription of the Boss documentation):
+Q1/Q5/Q7 = 2SC2459GR, Q2/Q15/Q16 = 2SC2458GR, Q3/Q10/Q11/Q13/Q14 = 2SK184GR,
+Q4/Q6/Q8 = 2SK118Y, Q9/Q12 = 2SA1049GR, D1/D3-D10 = 1SS-133.
+
+- **2SK184GR** (Toshiba N-JFET): Idss GR rank 2.6-6.5 mA -> **4.5 mA** midpoint;
+  Vgs(off) -0.2..-1.5 V -> **-1.2 V** (typical for the grade; matches the
+  usual SPICE model for this part). lambda 0.02.
+- **2SA1049-GR** (Toshiba PNP, the 2SC2459's complement): hFE GR 200-400 ->
+  **beta 300**. Was modelled as "2SA1335, beta 200" -- wrong part and the
+  bottom edge of the rank.
+- **2SC2459-GR** (NPN followers, modelled ideally): same rank -> beta 300.
+- **1SS133** = 1N4148-class silicon switch (Is 2.52 nA, N 1.752).
+
+The circuit is closed-loop biased, so DC is forgiving: the model's stage-1
+collector lands at **4.158 V**, matching a hand solution (~4.18 V) that needs
+Q10/Q11 to carry unequal currents from a small input offset.
 
 ## Verification (Tests/BD2StyleOverdriveProcessorTests.cpp)
 - DC: both stages' collectors 4.158 V (the 4 V reference + a small offset).

@@ -42,3 +42,7 @@ that one knob position; a real amp's loudness follows its Volume knobs.
 
 **2026-09-26, new pedals** (noon, before the trim): RAT 2 -1.25 dB, Turbo RAT +7.85, Crunch Box +14.25, Zendrive +10.14, OCD +14.37; the registry
 trims are the negatives (+1.25 / -7.85 / -14.25 / -10.14 / -14.37). The OCD's two selectors are at their defaults (MOSFET clipping, High peak).
+
+**2026-10-10, 2N7000 body-diode retune** (the OCD and Zendrive clipper moved from the datasheet's worst-case MAX
+anchor to its TYPICAL: earlier clipping -> ~0.7-0.9 dB less output at noon): Zendrive +9.49, OCD +13.52 before
+the trim; the registry trims are now -9.49 / -13.52.

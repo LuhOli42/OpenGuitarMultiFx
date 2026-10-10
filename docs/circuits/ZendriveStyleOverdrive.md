@@ -36,13 +36,15 @@ low-threshold silicon diodes in it. The same reading applies to the [OCD](./OCDS
 The channels are therefore not in the netlist. Each leg is a chain of junctions carrying one current, so it is one diode
 (`SeriesDiodes.h`: nVt = sum of the chain's, Is = the geometric mean weighted by nVt), and the two antiparallel legs are the solver's single
 clipper port. A test compares the chain with the explicit netlist (within 1-2 mV from 1 uA up). This took the pedal from 7.0% to 2.8% of a
-core with the output unchanged (-0.967 / +0.806 V both ways).
+core with the output unchanged (-0.901 / +0.740 V both ways).
 
 ## Model
 * AD712: A0 2e5, 4 MHz gain-bandwidth, 75 ohm, swing 2-7 V. The second op-amp is a follower (unity, inside its swing at these signals).
 * BAT41: Is 13 nA, N 1.1 (0.25 V at 0.1 mA, 0.32 V at 1 mA; the datasheet's <0.45 V at 10 mA needs a series resistance left out).
-  1N34A: the Centaur's (Is 200 nA, N 1.3). 2N7000 body diode: **Is 2 pA, N 1.4 (0.64 V at 0.1 mA, 0.73 V at 1 mA) -- an assumption**: the
-  datasheet gives only V_SD < 1.5 V at 0.4 A.
+  1N34A: the Centaur's (Is 200 nA, N 1.3). 2N7000 body diode: **Is 12.6 pA, N 1.4 (0.58 V at 0.1 mA, 0.66 V at 1 mA)**, the
+  same model as the OCD -- anchored on the manufacturers' typical VSD = 0.85 V at ISD = 200-300 mA (Supertex/
+  Microchip 2N7000-G, NXP), consistent with published measurements of ~0.5-0.7 V into conduction. Replaces a
+  2 pA guess.
 * Pots: Drive and Volume linear as the original (Aion recommends audio taper), Tone and Voice rheostats **clockwise = less resistance**
   (Tone: brighter; Voice: more gain range, per Aion's "the available gain increases as the Voice control is turned up").
 
@@ -50,8 +52,8 @@ core with the output unchanged (-0.967 / +0.806 V both ways).
 * DC: the op-amp output, its (-) input and the tone node at 4.500 V.
 * **Gain stage against the closed form** (input high-pass, AD712 pole, 1K + Voice + 100 nF leg, Rf as above || 100 pF), Drive 0.1 / 0.5 / 1 x
   Voice 0 / 0.5 / 1 x 150 Hz / 1 kHz: within 0.09 dB (up to 262x at 1 kHz with Drive and Voice at the maximum; 47x at 150 Hz).
-* **Clipper**: output minus (-) reaches **+0.806 V** (BAT41 + body) and **-0.967 V** (BAT41 + 1N34A + body): asymmetric, the negative side
-  harder. These are at the currents this circuit runs (a few uA through up to 500K): at 1 mA they would be 0.32 + 0.73 = 1.05 V and 1.4 V.
+* **Clipper**: output minus (-) reaches **+0.740 V** (BAT41 + body) and **-0.901 V** (BAT41 + 1N34A + body): asymmetric, the negative side
+  harder. These are at the currents this circuit runs (a few uA through up to 500K): at 1 mA they would be 0.32 + 0.66 = 0.98 V and ~1.3 V.
   **They depend directly on the body-diode assumption**: a factor 10 in its Is moves both by 83 mV.
 * Tone: 5 kHz / 200 Hz 0.240 (Tone 0) -> 1.010 (Tone 1). Voice 1 vs 0: 1 kHz level x5.6, 100 Hz relative to 1 kHz x0.2. Volume monotonic.
 * Series-diode equivalence, bounded/converging at every Drive setting, stress with random knobs (no failed solves), stereo independence.
