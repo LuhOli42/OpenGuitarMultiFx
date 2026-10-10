@@ -488,8 +488,16 @@ void GarnetHerzogStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
             }
 
             // reducedOrder: the behavioural stage returns wOut-equivalent volts at Level = 1; the real pot's
-            // taper (applied to a load of 1M into 150k -> 1M) is applied on top, same as the netlist does.
-            const double levelTap = reducedOrder ? pots::audio ((double) lv) * (1.0e6 / (1.15e6)) : 1.0;
+            // taper including its load is applied on top. The 1M pot's lower leg sees the wiper's downstream
+            // 150k + 1M (1.15M) — the loaded divider sits below the ideal audio taper at intermediate settings.
+            double levelTap = 1.0;
+            if (reducedOrder)
+            {
+                const double rLo = pots::audio ((double) lv) * 1.0e6;
+                const double rUp = 1.0e6 - rLo;
+                const double rPar = rLo > 0.0 ? 1.0 / (1.0 / rLo + 1.0 / 1.15e6) : 0.0;
+                levelTap = (rPar / (rUp + rPar + 1e-9)) * (1.0e6 / 1.15e6);
+            }
             const double outVolts = reducedOrder ? behavioralPowerStage (ch, drive) * levelTap : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 40.0;
             const bool sane = std::isfinite (outVolts) && std::abs (outVolts) < saneLimit;
