@@ -870,12 +870,21 @@ void MainComponent::showAddEffectMenu (int targetGridSlot)
     // ~120 effects on a touchscreen. Categories are registry metadata
     // (EffectRegistry::categoryForKey), so this dialog needs no name table.
     auto dialog = std::make_unique<AddEffectBrowserDialog> (registry);
+    // The pop is deferred one message-loop tick: popOverlay() destroys the
+    // card, and freeing a std::function's storage while it is still running
+    // (tile -> grid -> dialog -> this callback) is UB.
     dialog->onEffectChosen = [this, targetGridSlot] (juce::String key)
     {
-        overlayHost.popOverlay();
-        addEffect (key, targetGridSlot);
+        juce::MessageManager::callAsync ([this, key = std::move (key), targetGridSlot]
+        {
+            overlayHost.popOverlay();
+            addEffect (key, targetGridSlot);
+        });
     };
-    dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
+    dialog->onPopOverlay = [this]
+    {
+        juce::MessageManager::callAsync ([this] { overlayHost.popOverlay(); });
+    };
     overlayHost.pushOverlay (std::move (dialog));
 }
 

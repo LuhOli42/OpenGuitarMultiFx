@@ -207,6 +207,11 @@ void AddEffectBrowserDialog::rebuildTiles()
     emptyStateLabel.setVisible (emptyStateLabel.getText().isNotEmpty());
 
     resized();
+
+    // A new result set always starts at the top -- keeping the old offset
+    // would show the first matches above the viewport whenever the
+    // replacement list is also long enough to scroll.
+    gridViewport.setViewPosition (0, 0);
 }
 
 void AddEffectBrowserDialog::resized()
