@@ -98,6 +98,7 @@ private:
 
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
+        tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
         int iA = 0, srcVoc = 0;
         int rRect = 0;

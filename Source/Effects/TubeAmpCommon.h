@@ -72,6 +72,9 @@ namespace voicings
     // Single-ended small-amp (Herzog-style): no push-pull cancellation at all, so the most even-order
     // content of any voicing, no feedback damping, and a small OT that saturates early.
     inline constexpr PowerTailVoicing singleEnded { 11000.0, 110.0, 1.5, 0.9, 170.0, 1.0, 0.18, 0.8 };
+    // Direct-coupled solid-state (Acoustic 360-style): no output transformer and no tube imbalance, so
+    // only the speaker cone reaction remains -- the OT poles sit at the 0.4*fs clamp where they pass ~flat.
+    inline constexpr PowerTailVoicing solidState { 40000.0, 75.0, 1.5, 1.0, 140.0, 0.0, 0.0, 0.5 };
 }
 
 /** The constant-cost pieces of a tube power amp that the reduced-order behavioural stage does not get from
@@ -89,11 +92,17 @@ struct PowerStageTail
     {
         const double fs = juce::jmax (1.0, sampleRate);
         const double pi = juce::MathConstants<double>::pi;
-        // Two coincident poles have their -3 dB point at ~0.64x the pole frequency, so the poles sit at
-        // ~1.55x the requested rolloff frequency.
-        lpC = 1.0 - std::exp (-2.0 * pi * v.otHz * 1.554 / fs);
+        // Two coincident one-pole LPs. Solve the discrete coefficient so the cascade measures exactly
+        // -3 dB at otHz (each pole |H|^2 = 1/sqrt(2) there) instead of the usual exp() approximation,
+        // which drifts ~1 dB hot once otHz is a substantial fraction of Nyquist. otHz is clamped under
+        // Nyquist; voicings well past it (e.g. solidState) then run the poles ~flat, as intended.
+        const double wOt = 2.0 * pi * juce::jmin (v.otHz, 0.4 * fs) / fs;
+        const double b = 2.0 - 1.41421356 * std::cos (wOt);
+        // Negative lpC = flat: voicings at/above the clamp (e.g. solidState -- no OT at all) bypass it.
+        lpC = v.otHz < 0.4 * fs ? 1.0 - (b - std::sqrt (std::max (0.0, b * b - 0.34313))) / 0.58579 : -1.0;
         lfC = 1.0 - std::exp (-2.0 * pi * v.lfHz / fs);
         envC = 1.0 - std::exp (-1.0 / (0.02 * fs)); // ~20 ms: tracks the note level, not individual cycles
+        dcC = 1.0 - std::exp (-2.0 * pi * 12.0 / fs); // the OT can't pass DC: ~12 Hz mean subtraction
         const double w = 2.0 * pi * v.resHz / fs;
         const double alpha = std::sin (w) / (2.0 * v.resQ);
         const double a0 = 1.0 + alpha;
@@ -102,7 +111,7 @@ struct PowerStageTail
         resAdd = std::pow (10.0, v.resDb / 20.0) - 1.0;
         coreAmt = v.core; asymAmt = v.asym; dynAmt = v.dyn;
         invRef = 1.0 / juce::jmax (1.0e-9, refVolts);
-        lp1 = lp2 = lfState = env = 0.0;
+        lp1 = lp2 = lfState = env = dc = 0.0;
         resX1 = resX2 = resY1 = resY2 = 0.0;
     }
 
@@ -114,12 +123,17 @@ struct PowerStageTail
         resX2 = resX1; resX1 = x; resY2 = resY1; resY1 = rb;
         env += envC * (std::abs (x) * invRef - env);
         const double v0 = x + resAdd * (1.0 + dynAmt * juce::jlimit (0.0, 1.0, env)) * rb;
-        // Even-order content: a push-pull pair is never perfectly balanced.
+        // Even-order content: a push-pull pair is never perfectly balanced. The quadratic leaves a
+        // positive mean under drive which a transformer can't pass -- remove it like the real OT does.
         const double v = v0 + asymAmt * v0 * v0 * invRef;
+        dc += dcC * (v - dc);
+        const double vdc = v - dc;
         // OT core saturation: only the LF split saturates (flux ~ V/f).
-        lfState += lfC * (v - lfState);
+        lfState += lfC * (vdc - lfState);
         const double lfn = lfState * invRef;
-        const double vc = (v - lfState) + lfState / (1.0 + coreAmt * lfn * lfn);
+        const double vc = (vdc - lfState) + lfState / (1.0 + coreAmt * lfn * lfn);
+        if (lpC < 0.0)
+            return vc; // no output transformer (solid-state voicing)
         // OT leakage inductance.
         lp1 += lpC * (vc - lp1);
         lp2 += lpC * (lp1 - lp2);
@@ -130,8 +144,8 @@ private:
     double lp1 = 0.0, lp2 = 0.0;
     double lfState = 0.0;
     double resX1 = 0.0, resX2 = 0.0, resY1 = 0.0, resY2 = 0.0;
-    double env = 0.0;
-    double lpC = 0.0, lfC = 0.0, envC = 0.0;
+    double env = 0.0, dc = 0.0;
+    double lpC = 0.0, lfC = 0.0, envC = 0.0, dcC = 0.0;
     double resB0 = 0.0, resB2 = 0.0, resA1 = 0.0, resA2 = 0.0, resAdd = 0.0;
     double coreAmt = 0.0, asymAmt = 0.0, dynAmt = 0.0, invRef = 1.0;
 };

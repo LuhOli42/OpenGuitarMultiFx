@@ -401,7 +401,9 @@ void AC30StyleAmplifierProcessor::updatePots (const Knobs& k)
     if (appliedSpeaker != k.speaker && ! resistiveLoadForced)
         appliedSpeaker = k.speaker;
 
-    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
+    // reducedOrder now couples the PI through its real input cap, so the knee sits centered instead of
+    // biased ~3 dB hot by the leaked follower DC; the level constant absorbs that calibration shift.
+    speakerGain = reducedOrder ? 1.36 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
 }
 
 void AC30StyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -615,6 +617,7 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.piCoupling.prepare (newSampleRate, 0.01e-6, 1.0e6, ch.power.voltage (ch.wTone)); // the real 0.01uF into the PI grid
     }
     updatePots (lastKnobs);
 
@@ -699,7 +702,7 @@ void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone))
+            double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.piCoupling.process (ch.power.voltage (ch.wTone)))
                                                        : ch.power.voltage (ch.wOut);
             {
                 const double cutHz = 800.0 + 19200.0 * (1.0 - pots::audio ((double) cu));

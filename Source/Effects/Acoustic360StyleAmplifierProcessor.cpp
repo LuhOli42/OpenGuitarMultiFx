@@ -329,9 +329,7 @@ void Acoustic360StyleAmplifierProcessor::prepare (double newSampleRate, int, int
     {
         ch = Channel {};
         buildChannel (ch);
-        auto bmVoicing = voicings::bassAmp;
-        bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
-        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
+        ch.bmTail.prepare (sampleRate, voicings::solidState, 1.0 / outputScale); // direct-coupled: speaker reaction only
     }
 
     smoothedVolume.reset (newSampleRate, 0.02);
