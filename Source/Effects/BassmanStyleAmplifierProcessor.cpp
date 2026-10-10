@@ -877,11 +877,12 @@ void BassmanStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         // Power Drive: a master volume between the preamp and the tone stack / phase inverter (amplitude = knob's audio
         // taper). The excursion of the cathode follower scales; its DC and the tone stack's impedances do not.
         // reducedOrder applies the same attenuation as a real two-leg divider AFTER the tone stack instead (identical
-        // through the linear stack -- see buildChannel), so the follower drive stays full-scale here. Dispatch on the
-        // divider's handle, not the flag: a full-netlist instance processed while reducedOrder is on has no wPowerDrive
-        // and must keep attenuating here like the full path, or Power Drive below max stops doing anything.
+        // through the linear stack -- see buildChannel), so the follower drive stays full-scale here. Dispatch purely
+        // on the divider's handle, not the flag: the flag can flip either way after construction, so the divider owns
+        // the attenuation whenever it exists and the scalar owns it whenever it does not -- otherwise a reduced
+        // instance run with the flag off would get BOTH (double attenuation).
         const bool pdDividerBuilt = ! channels.empty() && channels[0].rPowerBottom != 0;
-        const double masterGain = (reducedOrder && pdDividerBuilt) ? 1.0 : juce::jmax (0.002, pots::audio ((double) pw));
+        const double masterGain = pdDividerBuilt ? 1.0 : juce::jmax (0.002, pots::audio ((double) pw));
         const double cfLpCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cfDriveHz / sampleRate);
         const double cfDcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cfDriveDcHz / sampleRate);
 
