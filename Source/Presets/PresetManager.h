@@ -35,6 +35,15 @@ public:
 
     bool deletePreset (const juce::String& name) const;
 
+    bool presetExists (const juce::String& name) const;
+
+    /** Keeps the preset's number (it's the same preset under a new name). False, and nothing changes, if `newName`
+        is empty, already taken, or `oldName` doesn't exist. */
+    bool renamePreset (const juce::String& oldName, const juce::String& newName) const;
+
+    /** Saves a copy of `sourceName` as `newName` under the next free number. Same refusals as renamePreset(). */
+    bool duplicatePreset (const juce::String& sourceName, const juce::String& newName) const;
+
     /** The `number` attribute already stored in an existing preset's saved
         XML, or 0 if it doesn't exist yet / has none. A preset's number is
         assigned once (see nextAvailableNumber()) and kept on every

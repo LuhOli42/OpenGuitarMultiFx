@@ -77,6 +77,33 @@ public:
             expect (presets.nameForNumber (12).isEmpty());
         }
 
+        beginTest ("renamePreset keeps the number and refuses a name that's taken");
+        {
+            PresetManager presets (tempDir);
+            expect (presets.renamePreset ("Lead Tone", "Solo Tone"));
+            expect (! presets.presetExists ("Lead Tone"));
+            expectEquals (presets.numberForExistingPreset ("Solo Tone"), 5);
+
+            expect (! presets.renamePreset ("Solo Tone", "My Preset"));
+            expect (! presets.renamePreset ("Solo Tone", "  "));
+            expect (! presets.renamePreset ("Nonexistent", "Anything"));
+            expectEquals (presets.numberForExistingPreset ("Solo Tone"), 5);
+            expectEquals (presets.numberForExistingPreset ("My Preset"), 3);
+        }
+
+        beginTest ("duplicatePreset copies the content under the next free number");
+        {
+            PresetManager presets (tempDir);
+            expect (presets.duplicatePreset ("My Preset", "My Preset copy"));
+            auto copy = presets.loadPreset ("My Preset copy");
+            expect (copy != nullptr);
+            expectEquals (copy->getStringAttribute ("someField"), juce::String ("hello"));
+            expectEquals (copy->getIntAttribute ("number"), 6);
+            expectEquals (presets.numberForExistingPreset ("My Preset"), 3);
+
+            expect (! presets.duplicatePreset ("My Preset", "Solo Tone"));
+        }
+
         tempDir.deleteRecursively();
     }
 };

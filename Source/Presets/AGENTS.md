@@ -14,12 +14,17 @@ Does not own: what a preset's XML actually contains — `MainComponent` builds/i
 | Export | Used By | Change Impact |
 |--------|---------|---------------|
 | `PresetManager::numberForExistingPreset`/`nextAvailableNumber` | `MainComponent::savePresetAs` | A preset's number is assigned once and kept on every re-save — treat it as stable identity, not list position |
+| `PresetManager::renamePreset`/`duplicatePreset`/`presetExists` | `MainComponent::showPresetsPanel` | Rename keeps the number (same preset, new name); duplicate takes the next free number. Both refuse an empty or already-taken name instead of overwriting |
 
 ## Entry Points
 | Task | Start Here |
 |------|------------|
 | Change preset file format/storage | `PresetManager.{h,cpp}` |
 | Change what a preset actually captures | `Source/UI/MainComponent::buildPresetXml`/`applyPresetXml` (not this directory) |
+
+## Roadmap
+The plan and the decisions for the preset system (snapshots inside a preset, browser, setlists) are in
+`docs/PresetsAndSnapshots.md` -- read it before changing what a preset contains.
 
 ## Contracts
 - A preset's `number` attribute is a stable identity assigned once (commit `0050b30`) — like a numbered slot on a hardware pedalboard, never recomputed from position on re-save.

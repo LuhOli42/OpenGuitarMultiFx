@@ -31,6 +31,9 @@ public:
     std::function<void (juce::String presetName)> onSaveRequested;
     /** Fires when the user taps Delete with a preset selected. */
     std::function<void (juce::String presetName)> onDeleteRequested;
+    /** Fire when the user taps Rename / Duplicate with a preset selected. */
+    std::function<void (juce::String presetName)> onRenameRequested;
+    std::function<void (juce::String presetName)> onDuplicateRequested;
     std::function<void()> onPopOverlay;
 
 private:
@@ -43,10 +46,15 @@ private:
     juce::ListBox listBox { "presets", this };
     juce::Label emptyStateLabel;
     juce::TextButton loadButton { "Load selected" };
+    juce::TextButton renameButton { "Rename" };
+    juce::TextButton duplicateButton { "Duplicate" };
     juce::TextButton deleteButton { "Delete" };
     juce::TextButton closeButton { "Close" };
 
     juce::StringArray names;
+
+    /** Calls `callback` with the selected preset's name, if a row is selected. */
+    void withSelected (const std::function<void (juce::String)>& callback);
 };
 
 } // namespace openguitarmultifx
