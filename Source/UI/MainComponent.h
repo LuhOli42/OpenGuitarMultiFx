@@ -101,6 +101,16 @@ private:
         rather than each having its own copy of load->apply->update-display. */
     void loadPresetByName (const juce::String& name);
     void updatePresetDisplay();
+    /** The loaded preset's state as it was right after loading/saving it -- what isPresetDirty() compares against.
+        Taken from buildPresetXml(), not from the file, so it reflects exactly what this build would write. */
+    void capturePresetBaseline();
+    /** True when a preset is loaded and the chain no longer matches its baseline (any knob, bypass, block, routing
+        or MIDI Learn change). Shown as " *" after the preset name. */
+    bool isPresetDirty() const;
+    /** Loads `name`, first asking Save / Discard / Cancel if the current preset has unsaved changes. Only for the
+        on-screen list: a MIDI Program Change discards silently, like a hardware pedalboard does on stage. */
+    void loadPresetAskingToSave (const juce::String& name);
+    void closePresetCardsAndReopenList();
     static juce::File getModelsDirectory();
     static juce::File getPresetsDirectory();
 
@@ -277,6 +287,10 @@ private:
     PresetManager presets { getPresetsDirectory() };
     juce::String currentPresetName;   // empty = no preset loaded/saved since the last change
     int currentPresetNumber = 0;      // 0 = none yet; a real preset's number is always >= 1
+    std::unique_ptr<juce::XmlElement> presetBaseline; // see capturePresetBaseline()
+    bool presetDirty = false;         // last value shown in the title; refreshed every dirtyCheckIntervalTicks
+    int ticksUntilDirtyCheck = 0;
+    static constexpr int dirtyCheckIntervalTicks = 10; // x 50ms timer: rebuilding the preset XML twice a second is plenty
 
     // presetBadge shows the preset NUMBER, big (see PresetBadge.h -- this
     // is a stage instrument, has to be readable from a few feet away, not

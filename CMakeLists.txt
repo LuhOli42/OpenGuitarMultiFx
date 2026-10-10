@@ -232,6 +232,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/OpenGuitarMultiFxLookAndFeel.cpp
   Source/UI/PresetBadge.cpp
   Source/UI/PresetListDialog.cpp
+  Source/UI/PromptCards.cpp
   Source/UI/Tone3000Panel.cpp
   Source/UI/Tone3000SearchDialog.cpp
   Source/UI/OAuthLoginDialog.cpp

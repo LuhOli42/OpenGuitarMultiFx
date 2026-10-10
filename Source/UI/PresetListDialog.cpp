@@ -36,25 +36,28 @@ PresetListDialog::PresetListDialog (juce::StringArray existingNames)
     emptyStateLabel.setVisible (names.isEmpty());
 
     addAndMakeVisible (loadButton);
-    loadButton.onClick = [this]
-    {
-        const int row = listBox.getSelectedRow();
-        if (row >= 0 && row < names.size() && onPresetChosen)
-            onPresetChosen (names[row]);
-    };
+    loadButton.onClick = [this] { withSelected (onPresetChosen); };
+
+    addAndMakeVisible (renameButton);
+    renameButton.onClick = [this] { withSelected (onRenameRequested); };
+
+    addAndMakeVisible (duplicateButton);
+    duplicateButton.onClick = [this] { withSelected (onDuplicateRequested); };
 
     addAndMakeVisible (deleteButton);
-    deleteButton.onClick = [this]
-    {
-        const int row = listBox.getSelectedRow();
-        if (row >= 0 && row < names.size() && onDeleteRequested)
-            onDeleteRequested (names[row]);
-    };
+    deleteButton.onClick = [this] { withSelected (onDeleteRequested); };
 
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
-    setSize (420, 480);
+    setSize (560, 480);
+}
+
+void PresetListDialog::withSelected (const std::function<void (juce::String)>& callback)
+{
+    const int row = listBox.getSelectedRow();
+    if (row >= 0 && row < names.size() && callback)
+        callback (names[row]);
 }
 
 int PresetListDialog::getNumRows()
@@ -92,9 +95,13 @@ void PresetListDialog::resized()
     auto bottomRow = area.removeFromBottom (touch::minTapTarget);
     closeButton.setBounds (bottomRow.removeFromRight (90));
     bottomRow.removeFromRight (8);
-    deleteButton.setBounds (bottomRow.removeFromRight (90));
+    deleteButton.setBounds (bottomRow.removeFromRight (80));
     bottomRow.removeFromRight (8);
-    loadButton.setBounds (bottomRow.removeFromRight (140));
+    duplicateButton.setBounds (bottomRow.removeFromRight (100));
+    bottomRow.removeFromRight (8);
+    renameButton.setBounds (bottomRow.removeFromRight (90));
+    bottomRow.removeFromRight (8);
+    loadButton.setBounds (bottomRow.removeFromRight (130));
 
     area.removeFromBottom (8);
     listBox.setBounds (area);
