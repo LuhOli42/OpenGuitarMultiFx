@@ -113,6 +113,7 @@ void OD1StyleOverdriveProcessor::reset()
         ch.c5.reset();
         ch.c7.reset();
         ch.c8.reset();
+        ch.clipper.reset (0.0);
     }
 }
 

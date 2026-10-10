@@ -159,6 +159,7 @@ void TubeScreamerStyleOverdriveProcessor::reset()
         ch.c8.reset();
         ch.c9.reset();
         ch.cWiper.reset();
+        ch.clipper.reset (0.0);
     }
 }
 

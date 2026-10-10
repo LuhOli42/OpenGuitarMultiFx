@@ -116,6 +116,7 @@ void TS9BStyleOverdriveProcessor::reset()
         ch.c8.reset();
         ch.c9.reset();
         ch.cDry.reset();
+        ch.clipper.reset (0.0);
     }
 }
 
