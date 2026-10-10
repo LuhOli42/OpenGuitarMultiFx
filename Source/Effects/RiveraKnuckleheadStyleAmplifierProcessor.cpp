@@ -571,14 +571,20 @@ double RiveraKnuckleheadStyleAmplifierProcessor::behavioralPowerStage (Channel& 
     const double drive = driveVoltage + asym;
     const double k = ch.bmRail * bmYmax / bmGain0;
     const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
-    const double u = std::abs (drive) / juce::jmax (1.0e-9, k);
-    const double u0 = std::abs (drive - driveVoltage) / juce::jmax (1.0e-9, k);
-    const double raw = std::copysign ((knee (u) - knee (u0)) * ch.bmRail, drive);
+    // signed odd saturator: copysign(knee(|x|), x) — the unsigned knee difference would
+    // reverse the waveform near zero for off-centre bias (review BUG_0001).
+    const auto f = [&] (double x) { const double ux = std::abs (x) / juce::jmax (1.0e-9, k);
+                                    return std::copysign (knee (ux), x); };
+    const double raw = (f (drive) - f (drive - driveVoltage)) * ch.bmRail;
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
     const double hfGain = bmShelfHfGain * (0.4 + 1.2 * juce::jlimit (0.0, 1.0, (double) lastKnobs.presence));
-    ch.bmOutput = ch.bmToneState + hfGain * (raw - ch.bmToneState);
+    // Focus also needs a level-independent path: it voices the low-frequency NFB even
+    // when no sag is engaged, so it rides a ~120 Hz LP band, not the sag depth alone.
+    const double lowCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 120.0 / juce::jmax (1.0, sampleRate));
+    ch.bmLowState += lowCoeff * (raw - ch.bmLowState);
+    ch.bmOutput = ch.bmToneState + hfGain * (raw - ch.bmToneState) + (focus - 0.5) * 1.6 * ch.bmLowState;
     return ch.bmOutput;
 }
 
@@ -768,6 +774,11 @@ void RiveraKnuckleheadStyleAmplifierProcessor::process (juce::AudioBuffer<float>
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (channelChoice != ch.appliedChannel)
+            {
+                ch.appliedChannel = channelChoice;
+                ch.chanFade = 0.0; // ~4 ms ramp-in absorbs the level jump on a live channel switch
+            }
             const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
             bool okPre = true;
             if (channelChoice == 0)
@@ -782,7 +793,8 @@ void RiveraKnuckleheadStyleAmplifierProcessor::process (juce::AudioBuffer<float>
             }
 
             // reducedOrder: ch.power is empty, nothing to solve; the behavioural stage takes the drive directly.
-            const double drive = masterGain * preampOutput (ch, channelChoice);
+            const double drive = masterGain * preampOutput (ch, channelChoice) * ch.chanFade;
+            ch.chanFade = juce::jmin (1.0, ch.chanFade + 1.0 / (0.004 * sampleRate));
             bool okPower = true;
             if (! reducedOrder)
             {

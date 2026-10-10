@@ -420,9 +420,11 @@ double GibsonEH150StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     const double drive = driveVoltage + asym;
     const double k = ch.bmRail * bmYmax / bmGain0;
     const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
-    const double u = std::abs (drive) / juce::jmax (1.0e-9, k);
-    const double u0 = std::abs (drive - driveVoltage) / juce::jmax (1.0e-9, k);
-    const double raw = std::copysign ((knee (u) - knee (u0)) * ch.bmRail, drive);
+    // signed odd saturator: copysign(knee(|x|), x) — the unsigned knee difference would
+    // reverse the waveform near zero for off-centre bias (review BUG_0001).
+    const auto f = [&] (double x) { const double ux = std::abs (x) / juce::jmax (1.0e-9, k);
+                                    return std::copysign (knee (ux), x); };
+    const double raw = (f (drive) - f (drive - driveVoltage)) * ch.bmRail;
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);

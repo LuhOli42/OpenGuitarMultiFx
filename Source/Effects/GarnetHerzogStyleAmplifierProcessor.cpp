@@ -182,7 +182,7 @@ void GarnetHerzogStyleAmplifierProcessor::buildChannel (Channel& ch)
 
         // .047 coupling + 220k grid leak (Garnet drawing).
         ch.wGrid = c.addNode();
-        c.addCapacitor (in, ch.wGrid, 0.47e-6);
+        c.addCapacitor (in, ch.wGrid, 0.047e-6);
         c.addResistor (ch.wGrid, gnd, 220.0e3);
         c.setInitialGuess (ch.wGrid, 0.0);
 

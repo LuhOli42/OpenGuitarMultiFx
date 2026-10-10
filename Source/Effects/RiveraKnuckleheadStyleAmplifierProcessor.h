@@ -113,7 +113,9 @@ private:
         double piRail = 0.0, preRail = 0.0;
 
         // reducedOrder only: behavioural power stage state (see behavioralPowerStage())
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmLowState = 0.0;
+        int appliedChannel = -1;
+        double chanFade = 1.0;
     };
 
     void buildChannel (Channel& ch);
