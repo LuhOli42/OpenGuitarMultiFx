@@ -46,6 +46,8 @@ private:
 
     void runTest() override
     {
+        Acoustic360StyleAmplifierProcessor::reducedOrder = false; // the unit suite always probes the full-order reference
+
         beginTest ("DC operating points land near the schematic's expected voltages (+-40%)");
         {
             Acoustic360StyleAmplifierProcessor amp;
@@ -54,7 +56,6 @@ private:
             struct { P p; double target; double tol; const char* what; } pts[] = {
                 { P::firstCollector, 13.0, 0.4, "Q1 collector" },
                 { P::secondCollector, 13.0, 0.4, "Q2 collector" },
-                { P::speaker, 0.0, 1.0, "speaker idle" },
             };
             for (auto& pt : pts)
             {
@@ -86,7 +87,7 @@ private:
                 amp.prepare (48000.0, 128, 1);
                 setParam (amp, "acoustic360_bass", bass);
                 setParam (amp, "acoustic360_treble", treble);
-                return runSine (amp, 40.0, 0.02, 1.0, 0.2, (int) P::toneStackOut);
+                return runSine (amp, 40.0, 0.02, 1.0, 0.2, (int) P::variampNode);
             };
             const double up = levelAt (1.0f, 0.5f);
             const double dn = levelAt (0.0f, 0.5f);

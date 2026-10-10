@@ -34,6 +34,17 @@ namespace
         return {}; // Koren's ECC83 set
     }
 
+    KorenTriode::Parameters triode12AX7PI()
+    {
+        // The PI triode's kg1 is softened 40x past the published value -- the same documented
+        // compromise as the JCM800/SLO-100/Mark IIC+/Dual Rectifier/5150/Powerball/Rockerverb models
+        // (see docs/circuits/CircuitFamilies.md): the raw kg1 knee gives the nonlinear loop enough
+        // incremental gain to sustain a ~3 Hz limit cycle through the global NFB on silence.
+        KorenTriode::Parameters p;
+        p.kg1 *= 40.0;
+        return p;
+    }
+
     KorenTriode::Parameters triode12AU7()
     {
         // Koren's published 12AU7 set (Table 1 of the 1996 paper): mu 21.5, Ex 1.3, Kg1 1180, Kp 84, Kvb 300.
@@ -50,8 +61,9 @@ namespace
         // The 7027A is a rated-up 6L6GC: two per bank share their nodes, so Kg1, Kg2 (and grid current)
         // halve, the grid-current table's Gg doubles, arc resistance halves -- the same pattern as
         // DualRectifierStyleAmplifierProcessor's pentode6L6Pair().
-        KorenPentode::Parameters p; // defaults are Koren's 6L6GC set
-        p.kg1 *= 0.5;
+        KorenPentode::Parameters p; // defaults are Koren's 6L6GC set, kg1 also softened 40x (see above)
+        p.kg1 *= 20.0;
+        p.kg2 *= 0.5;
         p.kg2 *= 0.5;
         p.grid.Gg *= 2.0;
         p.arcResistance *= 0.5;
@@ -62,13 +74,17 @@ namespace
 
     // Output transformer: ~4k plate-to-plate for the four 7027As at ~530 V, 4 ohm secondary
     // (estimate -- see the doc's "Honest simplifications").
-    constexpr double primaryHalfInductance = 12.0;        // H per half
+    constexpr double primaryHalfInductance = 30.0;        // H per half -- heavy bass-amp iron; at 12 H
+                                                            // the OT's ~13 Hz HP pole stacked on the two
+                                                            // RC poles inside the NFB loop and motorboated
     constexpr double halfToSecondaryTurns = 15.8;         // sqrt(1000/4): one half-primary is 1k, secondary 4
     constexpr double couplingHalves = 0.9995;
     constexpr double couplingSecondary = 0.9990;
     constexpr double primaryHalfResistance = 25.0;
     constexpr double secondaryResistance = 0.08;
-    constexpr double feedbackResistor = 150.0e3;          // the V4B takes global NFB into the PI like the SVT
+    constexpr double feedbackResistor = 1.5e6;          // the 1k half-primary at 15.8:1 puts ~2.6x the SVT's
+                                                        // forward gain inside the loop; at the SVT's 150k the
+                                                        // closed loop motorboats at ~3 Hz on silence
 
     // Mid trap: the tapped inductor with a different series capacitor per position; the V-series
     // selector is marked 300 / 800 / 3000 Hz (the SVT's is 220 / 800 / 3000).
@@ -382,6 +398,13 @@ void AmpegV4BStyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto cin = c.addNode();
         const auto vpi = c.addNode(), vdr = c.addNode(), ct = c.addNode(), neg = c.addNode();
         ch.wSrcPre = c.addSource (cin, 0.0);
+        ch.wTone = cin;
+        c.addResistor (cin, gnd, 1.0e6);
+
+        // FULL reference power stage only -- reducedOrder replaces everything below with
+        // behavioralPowerStage(), fitted to this same circuit (see the header + docs/circuits/AmpegV4B.md).
+        if (! reducedOrder)
+        {
         ch.wSrcPi = c.addSource (vpi, railPreampNominal);
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcNeg = c.addSource (neg, railDriverReturn);
@@ -398,8 +421,8 @@ void AmpegV4BStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (g7, g1, 1.0e3);                   // R7 grid stopper
         c.addResistor (g1, bn, 470.0e3);                 // R8 leak (returns to the tail node)
         c.addResistor (g2, bn, 470.0e3);
-        c.addTriode (pa, g1, k, triode12AX7());
-        c.addTriode (pb, g2, k, triode12AX7());
+        c.addTriode (pa, g1, k, triode12AX7PI());
+        c.addTriode (pb, g2, k, triode12AX7PI());
         c.addCapacitor (g1, pa, cgp);
         c.addCapacitor (g2, pb, cgp);
         c.addResistor (vpi, pa, 100.0e3);                // R12
@@ -423,8 +446,8 @@ void AmpegV4BStyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto gd1 = c.addNode(), gd2 = c.addNode(), pd1 = c.addNode(), pd2 = c.addNode(),
                    kd1 = c.addNode(), kd2 = c.addNode(), m1 = c.addNode(), m2 = c.addNode(),
                    nab = c.addNode(), nbb = c.addNode();
-        c.addCapacitor (pa, gd1, 0.047e-6);              // C8
-        c.addCapacitor (pb, gd2, 0.047e-6);              // C11
+        c.addCapacitor (pa, gd1, 0.1e-6);                // C8 -- bigger than the SVT's 0.047u: pushes its
+        c.addCapacitor (pb, gd2, 0.1e-6);                //    pole under the loop's phase crossover
         c.addResistor (gd1, gnd, 470.0e3);               // R19
         c.addResistor (gd2, gnd, 470.0e3);               // R27
         c.addTriode (pd1, gd1, kd1, triode12AU7());
@@ -512,7 +535,10 @@ void AmpegV4BStyleAmplifierProcessor::buildChannel (Channel& ch)
         // SVT faceplate -- a fixed network), with the same stray-capacitance pole as the other amps.
         const auto fp = c.addNode();
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        c.addCapacitor (fp, g2, 0.1e-6);
+        // 4.7 nF, not the SVT's 0.1u: makes this RC (~20 Hz) the loop's dominant LF pole, so the
+        // accumulated phase of the OT and coupling-cap poles arrives with <1 loop gain. At 0.1uF
+        // (pole ~3 Hz, clustered with the others) the closed loop motorboats on silence.
+        c.addCapacitor (fp, g2, 4.7e-9);
         c.addCapacitor (fp, gnd, 1.5e-9);
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
@@ -522,7 +548,39 @@ void AmpegV4BStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (g4, -45.0);
         c.setInitialGuess (nab, -45.0);
         c.setInitialGuess (nbb, -45.0);
+        }
     }
+}
+
+double AmpegV4BStyleAmplifierProcessor::sagRail (double envelope) const noexcept
+{
+    // Sag fitted to the reference netlist's supply droop: up to ~10 % into full drive.
+    return railPlatesNominal * juce::jlimit (0.80, 1.0, 1.0 - 0.010 * envelope);
+}
+
+double AmpegV4BStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) noexcept
+{
+    const double attackCoeff = 1.0 - std::exp (-1.0 / (0.008 * sampleRate));
+    const double releaseCoeff = 1.0 - std::exp (-1.0 / (0.045 * sampleRate));
+    const double absDrive = std::abs (toneVoltage);
+    ch.bmEnvelope += (absDrive > ch.bmEnvelope ? attackCoeff : releaseCoeff) * (absDrive - ch.bmEnvelope);
+    ch.bmRail = sagRail (ch.bmEnvelope);
+
+    const double k = ch.bmRail * bmYmax / bmGain0;
+    const double over = toneVoltage / bmGridClampV;
+    const double clamped = toneVoltage / std::sqrt (1.0 + over * over);
+    const auto knee = [k, rail = ch.bmRail] (double x) { return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax; };
+    const double shift = bmAsym * k;
+    const double raw = knee (clamped + shift) - knee (shift);
+
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / sampleRate);
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double rawAc = raw - ch.bmDcState;
+
+    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
+    ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
+    return ch.bmOutput;
 }
 
 void AmpegV4BStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -560,7 +618,7 @@ void AmpegV4BStyleAmplifierProcessor::updatePots (const Knobs& k)
 
     // Bias: the level-shifter tap resistor; ~215k lands the grids near -50 V. The knob sweeps the bias
     // trims' range: more resistance pulls the tap toward the driver plates = hotter (less negative).
-    const double biasR = 140.0e3 + 150.0e3 * k.bias; // 140k (cold) .. 290k (hot), noon ~215k -> ~-50 V
+    const double biasR = 250.0e3 + 120.0e3 * k.bias; // 250k (cold ~-53 V) .. 370k (hot ~-23 V), noon ~-38 V
 
     // Tube Feel: the supply's series resistance (sag) and the feedback amount. 1 = the real amp.
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
@@ -582,13 +640,16 @@ void AmpegV4BStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rUltraLoA, ulA);
         ch.pre.setResistance (ch.rUltraLoB, ulB);
         ch.pre.setCapacitance (ch.capUltraHi, uhC);
-        ch.power.setResistance (ch.rBiasTapA, biasR);
-        ch.power.setResistance (ch.rBiasTapB, biasR);
-        ch.power.setResistance (ch.rFeedback, feedbackR);
+        if (! reducedOrder)
+        {
+            ch.power.setResistance (ch.rBiasTapA, biasR);
+            ch.power.setResistance (ch.rBiasTapB, biasR);
+            ch.power.setResistance (ch.rFeedback, feedbackR);
+        }
         ch.supply.setResistance (ch.rRect, rectifier);
         ch.supply.setResistance (ch.rRect2, rectifier2);
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
-        if (! resistiveLoadForced && k.speaker != appliedSpeaker)
+        if (! reducedOrder && ! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
         if (k.midFreq != appliedMidFreq)
             applyMidFreq (ch, k.midFreq);
@@ -596,7 +657,7 @@ void AmpegV4BStyleAmplifierProcessor::updatePots (const Knobs& k)
     appliedSpeaker = k.speaker;
     appliedMidFreq = k.midFreq;
     // Heavier loads take fewer volts; compensate so 2 / 4 / 8 ohm changes the sound, not the loudness.
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 4.0, -0.8);
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 4.0, -0.8);
 }
 
 void AmpegV4BStyleAmplifierProcessor::recover (Channel& ch) const
@@ -624,9 +685,9 @@ void AmpegV4BStyleAmplifierProcessor::updateSupply (Channel& ch) const
     ch.sumCount = 0;
 
     const auto rail = [&] (NodalCircuit::Node node, double maxVolts) { return juce::jlimit (0.0, maxVolts, ch.supply.voltage (node)); };
-    ch.power.setSource (ch.wSrcCt, rail (ch.sA, 800.0));
-    ch.power.setSource (ch.wSrcPi, rail (ch.sC, 420.0));
-    ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 420.0));
+    if (! reducedOrder) ch.power.setSource (ch.wSrcCt, rail (ch.sA, 800.0));
+    if (! reducedOrder) ch.power.setSource (ch.wSrcPi, rail (ch.sC, 420.0));
+    if (! reducedOrder) ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 420.0));
     ch.pre.setSource (ch.pSrcVcc, rail (ch.sC, 420.0));
     ch.vScreen = rail (ch.sB, 420.0);
 }
@@ -642,15 +703,15 @@ double AmpegV4BStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
         case Probe::recoveryPlate: return ch.pre.voltage (ch.pPlate3);
         case Probe::midNode: return ch.pre.voltage (ch.pMid);
         case Probe::followerOut: return ch.pre.voltage (ch.pFollower);
-        case Probe::phaseInverterGrid: return ch.power.voltage (ch.wGridA);
-        case Probe::phaseInverterPlateA: return ch.power.voltage (ch.wPlateA);
-        case Probe::phaseInverterPlateB: return ch.power.voltage (ch.wPlateB);
-        case Probe::phaseInverterTail: return ch.power.voltage (ch.wTail);
-        case Probe::driverPlateA: return ch.power.voltage (ch.wDrvPlateA);
-        case Probe::powerGridA: return ch.power.voltage (ch.wPowerGridA);
-        case Probe::powerPlateA: return ch.power.voltage (ch.wPP1);
-        case Probe::powerPlateB: return ch.power.voltage (ch.wPP2);
-        case Probe::speaker: return ch.power.voltage (ch.wOut);
+        case Probe::phaseInverterGrid: return reducedOrder ? 0.0 : ch.power.voltage (ch.wGridA);
+        case Probe::phaseInverterPlateA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPlateA);
+        case Probe::phaseInverterPlateB: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPlateB);
+        case Probe::phaseInverterTail: return reducedOrder ? 0.0 : ch.power.voltage (ch.wTail);
+        case Probe::driverPlateA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wDrvPlateA);
+        case Probe::powerGridA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPowerGridA);
+        case Probe::powerPlateA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPP1);
+        case Probe::powerPlateB: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPP2);
+        case Probe::speaker: return reducedOrder ? ch.bmOutput : ch.power.voltage (ch.wOut);
     }
     return 0.0;
 }
@@ -683,6 +744,8 @@ void AmpegV4BStyleAmplifierProcessor::debugSetFeedbackResistance (double ohms)
 
 double AmpegV4BStyleAmplifierProcessor::plateCurrentTotal() const noexcept
 {
+    if (reducedOrder)
+        return 0.0;
     double a = 0.0, b = 0.0, sa = 0.0, sb = 0.0;
     channels[0].power.pentodeCurrents (channels[0].penA, a, sa);
     channels[0].power.pentodeCurrents (channels[0].penB, b, sb);
@@ -691,6 +754,8 @@ double AmpegV4BStyleAmplifierProcessor::plateCurrentTotal() const noexcept
 
 double AmpegV4BStyleAmplifierProcessor::screenCurrentTotal() const noexcept
 {
+    if (reducedOrder)
+        return 0.0;
     double a = 0.0, b = 0.0, sa = 0.0, sb = 0.0;
     channels[0].power.pentodeCurrents (channels[0].penA, a, sa);
     channels[0].power.pentodeCurrents (channels[0].penB, b, sb);
@@ -748,18 +813,30 @@ void AmpegV4BStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sC));
         dcOk = ch.pre.prepare (newSampleRate) && dcOk;
 
-        ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-        ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+        }
         ch.vScreen = ch.supply.voltage (ch.sB);
-        ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
-        ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
+        if (! reducedOrder)
+        {
+            ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
+            ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
+        }
         dcOk = ch.power.prepare (newSampleRate) && dcOk;
         ch.power.solveSample();
 
         double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
-        ch.power.pentodeCurrents (ch.penA, ipA, isA);
-        ch.power.pentodeCurrents (ch.penB, ipB, isB);
+        if (! reducedOrder)
+        {
+            if (! reducedOrder)
+            {
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            }
+        }
         ch.supply.setCurrentSource (ch.iA, -(ipA + ipB));
         ch.supply.setCurrentSource (ch.iB, -(isA + isB + idleDriverCurrent));
         idleSupplyCurrent = ipA + ipB + isA + isB + idleDriverCurrent + idlePreampCurrent;
@@ -768,9 +845,12 @@ void AmpegV4BStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.screenDropA = screenResistor * isA;
         ch.screenDropB = screenResistor * isB;
         ch.vScreen = ch.supply.voltage (ch.sB);
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
-        ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-        ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+        }
         ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sC));
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
@@ -871,8 +951,11 @@ void AmpegV4BStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             bool ok = okPre;
 
             ch.power.setSource (ch.wSrcPre, masterGain * ch.pre.voltage (ch.pFollower));
-            ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
-            ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            if (! reducedOrder)
+            {
+                ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
+                ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            }
             const bool ok2 = ch.power.solveSample();
             ok = ok && ok2;
             if (chIdx == 0)
@@ -882,8 +965,11 @@ void AmpegV4BStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             }
 
             double ipA, ipB, isA, isB;
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            if (! reducedOrder)
+            {
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            }
             ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
             ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
             ch.sumPlate += ipA + ipB;
@@ -899,7 +985,8 @@ void AmpegV4BStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             // Same sanity gate as the other amps: a converged solve can still land on a state no amplifier
             // reaches (a speaker terminal at hundreds of volts); such a sample is a failure and the output
             // holds its last value instead of printing the excursion.
-            const double speakerVolts = ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone))
+                                                     : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 250.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;
@@ -932,7 +1019,7 @@ void AmpegV4BStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;

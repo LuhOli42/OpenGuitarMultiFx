@@ -42,7 +42,20 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     /** Amplifier output (speaker-terminal volts) is scaled by this to get a signal level. */
-    static constexpr double outputScale = 1.0 / 18.0; // ~25 W into 8 ohm is ~14 Vrms at the terminal
+    static constexpr double outputScale = 1.0 / 78.1; // reducedOrder speaker-level mapping (below)
+    static constexpr double fullOutputScale = 1.0 / 40.0; // ~25 W into 8 ohm is ~14 Vrms at the terminal
+
+    /** Ships reducedOrder in the app (the full push-pull + OT + NFB netlist is the calibration
+        reference -- same pattern as BassmanStyleAmplifierProcessor). EffectRegistry.cpp flips this
+        on centrally; the unit tests reset it to false so they keep probing the reference model. */
+    static inline bool reducedOrder = false;
+    static constexpr double bmGain0 = 25.0;      // closed-loop gain of the driver + push-pull + OT + NFB
+    static constexpr double bmYmax = 0.208;      // fraction of the sag rail reachable at the speaker
+    static constexpr double bmAsym = 0.09;       // push-pull clip asymmetry
+    static constexpr double bmGridClampV = 24.0; // driver input where the paraphase stage saturates
+    static constexpr double bmDcHz = 8.0;        // OT low-frequency saturation rolloff
+    static constexpr double bmShelfHz = 70.0;    // speaker-magnetics low-shelf pole
+    static constexpr double bmShelfHfGain = 0.53;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -96,6 +109,8 @@ private:
         int iA = 0, iB = 0, srcVoc = 0, rRect = 0;
         NodalCircuit::Node sA = 0, sB = 0;
         double sumPlate = 0.0, sumScreen = 0.0;
+        NodalCircuit::Node wTone = 0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
         int sumCount = 0;
         int supplyCounter = 0;
     };
@@ -109,6 +124,8 @@ private:
     };
     void updatePots (const Knobs& k);
     void applySpeaker (Channel& ch, int index) const;
+    double sagRail (double envelope) const noexcept;
+    double behavioralPowerStage (Channel& ch, double toneVoltage) noexcept;
     void recover (Channel& ch) const;
     mutable int recoveries = 0;
     Knobs lastKnobs {};

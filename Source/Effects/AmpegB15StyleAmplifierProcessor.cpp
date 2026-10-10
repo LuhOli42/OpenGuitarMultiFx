@@ -22,7 +22,7 @@ namespace
     constexpr double idleScreenCurrent = 0.008;
     constexpr double idleDriverCurrent = 0.0015;  // third 6SL7, two halves at ~0.7 mA
     constexpr double idlePreampCurrent = 0.0014;  // the marked ~330 V rail is the LOADED rail
-    constexpr double biasSupplyVolts = -50.0;     // fixed bias, marked point "K" on the schematic
+    constexpr double biasSupplyVolts = -45.0;     // fixed bias, marked point "K" on the schematic
 
     // ---- tubes ----
     KorenTriode::Parameters triode6SL7()
@@ -236,6 +236,13 @@ void AmpegB15StyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto cin = c.addNode();
         const auto vdr = c.addNode(), ct = c.addNode(), neg = c.addNode();
         ch.wSrcPre = c.addSource (cin, 0.0);
+        ch.wTone = cin;
+        c.addResistor (cin, gnd, 1.0e6);
+
+        // FULL reference power stage only -- reducedOrder replaces everything below with
+        // behavioralPowerStage(), fitted to this same circuit (see the header + docs/circuits/AmpegB15.md).
+        if (! reducedOrder)
+        {
         ch.wSrcVdr = c.addSource (vdr, railPreampNominal);
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcNeg = c.addSource (neg, biasSupplyVolts);
@@ -295,12 +302,14 @@ void AmpegB15StyleAmplifierProcessor::buildChannel (Channel& ch)
         const double ls = lh / (halfToSecondaryTurns * halfToSecondaryTurns);
         const double m12 = -couplingHalves * lh;
         const double mps = couplingSecondary * std::sqrt (lh * ls);
-        // Secondary sense chosen so feedback into the driver cathode is NEGATIVE (verify with a
-        // zero-input render: the wrong sign motorboats, same mechanism as the SVT's NFB).
+        // Secondary sense chosen so feedback into the driver cathode is NEGATIVE: input up drives
+        // pp1 DOWN, so the secondary must swing UP into the cathode node to oppose it -- the opposite
+        // sign convention from the SVT (whose NFB lands on a grid, not a cathode). The wrong sign
+        // motorboats and shows up as mass solve failures + rest-state recoveries.
         c.addCoupledInductors ({ { a1, pp1 }, { a2, pp2 }, { sw, gnd } },
-                               { lh,  m12,  mps,
-                                 m12, lh,  -mps,
-                                 mps, -mps, ls });
+                               { lh,  m12,  -mps,
+                                 m12, lh,   mps,
+                                 -mps, mps,  ls });
         ch.wOut = c.addNode();
         c.addResistor (sw, ch.wOut, secondaryResistance);
         ch.wPP1 = pp1;
@@ -325,7 +334,39 @@ void AmpegB15StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (a2, railPlatesNominal);
         c.setInitialGuess (g3, biasSupplyVolts);
         c.setInitialGuess (g4, biasSupplyVolts);
+        }
     }
+}
+
+double AmpegB15StyleAmplifierProcessor::sagRail (double envelope) const noexcept
+{
+    // 5AR4-style sag: rail droops up to ~12 % into full drive (fitted to the reference netlist).
+    return railPlatesNominal * juce::jlimit (0.80, 1.0, 1.0 - 0.012 * envelope);
+}
+
+double AmpegB15StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) noexcept
+{
+    const double attackCoeff = 1.0 - std::exp (-1.0 / (0.008 * sampleRate));
+    const double releaseCoeff = 1.0 - std::exp (-1.0 / (0.045 * sampleRate));
+    const double absDrive = std::abs (toneVoltage);
+    ch.bmEnvelope += (absDrive > ch.bmEnvelope ? attackCoeff : releaseCoeff) * (absDrive - ch.bmEnvelope);
+    ch.bmRail = sagRail (ch.bmEnvelope);
+
+    const double k = ch.bmRail * bmYmax / bmGain0;
+    const double over = toneVoltage / bmGridClampV;
+    const double clamped = toneVoltage / std::sqrt (1.0 + over * over);
+    const auto knee = [k, rail = ch.bmRail] (double x) { return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax; };
+    const double shift = bmAsym * k;
+    const double raw = knee (clamped + shift) - knee (shift);
+
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / sampleRate);
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double rawAc = raw - ch.bmDcState;
+
+    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
+    ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
+    return ch.bmOutput;
 }
 
 void AmpegB15StyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -349,8 +390,8 @@ void AmpegB15StyleAmplifierProcessor::updatePots (const Knobs& k)
     const double ulA = k.ultraLo > 0.5 ? 330.0e3 : 1.0e9;
     const double uhC = k.ultraHi > 0.5 ? 0.01e-6 : 1.0e-12;
 
-    // Bias knob: the fixed-bias rail itself, -40 (cold) .. -60 V (hot), noon -50.
-    const double biasV = -(40.0 + 20.0 * k.bias);
+    // Bias knob: the fixed-bias rail itself, -52 (cold) .. -38 V (hot), noon -45.
+    const double biasV = -(52.0 - 14.0 * k.bias);
 
     // Tube Feel: the supply's series resistance (sag) and the feedback amount. 1 = the real amp.
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
@@ -369,16 +410,19 @@ void AmpegB15StyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rMasterBot, masterBot);
         ch.pre.setResistance (ch.rUltraLoA, ulA);
         ch.pre.setCapacitance (ch.capUltraHi, uhC);
-        ch.power.setSource (ch.wSrcNeg, biasV);
-        ch.power.setResistance (ch.rFeedback, feedbackR);
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcNeg, biasV);
+            ch.power.setResistance (ch.rFeedback, feedbackR);
+        }
         ch.supply.setResistance (ch.rRect, rectifier);
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
-        if (! resistiveLoadForced && k.speaker != appliedSpeaker)
+        if (! reducedOrder && ! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
     }
     appliedSpeaker = k.speaker;
     // Heavier loads take fewer volts; compensate so the impedance choices change feel, not loudness.
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 8.0, -0.8);
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 8.0, -0.8);
 }
 
 void AmpegB15StyleAmplifierProcessor::recover (Channel& ch) const
@@ -404,8 +448,11 @@ void AmpegB15StyleAmplifierProcessor::updateSupply (Channel& ch) const
     ch.sumCount = 0;
 
     const auto rail = [&] (NodalCircuit::Node node, double maxVolts) { return juce::jlimit (0.0, maxVolts, ch.supply.voltage (node)); };
-    ch.power.setSource (ch.wSrcCt, rail (ch.sA, 600.0));
-    ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 450.0));
+    if (! reducedOrder)
+    {
+        ch.power.setSource (ch.wSrcCt, rail (ch.sA, 600.0));
+        ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 450.0));
+    }
     ch.pre.setSource (ch.pSrcVcc, rail (ch.sB, 450.0));
     ch.vScreen = rail (ch.sA, 600.0);
 }
@@ -418,12 +465,12 @@ double AmpegB15StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
         case Probe::firstPlate: return ch.pre.voltage (ch.pPlate1);
         case Probe::toneStackOut: return ch.pre.voltage (ch.pTone);
         case Probe::secondPlate: return ch.pre.voltage (ch.pPlate2);
-        case Probe::driverPlate: return ch.power.voltage (ch.wDrvPlate);
-        case Probe::inverterPlate: return ch.power.voltage (ch.wInvPlate);
-        case Probe::powerGridA: return ch.power.voltage (ch.wPowerGridA);
-        case Probe::powerPlateA: return ch.power.voltage (ch.wPP1);
-        case Probe::powerPlateB: return ch.power.voltage (ch.wPP2);
-        case Probe::speaker: return ch.power.voltage (ch.wOut);
+        case Probe::driverPlate: return reducedOrder ? 0.0 : ch.power.voltage (ch.wDrvPlate);
+        case Probe::inverterPlate: return reducedOrder ? 0.0 : ch.power.voltage (ch.wInvPlate);
+        case Probe::powerGridA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPowerGridA);
+        case Probe::powerPlateA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPP1);
+        case Probe::powerPlateB: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPP2);
+        case Probe::speaker: return reducedOrder ? ch.bmOutput : ch.power.voltage (ch.wOut);
     }
     return 0.0;
 }
@@ -507,17 +554,31 @@ void AmpegB15StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sB));
         dcOk = ch.pre.prepare (newSampleRate) && dcOk;
 
-        ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+        }
         ch.vScreen = ch.supply.voltage (ch.sA);
-        ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
-        ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
+        if (! reducedOrder)
+        {
+            ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
+            ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
+        }
         dcOk = ch.power.prepare (newSampleRate) && dcOk;
         ch.power.solveSample();
 
         double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
-        ch.power.pentodeCurrents (ch.penA, ipA, isA);
-        ch.power.pentodeCurrents (ch.penB, ipB, isB);
+        if (! reducedOrder)
+        {
+            ch.power.pentodeCurrents (ch.penA, ipA, isA);
+            ch.power.pentodeCurrents (ch.penB, ipB, isB);
+        }
+        else
+        {
+            ipA = ipB = idlePlateCurrent * 0.5;
+            isA = isB = idleScreenCurrent * 0.5;
+        }
         ch.supply.setCurrentSource (ch.iA, -(ipA + ipB + isA + isB));
         idleSupplyCurrent = ipA + ipB + isA + isB + idleDriverCurrent + idlePreampCurrent;
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifierResistance * (0.05 + 0.95 * (double) tubeFeelParam->get()) * idleSupplyCurrent);
@@ -525,8 +586,11 @@ void AmpegB15StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.screenDropA = screenResistor * isA;
         ch.screenDropB = screenResistor * isB;
         ch.vScreen = ch.supply.voltage (ch.sA);
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
-        ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+        }
         ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sB));
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
@@ -620,8 +684,11 @@ void AmpegB15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             bool ok = okPre;
 
             ch.power.setSource (ch.wSrcPre, masterGain * ch.pre.voltage (ch.pOut));
-            ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
-            ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            if (! reducedOrder)
+            {
+                ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
+                ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            }
             const bool ok2 = ch.power.solveSample();
             ok = ok && ok2;
             if (chIdx == 0)
@@ -630,9 +697,12 @@ void AmpegB15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 failuresPower += ok2 ? 0 : 1;
             }
 
-            double ipA, ipB, isA, isB;
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            double ipA = idlePlateCurrent * 0.5, ipB = ipA, isA = idleScreenCurrent * 0.5, isB = isA;
+            if (! reducedOrder)
+            {
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            }
             ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
             ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
             ch.sumPlate += ipA + ipB;
@@ -645,7 +715,8 @@ void AmpegB15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            const double speakerVolts = ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone))
+                                                     : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 250.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;
@@ -670,7 +741,7 @@ void AmpegB15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;

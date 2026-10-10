@@ -110,11 +110,8 @@ MesaBass400PlusStyleAmplifierProcessor::MesaBass400PlusStyleAmplifierProcessor()
     group->addChild (std::move (master));
 
     const char* eqNames[eqBands] = { "40 Hz", "80 Hz", "160 Hz", "320 Hz", "750 Hz", "2.2 kHz", "6.6 kHz" };
-    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("mesa400p_page2", "Page 2", "|",
-        std::make_unique<juce::AudioParameterFloat> ("mesa400p_eq1", eqNames[0],
-            juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f));
-    eqParam[0] = (juce::AudioParameterFloat*) page2->getParameters()[0];
-    for (int i = 1; i < eqBands; ++i)
+    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("mesa400p_page2", "Page 2", "|");
+    for (int i = 0; i < eqBands; ++i)
     {
         auto p = std::make_unique<juce::AudioParameterFloat> (
             juce::String ("mesa400p_eq") + juce::String (i + 1), eqNames[i],
@@ -176,7 +173,7 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rRect2 = c.addResistor (vo2, ch.sB, rectifierResistance2);
         c.addCapacitor (ch.sB, gnd, 100.0e-6);
 
-        c.addResistor (ch.sB, ch.sC, 6.8e3);             // dropper to the +300 V preamp/PI rail
+        c.addResistor (ch.sB, ch.sC, 33.0e3);            // dropper: ~100 V at the ~3 mA preamp draw
         c.addCapacitor (ch.sC, gnd, 30.0e-6);
 
         ch.iA = c.addCurrentSource (ch.sA, -idlePlateCurrent);
@@ -305,7 +302,10 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.rEqBot[i] = c.addResistor (w, ch.qOut, 25.0e3);
             c.addCoupledInductors ({ { w, x } }, { eqInductance[i] });
             const double cap = 1.0 / (39.478 * eqFreq[i] * eqFreq[i] * eqInductance[i]);
-            c.addCapacitor (x, gnd, cap);
+            // The trap terminates at the summing node (virtual earth), not real ground: wiper at the
+            // input end puts the LC across the input leg (a second path into sn -> BOOST at
+            // resonance); wiper at the output end puts it across the feedback leg (Zf -> 0 -> CUT).
+            c.addCapacitor (x, sn, cap);
         }
         c.setInitialGuess (ei, 0.0);
     }
@@ -318,6 +318,13 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto cin = c.addNode();
         const auto vpi = c.addNode(), vdr = c.addNode(), ct = c.addNode(), neg = c.addNode();
         ch.wSrcPre = c.addSource (cin, 0.0);
+        ch.wTone = cin;
+        c.addResistor (cin, gnd, 1.0e6);
+
+        // FULL reference power stage only -- reducedOrder replaces everything below with
+        // behavioralPowerStage(), fitted to this same circuit (see the header + docs/circuits/MesaBass400Plus.md).
+        if (! reducedOrder)
+        {
         ch.wSrcPi = c.addSource (vpi, railPreampNominal);
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcNeg = c.addSource (neg, railDriverReturn);
@@ -433,7 +440,39 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (g4, -68.0);
         c.setInitialGuess (nab, -68.0);
         c.setInitialGuess (nbb, -68.0);
+        }
     }
+}
+
+double MesaBass400PlusStyleAmplifierProcessor::sagRail (double envelope) const noexcept
+{
+    // Sag fitted to the reference netlist's supply droop: up to ~10 % into full drive.
+    return railPlatesNominal * juce::jlimit (0.80, 1.0, 1.0 - 0.010 * envelope);
+}
+
+double MesaBass400PlusStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) noexcept
+{
+    const double attackCoeff = 1.0 - std::exp (-1.0 / (0.008 * sampleRate));
+    const double releaseCoeff = 1.0 - std::exp (-1.0 / (0.045 * sampleRate));
+    const double absDrive = std::abs (toneVoltage);
+    ch.bmEnvelope += (absDrive > ch.bmEnvelope ? attackCoeff : releaseCoeff) * (absDrive - ch.bmEnvelope);
+    ch.bmRail = sagRail (ch.bmEnvelope);
+
+    const double k = ch.bmRail * bmYmax / bmGain0;
+    const double over = toneVoltage / bmGridClampV;
+    const double clamped = toneVoltage / std::sqrt (1.0 + over * over);
+    const auto knee = [k, rail = ch.bmRail] (double x) { return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax; };
+    const double shift = bmAsym * k;
+    const double raw = knee (clamped + shift) - knee (shift);
+
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / sampleRate);
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double rawAc = raw - ch.bmDcState;
+
+    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
+    ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
+    return ch.bmOutput;
 }
 
 void MesaBass400PlusStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -455,7 +494,7 @@ void MesaBass400PlusStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double midR = juce::jmax (1.0, 50.0e3 * k.middle);
     const double masterBot = juce::jmax (1.0, 50.0e3 * k.master);
     const double brightC = k.bright > 0.5 ? 470.0e-12 : 1.0e-12;
-    const double biasR = 110.0e3 + 130.0e3 * k.bias; // noon ~175k -> taps ~-68 V
+    const double biasR = 210.0e3 + 80.0e3 * k.bias; // 210k (cold ~-59 V) .. 290k (hot ~-32 V), noon ~-45 V
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double rectifier2 = rectifierResistance2 * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride
@@ -479,17 +518,20 @@ void MesaBass400PlusStyleAmplifierProcessor::updatePots (const Knobs& k)
             ch.eq.setResistance (ch.rEqTop[i], juce::jmax (1.0, 50.0e3 * (1.0 - slider)));
             ch.eq.setResistance (ch.rEqBot[i], juce::jmax (1.0, 50.0e3 * slider));
         }
-        ch.power.setResistance (ch.rBiasTapA, biasR);
-        ch.power.setResistance (ch.rBiasTapB, biasR);
-        ch.power.setResistance (ch.rFeedback, feedbackR);
+        if (! reducedOrder)
+        {
+            ch.power.setResistance (ch.rBiasTapA, biasR);
+            ch.power.setResistance (ch.rBiasTapB, biasR);
+            ch.power.setResistance (ch.rFeedback, feedbackR);
+        }
         ch.supply.setResistance (ch.rRect, rectifier);
         ch.supply.setResistance (ch.rRect2, rectifier2);
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
-        if (! resistiveLoadForced && k.speaker != appliedSpeaker)
+        if (! reducedOrder && ! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
     }
     appliedSpeaker = k.speaker;
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 4.0, -0.8);
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 4.0, -0.8);
 }
 
 void MesaBass400PlusStyleAmplifierProcessor::recover (Channel& ch) const
@@ -517,9 +559,9 @@ void MesaBass400PlusStyleAmplifierProcessor::updateSupply (Channel& ch) const
     ch.sumCount = 0;
 
     const auto rail = [&] (NodalCircuit::Node node, double maxVolts) { return juce::jlimit (0.0, maxVolts, ch.supply.voltage (node)); };
-    ch.power.setSource (ch.wSrcCt, rail (ch.sA, 700.0));
-    ch.power.setSource (ch.wSrcPi, rail (ch.sC, 420.0));
-    ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 500.0));
+    if (! reducedOrder) ch.power.setSource (ch.wSrcCt, rail (ch.sA, 700.0));
+    if (! reducedOrder) ch.power.setSource (ch.wSrcPi, rail (ch.sC, 420.0));
+    if (! reducedOrder) ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 500.0));
     ch.pre.setSource (ch.pSrcVcc, rail (ch.sC, 420.0));
     ch.vScreen = rail (ch.sB, 500.0);
 }
@@ -534,14 +576,14 @@ double MesaBass400PlusStyleAmplifierProcessor::debugVoltage (Probe p) const noex
         case Probe::toneStackOut: return ch.pre.voltage (ch.pTone);
         case Probe::recoveryPlate: return ch.pre.voltage (ch.pPlate3);
         case Probe::eqOut: return ch.eq.voltage (ch.qOut);
-        case Probe::phaseInverterGrid: return ch.power.voltage (ch.wGridA);
-        case Probe::phaseInverterPlateA: return ch.power.voltage (ch.wPlateA);
-        case Probe::phaseInverterPlateB: return ch.power.voltage (ch.wPlateB);
-        case Probe::driverPlateA: return ch.power.voltage (ch.wDrvPlateA);
-        case Probe::powerGridA: return ch.power.voltage (ch.wPowerGridA);
-        case Probe::powerPlateA: return ch.power.voltage (ch.wPP1);
-        case Probe::powerPlateB: return ch.power.voltage (ch.wPP2);
-        case Probe::speaker: return ch.power.voltage (ch.wOut);
+        case Probe::phaseInverterGrid: return reducedOrder ? 0.0 : ch.power.voltage (ch.wGridA);
+        case Probe::phaseInverterPlateA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPlateA);
+        case Probe::phaseInverterPlateB: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPlateB);
+        case Probe::driverPlateA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wDrvPlateA);
+        case Probe::powerGridA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPowerGridA);
+        case Probe::powerPlateA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPP1);
+        case Probe::powerPlateB: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPP2);
+        case Probe::speaker: return reducedOrder ? ch.bmOutput : ch.power.voltage (ch.wOut);
     }
     return 0.0;
 }
@@ -574,6 +616,8 @@ void MesaBass400PlusStyleAmplifierProcessor::debugSetFeedbackResistance (double 
 
 double MesaBass400PlusStyleAmplifierProcessor::plateCurrentTotal() const noexcept
 {
+    if (reducedOrder)
+        return 0.0;
     double a = 0.0, b = 0.0, sa = 0.0, sb = 0.0;
     channels[0].power.pentodeCurrents (channels[0].penA, a, sa);
     channels[0].power.pentodeCurrents (channels[0].penB, b, sb);
@@ -582,6 +626,8 @@ double MesaBass400PlusStyleAmplifierProcessor::plateCurrentTotal() const noexcep
 
 double MesaBass400PlusStyleAmplifierProcessor::screenCurrentTotal() const noexcept
 {
+    if (reducedOrder)
+        return 0.0;
     double a = 0.0, b = 0.0, sa = 0.0, sb = 0.0;
     channels[0].power.pentodeCurrents (channels[0].penA, a, sa);
     channels[0].power.pentodeCurrents (channels[0].penB, b, sb);
@@ -647,18 +693,30 @@ void MesaBass400PlusStyleAmplifierProcessor::prepare (double newSampleRate, int,
         dcOk = ch.pre.prepare (newSampleRate) && dcOk;
         dcOk = ch.eq.prepare (newSampleRate) && dcOk;
 
-        ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-        ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+        }
         ch.vScreen = ch.supply.voltage (ch.sB);
-        ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
-        ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
+        if (! reducedOrder)
+        {
+            ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
+            ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
+        }
         dcOk = ch.power.prepare (newSampleRate) && dcOk;
         ch.power.solveSample();
 
         double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
-        ch.power.pentodeCurrents (ch.penA, ipA, isA);
-        ch.power.pentodeCurrents (ch.penB, ipB, isB);
+        if (! reducedOrder)
+        {
+            if (! reducedOrder)
+            {
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            }
+        }
         ch.supply.setCurrentSource (ch.iA, -(ipA + ipB));
         ch.supply.setCurrentSource (ch.iB, -(isA + isB + idleDriverCurrent));
         idleSupplyCurrent = ipA + ipB + isA + isB + idleDriverCurrent + idlePreampCurrent;
@@ -667,9 +725,12 @@ void MesaBass400PlusStyleAmplifierProcessor::prepare (double newSampleRate, int,
         ch.screenDropA = screenResistor * isA;
         ch.screenDropB = screenResistor * isB;
         ch.vScreen = ch.supply.voltage (ch.sB);
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
-        ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-        ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+        }
         ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sC));
         ch.pre.saveDynamicState (ch.preRest);
         ch.eq.saveDynamicState (ch.eqRest);
@@ -779,8 +840,11 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
             ch.eq.setSource (ch.qSrcIn, masterGain * ch.pre.voltage (ch.pOut));
             ch.eq.solveSample(); // linear block: cannot diverge, always one pass
             ch.power.setSource (ch.wSrcPre, ch.eq.voltage (ch.qOut));
-            ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
-            ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            if (! reducedOrder)
+            {
+                ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
+                ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            }
             const bool ok2 = ch.power.solveSample();
             ok = ok && ok2;
             if (chIdx == 0)
@@ -790,8 +854,11 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
             }
 
             double ipA, ipB, isA, isB;
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            if (! reducedOrder)
+            {
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            }
             ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
             ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
             ch.sumPlate += ipA + ipB;
@@ -804,7 +871,8 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
                 updateSupply (ch);
             }
 
-            const double speakerVolts = ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone))
+                                                     : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 250.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;
@@ -830,7 +898,7 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;

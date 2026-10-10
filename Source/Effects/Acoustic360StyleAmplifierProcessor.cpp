@@ -116,9 +116,9 @@ void Acoustic360StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rBassTop = c.addResistor (t1, w1, 125.0e3);   // Bass 250k audio
         ch.rBassBot = c.addResistor (w1, nb, 125.0e3);
         c.addResistor (nb, gnd, 5.6e3);
-        c.addCapacitor (w1, ns, 0.0047e-6);
+        c.addCapacitor (w1, ns, 0.047e-6);             // bass-path cap, voiced for ~40 Hz control
         c.addResistor (ns, t2, 22.0e3);
-        c.addCapacitor (ti, t2, 1.5e-9);                 // treble feed
+        c.addCapacitor (ti, t2, 4.7e-9);                 // treble feed
         ch.rTrebleTop = c.addResistor (t2, wt, 125.0e3); // Treble 250k audio
         ch.rTrebleBot = c.addResistor (wt, tb, 125.0e3);
         c.addCapacitor (tb, gnd, 0.022e-6);
@@ -170,12 +170,19 @@ void Acoustic360StyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto cin = c.addNode(), ip = c.addNode(), im = c.addNode();
         ch.wOut = c.addNode();
         ch.wSrcPre = c.addSource (cin, 0.0);
+        ch.wTone = cin;
+        c.addResistor (cin, gnd, 1.0e6);
+
+        // FULL reference power stage only -- reducedOrder replaces everything below with
+        // behavioralPowerStage(), fitted to this same circuit (see the header + docs/circuits/Acoustic360.md).
+        if (! reducedOrder)
+        {
         c.addResistor (cin, ip, 22.0e3);
         c.addResistor (ip, gnd, 100.0e3);
         c.addResistor (ch.wOut, im, 56.0e3);             // feedback divider -> gain ~30
         c.addResistor (im, gnd, 2.0e3);
         c.addCapacitor (im, gnd, 0.047e-6);              // LF stabilisation at the input leg
-        c.addSaturatingOpAmp (ip, im, ch.wOut, { -55.0, 55.0 }); // ~28 Vrms into 4 ohm, plus margin
+        c.addSaturatingOpAmp (ip, im, ch.wOut, { -40.0, 40.0 }); // ~28 Vrms into 4 ohm, plus margin
 
         {
             const auto sm = speakerModel (4.0);
@@ -188,7 +195,39 @@ void Acoustic360StyleAmplifierProcessor::buildChannel (Channel& ch)
         }
         c.setInitialGuess (ip, 0.0);
         c.setInitialGuess (im, 0.0);
+        }
     }
+}
+
+double Acoustic360StyleAmplifierProcessor::sagRail (double envelope) const noexcept
+{
+    // Stiff solid-state rails: only ~3 % droop under full drive (big filter bank, no tube rectifier).
+    return 65.0 * juce::jlimit (0.94, 1.0, 1.0 - 0.002 * envelope);
+}
+
+double Acoustic360StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) noexcept
+{
+    const double attackCoeff = 1.0 - std::exp (-1.0 / (0.008 * sampleRate));
+    const double releaseCoeff = 1.0 - std::exp (-1.0 / (0.045 * sampleRate));
+    const double absDrive = std::abs (toneVoltage);
+    ch.bmEnvelope += (absDrive > ch.bmEnvelope ? attackCoeff : releaseCoeff) * (absDrive - ch.bmEnvelope);
+    ch.bmRail = sagRail (ch.bmEnvelope);
+
+    const double k = ch.bmRail * bmYmax / bmGain0;
+    const double over = toneVoltage / bmGridClampV;
+    const double clamped = toneVoltage / std::sqrt (1.0 + over * over);
+    const auto knee = [k, rail = ch.bmRail] (double x) { return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax; };
+    const double shift = bmAsym * k;
+    const double raw = knee (clamped + shift) - knee (shift);
+
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / sampleRate);
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double rawAc = raw - ch.bmDcState;
+
+    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
+    ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
+    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
+    return ch.bmOutput;
 }
 
 void Acoustic360StyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -214,7 +253,7 @@ void Acoustic360StyleAmplifierProcessor::updatePots (const Knobs& k)
     const double volumeBot = juce::jmax (1.0, 500.0e3 * pots::audio (k.volume));
     const double bassBot = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass));
     const double trebleBot = juce::jmax (1.0, 250.0e3 * pots::audio (k.treble));
-    const double effectR = juce::jmax (1.0, 100.0e3 * k.effect);
+    const double effectR = juce::jmax (1.0, 100.0e3 * (1.0 - k.effect)); // Effect up = trap fully in circuit
     const double brightC = k.bright > 0.5 ? 470.0e-12 : 1.0e-12;
 
     for (auto& ch : channels)
@@ -227,14 +266,16 @@ void Acoustic360StyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rTrebleTop, juce::jmax (1.0, 250.0e3 - trebleBot));
         ch.pre.setResistance (ch.rTrebleBot, trebleBot);
         ch.pre.setResistance (ch.rEffect, effectR);
-        if (! resistiveLoadForced && k.speaker != appliedSpeaker)
+        if (! reducedOrder)
+            /* speaker handled by behavioral stage */;
+        else         if (! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
         if (k.variamp != appliedVariamp)
             applyVariamp (ch, k.variamp);
     }
     appliedSpeaker = k.speaker;
     appliedVariamp = k.variamp;
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 1, k.speaker)] / 4.0, -0.8);
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 1, k.speaker)] / 4.0, -0.8);
 }
 
 void Acoustic360StyleAmplifierProcessor::recover (Channel& ch) const
@@ -256,7 +297,7 @@ double Acoustic360StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
         case Probe::secondCollector: return ch.pre.voltage (ch.pCol2);
         case Probe::variampNode: return ch.pre.voltage (ch.pVar);
         case Probe::preampOut: return ch.pre.voltage (ch.pOut);
-        case Probe::speaker: return ch.power.voltage (ch.wOut);
+        case Probe::speaker: return reducedOrder ? ch.bmOutput : ch.power.voltage (ch.wOut);
     }
     return 0.0;
 }
@@ -406,7 +447,8 @@ void Acoustic360StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
                 failuresPower += ok2 ? 0 : 1;
             }
 
-            const double speakerVolts = ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone))
+                                                     : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 250.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;
@@ -430,7 +472,7 @@ void Acoustic360StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;

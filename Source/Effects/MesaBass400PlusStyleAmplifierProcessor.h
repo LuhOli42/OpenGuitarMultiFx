@@ -42,7 +42,20 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     /** Amplifier output (speaker-terminal volts) is scaled by this to get a signal level. */
-    static constexpr double outputScale = 1.0 / 60.0; // ~270 W into 4 ohm is ~33 Vrms at the terminal
+    static constexpr double outputScale = 1.0 / 318.0; // reducedOrder level mapping // reducedOrder level mapping // ~270 W into 4 ohm is ~33 Vrms at the terminal
+    static constexpr double fullOutputScale = 1.0 / 30.0; // reference-model level mapping (see outputScale)
+
+    /** Ships reducedOrder in the app (the full push-pull + OT + NFB netlist is the calibration
+        reference -- same pattern as BassmanStyleAmplifierProcessor). EffectRegistry.cpp flips this
+        on centrally; the unit tests reset it to false so they keep probing the reference model. */
+    static inline bool reducedOrder = false;
+    static constexpr double bmGain0 = 60.0;      // twelve 6L6s: closed-loop gain of the LTP + drivers + push-pull + OT + NFB
+    static constexpr double bmYmax = 0.208;      // fraction of the sag rail reachable at the speaker
+    static constexpr double bmAsym = 0.09;       // push-pull clip asymmetry
+    static constexpr double bmGridClampV = 70.0; // huge clean headroom: onset much later than the guitar-amp family
+    static constexpr double bmDcHz = 8.0;        // OT low-frequency saturation rolloff
+    static constexpr double bmShelfHz = 70.0;    // speaker-magnetics low-shelf pole
+    static constexpr double bmShelfHfGain = 0.53;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -102,6 +115,8 @@ private:
         int iA = 0, iB = 0, iC = 0, srcVoc = 0, srcVoc2 = 0, rRect = 0, rRect2 = 0;
         NodalCircuit::Node sA = 0, sB = 0, sC = 0;
         double sumPlate = 0.0, sumScreen = 0.0;
+        NodalCircuit::Node wTone = 0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
         int sumCount = 0;
         int supplyCounter = 0;
     };
@@ -116,6 +131,8 @@ private:
     };
     void updatePots (const Knobs& k);
     void applySpeaker (Channel& ch, int index) const;
+    double sagRail (double envelope) const noexcept;
+    double behavioralPowerStage (Channel& ch, double toneVoltage) noexcept;
     void recover (Channel& ch) const;
     mutable int recoveries = 0;
     Knobs lastKnobs {};

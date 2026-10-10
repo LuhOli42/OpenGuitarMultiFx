@@ -32,3 +32,26 @@ Ultra-Hi rocker switches. Factory spec: 100 W into 2 / 4 / 8 ohm, input sensitiv
   are documented estimates matching the Ampeg topology, not literal part numbers from the scan.
 - A Master control is kept (synthetic, like the other amp models) because the V4B's only level control
   is the channel Volume.
+
+## Power-stage stability
+
+The raw Koren 6L6GC knee on the 7027A pair plus the unmodified LTP triode gave the global-NFB loop
+enough incremental gain to sustain a ~3 Hz motorboating limit cycle on silence. As documented for the
+JCM800/SLO-100/etc. in CircuitFamilies.md, the remedy is the same documented compromise: `kg1` is
+softened ~40x on BOTH the phase-inverter triode AND the output pentode pair. The side effect is also
+the documented one -- the reference model's idle current and closed-loop gain collapse far below the
+real amp's ~160 mA quiescent (the unit test's idle-current bound reflects this), which is part of why
+the behavioural power stage below is the shipped model.
+
+## Reduced-order power stage (shipped default)
+
+Like the JCM800/SLO-100/Mark IIC+/Dual Rectifier/5150/Powerball/Rockerverb/Deluxe Reverb/AC30/Bassman/
+Super Lead family (see CircuitFamilies.md), this processor ships a behavioural power stage as the
+application default (`AmpegV4BStyleAmplifierProcessor::reducedOrder`, set centrally in EffectRegistry.cpp
+together with `markQualityDependent`): the preamp and tone-shaping netlists remain real circuits,
+while the phase-inverter + push-pull + output transformer + global NFB + speaker impedance cluster is
+replaced by an envelope-followed sag rail feeding an asymmetric tanh knee, a DC blocker, and a
+low-shelf speaker-magnetics correction, fitted to this file's own reference netlist. The full netlist
+stays in the source for calibration and is what the unit tests exercise (`reducedOrder = false` at the
+top of the test).
+

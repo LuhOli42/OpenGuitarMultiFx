@@ -46,6 +46,8 @@ private:
 
     void runTest() override
     {
+        AmpegB15StyleAmplifierProcessor::reducedOrder = false; // the unit suite always probes the full-order reference
+
         beginTest ("DC operating points land near the schematic's expected voltages (+-40%)");
         {
             AmpegB15StyleAmplifierProcessor amp;

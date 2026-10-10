@@ -40,7 +40,20 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     /** Amplifier output (speaker-terminal volts) is scaled by this to get a signal level. */
-    static constexpr double outputScale = 1.0 / 40.0; // ~200 W into 4 ohm is ~28 Vrms at the terminal
+    static constexpr double outputScale = 1.0 / 26.5; // reducedOrder level mapping // reducedOrder speaker-level mapping (below)
+    static constexpr double fullOutputScale = 1.0 / 70.0; // ~200 W into 4 ohm is ~28 Vrms at the terminal
+
+    /** Ships reducedOrder in the app (the saturating-op-amp + speaker netlist is the calibration
+        reference -- same pattern as BassmanStyleAmplifierProcessor). EffectRegistry.cpp flips this
+        on centrally; the unit tests reset it to false so they keep probing the reference model. */
+    static inline bool reducedOrder = false;
+    static constexpr double bmGain0 = 30.0;      // closed-loop gain of the power-amp feedback pair (~30x)
+    static constexpr double bmYmax = 0.62;       // solid-state clip: output swings close to the 40 V rails
+    static constexpr double bmAsym = 0.02;       // nearly symmetric SS clip
+    static constexpr double bmGridClampV = 60.0; // broad knee: SS clip is sudden, this only softens onset
+    static constexpr double bmDcHz = 4.0;        // rail-decoupling rolloff
+    static constexpr double bmShelfHz = 70.0;    // speaker-magnetics low-shelf pole
+    static constexpr double bmShelfHfGain = 0.53;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -78,6 +91,8 @@ private:
         int wSrcPre = 0;
         int rSpkRe = 0, rSpkRp = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         NodalCircuit::Node wOut = 0;
+        NodalCircuit::Node wTone = 0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
     };
 
     void buildChannel (Channel& ch);
@@ -89,6 +104,8 @@ private:
     };
     void updatePots (const Knobs& k);
     void applySpeaker (Channel& ch, int index) const;
+    double sagRail (double envelope) const noexcept;
+    double behavioralPowerStage (Channel& ch, double toneVoltage) noexcept;
     void applyVariamp (Channel& ch, int index) const;
     void recover (Channel& ch) const;
     mutable int recoveries = 0;

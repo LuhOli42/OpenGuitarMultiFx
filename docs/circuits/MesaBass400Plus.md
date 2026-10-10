@@ -35,3 +35,16 @@ EQ sliders at 40, 80, 160, 320, 750, 2200 and 6600 Hz; the EQ can be bypassed.
   1 H at 40 Hz to 1 mH at 6.6 kHz); the real board's part numbers vary by revision.
 - Slave-out / FX-return circuitry is omitted; the DI-out rear features don't affect the amp's
   own sound.
+
+## Reduced-order power stage (shipped default)
+
+Like the JCM800/SLO-100/Mark IIC+/Dual Rectifier/5150/Powerball/Rockerverb/Deluxe Reverb/AC30/Bassman/
+Super Lead family (see CircuitFamilies.md), this processor ships a behavioural power stage as the
+application default (`MesaBass400PlusStyleAmplifierProcessor::reducedOrder`, set centrally in EffectRegistry.cpp
+together with `markQualityDependent`): the preamp and tone-shaping netlists remain real circuits,
+while the phase-inverter + push-pull + output transformer + global NFB + speaker impedance cluster is
+replaced by an envelope-followed sag rail feeding an asymmetric tanh knee, a DC blocker, and a
+low-shelf speaker-magnetics correction, fitted to this file's own reference netlist. The full netlist
+stays in the source for calibration and is what the unit tests exercise (`reducedOrder = false` at the
+top of the test).
+

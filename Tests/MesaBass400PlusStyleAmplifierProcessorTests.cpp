@@ -46,6 +46,8 @@ private:
 
     void runTest() override
     {
+        MesaBass400PlusStyleAmplifierProcessor::reducedOrder = false; // the unit suite always probes the full-order reference
+
         beginTest ("DC operating points land near the schematic's expected voltages (+-40%)");
         {
             MesaBass400PlusStyleAmplifierProcessor amp;

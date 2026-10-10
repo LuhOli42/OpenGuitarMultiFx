@@ -33,3 +33,16 @@ B-15Ns add Ultra-Lo and Ultra-Hi rocker switches on the input voicing). Inputs: 
   are image scans without legible text for every secondary tap.
 - A Master control is kept (synthetic, like the other amp models) because the B-15's only level
   control is the channel Volume.
+
+## Reduced-order power stage (shipped default)
+
+Like the JCM800/SLO-100/Mark IIC+/Dual Rectifier/5150/Powerball/Rockerverb/Deluxe Reverb/AC30/Bassman/
+Super Lead family (see CircuitFamilies.md), this processor ships a behavioural power stage as the
+application default (`AmpegB15StyleAmplifierProcessor::reducedOrder`, set centrally in EffectRegistry.cpp
+together with `markQualityDependent`): the preamp and tone-shaping netlists remain real circuits,
+while the phase-inverter + push-pull + output transformer + global NFB + speaker impedance cluster is
+replaced by an envelope-followed sag rail feeding an asymmetric tanh knee, a DC blocker, and a
+low-shelf speaker-magnetics correction, fitted to this file's own reference netlist. The full netlist
+stays in the source for calibration and is what the unit tests exercise (`reducedOrder = false` at the
+top of the test).
+
