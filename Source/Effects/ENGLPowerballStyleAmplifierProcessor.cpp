@@ -650,7 +650,7 @@ double ENGLPowerballStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     const double presAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 4500.0 / juce::jmax (1.0, sampleRate));
     ch.bmPresState += presAlpha * (top - ch.bmPresState);
     const double presShelf = ch.bmPresState + (0.64 + 1.2 * juce::jlimit (0.0, 1.0, (double) lastKnobs.presence)) * (top - ch.bmPresState);
-    const double effTop = presShelf + (juce::jlimit (0.0, 1.0, (double) lastKnobs.depth) - 0.3) * 0.8 * (lf - top);
+    const double effTop = presShelf + (juce::jlimit (0.0, 1.0, (double) lastKnobs.depth) - 0.3) * 0.8 * (lf - raw);
     const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmCutHz / juce::jmax (1.0, sampleRate));
     ch.bmCutState += cut * (effTop - ch.bmCutState);
     ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (effTop - ch.bmCutState) * bmLevelTrim);

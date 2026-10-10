@@ -691,7 +691,7 @@ double EVH5150StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double
     const double presAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 4500.0 / juce::jmax (1.0, sampleRate));
     ch.bmPresState += presAlpha * (top - ch.bmPresState);
     const double presShelf = ch.bmPresState + (0.64 + 1.2 * juce::jlimit (0.0, 1.0, (double) lastKnobs.presence)) * (top - ch.bmPresState);
-    const double effTop = presShelf + (juce::jlimit (0.0, 1.0, (double) lastKnobs.resonance) - 0.3) * 0.8 * (lf - top);
+    const double effTop = presShelf + (juce::jlimit (0.0, 1.0, (double) lastKnobs.resonance) - 0.3) * 0.8 * (lf - raw);
     const double notch = bmCB0 * effTop + bmCB1 * ch.bmCX1 + bmCB2 * ch.bmCX2
                        - bmCA1 * ch.bmCY1 - bmCA2 * ch.bmCY2;
     ch.bmCX2 = ch.bmCX1; ch.bmCX1 = effTop;

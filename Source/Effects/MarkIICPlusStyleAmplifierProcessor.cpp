@@ -756,7 +756,7 @@ double MarkIICPlusStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
     // Pull Deep is dead in reducedOrder (its NFB bypass leg exists only in the full power block):
     // lean the output toward the LF cone bump the top section otherwise removes.
-    const double deepTop = pullDeepParam->get() >= 0.5f ? top + 0.8 * (lf - top) : top;
+    const double deepTop = pullDeepParam->get() >= 0.5f ? top + 0.8 * (lf - raw) : top;
     ch.bmOutput = deepTop * bmLevelTrim;
     return ch.bmOutput;
 }
@@ -998,8 +998,8 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
     for (int b = 0; b < geqBands; ++b)
     {
         geqCoeffs[b] = {};
-        geqState[0][b] = {};
-        geqState[1][b] = {};
+        for (auto& ch : channels)
+            ch.geqState[b] = {};
         lastGeqSliders[b] = 0.5f;
     }
     geqUpdateCounter = 0;
@@ -1107,6 +1107,7 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
         const bool geqOn = geqOnParam->get() >= 0.5f;
+        const double geqBlendAlpha = 1.0 - std::exp (-1.0 / (0.005 * sampleRate));
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
@@ -1137,14 +1138,16 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
             for (int b = 0; b < geqBands; ++b)
             {
                 const auto& c = geqCoeffs[b];
-                auto& s = geqState[chIdx][b];
+                auto& s = ch.geqState[b];
                 const double y = c.b0 * powerIn + s.s1;
                 s.s1 = c.b1 * powerIn - c.a1 * y + s.s2;
                 s.s2 = c.b2 * powerIn - c.a2 * y;
                 powerIn = y;
             }
-            if (! geqOn)
-                powerIn = geqDry;
+            // Slewed blend (~5 ms to the switch position) so the footswitch crossfades instead of
+            // stepping between two different samples; biquad states keep tracking while bypassed.
+            ch.geqBlend += geqBlendAlpha * ((geqOn ? 1.0 : 0.0) - ch.geqBlend);
+            powerIn = geqDry + ch.geqBlend * (powerIn - geqDry);
             ch.power.setSource (ch.wSrcCf, ch.followerDc + powerIn);
             if (! reducedOrder)
             {
