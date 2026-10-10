@@ -23,8 +23,9 @@ namespace openguitarmultifx
     amp's channel switching). Then Master -> phase inverter (4x6L6, global feedback with Presence and Pull Deep).
 
     Controls, page 1 -- the real panel: Channel (Rhythm / Lead), Volume 1, Pull Bright, Treble, Pull Shift, Bass,
-    Middle, Master, Pull Deep, Lead Drive, Lead Master, Presence. Page 2 (synthetic): Power Drive, Bias, Tube Feel,
-    Speaker (4 / 8 / 16 ohm), Output. Page 3: the 5-band graphic EQ.
+    Middle, Master, Pull Deep, Lead Drive, Lead Master, Presence, then the footswitchable 5-band graphic EQ
+    (on/off + 80/240/750/2200/6600 Hz) that sits between preamp and power amp on the real unit.
+    Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class MarkIICPlusStyleAmplifierProcessor : public EffectProcessor
 {
@@ -101,6 +102,11 @@ public:
     double screenCurrentTotal() const noexcept;
 
 private:
+    static constexpr int geqBands = 5;
+    static constexpr double geqFreqs[geqBands] = { 80.0, 240.0, 750.0, 2200.0, 6600.0 };
+    struct BiquadState { double s1 = 0.0, s2 = 0.0; };
+    struct BiquadCoeffs { double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0; };
+
     struct Channel
     {
         NodalCircuit pre, power, supply;
@@ -151,6 +157,12 @@ private:
         double sumPlate = 0.0, sumScreen = 0.0;
         int sumCount = 0;
         int supplyCounter = 0;
+
+        // graphic EQ histories live per channel so DualMonoShortcut's channels[1] = channels[0]
+        // resync copies them with the circuit; geqBlend slews the on/off footswitch into a ~5 ms
+        // crossfade instead of a single-sample dry/wet step (starts at the default-on position).
+        BiquadState geqState[geqBands] {};
+        double geqBlend = 1.0;
     };
 
     void buildChannel (Channel& ch);
@@ -197,6 +209,7 @@ private:
     juce::AudioParameterFloat* masterParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* geqParams[5] {};
+    juce::AudioParameterFloat* geqOnParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
@@ -205,12 +218,7 @@ private:
     juce::SmoothedValue<float> smoothedVolume1, smoothedLeadMaster, smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
-    static constexpr int geqBands = 5;
-    static constexpr double geqFreqs[geqBands] = { 80.0, 240.0, 750.0, 2200.0, 6600.0 };
-    struct BiquadState { double s1 = 0.0, s2 = 0.0; };
-    struct BiquadCoeffs { double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0; };
     BiquadCoeffs geqCoeffs[geqBands] {};
-    BiquadState geqState[2][geqBands] {};
     float lastGeqSliders[geqBands] {};
     int geqUpdateCounter = 0;
 

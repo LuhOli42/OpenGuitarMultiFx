@@ -110,15 +110,16 @@ MesaBass400PlusStyleAmplifierProcessor::MesaBass400PlusStyleAmplifierProcessor()
     group->addChild (std::move (master));
 
     const char* eqNames[eqBands] = { "40 Hz", "80 Hz", "160 Hz", "320 Hz", "750 Hz", "2.2 kHz", "6.6 kHz" };
-    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("mesa400p_page2", "Page 2", "|");
+    // The 7-band graphic EQ is a front-panel control on the real Bass 400+ -> page 1, not page 2.
     for (int i = 0; i < eqBands; ++i)
     {
         auto p = std::make_unique<juce::AudioParameterFloat> (
             juce::String ("mesa400p_eq") + juce::String (i + 1), eqNames[i],
             juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
         eqParam[i] = p.get();
-        page2->addChild (std::move (p));
+        group->addChild (std::move (p));
     }
+    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("mesa400p_page2", "Page 2", "|");
     auto power = std::make_unique<juce::AudioParameterFloat> (
         "mesa400p_power", "Power Drive", juce::NormalisableRange<float> (0.0f, 1.0f), 1.0f);
     auto bias = std::make_unique<juce::AudioParameterFloat> (

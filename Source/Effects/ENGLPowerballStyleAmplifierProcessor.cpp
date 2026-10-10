@@ -617,12 +617,22 @@ double ENGLPowerballStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    // reducedOrder folds the page-2 controls that only exist in the full power netlist into the
+    // behavioural stage: Tube Feel scales the available sag depth, Bias shifts the saturator's
+    // operating point the way the full model's bias trim does.
+    const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
+    const double bias = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
+    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = absDrive / juce::jmax (1.0e-9, k);
-    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, toneVoltage);
+    const double shift = 0.6 * (bias - 0.5) * k;
+    const auto sat = [k, rail = ch.bmRail] (double xx)
+    {
+        const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
+        const double yx = bmYmax * ux / std::pow (1.0 + std::pow (ux, bmKneeN), 1.0 / bmKneeN);
+        return std::copysign (yx * rail, xx);
+    };
+    const double raw = sat (toneVoltage + shift) - sat (shift);
 
     // The frequency response the removed stages used to provide: two fixed biquads fitted to this netlist's
     // own measured transfer (resonant LF bell + zero/pole top section) plus a one-pole low cut.
@@ -634,9 +644,16 @@ double ENGLPowerballStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
                      - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
     ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
     ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
+    // Presence/Resonance were dead in reducedOrder (their NFB legs live in the full power block
+    // only): presence becomes a first-order HF shelf on the fitted output -- flat at the 0.3
+    // default; resonance/depth leans the output toward the pre-top-section LF bump.
+    const double presAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 4500.0 / juce::jmax (1.0, sampleRate));
+    ch.bmPresState += presAlpha * (top - ch.bmPresState);
+    const double presShelf = ch.bmPresState + (0.64 + 1.2 * juce::jlimit (0.0, 1.0, (double) lastKnobs.presence)) * (top - ch.bmPresState);
+    const double effTop = presShelf + (juce::jlimit (0.0, 1.0, (double) lastKnobs.depth) - 0.3) * 0.8 * (lf - raw);
     const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmCutHz / juce::jmax (1.0, sampleRate));
-    ch.bmCutState += cut * (top - ch.bmCutState);
-    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (top - ch.bmCutState) * bmLevelTrim);
+    ch.bmCutState += cut * (effTop - ch.bmCutState);
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (effTop - ch.bmCutState) * bmLevelTrim);
     return ch.bmOutput;
 }
 
@@ -834,6 +851,7 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         ch.bmAX1 = ch.bmAX2 = ch.bmAY1 = ch.bmAY2 = 0.0;
         ch.bmBX1 = ch.bmBX2 = ch.bmBY1 = ch.bmBY2 = 0.0;
         ch.bmCutState = 0.0;
+        ch.bmPresState = 0.0;
     }
     designPowerFilters();
     updatePots (lastKnobs);

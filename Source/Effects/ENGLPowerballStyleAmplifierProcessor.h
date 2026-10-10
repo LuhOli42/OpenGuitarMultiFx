@@ -102,6 +102,7 @@ private:
         double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
         double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
         double bmCutState = 0.0;
+        double bmPresState = 0.0;   // presence HF-shelf lowpass state (reducedOrder only)
         double mwDcPrev = 0.0, mwDcOut = 0.0;
         double mwTarget = 0.0;
 

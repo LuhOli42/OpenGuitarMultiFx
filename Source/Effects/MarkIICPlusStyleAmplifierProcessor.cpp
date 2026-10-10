@@ -311,6 +311,10 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     auto gain = make ("mk2c_gain", "Lead Drive", 0.5f);
     auto leadMaster = make ("mk2c_lead_master", "Lead Master", 0.5f);
     auto presence = make ("mk2c_presence", "Presence", 0.3f);
+    auto geqOn = std::make_unique<juce::AudioParameterFloat> (
+        "mk2c_geq_on", "Graphic EQ", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        { return v < 0.5f ? juce::String ("Off") : juce::String ("On"); }));
     auto output = make ("mk2c_output", "Output", 0.5f);
     auto geqMake = [] (const char* id, const char* name)
     {
@@ -355,6 +359,7 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     geqParams[2] = geq750.get();
     geqParams[3] = geq2200.get();
     geqParams[4] = geq6600.get();
+    geqOnParam = geqOn.get();
     powerParam = power.get();
     biasParam = bias.get();
     tubeFeelParam = feel.get();
@@ -373,19 +378,18 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     group->addChild (std::move (gain));
     group->addChild (std::move (leadMaster));
     group->addChild (std::move (presence));
+    group->addChild (std::move (geqOn));
+    group->addChild (std::move (geq80));
+    group->addChild (std::move (geq240));
+    group->addChild (std::move (geq750));
+    group->addChild (std::move (geq2200));
+    group->addChild (std::move (geq6600));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("mk2c_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
     group->addChild (std::move (page2));
-    auto page3 = std::make_unique<juce::AudioProcessorParameterGroup> ("mk2c_geq", "Graphic EQ", "|",
-        std::move (geq80));
-    page3->addChild (std::move (geq240));
-    page3->addChild (std::move (geq750));
-    page3->addChild (std::move (geq2200));
-    page3->addChild (std::move (geq6600));
-    group->addChild (std::move (page3));
     parameters = std::move (group);
 }
 
@@ -723,12 +727,21 @@ double MarkIICPlusStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    // reducedOrder folds the page-2 controls that only exist in the full power netlist: Tube Feel scales
+    // the available sag depth, Bias shifts the saturator's operating point like the full model's bias trim.
+    const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
+    const double bias = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
+    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = absDrive / juce::jmax (1.0e-9, k);
-    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, drive);
+    const double shift = 0.6 * (bias - 0.5) * k;
+    const auto sat = [k, rail = ch.bmRail] (double xx)
+    {
+        const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
+        const double yx = bmYmax * ux / std::pow (1.0 + std::pow (ux, bmKneeN), 1.0 / bmKneeN);
+        return std::copysign (yx * rail, xx);
+    };
+    const double raw = sat (drive + shift) - sat (shift);
 
     // The frequency response the removed stages used to provide: two fixed biquads fitted to the response this
     // amp's own reference netlist calls for (LF cone-resonance bump + ~flat mids + presence plateau, NOT the
@@ -741,7 +754,10 @@ double MarkIICPlusStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
                      - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
     ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
     ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
-    ch.bmOutput = top * bmLevelTrim;
+    // Pull Deep is dead in reducedOrder (its NFB bypass leg exists only in the full power block):
+    // lean the output toward the LF cone bump the top section otherwise removes.
+    const double deepTop = pullDeepParam->get() >= 0.5f ? top + 0.8 * (lf - raw) : top;
+    ch.bmOutput = deepTop * bmLevelTrim;
     return ch.bmOutput;
 }
 
@@ -982,11 +998,15 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
     for (int b = 0; b < geqBands; ++b)
     {
         geqCoeffs[b] = {};
-        geqState[0][b] = {};
-        geqState[1][b] = {};
+        for (auto& ch : channels)
+            ch.geqState[b] = {};
         lastGeqSliders[b] = 0.5f;
     }
     geqUpdateCounter = 0;
+    // Start the wet blend at the switch's saved position (an EQ-off preset must come up dry,
+    // not fade in from wet); the ~5 ms slew then only covers real footswitch transitions.
+    for (auto& ch : channels)
+        ch.geqBlend = geqOnParam != nullptr && geqOnParam->get() >= 0.5f ? 1.0 : 0.0;
 
     controlCounter = 0;
     sampleCount = 0;
@@ -1090,6 +1110,8 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
+        const bool geqOn = geqOnParam->get() >= 0.5f;
+        const double geqBlendAlpha = 1.0 - std::exp (-1.0 / (0.005 * sampleRate));
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
@@ -1111,7 +1133,26 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
 
             // Both channels leave the preamp through V3b.
             const double preAc = ch.pre2.voltage (ch.pFollower) - ch.followerDc;
-            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * preAc);
+            double powerIn = masterGain * cathodeFollowerGain * preAc;
+            // Footswitchable 5-band graphic EQ: on the real amp it sits between the preamp out and the
+            // power amp in -- run it on the signal feeding the power block so it works in BOTH the full
+            // netlist and reducedOrder paths (it used to post-process the reduced path only, dead at full
+            // order). States keep tracking the input while bypassed, so toggling never pops.
+            const double geqDry = powerIn;
+            for (int b = 0; b < geqBands; ++b)
+            {
+                const auto& c = geqCoeffs[b];
+                auto& s = ch.geqState[b];
+                const double y = c.b0 * powerIn + s.s1;
+                s.s1 = c.b1 * powerIn - c.a1 * y + s.s2;
+                s.s2 = c.b2 * powerIn - c.a2 * y;
+                powerIn = y;
+            }
+            // Slewed blend (~5 ms to the switch position) so the footswitch crossfades instead of
+            // stepping between two different samples; biquad states keep tracking while bypassed.
+            ch.geqBlend += geqBlendAlpha * ((geqOn ? 1.0 : 0.0) - ch.geqBlend);
+            powerIn = geqDry + ch.geqBlend * (powerIn - geqDry);
+            ch.power.setSource (ch.wSrcCf, ch.followerDc + powerIn);
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
@@ -1143,15 +1184,6 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
             }
 
             double toneOut = ch.piCoupling.process (ch.power.voltage (ch.wTone));
-            for (int b = 0; b < geqBands; ++b)
-            {
-                const auto& c = geqCoeffs[b];
-                auto& s = geqState[chIdx][b];
-                const double y = c.b0 * toneOut + s.s1;
-                s.s1 = c.b1 * toneOut - c.a1 * y + s.s2;
-                s.s2 = c.b2 * toneOut - c.a2 * y;
-                toneOut = y;
-            }
             const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, toneOut) : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
