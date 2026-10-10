@@ -2,6 +2,7 @@
 
 #include "EffectProcessor.h"
 #include "EnvelopeFollower.h"
+#include "WetLevelMatcher.h"
 #include "../Engine/DeferredReclaimer.h"
 
 #include <juce_dsp/juce_dsp.h>
@@ -51,6 +52,11 @@ public:
     bool hasImpulseResponse (int slot) const noexcept;
     juce::String getLoadedIRName (int slot) const { return slot == 0 ? loadedNameA : loadedNameB; }
 
+    /** Control thread only. Applies a slot's "Source" parameter value right
+        now (bundled IR, last file IR, or empty) -- the sweep timer polls it
+        too, so picking a built-in in the UI needs no other wiring. */
+    void applySourceSelection (int slot);
+
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override;
@@ -76,13 +82,21 @@ private:
     {
         irSlotA.sweep();
         irSlotB.sweep();
+        applySourceSelection (0);
+        applySourceSelection (1);
     }
+    void loadBundledIR (int index, int slot);
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* blend = nullptr;
     juce::AudioParameterFloat* dynamicsAmount = nullptr;
     juce::AudioParameterFloat* mixParam = nullptr;
     juce::AudioParameterFloat* outputGainDb = nullptr;
+    // Per-slot "Source" selectors (0 = File/empty, 1..N = bundled) --
+    // appended after the existing four params, order untouched.
+    juce::AudioParameterFloat* sourceParamA = nullptr;
+    juce::AudioParameterFloat* sourceParamB = nullptr;
+    int appliedSourceA = -1, appliedSourceB = -1; // control thread
 
     DeferredReclaimer<juce::dsp::Convolution> irSlotA, irSlotB;
     juce::File lastLoadedFileA, lastLoadedFileB;
@@ -99,6 +113,7 @@ private:
     // at the block's max, addressed with the block's real numSamples via
     // an explicit-length juce::dsp::AudioBlock (never resized per-call).
     juce::AudioBuffer<float> scratchA, scratchB, dryScratch;
+    std::array<WetLevelMatcher, 2> wetMatch; // keeps the blended wet as loud as the dry (docs/circuits/MixLaw.md)
 };
 
 } // namespace openguitarmultifx

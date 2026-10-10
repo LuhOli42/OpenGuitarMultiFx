@@ -13,6 +13,23 @@
 namespace openguitarmultifx
 {
 
+/** The cabinet IRs embedded in the binary (the wavs in Assets/IRs via the
+    OpenGuitarMultiFx_IRs binary-data target -- synthetic house curves, see
+    docs/BundledCabIRs.md). Shared by IRLoaderProcessor and
+    DynamicCabProcessor so both offer the same built-in list.
+    Control-thread only: handing the raw bytes to a juce::dsp::Convolution
+    happens inside each processor's own DeferredReclaimer swap discipline. */
+namespace bundledCabIRs
+{
+    int count();
+    /** "4x12 Closed-Back" -- bare name. */
+    juce::String displayName (int index);
+    /** "Built-in: 4x12 Closed-Back" -- selector option and status text. */
+    juce::String selectorName (int index);
+    const char* data (int index);
+    int dataSize (int index);
+}
+
 /**
     Loads a WAV impulse response and convolves the signal with it. Used for
     two chain roles -- "Cab" and "Reverb"/"Space" -- because they're the
@@ -44,6 +61,13 @@ public:
     /** Control thread only. */
     void loadImpulseResponse (const juce::File& irFile);
     void clearImpulseResponse();
+
+    /** Control thread only. Applies the current "IR Source" parameter value
+        right now (loads the selected bundled IR, restores the last file IR,
+        or clears) -- the sweep timer polls this too, so picking a built-in in
+        the UI works with no other wiring. Tests call it directly to avoid
+        waiting on the timer. */
+    void applySourceSelection();
     bool hasImpulseResponse() const noexcept { return irSlot.currentRaw() != nullptr; }
     juce::String getLoadedIRName() const { return loadedName; }
 
@@ -74,13 +98,22 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
 private:
-    void timerCallback() override { irSlot.sweep(); }
+    void timerCallback() override
+    {
+        irSlot.sweep();
+        applySourceSelection(); // picks up IR Source changes from the UI/MIDI/presets
+    }
     bool isReverbRole() const noexcept { return name.containsIgnoreCase ("Reverb") || name.containsIgnoreCase ("Space"); }
+    void loadBundledIR (int index);
 
     juce::String name;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* mixParam = nullptr;
     juce::AudioParameterFloat* outputGainDb = nullptr;
+    // "IR Source" selector (0 = File, 1..N = bundled) -- only exists on the
+    // "Cab" role; a convolved reverb tail has no business being a cabinet.
+    juce::AudioParameterFloat* sourceParam = nullptr;
+    int appliedSource = -1; // control thread: which source index is currently published
 
     DeferredReclaimer<juce::dsp::Convolution> irSlot;
     juce::File lastLoadedFile;
@@ -92,7 +125,7 @@ private:
 
     // Pre-allocated in prepare() for the dry/wet mix -- process() must never allocate.
     juce::AudioBuffer<float> dryScratch;
-    std::array<WetLevelMatcher, 2> wetMatch; // reverb role only: keeps Mix = 1 as loud as the dry signal (docs/circuits/MixLaw.md)
+    std::array<WetLevelMatcher, 2> wetMatch; // any loaded IR: keeps Mix = 1 as loud as the dry signal (docs/circuits/MixLaw.md)
 };
 
 } // namespace openguitarmultifx
