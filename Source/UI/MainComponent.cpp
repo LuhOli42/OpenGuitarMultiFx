@@ -102,8 +102,9 @@ namespace
             || displayName == "Flanger" || displayName == "Phaser" || displayName == "Rotary"
             || displayName == "Uni-Vibe" || displayName == "Pitch Mod")
             return "Modulation";
-        if (displayName == "Pitch Shift" || displayName == "Octaver" || displayName == "Harmonizer"
-            || displayName == "Parametric EQ" || displayName == "Ring Mod" || displayName.endsWith (" Equalizer")
+        if (displayName == "Pitch Shift" || displayName == "Octaver" || displayName == "Boss OC-2-Style Octaver"
+            || displayName == "Harmonizer" || displayName == "Parametric EQ" || displayName == "Ring Mod"
+            || displayName.endsWith (" Equalizer")
             || displayName == "Mu-Tron III-Style Filter")
             return "Filter/FX";
         return "Other"; // shouldn't normally happen -- a new effect type that hasn't been categorised yet
