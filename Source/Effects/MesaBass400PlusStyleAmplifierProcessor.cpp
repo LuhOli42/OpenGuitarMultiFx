@@ -450,19 +450,23 @@ double MesaBass400PlusStyleAmplifierProcessor::sagRail (double envelope) const n
     return railPlatesNominal * juce::jlimit (0.80, 1.0, 1.0 - 0.010 * envelope);
 }
 
-double MesaBass400PlusStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) noexcept
+double MesaBass400PlusStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage,
+                                                                  double bias, double feel) noexcept
 {
     const double attackCoeff = 1.0 - std::exp (-1.0 / (0.008 * sampleRate));
     const double releaseCoeff = 1.0 - std::exp (-1.0 / (0.045 * sampleRate));
     const double absDrive = std::abs (toneVoltage);
     ch.bmEnvelope += (absDrive > ch.bmEnvelope ? attackCoeff : releaseCoeff) * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRail (ch.bmEnvelope);
+    // Tube Feel folds how far the rail sags around its resting point; Bias shifts the knee's
+    // operating point like the bias trims do on the reference netlist (feel/bias at defaults
+    // give the fitted curve unchanged).
+    ch.bmRail = railPlatesNominal - feel * (railPlatesNominal - sagRail (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double over = toneVoltage / bmGridClampV;
     const double clamped = toneVoltage / std::sqrt (1.0 + over * over);
     const auto knee = [k, rail = ch.bmRail] (double x) { return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax; };
-    const double shift = bmAsym * k;
+    const double shift = (bmAsym + 0.6 * (bias - 0.5)) * k;
     const double raw = knee (clamped + shift) - knee (shift);
 
     const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / sampleRate);
@@ -531,7 +535,7 @@ void MesaBass400PlusStyleAmplifierProcessor::updatePots (const Knobs& k)
             applySpeaker (ch, k.speaker);
     }
     appliedSpeaker = k.speaker;
-    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 4.0, -0.8);
+    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 4.0, -0.8);
 }
 
 void MesaBass400PlusStyleAmplifierProcessor::recover (Channel& ch) const
@@ -853,16 +857,16 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
                 failuresPower += ok2 ? 0 : 1;
             }
 
-            double ipA, ipB, isA, isB;
             if (! reducedOrder)
             {
+                double ipA, ipB, isA, isB;
                 ch.power.pentodeCurrents (ch.penA, ipA, isA);
                 ch.power.pentodeCurrents (ch.penB, ipB, isB);
+                ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
+                ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
+                ch.sumPlate += ipA + ipB;
+                ch.sumScreen += isA + isB;
             }
-            ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
-            ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
-            ch.sumPlate += ipA + ipB;
-            ch.sumScreen += isA + isB;
             ++ch.sumCount;
 
             if (++ch.supplyCounter >= supplyInterval)
@@ -871,7 +875,7 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone))
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone), (double) bi, (double) fe)
                                                      : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 250.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;

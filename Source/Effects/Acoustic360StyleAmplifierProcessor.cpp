@@ -266,16 +266,14 @@ void Acoustic360StyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rTrebleTop, juce::jmax (1.0, 250.0e3 - trebleBot));
         ch.pre.setResistance (ch.rTrebleBot, trebleBot);
         ch.pre.setResistance (ch.rEffect, effectR);
-        if (! reducedOrder)
-            /* speaker handled by behavioral stage */;
-        else         if (! resistiveLoadForced && k.speaker != appliedSpeaker)
+        if (! reducedOrder && ! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
         if (k.variamp != appliedVariamp)
             applyVariamp (ch, k.variamp);
     }
     appliedSpeaker = k.speaker;
     appliedVariamp = k.variamp;
-    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 1, k.speaker)] / 4.0, -0.8);
+    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 1, k.speaker)] / 4.0, -0.8);
 }
 
 void Acoustic360StyleAmplifierProcessor::recover (Channel& ch) const

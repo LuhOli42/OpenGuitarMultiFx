@@ -344,19 +344,23 @@ double AmpegB15StyleAmplifierProcessor::sagRail (double envelope) const noexcept
     return railPlatesNominal * juce::jlimit (0.80, 1.0, 1.0 - 0.012 * envelope);
 }
 
-double AmpegB15StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) noexcept
+double AmpegB15StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage,
+                                                                  double bias, double feel) noexcept
 {
     const double attackCoeff = 1.0 - std::exp (-1.0 / (0.008 * sampleRate));
     const double releaseCoeff = 1.0 - std::exp (-1.0 / (0.045 * sampleRate));
     const double absDrive = std::abs (toneVoltage);
     ch.bmEnvelope += (absDrive > ch.bmEnvelope ? attackCoeff : releaseCoeff) * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRail (ch.bmEnvelope);
+    // Tube Feel folds how far the rail sags around its resting point; Bias shifts the knee's
+    // operating point like the bias trims do on the reference netlist (feel/bias at defaults
+    // give the fitted curve unchanged).
+    ch.bmRail = railPlatesNominal - feel * (railPlatesNominal - sagRail (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double over = toneVoltage / bmGridClampV;
     const double clamped = toneVoltage / std::sqrt (1.0 + over * over);
     const auto knee = [k, rail = ch.bmRail] (double x) { return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax; };
-    const double shift = bmAsym * k;
+    const double shift = (bmAsym + 0.6 * (bias - 0.5)) * k;
     const double raw = knee (clamped + shift) - knee (shift);
 
     const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / sampleRate);
@@ -422,7 +426,7 @@ void AmpegB15StyleAmplifierProcessor::updatePots (const Knobs& k)
     }
     appliedSpeaker = k.speaker;
     // Heavier loads take fewer volts; compensate so the impedance choices change feel, not loudness.
-    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 8.0, -0.8);
+    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 8.0, -0.8);
 }
 
 void AmpegB15StyleAmplifierProcessor::recover (Channel& ch) const
@@ -715,7 +719,7 @@ void AmpegB15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone))
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone), (double) bi, (double) fe)
                                                      : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 250.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;

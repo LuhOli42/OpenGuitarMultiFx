@@ -137,7 +137,7 @@ private:
     void updatePots (const Knobs& k);
     void applySpeaker (Channel& ch, int index) const;
     double sagRail (double envelope) const noexcept;
-    double behavioralPowerStage (Channel& ch, double toneVoltage) noexcept;
+    double behavioralPowerStage (Channel& ch, double toneVoltage, double bias, double feel) noexcept;
     void applyMidFreq (Channel& ch, int index) const;
     void recover (Channel& ch) const;
     mutable int recoveries = 0;
