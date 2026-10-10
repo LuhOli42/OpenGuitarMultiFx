@@ -1003,6 +1003,10 @@ void MarkIICPlusStyleAmplifierProcessor::prepare (double newSampleRate, int, int
         lastGeqSliders[b] = 0.5f;
     }
     geqUpdateCounter = 0;
+    // Start the wet blend at the switch's saved position (an EQ-off preset must come up dry,
+    // not fade in from wet); the ~5 ms slew then only covers real footswitch transitions.
+    for (auto& ch : channels)
+        ch.geqBlend = geqOnParam != nullptr && geqOnParam->get() >= 0.5f ? 1.0 : 0.0;
 
     controlCounter = 0;
     sampleCount = 0;
