@@ -89,6 +89,7 @@ public:
     void setDeadlineMode (int maxIterations) noexcept { deadlineIterations = maxIterations; }
     bool isDeadlineMode() const noexcept { return deadlineIterations > 0; }
     long long getDeadlineSamples() const noexcept { return deadlineSamples; }
+    long long getSkippedSamples() const noexcept { return skippedSamples; }  // fixed-point skips, see solveSample()
     /** The circuit's memory and nothing else: capacitor and inductor state, the Newton warm-start history, the last excitation. Saving and restoring it
         is a few hundred bytes and touches no parameter, so it does NOT invalidate the reduced model (a full copy of the circuit from a "rest" snapshot
         also restores the resistances the knobs had at prepare(), and re-applying the knobs then rebuilds the model: milliseconds, on the audio thread, in the
@@ -158,6 +159,8 @@ public:
         satMode = d.satMode;
         lastMode = d.lastMode;
         consecutiveFailures = 0;
+        lastSolveOk = false; // a restored state has not just been solved: force one real solve first
+        settleCount = 0;
     }
     static inline double portResidualAccept = 30.0; // volts: the largest port-equation error a converged point may carry (garbage is hundreds; a real point is micro-volts)
     void setIntegrationTheta (double newTheta) noexcept { theta = newTheta; }
@@ -530,6 +533,8 @@ public:
         models.assign (satOpIndex >= 0 ? 3 : 1, Model {});
         modelsDirty = true;
         useX = true;
+        lastSolveOk = false;
+        settleCount = 0;
         sourceOfNode.assign ((size_t) nodeCount + 1, -1);
         for (size_t h = 0; h < sources.size(); ++h)
             if (! sources[h].current)
@@ -585,6 +590,8 @@ public:
         satMode = 0;
         modelsDirty = true;
         useX = true;
+        lastSolveOk = false;
+        settleCount = 0;
         xPrev = x;
 
         return ok;
@@ -651,6 +658,37 @@ public:
             E[ns + h] = sources[(size_t) h].volts;
         E[m - 1] = 1.0;
 
+        // Fixed point: an excitation vector bitwise identical to the one the last solve
+        // converged on produces the same u0, the same currents and the same capacitor update,
+        // so the whole solve is provably a no-op -- the settled circuit is skipped instead of
+        // paying for it. An idle circuit (a pedal sitting between phrases or songs) reaches
+        // this state once its states have contracted to machine precision, and from then on
+        // costs nothing until the input moves again. The comparison is exact by design: any
+        // tolerance would also fire at a mode null mid-trajectory, where the state is merely
+        // passing through a slow point, and freezing there leaves a stale state that the
+        // gain stages amplify on resume.
+        if (lastSolveOk)
+        {
+            bool settled = true;
+            for (int e = 0; e < m; ++e)
+                if (E[e] != Elast[e])
+                {
+                    settled = false;
+                    break;
+                }
+            // A single still sample still is not proof of rest (an oscillation's apex is
+            // still too); it only counts when the stillness persists.
+            if (settled && ++settleCount >= 32)
+            {
+                ++skippedSamples;
+                return true;
+            }
+            if (! settled)
+                settleCount = 0;
+        }
+        else
+            settleCount = 0;
+
         double cur[maxPortsI] = {};
         bool ok = false;
 
@@ -681,7 +719,10 @@ public:
         }
 
         if (! ok)
+        {
+            lastSolveOk = false;
             return false;
+        }
 
         Model& M = models[(size_t) satMode];
         for (int c = 0; c < ns; ++c)
@@ -716,6 +757,7 @@ public:
             curLast[k] = cur[k];
         lastMode = satMode;
         useX = false;
+        lastSolveOk = true;
         return true;
     }
 
@@ -838,6 +880,9 @@ private:
     bool useX = true;                        // true until the first fast sample: voltage() then reads the DC solution `x`
     double Elast[maxExcite] = {}, curLast[maxPortsI] = {};
     int lastMode = 0;
+    bool lastSolveOk = false;                  // the settled-circuit skip in solveSample() only ever follows a real solve
+    int settleCount = 0;                       // consecutive samples the excitation has stayed put, for that same skip
+    long long skippedSamples = 0;
     std::vector<int> sourceOfNode;           // node -> index into `sources`, or -1
     struct CurrentPort { Node plus, minus; double sign; };
     struct VoltagePort { Node plus, minus; };
