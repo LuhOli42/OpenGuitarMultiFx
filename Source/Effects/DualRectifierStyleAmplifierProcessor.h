@@ -56,8 +56,21 @@ public:
     static constexpr double bmGain0 = 9.5;
     static constexpr double bmYmax = 0.198;
     static constexpr double bmKneeN = 6.0;
-    static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.55;
+    // The frequency response the reduced path's removed stages used to provide, fitted to THIS amp's own
+    // full-order lock-in sweep (toneStackOut -> speaker): an LF bump peaking ~+6 dB at ~80 Hz that rolls off
+    // below (resonant high-pass, bmBumpQp = resonance height), a one-pole low cut at bmCutHz finishing
+    // the steep sub-30 Hz fall the reference measures, and a zero/pole pair for the ~3-4 kHz presence ridge into
+    // the top rolloff. The earlier one-pole shelf (bmShelfHz/bmShelfHfGain) could not reproduce the bump.
+    // The reference's presence pot is inside the dead NFB loop (kg1 collapse) and measures 0.0 dB at every
+    // setting, so there is no presence feed here -- the knob only matters in the full model.
+    static constexpr double bmBumpHz = 80.0, bmBumpQp = 2.0;
+    static constexpr double bmCutHz = 15.0;
+    static constexpr double bmTopZHz = 2000.0, bmTopPHz = 5000.0, bmTopQp = 0.9;
+    // physical ceiling: the stages this replaces clip at the rail, and the fitted filters' resonance can
+    // overshoot the knee's bound ~2x on saturated LF -- the cap keeps emitted volts inside the sanity bound.
+    static constexpr double bmOutMax = 62.0;
+    // re-trim to unity at noon after the fitted sections changed the broadband level.
+    static constexpr double bmLevelTrim = 0.55;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -116,7 +129,10 @@ private:
         double vScreen = 460.0;
 
         // reducedOrder behavioural power stage state
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
+        double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
+        double bmCutState = 0.0;
         tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
         // supply
@@ -149,6 +165,10 @@ private:
     bool supplyCurrentFrozen = false;
     void updateSupply (Channel& ch) const;
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
+    void designPowerFilters();
+    // power-stage biquads (bilinear-transformed in designPowerFilters())
+    double bmAB0 = 1.0, bmAB1 = 0.0, bmAB2 = 0.0, bmAA1 = 0.0, bmAA2 = 0.0;
+    double bmBB0 = 1.0, bmBB1 = 0.0, bmBB2 = 0.0, bmBA1 = 0.0, bmBA2 = 0.0;
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
