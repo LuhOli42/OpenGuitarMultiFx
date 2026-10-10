@@ -1,10 +1,42 @@
 #include "DynamicCabProcessor.h"
+#include "IRLoaderProcessor.h" // bundledCabIRs -- same built-in list as the Cab role
 #include "IconKit.h"
 
 #include <IconData.h>
 
+#include <array>
+#include <cmath>
+
 namespace openguitarmultifx
 {
+
+namespace
+{
+    juce::AudioParameterFloat* makeSourceParam (const char* paramID, const char* paramName, float defaultValue,
+                                                juce::AudioProcessorParameterGroup& group)
+    {
+        auto p = std::make_unique<juce::AudioParameterFloat> (
+            paramID, paramName,
+            juce::NormalisableRange<float> (0.0f, (float) bundledCabIRs::count(), 1.0f),
+            defaultValue,
+            juce::AudioParameterFloatAttributes()
+                .withStringFromValueFunction ([] (float v, int) -> juce::String
+                {
+                    const int i = (int) std::lround (v);
+                    return i <= 0 ? juce::String ("File") : bundledCabIRs::selectorName (i - 1);
+                })
+                .withValueFromStringFunction ([] (const juce::String& text) -> float
+                {
+                    for (int i = 0; i < bundledCabIRs::count(); ++i)
+                        if (text == bundledCabIRs::selectorName (i) || text == bundledCabIRs::displayName (i))
+                            return (float) (i + 1);
+                    return 0.0f;
+                }));
+        auto* raw = p.get();
+        group.addChild (std::move (p));
+        return raw;
+    }
+}
 
 DynamicCabProcessor::DynamicCabProcessor()
 {
@@ -26,7 +58,14 @@ DynamicCabProcessor::DynamicCabProcessor()
         "dyncab", "Dynamic Cab", "|",
         std::move (blendParam), std::move (dynamics), std::move (mix), std::move (output));
 
-    startTimer (100); // sweeps irSlotA/B -- see DeferredReclaimer
+    // Appended AFTER blend/dynamics/mix/output so param order (and presets)
+    // are untouched. Slot A defaults to the bundled closed-back so a fresh
+    // block already sounds like a cab; slot B stays "File"/empty so the
+    // single-IR default behaves exactly like a plain Cab.
+    sourceParamA = makeSourceParam ("dyncab_source_a", "IR A Source", 1.0f, *parameters);
+    sourceParamB = makeSourceParam ("dyncab_source_b", "IR B Source", 0.0f, *parameters);
+
+    startTimer (100); // sweeps irSlotA/B and applies Source changes -- see DeferredReclaimer
 }
 
 DynamicCabProcessor::~DynamicCabProcessor() = default;
@@ -57,12 +96,72 @@ void DynamicCabProcessor::loadImpulseResponse (const juce::File& irFile, int slo
         lastLoadedFileA = irFile;
         loadedNameA = irFile.getFileName();
         irSlotA.publish (std::move (conv));
+        *sourceParamA = 0.0f; // a file load is an explicit choice of the "File" source
+        appliedSourceA = 0;
     }
     else
     {
         lastLoadedFileB = irFile;
         loadedNameB = irFile.getFileName();
         irSlotB.publish (std::move (conv));
+        *sourceParamB = 0.0f;
+        appliedSourceB = 0;
+    }
+}
+
+void DynamicCabProcessor::loadBundledIR (int index, int slot)
+{
+    auto conv = std::make_unique<juce::dsp::Convolution>();
+
+    conv->loadImpulseResponse (bundledCabIRs::data (index), (size_t) bundledCabIRs::dataSize (index),
+                               juce::dsp::Convolution::Stereo::yes,
+                               juce::dsp::Convolution::Trim::yes,
+                               (size_t) (sampleRate > 0.0 ? (int) (0.15 * sampleRate) : 0),
+                               juce::dsp::Convolution::Normalise::yes);
+
+    // Load BEFORE prepare so the IR is fully initialised for the first
+    // process() call (see IRLoaderProcessor::loadBundledIR).
+    if (sampleRate > 0.0)
+    {
+        juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) preparedBlockSize, (juce::uint32) preparedNumChannels };
+        conv->prepare (spec);
+    }
+
+    // lastLoadedFileA/B deliberately kept -- flipping the selector back to
+    // "File" restores the user's own IR rather than losing it.
+    if (slot == 0)
+    {
+        loadedNameA = bundledCabIRs::selectorName (index);
+        irSlotA.publish (std::move (conv));
+    }
+    else
+    {
+        loadedNameB = bundledCabIRs::selectorName (index);
+        irSlotB.publish (std::move (conv));
+    }
+}
+
+void DynamicCabProcessor::applySourceSelection (int slot)
+{
+    auto* sourceParam = slot == 0 ? sourceParamA : sourceParamB;
+    auto& applied = slot == 0 ? appliedSourceA : appliedSourceB;
+    auto& lastFile = slot == 0 ? lastLoadedFileA : lastLoadedFileB;
+    auto& loadedName = slot == 0 ? loadedNameA : loadedNameB;
+    auto& irSlot = slot == 0 ? irSlotA : irSlotB;
+
+    const int wanted = juce::jlimit (0, bundledCabIRs::count(), (int) std::lround (sourceParam->get()));
+    if (wanted == applied)
+        return;
+    applied = wanted;
+
+    if (wanted > 0)
+        loadBundledIR (wanted - 1, slot);
+    else if (lastFile.existsAsFile())
+        loadImpulseResponse (lastFile, slot); // rewrites applied = 0, same value
+    else
+    {
+        irSlot.publish (nullptr);
+        loadedName.clear();
     }
 }
 
@@ -73,12 +172,16 @@ void DynamicCabProcessor::clearImpulseResponse (int slot)
         irSlotA.publish (nullptr);
         lastLoadedFileA = juce::File();
         loadedNameA.clear();
+        *sourceParamA = 0.0f;
+        appliedSourceA = 0;
     }
     else
     {
         irSlotB.publish (nullptr);
         lastLoadedFileB = juce::File();
         loadedNameB.clear();
+        *sourceParamB = 0.0f;
+        appliedSourceB = 0;
     }
 }
 
@@ -96,14 +199,18 @@ void DynamicCabProcessor::prepare (double newSampleRate, int maxBlockSize, int n
     inputEnvelope.setAttackTime (5.0f);
     inputEnvelope.setReleaseTime (150.0f);
 
+    // A normalised cab IR lands ~-8 dB under the dry for guitar content;
+    // the matcher starts near that and follows the actual IRs and signal.
+    for (auto& m : wetMatch)
+        m.prepare (sampleRate, 2.5f);
+
     // Same reasoning as IRLoaderProcessor::prepare(): a sample-rate/block-
-    // size change invalidates an already-prepared Convolution, so reloading
-    // builds a fresh instance and swaps it in atomically rather than
-    // mutating the live one.
-    if (lastLoadedFileA.existsAsFile())
-        loadImpulseResponse (lastLoadedFileA, 0);
-    if (lastLoadedFileB.existsAsFile())
-        loadImpulseResponse (lastLoadedFileB, 1);
+    // size change invalidates an already-prepared Convolution, so rebuilding
+    // whichever source is selected and swapping it in atomically rather
+    // than mutating the live one.
+    appliedSourceA = appliedSourceB = -1;
+    applySourceSelection (0);
+    applySourceSelection (1);
 }
 
 void DynamicCabProcessor::reset()
@@ -125,11 +232,11 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int numChannels = juce::jmin (buffer.getNumChannels(), preparedNumChannels);
     const float mix = mixParam->get();
-    const bool needsDryBlend = mix < 0.999f;
 
-    if (needsDryBlend)
-        for (int ch = 0; ch < numChannels; ++ch)
-            dryScratch.copyFrom (ch, 0, buffer, ch, 0, numSamples);
+    // With any IR loaded the wet is level-matched to the dry so Mix is a
+    // real crossfade (docs/circuits/MixLaw.md) -- see IRLoaderProcessor.
+    for (int ch = 0; ch < numChannels; ++ch)
+        dryScratch.copyFrom (ch, 0, buffer, ch, 0, numSamples);
 
     // Only one slot loaded -- behave exactly like a single-IR cab, ignoring
     // Blend/Dynamics entirely, rather than crossfading toward silence in
@@ -183,12 +290,18 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
             buffer.copyFrom (ch, 0, onlyLoaded, ch, 0, numSamples);
     }
 
-    if (needsDryBlend)
+    for (int ch = 0; ch < juce::jmin (2, numChannels); ++ch)
     {
-        buffer.applyGain (mix);
-        for (int ch = 0; ch < numChannels; ++ch)
-            buffer.addFrom (ch, 0, dryScratch, ch, 0, numSamples, 1.0f - mix);
+        auto* data = buffer.getWritePointer (ch);
+        const auto* dry = dryScratch.getReadPointer (ch);
+        for (int i = 0; i < numSamples; ++i)
+        {
+            wetMatch[(size_t) ch].accumulate (dry[i], data[i]);
+            data[i] = dry[i] * (1.0f - mix) + data[i] * mix * wetMatch[(size_t) ch].gain();
+        }
     }
+    for (int ch = 0; ch < juce::jmin (2, numChannels); ++ch)
+        wetMatch[(size_t) ch].endBlock (numSamples, 1);
 
     const float outGain = juce::Decibels::decibelsToGain (outputGainDb->get());
     if (outGain != 1.0f)
@@ -220,24 +333,41 @@ std::unique_ptr<juce::XmlElement> DynamicCabProcessor::getState() const
 
 void DynamicCabProcessor::setState (const juce::XmlElement& state)
 {
-    EffectProcessor::setState (state); // base: blend/dynamics/mix/output
+    EffectProcessor::setState (state); // base: blend/dynamics/mix/output/sources
 
-    const auto pathA = state.getStringAttribute ("irPathA");
-    if (pathA.isNotEmpty())
+    for (int slot = 0; slot < 2; ++slot)
     {
-        const juce::File fileA (pathA);
-        if (fileA.existsAsFile())
-            loadImpulseResponse (fileA, 0);
-        // else: moved/deleted since the preset was saved -- leave unloaded
-        // rather than fail the whole preset load.
-    }
+        auto* sourceParam = slot == 0 ? sourceParamA : sourceParamB;
+        const auto sourceID = slot == 0 ? "dyncab_source_a" : "dyncab_source_b";
+        const auto pathKey = slot == 0 ? "irPathA" : "irPathB";
 
-    const auto pathB = state.getStringAttribute ("irPathB");
-    if (pathB.isNotEmpty())
-    {
-        const juce::File fileB (pathB);
-        if (fileB.existsAsFile())
-            loadImpulseResponse (fileB, 1);
+        const bool savedByBundledAwareVersion = state.hasAttribute (sourceID);
+        const auto path = state.getStringAttribute (pathKey);
+
+        if (savedByBundledAwareVersion && std::lround (sourceParam->get()) > 0)
+        {
+            // New-format preset that explicitly picked a bundled IR -- that
+            // selection wins over any stale irPath attribute also on it.
+            applySourceSelection (slot);
+            continue;
+        }
+
+        if (! savedByBundledAwareVersion)
+            *sourceParam = 0.0f; // pre-bundled preset: keep its file-or-nothing meaning
+
+        if (path.isNotEmpty())
+        {
+            const juce::File file (path);
+            if (file.existsAsFile())
+            {
+                loadImpulseResponse (file, slot);
+                continue;
+            }
+            // else: moved/deleted since the preset was saved -- leave unloaded
+            // rather than fail the whole preset load.
+        }
+
+        applySourceSelection (slot); // file source with no (valid) file -> clears
     }
 }
 

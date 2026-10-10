@@ -2,11 +2,34 @@
 #include "IconKit.h"
 
 #include <IconData.h>
+#include <IRData.h>
 
 #include <cmath>
 
 namespace openguitarmultifx
 {
+
+namespace
+{
+    struct BundledIRAsset { const char* name; const char* bytes; int byteCount; };
+
+    // Order is the "IR Source" parameter's option order -- default selection
+    // is entry 0, the general-purpose closed-back.
+    const BundledIRAsset bundledIRAssets[] = {
+        { "4x12 Closed-Back", IRData::cab4x12closed_wav, IRData::cab4x12closed_wavSize },
+        { "2x12 Open-Back",   IRData::cab2x12open_wav,   IRData::cab2x12open_wavSize },
+        { "1x12 Open-Back",   IRData::cab1x12open_wav,   IRData::cab1x12open_wavSize },
+    };
+}
+
+namespace bundledCabIRs
+{
+    int count() { return (int) std::size (bundledIRAssets); }
+    juce::String displayName (int index) { return bundledIRAssets[index].name; }
+    juce::String selectorName (int index) { return "Built-in: " + juce::String (bundledIRAssets[index].name); }
+    const char* data (int index) { return bundledIRAssets[index].bytes; }
+    int dataSize (int index) { return bundledIRAssets[index].byteCount; }
+}
 
 IRLoaderProcessor::IRLoaderProcessor (juce::String chainRoleName)
     : name (std::move (chainRoleName))
@@ -22,7 +45,34 @@ IRLoaderProcessor::IRLoaderProcessor (juce::String chainRoleName)
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "ir", name, "|", std::move (mix), std::move (output));
 
-    startTimer (100); // sweeps irSlot -- see DeferredReclaimer
+    // Appended AFTER mix/output so existing param order (and presets) are
+    // untouched -- see the "don't reorder parameter pages" rule. Cab role
+    // only: bundled IRs are all guitar cabinets, meaningless for the reverb
+    // role's space IRs.
+    if (! isReverbRole())
+    {
+        auto source = std::make_unique<juce::AudioParameterFloat> (
+            "ir_source", "IR Source",
+            juce::NormalisableRange<float> (0.0f, (float) bundledCabIRs::count(), 1.0f),
+            1.0f, // a fresh Cab block defaults to the first bundled IR, so amps sound like amps out of the box
+            juce::AudioParameterFloatAttributes()
+                .withStringFromValueFunction ([] (float v, int) -> juce::String
+                {
+                    const int i = (int) std::lround (v);
+                    return i <= 0 ? juce::String ("File") : bundledCabIRs::selectorName (i - 1);
+                })
+                .withValueFromStringFunction ([] (const juce::String& text) -> float
+                {
+                    for (int i = 0; i < bundledCabIRs::count(); ++i)
+                        if (text == bundledCabIRs::selectorName (i) || text == bundledCabIRs::displayName (i))
+                            return (float) (i + 1);
+                    return 0.0f;
+                }));
+        sourceParam = source.get();
+        parameters->addChild (std::move (source));
+    }
+
+    startTimer (100); // sweeps irSlot and applies IR Source changes -- see DeferredReclaimer
 }
 
 IRLoaderProcessor::~IRLoaderProcessor() = default;
@@ -50,6 +100,62 @@ void IRLoaderProcessor::loadImpulseResponse (const juce::File& irFile)
     lastLoadedFile = irFile;
     loadedName = irFile.getFileName();
     irSlot.publish (std::move (conv));
+
+    // A file load is an explicit choice of the "File" source -- keep the
+    // selector in step so the UI shows what's actually playing.
+    if (sourceParam != nullptr)
+        *sourceParam = 0.0f;
+    appliedSource = 0;
+}
+
+void IRLoaderProcessor::loadBundledIR (int index)
+{
+    auto conv = std::make_unique<juce::dsp::Convolution>();
+
+    const int maxSamples = isReverbRole() || sampleRate <= 0.0 ? 0 : (int) (0.15 * sampleRate);
+    // BinaryData bytes are static storage -- Convolution's background decode
+    // may keep reading them after this call returns, which is safe here
+    // specifically because they can never move or be freed.
+    conv->loadImpulseResponse (bundledCabIRs::data (index), (size_t) bundledCabIRs::dataSize (index),
+                               juce::dsp::Convolution::Stereo::yes,
+                               juce::dsp::Convolution::Trim::yes,
+                               (size_t) maxSamples,
+                               juce::dsp::Convolution::Normalise::yes);
+
+    // Load BEFORE prepare: the docs guarantee prepare() fully initialises the
+    // most recently supplied IR, so a bundled cab is active on the very first
+    // process() call instead of fading in on the decode thread.
+    if (sampleRate > 0.0)
+    {
+        juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) preparedBlockSize, (juce::uint32) preparedNumChannels };
+        conv->prepare (spec);
+    }
+
+    loadedName = bundledCabIRs::selectorName (index);
+    irSlot.publish (std::move (conv));
+    // lastLoadedFile is deliberately kept -- flipping the selector back to
+    // "File" restores the user's own IR rather than losing it.
+}
+
+void IRLoaderProcessor::applySourceSelection()
+{
+    const int wanted = sourceParam != nullptr
+        ? juce::jlimit (0, bundledCabIRs::count(), (int) std::lround (sourceParam->get()))
+        : 0;
+
+    if (wanted == appliedSource)
+        return;
+    appliedSource = wanted;
+
+    if (wanted > 0)
+        loadBundledIR (wanted - 1);
+    else if (lastLoadedFile.existsAsFile())
+        loadImpulseResponse (lastLoadedFile); // rewrites appliedSource = 0, same value
+    else
+    {
+        irSlot.publish (nullptr);
+        loadedName.clear();
+    }
 }
 
 void IRLoaderProcessor::clearImpulseResponse()
@@ -57,6 +163,10 @@ void IRLoaderProcessor::clearImpulseResponse()
     irSlot.publish (nullptr);
     lastLoadedFile = juce::File();
     loadedName.clear();
+
+    if (sourceParam != nullptr)
+        *sourceParam = 0.0f;
+    appliedSource = 0;
 }
 
 void IRLoaderProcessor::prepare (double newSampleRate, int maxBlockSize, int numChannels)
@@ -68,16 +178,19 @@ void IRLoaderProcessor::prepare (double newSampleRate, int maxBlockSize, int num
     dryScratch.setSize (preparedNumChannels, maxBlockSize, false, false, true);
 
     // JUCE normalises a loaded IR to 0.125 / sqrt (sum of squares), i.e. an energy gain of -18 dB: a "Reverb" wet path is 18 dB
-    // under the dry until this brings it back (the starting value; WetLevelMatcher then follows the actual IR and signal).
+    // under the dry until this brings it back. A cab IR through guitar content measures closer to -8 dB (the box bump and
+    // presence lift keep more of the passband), so it starts nearer its converged gain. Either way WetLevelMatcher then
+    // follows the actual IR and signal.
+    const float initialGain = isReverbRole() ? 1.0f / 0.125f : 2.5f;
     for (auto& m : wetMatch)
-        m.prepare (sampleRate, 1.0f / 0.125f);
+        m.prepare (sampleRate, initialGain);
 
     // Same reasoning as NAMProcessor::prepare(): a sample-rate/block-size
-    // change invalidates an already-prepared Convolution, so reloading
-    // builds a fresh instance and swaps it in atomically rather than
-    // mutating the live one.
-    if (lastLoadedFile.existsAsFile())
-        loadImpulseResponse (lastLoadedFile);
+    // change invalidates an already-prepared Convolution, so rebuilding
+    // whichever source is selected and swapping it in atomically rather
+    // than mutating the live one. appliedSource = -1 forces the rebuild.
+    appliedSource = -1;
+    applySourceSelection();
 }
 
 void IRLoaderProcessor::reset()
@@ -96,38 +209,32 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
 
     const int numSamples = buffer.getNumSamples();
     const float mix = mixParam->get();
-    const bool matchWet = isReverbRole(); // a Cab keeps its own level; a reverb's wet is level-matched to the dry
-    const bool needsDryBlend = mix < 0.999f || matchWet;
 
-    if (needsDryBlend)
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            dryScratch.copyFrom (ch, 0, buffer, ch, 0, numSamples);
+    // Reaching here means an IR IS loaded, and the Mix law then applies in
+    // full: the wet path is level-matched to the dry so Mix is a real
+    // crossfade (docs/circuits/MixLaw.md). The old "a cab keeps its own
+    // level" carve-out only held while a fresh Cab had no IR and passed
+    // the input through; with a bundled IR active by default the cab would
+    // sit ~8 dB under the dry and noon would no longer be 50/50.
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        dryScratch.copyFrom (ch, 0, buffer, ch, 0, numSamples);
 
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
     conv->process (context);
 
-    if (matchWet)
+    for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
     {
-        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+        auto* data = buffer.getWritePointer (ch);
+        const auto* dry = dryScratch.getReadPointer (ch);
+        for (int i = 0; i < numSamples; ++i)
         {
-            auto* data = buffer.getWritePointer (ch);
-            const auto* dry = dryScratch.getReadPointer (ch);
-            for (int i = 0; i < numSamples; ++i)
-            {
-                wetMatch[(size_t) ch].accumulate (dry[i], data[i]);
-                data[i] = dry[i] * (1.0f - mix) + data[i] * mix * wetMatch[(size_t) ch].gain();
-            }
+            wetMatch[(size_t) ch].accumulate (dry[i], data[i]);
+            data[i] = dry[i] * (1.0f - mix) + data[i] * mix * wetMatch[(size_t) ch].gain();
         }
-        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
-            wetMatch[(size_t) ch].endBlock (numSamples, 1);
     }
-    else if (needsDryBlend)
-    {
-        buffer.applyGain (mix);
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            buffer.addFrom (ch, 0, dryScratch, ch, 0, numSamples, 1.0f - mix);
-    }
+    for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+        wetMatch[(size_t) ch].endBlock (numSamples, 1);
 
     const float outGain = juce::Decibels::decibelsToGain (outputGainDb->get());
     if (outGain != 1.0f)
@@ -151,17 +258,35 @@ std::unique_ptr<juce::XmlElement> IRLoaderProcessor::getState() const
 
 void IRLoaderProcessor::setState (const juce::XmlElement& state)
 {
-    EffectProcessor::setState (state); // base: mix/output gain
+    EffectProcessor::setState (state); // base: mix/output/source params
 
+    const bool savedByBundledAwareVersion = state.hasAttribute ("ir_source");
     const auto path = state.getStringAttribute ("irPath");
-    if (path.isEmpty())
-        return;
 
-    const juce::File file (path);
-    if (file.existsAsFile())
-        loadImpulseResponse (file);
-    // else: the file moved or was deleted since the preset was saved --
-    // leave this block unloaded rather than fail the whole preset load.
+    if (sourceParam != nullptr && savedByBundledAwareVersion && std::lround (sourceParam->get()) > 0)
+    {
+        // New-format preset that explicitly picked a bundled IR -- that
+        // selection wins over any stale irPath attribute also on the preset.
+        applySourceSelection();
+        return;
+    }
+
+    if (! savedByBundledAwareVersion && sourceParam != nullptr)
+        *sourceParam = 0.0f; // pre-bundled preset: "no source recorded" meant file-or-nothing, keep that meaning
+
+    if (path.isNotEmpty())
+    {
+        const juce::File file (path);
+        if (file.existsAsFile())
+        {
+            loadImpulseResponse (file);
+            return;
+        }
+        // else: the file moved or was deleted since the preset was saved --
+        // leave this block unloaded rather than fail the whole preset load.
+    }
+
+    applySourceSelection(); // file source with no (valid) file -> clears
 }
 
 void IRLoaderProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const

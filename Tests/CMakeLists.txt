@@ -225,6 +225,7 @@ target_link_libraries(OpenGuitarMultiFx_Tests PRIVATE
   nam_core
   chowdsp::chowdsp_wdf
   OpenGuitarMultiFx_Icons
+  OpenGuitarMultiFx_IRs
 )
 
 # The full suite runs as ONE serial ctest entry on purpose: normal suites
@@ -280,4 +281,5 @@ target_link_libraries(OpenGuitarMultiFx_RenderFx PRIVATE
   nam_core
   chowdsp::chowdsp_wdf
   OpenGuitarMultiFx_Icons
+  OpenGuitarMultiFx_IRs
 )
