@@ -589,7 +589,7 @@ double SunnModelTStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, dou
     const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
     const double biasTrim = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
     const double presence = juce::jlimit (0.0, 1.0, (double) lastKnobs.presence);
-    ch.bmRail = 1.0 - (0.4 + 1.2 * feel) * (1.0 - sagRailLookup (ch.bmEnvelope));
+    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double asym = 0.3 * (biasTrim - 0.5) * bmYmax;
     const double drive = toneVoltage + asym;
