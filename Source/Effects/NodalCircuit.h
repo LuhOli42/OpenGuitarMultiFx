@@ -34,8 +34,10 @@ namespace openguitarmultifx
     - **Ideal op-amps** (V+ = V-, output current unconstrained), solved
       exactly by replacing the output node's KCL row with the virtual-short
       constraint -- no extra unknown. Same "ideal op-amp" fidelity level as
-      every other circuit in this project (no gain-bandwidth, slew or rail
-      clipping).
+      every other circuit in this project (no gain-bandwidth or slew); rail
+      clipping is optional per op-amp via addSaturatingOpAmp()/
+      addRailLimitedOpAmp(), which is where a driven stage's distortion comes
+      from.
     - Diodes (Shockley), BJTs (Ebers-Moll, NPN/PNP) and N-channel JFETs
       (Shichman-Hodges). The BJT and JFET equations are EbersMollBJT's and
       ShichmanHodgesJFET's own `evaluate()` -- one home for each device
@@ -274,11 +276,25 @@ public:
         factorisation (built lazily), the previous sample's state is tried first, and a state is consistent when
         the ideal answer is inside the rails (state 0), or when the (+)/(-) difference has the sign that keeps
         pushing into the rail (states 1, 2). No extra Newton port, no finite-gain error. At most ONE per
-        NodalCircuit (every block that needs one has exactly one). */
+        NodalCircuit (every block that needs one has exactly one); for a second or later rail-limited op-amp in
+        the same block use addRailLimitedOpAmp(). */
     void addSaturatingOpAmp (Node inPlus, Node inMinus, Node out, const OpAmpSpec& spec)
     {
         satOpIndex = (int) opAmps.size();
         satSpec = spec;
+        opAmps.push_back ({ inPlus, inMinus, out, 0.0 });
+    }
+
+    /** The same "output runs out of swing" as addSaturatingOpAmp(), but as a Newton port instead of the
+        three-state switch: the port measures V(out) and injects, into the op-amp's own constraint row, the
+        input-referred error a real output stage needs to sit that far out -- zero inside the rails, a steep
+        cubic past them, so the output lands ~40 mV beyond the rail while the virtual short is dropped and the
+        inputs stop following. One Newton port each, no per-block limit, so it is the tool for the second and
+        later saturating op-amps in a block (and for rails on a follower or inside a block that already spends
+        its addSaturatingOpAmp() elsewhere); the exact switch stays cheaper for the first. */
+    void addRailLimitedOpAmp (Node inPlus, Node inMinus, Node out, const OpAmpSpec& spec)
+    {
+        railDevices.push_back ({ out, spec.lowRail, spec.highRail });
         opAmps.push_back ({ inPlus, inMinus, out, 0.0 });
     }
 
@@ -499,7 +515,7 @@ public:
 
         if (unknownCount > maxUnknowns)
             return false; // netlist too large for one block -- split it, see the class doc
-        if ((int) (diodes.size() + 2 * bjts.size() + 2 * jfets.size() + 2 * triodes.size() + 2 * pentodes.size()) > maxPortsV)
+        if ((int) (diodes.size() + railDevices.size() + 2 * bjts.size() + 2 * jfets.size() + 2 * triodes.size() + 2 * pentodes.size()) > maxPortsV)
             return false; // too many nonlinear devices for one block
 
         isOpAmpRow.assign ((size_t) unknownCount, false);
@@ -654,6 +670,9 @@ public:
         double cur[maxPortsI] = {};
         bool ok = false;
 
+        bool railsIdle = false;
+        double u0[maxPortsV];
+
         // A saturating op-amp can need up to a few passes (ideal -> held at a rail -> back); everything else, one.
         for (int attempt = 0; attempt < 4; ++attempt)
         {
@@ -661,7 +680,6 @@ public:
             if (! M.valid)
                 break;
 
-            double u0[maxPortsV];
             for (int j = 0; j < nv; ++j)
             {
                 double v = 0.0;
@@ -670,7 +688,8 @@ public:
                 u0[j] = v;
             }
 
-            ok = newtonPorts (u0, M.W, M.K, cur);
+            railsIdle = railPortsInactive (u0);
+            ok = railsIdle || newtonPorts (u0, M.W, M.K, cur);
             if (! ok || satOpIndex < 0)
                 break;
 
@@ -682,6 +701,20 @@ public:
 
         if (! ok)
             return false;
+
+        if (railsIdle)
+        {
+            // The ports' converged state IS the linear response this sample; keep the warm
+            // start in step so the predictor doesn't extrapolate from stale values.
+            for (int k = 0; k < ni; ++k)
+                cur[k] = 0.0;
+            for (int j = 0; j < nv; ++j)
+            {
+                uStatePrev2[j] = uStatePrev[j];
+                uStatePrev[j] = uState[j];
+                uState[j] = u0[j];
+            }
+        }
 
         Model& M = models[(size_t) satMode];
         for (int c = 0; c < ns; ++c)
@@ -747,6 +780,7 @@ private:
     struct InductorGroup { int first = 0, n = 0; std::vector<double> inverse; }; // inverse inductance matrix, row-major
     struct Src { Node node; double volts; bool current = false; };
     struct Op { Node plus, minus, out; double offset; double invGain = 0.0, cm = 0.0; }; // (1+cm) V(plus) - (1-cm) V(minus) - invGain V(out) = offset
+    struct RailDevice { Node out; double lo, hi; }; // a rail-limited op-amp's output bounds (see addRailLimitedOpAmp)
     struct Dio { Node a, k; double Is, nVt; };
     struct Bjt { Node c, b, e; bool pnp; EbersMollBJT model; double iSat = 0.0; };
     struct Jfet { Node d, g, s; ShichmanHodgesJFET model; double assumedVds = 0.0; };
@@ -758,6 +792,7 @@ private:
     std::vector<Cap> capacitors;
     std::vector<Src> sources;
     std::vector<Op> opAmps;
+    std::vector<RailDevice> railDevices;
     std::vector<Dio> diodes;
     struct BjtDynamics { int bjt; int capBe; double tauF, cje; };
     std::vector<BjtDynamics> bjtDynamics;
@@ -839,7 +874,9 @@ private:
     double Elast[maxExcite] = {}, curLast[maxPortsI] = {};
     int lastMode = 0;
     std::vector<int> sourceOfNode;           // node -> index into `sources`, or -1
-    struct CurrentPort { Node plus, minus; double sign; };
+    // `constraint` lets the port inject into an op-amp's constraint row itself (isOpAmpRow): the rail device
+    // adds its input-referred error there, where a plain node current must never go.
+    struct CurrentPort { Node plus, minus; double sign; bool constraint = false; };
     struct VoltagePort { Node plus, minus; };
     struct DeviceMap { int kind; int v0, i0; int index; int nv, ni; }; // kind: 0 diode, 1 bjt, 2 jfet
     std::vector<CurrentPort> currentPorts;
@@ -1210,6 +1247,13 @@ private:
             const auto op = t.model.evaluate (vAt (t.g, xv) - vAt (t.k, xv), vAt (t.p, xv) - vAt (t.k, xv), t.vg2);
             stampTube (t.p, t.g, t.k, op.ip, op.dip_dvgk, op.dip_dvpk, op.ig, op.dig_dvgk);
         }
+
+        // railDevices are NOT stamped here: they are a transient-solve device (a Newton port into the
+        // constraint row, see buildPorts). In the DC solve their cubic would inject a ~1e5 V error term
+        // whenever an intermediate point sits outside the fixed rails -- solveDc's source stepping always
+        // passes through such points (a stepped-up supply puts every node below the low rail), and the
+        // error then blows up through high-gain stages. A DC point outside the rails is meaningless
+        // anyway, so the DC paths treat a rail-limited op-amp as ideal.
     }
 
     bool hasNonlinear() const noexcept { return ! diodes.empty() || ! bjts.empty() || ! jfets.empty() || ! triodes.empty() || ! pentodes.empty(); }
@@ -1594,6 +1638,8 @@ private:
             j = { false, 0.0, 0.0 };
         for (auto& l : portLimit)
             l = 1.0;
+        for (auto& r : portRail)
+            r = -1;
         diodePairs.clear();
 
         auto addJunction = [this] (double Is, double vt)
@@ -1726,7 +1772,35 @@ private:
         for (size_t i = 0; i < pentodes.size(); ++i)
             addTube (8, i, pentodes[i].p, pentodes[i].g, pentodes[i].k);
 
+        // Rail-limited op-amps (kind 9): one port per op-amp -- the voltage port reads V(out) and the current
+        // port injects railError(V(out)) into the constraint row (V+ - V- = offset + i), so out = u0 - i(out):
+        // demanded overshoot past a rail is answered by the steep cubic error, landing out ~40 mV over the rail.
+        for (size_t i = 0; i < railDevices.size(); ++i)
+        {
+            const auto& r = railDevices[i];
+            if (indexOf[(size_t) r.out] < 0)
+                continue; // output pinned by a source: nothing to saturate
+            const size_t vp = voltagePorts.size();
+            deviceMaps.push_back ({ 9, (int) vp, (int) currentPorts.size(), (int) i, 1, 1 });
+            voltagePorts.push_back ({ r.out, ground });
+            if (vp < (size_t) maxPortsV)
+            {
+                portLimit[vp] = 4.0; // a cubic, not an exponential: several volts per step are safe
+                portRail[vp] = (int) i;
+            }
+            currentPorts.push_back ({ r.out, ground, -1.0, true });
+        }
+
+        // When every port in the circuit is a rail device, an all-inside-the-rails sample is
+        // EXACTLY linear (i = 0 for every port), so the transient solve can skip Newton outright
+        // instead of paying a full port solve per sample -- see solveDevices().
+        allRailPorts = ! deviceMaps.empty();
+        for (const auto& dm : deviceMaps)
+            allRailPorts = allRailPorts && dm.kind == 9;
     }
+
+    bool allRailPorts = false;
+    int portRail[maxPortsV] {}; // railDevices index that owns each voltage port, or -1
 
     double portCoeff (const double* w, Node n) const noexcept
     {
@@ -1752,8 +1826,8 @@ private:
             const auto& cp = currentPorts[k];
             const int ip = cp.plus > 0 ? indexOf[(size_t) cp.plus] : -1;
             const int im = cp.minus > 0 ? indexOf[(size_t) cp.minus] : -1;
-            if (ip >= 0 && ! isOpAmpRow[(size_t) ip]) e[ip] += cp.sign;
-            if (im >= 0 && ! isOpAmpRow[(size_t) im]) e[im] -= cp.sign;
+            if (ip >= 0 && (! isOpAmpRow[(size_t) ip] || cp.constraint)) e[ip] += cp.sign;
+            if (im >= 0 && (! isOpAmpRow[(size_t) im] || cp.constraint)) e[im] -= cp.sign;
 
             luBackSubstitute (e);
             for (int i = 0; i < unknownCount; ++i)
@@ -1930,6 +2004,13 @@ private:
                                          : -limitJunction (-guess, std::max (-uState[j], 0.0), junction[j].vt2, junction[j].vcrit2);
                 else if (junction[j].isJunction)
                     guess = limitJunction (guess, uState[j], junction[j].vt, junction[j].vcrit);
+                else if (portRail[j] >= 0)
+                {
+                    // A rail-limited output always lands within a knee of a rail: keep the
+                    // extrapolated start in reach so a steep cubic can't blow up the guess.
+                    const auto& r = railDevices[(size_t) portRail[j]];
+                    guess = std::min (std::max (guess, r.lo - 0.3), r.hi + 0.3);
+                }
                 u[j] = guess;
             }
         }
@@ -2237,6 +2318,24 @@ private:
         return true;
     }
 
+    /** True when the device ports can contribute nothing this sample: every port is a rail
+        device AND every no-device port voltage sits inside its rails, so i = 0 exactly and
+        the solution is the linear response. Cheap check, keeps a rail-only block as cheap as
+        a purely linear one whenever the op-amps aren't clipping. */
+    bool railPortsInactive (const double* u0) const noexcept
+    {
+        if (! allRailPorts)
+            return false;
+        const int nv = (int) voltagePorts.size();
+        for (int j = 0; j < nv; ++j)
+        {
+            const auto& r = railDevices[(size_t) portRail[j]];
+            if (u0[j] < r.lo || u0[j] > r.hi)
+                return false;
+        }
+        return true;
+    }
+
     /** DC / relaxation path: node vector from the no-device response `xLinear`. */
     bool solveDevices() noexcept
     {
@@ -2255,6 +2354,18 @@ private:
         {
             const auto& vp = voltagePorts[(size_t) j];
             u0[j] = nodeOf (vp.plus, xLinear) - nodeOf (vp.minus, xLinear);
+        }
+        if (railPortsInactive (u0))
+        {
+            for (int j = 0; j < nv; ++j)
+            {
+                uStatePrev2[j] = uStatePrev[j];
+                uStatePrev[j] = uState[j];
+                uState[j] = u0[j];
+            }
+            for (int i = 0; i < unknownCount; ++i)
+                x[(size_t) i] = xLinear[i];
+            return true;
         }
         if (! newtonPorts (u0, W, K, cur))
             return false;
@@ -2301,6 +2412,20 @@ private:
             return 0.0;
         const int i = indexOf[(size_t) n];
         return i >= 0 ? xv[i] : knownVoltage[(size_t) n];
+    }
+
+    // The input-referred error a real output stage needs to sit `u` volts at its output: zero inside the
+    // rails, a steep cubic past them (a 10 V demanded overshoot lands the output ~46 mV beyond the rail).
+    static constexpr double railKnee = 1.0e4;
+    static double railError (double u, const RailDevice& r) noexcept
+    {
+        const double d = u > r.hi ? u - r.hi : u < r.lo ? u - r.lo : 0.0;
+        return railKnee * d * d * d;
+    }
+    static double railErrorDeriv (double u, const RailDevice& r) noexcept
+    {
+        const double d = u > r.hi ? u - r.hi : u < r.lo ? u - r.lo : 0.0;
+        return 3.0 * railKnee * d * d;
     }
 
     /** Device currents (one per current port) and d(current)/d(port voltage). */
@@ -2383,6 +2508,12 @@ private:
                 const double e2 = std::exp (std::min (-u[m.v0] / d2.nVt, 40.0));
                 cur[m.i0] = d1.Is * (e1 - 1.0) - d2.Is * (e2 - 1.0);
                 D[m.i0][m.v0] = d1.Is / d1.nVt * e1 + d2.Is / d2.nVt * e2;
+            }
+            else if (m.kind == 9)
+            {
+                const auto& r = railDevices[(size_t) m.index];
+                cur[m.i0] = railError (u[m.v0], r);
+                D[m.i0][m.v0] = railErrorDeriv (u[m.v0], r);
             }
             else
             {

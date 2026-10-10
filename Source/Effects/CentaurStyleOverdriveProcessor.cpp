@@ -121,8 +121,10 @@ void CentaurStyleOverdriveProcessor::buildChannel (Channel& ch, double /*sr*/)
         ch.rB2BG = c.addResistor (B2, BG, 50.0e3); // gang 2: pin1 -> wiper
         ch.rBGVB = c.addResistor (BG, vb, 50.0e3); // gang 2: wiper -> pin3
 
-        // Summing amplifier (IC2_A), inverting, (+) on 4.5 V.
-        c.addOpAmp (vb, s, u);
+        // Summing amplifier (IC2_A), inverting, (+) on 4.5 V. The 2 k feed-forward legs (R17/R18) give it up to
+        // ~392k/2k = 196 on their nodes, so driven hard it too runs into the same TL072 rails as the gain stage --
+        // the real pedal clips here as well; rail-limited, not ideal.
+        c.addRailLimitedOpAmp (vb, s, u, tl072);
         c.addResistor (s, u, 392.0e3);          // R20
         c.addCapacitor (s, u, 820.0e-12);       // C13
 
@@ -143,10 +145,14 @@ void CentaurStyleOverdriveProcessor::buildChannel (Channel& ch, double /*sr*/)
         ch.srcB2 = c.addSource (B, vBias);
         ch.srcU = c.addSource (un, vBias);
 
-        // Active treble stage (IC2_B, inverting).
+        // Active treble stage (IC2_B, inverting): its input is the summing amp's output, which driven hard is
+        // already at the rails, so this stage too is rail-limited on the same +-9 V supply.
+        NodalCircuit::OpAmpSpec tl072;
+        tl072.lowRail = vBias - 7.5;
+        tl072.highRail = vBias + 7.5;
         c.addResistor (un, v, 100.0e3);            // R22
         c.addResistor (v, w, 100.0e3);             // R24
-        c.addOpAmp (vb, v, w);
+        c.addRailLimitedOpAmp (vb, v, w, tl072);
         ch.rToneTop = c.addResistor (un, wT, 6.8e3); // R21 + treble pot pin3 -> wiper
         c.addCapacitor (wT, v, 3.9e-9);            // C14
         ch.rToneBot = c.addResistor (wT, w, 9.7e3);  // treble pot wiper -> pin1 + R23

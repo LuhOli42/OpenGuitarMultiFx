@@ -130,6 +130,59 @@ public:
             expectGreaterThan (worstFollowError, 0.5);
         }
 
+        beginTest ("rail-limited op-amp: ideal inside the rails, stops ~a knee past them, and several fit in one circuit");
+        {
+            NodalCircuit c;
+            c.setIntegrationTheta (0.5);
+            const auto in = c.addNode(), inv = c.addNode(), out = c.addNode(), vb = c.addNode();
+            const auto buf = c.addNode();
+            const int src = c.addSource (in, 4.5);
+            c.addSource (vb, 4.5);
+            NodalCircuit::OpAmpSpec spec;
+            spec.lowRail = 1.5;
+            spec.highRail = 7.5;
+            c.addRailLimitedOpAmp (in, inv, out, spec);
+            c.addResistor (inv, out, 9000.0);
+            c.addResistor (inv, vb, 1000.0);
+            // A second rail-limited op-amp in the SAME circuit (the three-state addSaturatingOpAmp allows
+            // only one): a unity-gain follower after the first stage.
+            c.addRailLimitedOpAmp (out, buf, buf, spec);
+            c.addResistor (buf, vb, 10000.0);
+            c.setInitialGuess (inv, 4.5);
+            c.setInitialGuess (out, 4.5);
+            c.setInitialGuess (buf, 4.5);
+            expect (c.prepare (sr));
+
+            // Non-inverting gain 10 inside the rails: the rail device contributes nothing there.
+            const double g = sineGain (c, src, out, 1000.0, 0.01, 4.5, 4.5);
+            logMessage ("small-signal gain = " + juce::String (g, 4) + " (ideal 10)");
+            expectWithinAbsoluteError (g, 10.0, 0.01);
+
+            // 2 V in demands 24.5 V out: the output must stop just past the rails (the soft knee of the
+            // cubic rail device), and the inverting input must stop following the input.
+            double top = -1.0e9, bottom = 1.0e9, bufTop = -1.0e9, worstFollowError = 0.0;
+            bool solved = true;
+            for (int n = 0; n < (int) (0.1 * sr); ++n)
+            {
+                const double vin = 4.5 + 2.0 * std::sin (2.0 * juce::MathConstants<double>::pi * 200.0 * (double) n / sr);
+                c.setSource (src, vin);
+                solved = c.solveSample() && solved;
+                top = juce::jmax (top, c.voltage (out));
+                bottom = juce::jmin (bottom, c.voltage (out));
+                bufTop = juce::jmax (bufTop, c.voltage (buf));
+                worstFollowError = juce::jmax (worstFollowError, std::abs (c.voltage (inv) - c.voltage (in)));
+            }
+            logMessage ("output range [" + juce::String (bottom, 2) + ", " + juce::String (top, 2) + "] V, follower peak "
+                        + juce::String (bufTop, 2) + " V, worst V(+)-V(-) = " + juce::String (worstFollowError, 2));
+            expect (solved);
+            // On the rail, but a soft knee past it rather than the exact three-state switch's landing.
+            expect (top > 7.5 && top < 7.5 + 0.2);
+            expect (bottom < 1.5 && bottom > 1.5 - 0.2);
+            // The second rail-limited stage also stops at the high rail: it is NOT 10x (4.5 - 1.5).
+            expect (bufTop > 7.5 && bufTop < 7.5 + 0.2);
+            expectGreaterThan (worstFollowError, 0.5);
+        }
+
         beginTest ("anti-parallel diode clipper DC point matches an independent scalar solve");
         {
             NodalCircuit c;
