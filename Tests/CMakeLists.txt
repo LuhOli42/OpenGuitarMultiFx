@@ -39,6 +39,9 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   AC30StyleAmplifierProcessorTests.cpp
   TrainwreckExpressStyleAmplifierProcessorTests.cpp
   KometConcordeStyleAmplifierProcessorTests.cpp
+  GibsonEH150StyleAmplifierProcessorTests.cpp
+  GarnetHerzogStyleAmplifierProcessorTests.cpp
+  RiveraKnuckleheadStyleAmplifierProcessorTests.cpp
   MatchlessHC30StyleAmplifierProcessorTests.cpp
   HotCat30StyleAmplifierProcessorTests.cpp
   CarmenGhiaStyleAmplifierProcessorTests.cpp
@@ -203,6 +206,9 @@ set(OGMFX_SOURCES
   ../Source/Effects/TraceElliotGP12StyleAmplifierProcessor.cpp
   ../Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   ../Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
+  ../Source/Effects/GibsonEH150StyleAmplifierProcessor.cpp
+  ../Source/Effects/GarnetHerzogStyleAmplifierProcessor.cpp
+  ../Source/Effects/RiveraKnuckleheadStyleAmplifierProcessor.cpp
   ../Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
   ../Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
   ../Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp

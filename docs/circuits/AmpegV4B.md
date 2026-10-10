@@ -54,4 +54,3 @@ replaced by an envelope-followed sag rail feeding an asymmetric tanh knee, a DC 
 low-shelf speaker-magnetics correction, fitted to this file's own reference netlist. The full netlist
 stays in the source for calibration and is what the unit tests exercise (`reducedOrder = false` at the
 top of the test).
-
