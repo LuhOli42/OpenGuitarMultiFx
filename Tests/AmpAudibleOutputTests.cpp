@@ -33,7 +33,13 @@ public:
                                  "JCM800StyleAmplifier", "AC15StyleAmplifier", "AC30StyleAmplifier",
                                  "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier", "DualRectifierStyleAmplifier",
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
-                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier" })
+                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier",
+                                 "MatchlessHC30StyleAmplifier", "HotCat30StyleAmplifier",
+                                 "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier",
+                                 "DumbleSteelStringStyleAmplifier", "SunnModelTStyleAmplifier",
+                                 "FryetteDeliveranceD120StyleAmplifier", "BognerUberschallStyleAmplifier",
+                                 "AmpegB15StyleAmplifier", "AmpegV4BStyleAmplifier",
+                                 "MesaBass400PlusStyleAmplifier", "Acoustic360StyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
@@ -101,7 +107,13 @@ public:
                                  "JCM800StyleAmplifier", "AC15StyleAmplifier", "AC30StyleAmplifier",
                                  "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier", "DualRectifierStyleAmplifier",
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
-                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier" })
+                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier",
+                                 "MatchlessHC30StyleAmplifier", "HotCat30StyleAmplifier",
+                                 "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier",
+                                 "DumbleSteelStringStyleAmplifier", "SunnModelTStyleAmplifier",
+                                 "FryetteDeliveranceD120StyleAmplifier", "BognerUberschallStyleAmplifier",
+                                 "AmpegB15StyleAmplifier", "AmpegV4BStyleAmplifier",
+                                 "MesaBass400PlusStyleAmplifier", "Acoustic360StyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);

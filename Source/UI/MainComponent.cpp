@@ -77,7 +77,15 @@ namespace
             || displayName == "Deluxe Reverb-Style Amplifier" || displayName == "JC-120-Style Amplifier" || displayName == "JTM45-Style Amplifier"
             || displayName == "JCM800-Style Amplifier" || displayName == "AC15-Style Amplifier" || displayName == "AC30-Style Amplifier"
             || displayName == "SLO-100-Style Amplifier" || displayName == "Mark IIC+-Style Amplifier" || displayName == "Dual Rectifier-Style Amplifier" || displayName == "5150-Style Amplifier" || displayName == "Powerball-Style Amplifier" || displayName == "Rockerverb-Style Amplifier" || displayName == "SVT-Style Amplifier"
-            || displayName == "Trainwreck Express-Style Amplifier" || displayName == "Komet Concorde-Style Amplifier")
+            || displayName == "Trainwreck Express-Style Amplifier" || displayName == "Komet Concorde-Style Amplifier"
+            || displayName == "Divided by 13 FTR 37-Style Amplifier" || displayName == "Carr Rambler-Style Amplifier"
+            || displayName == "HC-30-Style Amplifier" || displayName == "Hot Cat 30-Style Amplifier"
+            || displayName == "Carmen Ghia-Style Amplifier" || displayName == "Astroverb 16-Style Amplifier"
+            || displayName == "Dumble Steel String-Style Amplifier" || displayName == "Sunn Model T-Style Amplifier"
+            || displayName == "Fryette Deliverance D120-Style Amplifier" || displayName == "Bogner Uberschall-Style Amplifier"
+            || displayName == "B-15-Style Amplifier" || displayName == "V4B-Style Amplifier"
+            || displayName == "Bass 400+-Style Amplifier" || displayName == "360-Style Amplifier"
+            || displayName == "Trace Elliot GP12-Style Amplifier")
             return "Modeled Amps";
         if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")
             return "Neural";
@@ -95,7 +103,8 @@ namespace
             || displayName == "Uni-Vibe" || displayName == "Pitch Mod")
             return "Modulation";
         if (displayName == "Pitch Shift" || displayName == "Octaver" || displayName == "Harmonizer"
-            || displayName == "Parametric EQ" || displayName == "Ring Mod" || displayName.endsWith (" Equalizer"))
+            || displayName == "Parametric EQ" || displayName == "Ring Mod" || displayName.endsWith (" Equalizer")
+            || displayName == "Mu-Tron III-Style Filter")
             return "Filter/FX";
         return "Other"; // shouldn't normally happen -- a new effect type that hasn't been categorised yet
     }
