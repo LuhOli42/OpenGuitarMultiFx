@@ -45,6 +45,26 @@ namespace
         return p;
     }
 
+    /** The PI's own 12AX7, kg1 softened 24x -- the same cure the AC30, JCM800, SLO100 and Deluxe
+        Reverb references needed. At the published fit this power block flops rail-to-rail in a
+        ~2 Hz limit cycle on silence: the level-shifter path is DC-coupled, so forward gain does
+        not collapse at LF the way a cap-coupled amp's does, and any whisper through the NFB
+        return re-triggers the hop (opening the loop is the only thing that silences it --
+        measured rms ~0.4 closed vs ~0.0003 open). Audible as rumble/"DC" at Master = 0 and a
+        thump when the knob moves. The LTP is the metastable element, and its kg1 softening is
+        free: the pair is tail-fed and self-biased, so the DC points hold while the loop's
+        incremental gain drops below what sustains the hop -- most of the fix; the rest is
+        keeping the loop's LF poles sub-Hz so the feedback stays degenerative at the flop
+        frequency (see C8/C11 below). The 6550s keep the published set --
+        they are fixed-bias at -45 V, so kg1 softening would starve the ~0.3 A idle they owe,
+        and Gg/kp moved the flop the wrong way. */
+    KorenTriode::Parameters triode12AX7Pi()
+    {
+        auto p = triode12AX7();
+        p.kg1 *= 24.0;
+        return p;
+    }
+
     KorenPentode::Parameters pentode6550Triple()
     {
         // Koren's published 6550 set (mu 7.9, Ex 1.35, Kg1 890, Kg2 4200, Kp 60, Kvb 24). Three identical
@@ -401,8 +421,8 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (g7, g1, 1.0e3);                   // R7 grid stopper
         c.addResistor (g1, bn, 470.0e3);                 // R8 leak (returns to the tail node)
         c.addResistor (g2, bn, 470.0e3);
-        c.addTriode (pa, g1, k, triode12AX7());
-        c.addTriode (pb, g2, k, triode12AX7());
+        c.addTriode (pa, g1, k, triode12AX7Pi());
+        c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
         c.addCapacitor (g2, pb, cgp);
         c.addResistor (vpi, pa, 100.0e3);                // R12
@@ -425,9 +445,22 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         // output grids at ~-45 V -- the bias IS the divider's DC operating point.
         const auto gd1 = c.addNode(), gd2 = c.addNode(), pd1 = c.addNode(), pd2 = c.addNode(),
                    kd1 = c.addNode(), kd2 = c.addNode(), m1 = c.addNode(), m2 = c.addNode(),
-                   nab = c.addNode(), nbb = c.addNode();
-        c.addCapacitor (pa, gd1, 0.047e-6);              // C8
-        c.addCapacitor (pb, gd2, 0.047e-6);              // C11
+                   nab = c.addNode(), nbb = c.addNode(),
+                   gs1 = c.addNode(), gs2 = c.addNode();
+        // C8/C11 are much larger than the schematic estimate for a reason, not fidelity to
+        // the printed value: every high-pass pole in the feedback loop adds up to +90 deg of
+        // phase LEAD below its corner, and a stack of them at audio-band corners flips the
+        // global NFB positive at the ~0.25 Hz the motorboat relaxation runs at. Pushing all
+        // the loop's LF poles far below the output transformer's own LF corner keeps the
+        // feedback degenerative down there, so the ~1 s kick from a driven input decays
+        // instead of re-triggering. (Real SVTs ship electrolytics here, not film caps.)
+        c.addCapacitor (pa, gs1, 2.2e-6);               // C8
+        c.addCapacitor (pb, gs2, 2.2e-6);               // C11
+        // Grid stoppers on the driver grids (same value the 6550s get): they limit how hard
+        // a kick from the PI can slam the 12AU7 grids into conduction and charge C8/C11
+        // asymmetrically -- one of the hysteresis paths the relaxation can ride on.
+        c.addResistor (gs1, gd1, 47.0e3);
+        c.addResistor (gs2, gd2, 47.0e3);
         c.addResistor (gd1, gnd, 470.0e3);               // R19
         c.addResistor (gd2, gnd, 470.0e3);               // R27
         c.addTriode (pd1, gd1, kd1, triode12AU7());
@@ -515,7 +548,7 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         // SVT faceplate -- a fixed network), with the same stray-capacitance pole as the other amps.
         const auto fp = c.addNode();
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        c.addCapacitor (fp, g2, 0.1e-6);
+        c.addCapacitor (fp, g2, 2.2e-6);               // same "poles well below the OT corner" rule as C8/C11
         c.addCapacitor (fp, gnd, 1.5e-9);
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
