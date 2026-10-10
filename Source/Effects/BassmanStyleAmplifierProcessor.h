@@ -49,13 +49,18 @@ public:
     /** Full-order netlist keeps the original 8 ohm mapping -- the rescale above only compensates the reduced path. */
     static constexpr double fullOutputScale = 1.0 / 40.0;
 
-    // ---- reduced-order power stage (2026-09-27) ----
+    // ---- reduced-order power stage (2026-09-27, control folding 2026-10-10) ----
     // Same mechanism as SuperLeadStyleAmplifierProcessor (see that header's own note for the full reasoning, the
     // calibration methodology and the found/fixed speaker-level bug): the phase inverter, power tubes, output transformer,
     // global feedback and physical speaker are replaced by a fitted, constant-cost curve; the tone stack stays real and
     // always solved. Default false here so every OTHER test in BassmanStyleAmplifierProcessorTests.cpp keeps working
     // unchanged; EffectRegistry.cpp turns it on centrally for the real app. docs/circuits/Bassman5F6A.md has the
     // calibration data and verified numbers.
+    // The power-side controls are folded into the behavioural stage (the canonical recipe of the PR #31/#41 amps):
+    // Tube Feel scales the sag depth, Bias shifts the saturator's operating point, Presence scales the fitted HF
+    // shelf, and Power Drive is a real two-leg divider across the tone-stack output (restoring the ~1M load the
+    // full netlist's PI grid leak puts on wTone). Every fold is centred on the shipped defaults, so at default knobs
+    // the stage is bit-identical to the calibrated fit it replaces.
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 2.00;   // closed-loop small-signal gain, toneStackOut -> speaker, at the nominal rail
     static constexpr double bmYmax = 0.092;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
@@ -126,8 +131,10 @@ private:
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rRect = 0, rSpkRe = 0, rSpkRp = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMid = 0, rPresTop = 0, rPresBottom = 0;
+        int rPowerTop = 0, rPowerBottom = 0;             // reducedOrder only: Power Drive two-leg divider
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wSlope = 0, wOut = 0, wPlateA = 0, wPlateB = 0, wGridA = 0, wTail = 0, wTone = 0, wPP1 = 0, wPP2 = 0, wPowerGridA = 0;
+        NodalCircuit::Node wPowerDrive = 0;              // reducedOrder only: the divider's wiper (feeds behavioralPowerStage)
         double screenDropA = 0.0, screenDropB = 0.0;
         double vScreen = 450.0;
 
