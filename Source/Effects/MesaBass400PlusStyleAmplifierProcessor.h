@@ -9,27 +9,23 @@ namespace openguitarmultifx
 {
 
 /**
-    An Mesa/Boogie Bass 400+-style bass amplifier, modelled at component level on NodalCircuit from the amp's
-    1971 factory schematic (see docs/circuits/MesaBass400Plus.md -- read that file to understand this processor).
+    A Mesa/Boogie Bass 400+-style bass amplifier, modelled at component level on NodalCircuit from the
+    amp's schematic (see docs/circuits/MesaBass400Plus.md -- read that file to understand this processor).
 
-    Two solver blocks plus a small power-supply model:
-      1. the preamp -- the 6K11/12AX7 front end's gain stages around the Ultra-Lo network and the Volume pot, the
-         Baxandall-style bass/treble tone section, the V2:B recovery stage, the tapped-inductor mid trap
-         with its 3-position frequency select, the Master pot and the V2:A cathode-follower output;
-      2. everything the global feedback loop passes through -- the 12DW7 long-tailed-pair phase splitter
-         (modelled with the 12AX7 parameter set), the two 12AU7 common-cathode drivers with their resistive
-         level-shifters (which is where the output tubes' -50 V bias actually comes from), the four 7027As
-         as two push-pull pairs, the output
-         transformer (coupled inductors), the speaker and the negative feedback into the phase splitter;
-      3. the rectifier / filter supply, whose sag under load is a large part of the character.
+    Four solver blocks:
+      1. the preamp -- two 12AX7 gain stages around the Volume pot (with its pull-Bright), the passive
+         bass/treble/middle tone section and the recovery stage;
+      2. the seven-band graphic equalizer -- a feedback EQ around a finite-gain stage, each slider a pot
+         between the input and output buses with a series L-C trap on its wiper, exactly as in the amp;
+      3. everything the global feedback loop passes through -- the long-tailed-pair phase splitter, the
+         two common-cathode drivers with their resistive level-shifters (which set the output tubes'
+         ~-68 V bias), the twelve 6L6GCs as two push-pull sextets, the output transformer (coupled
+         inductors), the speaker and the negative feedback into the phase splitter;
+      4. the rectifier / filter supply.
 
-    Controls, page 1: Input (0 dB / -15 dB -- the amp's two front-panel jacks), Gain, Ultra-Lo, Ultra-Hi
-    (the faceplate rocker switches), Bass, Mid + Mid Frequency (the 3-position 220/800/3000 Hz tapped-
-    inductor select), Treble, Master. Page 2 (synthetic, plus Output -- a plug-in level control): Power
-    Drive (a master volume between the preamp and the phase splitter), Bias (the driver level-shifter tap,
-    so hot/cold like the amp's own bias trims), Tube Feel (how much the supply sags and how little negative
-    feedback there is: 0 = stiff and solid-state-like, 1 = the real amp) and Speaker (2 / 4 / 8 ohm, a
-    speaker with its voice-coil inductance and cone resonance).
+    Controls, page 1: Volume (channel 1), Bright (the Volume's pull switch), Bass, Middle, Treble,
+    Master. Page 2: the seven graphic-EQ sliders (40 Hz .. 6.6 kHz), Power Drive, Bias, Tube Feel,
+    Speaker, Output.
 */
 class MesaBass400PlusStyleAmplifierProcessor : public EffectProcessor
 {
@@ -42,37 +38,30 @@ public:
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Bass 400+-Style Amplifier"; }
-    juce::Colour getAccentColour() const override { return juce::Colour (0xffc94a5a); }
+    juce::Colour getAccentColour() const override { return juce::Colour (0xff8a5ac9); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     /** Amplifier output (speaker-terminal volts) is scaled by this to get a signal level. */
-    static constexpr double outputScale = 1.0 / 30.0; // 100 W into 4 ohm is ~20 Vrms at the terminal
+    static constexpr double outputScale = 1.0 / 60.0; // ~270 W into 4 ohm is ~33 Vrms at the terminal
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
-    enum class Probe { firstPlate, secondPlate, toneStackOut, recoveryPlate, midNode, followerOut,
-                       phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB, phaseInverterTail,
+    enum class Probe { firstPlate, secondPlate, toneStackOut, recoveryPlate, eqOut,
+                       phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB,
                        driverPlateA, powerGridA, powerPlateA, powerPlateB, speaker };
     double debugVoltage (Probe p) const noexcept;
     double getSolveFailureRate() const noexcept
     {
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
     }
-    /** Supply rails at the last update: plates (B+), screens/drivers, preamp+PI. */
     double railPlates() const noexcept { return channels[0].supply.voltage (channels[0].sA); }
     double railScreens() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
     double railPreamp() const noexcept { return channels[0].supply.voltage (channels[0].sC); }
-    /** Development/test hook: replaces the negative-feedback resistor (a huge value opens the loop). */
     void debugSetFeedbackResistance (double ohms);
-    /** Test hook: replaces the speaker by a plain resistor. */
     void debugSetResistiveLoad (double ohms);
-
     double debugIterations (int block) const noexcept;
     long long debugPreFailures() const noexcept { return failuresPre; }
     long long debugPowerFailures() const noexcept { return failuresPower; }
-    long long debugSanityRejects() const noexcept { return sanityRejects; }
-    double debugWorstRejectedVolts() const noexcept { return worstRejectedVolts; }
-    double debugWorstSaneVolts() const noexcept { return worstSaneVolts; }
     int debugRecoveries() const noexcept { return recoveries; }
     double plateCurrentTotal() const noexcept;
     double screenCurrentTotal() const noexcept;
@@ -80,8 +69,8 @@ public:
 private:
     struct Channel
     {
-        NodalCircuit pre, power, supply;
-        NodalCircuit::DynamicState preRest, powerRest, supplyRest;
+        NodalCircuit pre, eq, power, supply;
+        NodalCircuit::DynamicState preRest, eqRest, powerRest, supplyRest;
         int failStreak = 0;
         int restRefreshCounter = 0;
         double lastEmitted = 0.0, declick = 0.0;
@@ -89,10 +78,15 @@ private:
 
         // preamp
         int pSrcVcc = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0, rBassTop = 0, rBassBot = 0, rTrebleTop = 0, rTrebleBot = 0;
-        int rMasterTop = 0, rMasterBot = 0, rMid = 0, rUltraLoA = 0, rUltraLoB = 0, capUltraHi = 0;
-        int grpMidL = 0, capMidC = 0;
-        NodalCircuit::Node pPlate1 = 0, pPlate2 = 0, pTone = 0, pPlate3 = 0, pMid = 0, pFollower = 0;
+        int rVolumeTop = 0, rVolumeBot = 0, capBright = 0;
+        int rBassTop = 0, rBassBot = 0, rTrebleTop = 0, rTrebleBot = 0, rMid = 0;
+        int rMasterTop = 0, rMasterBot = 0;
+        NodalCircuit::Node pPlate1 = 0, pPlate2 = 0, pTone = 0, pPlate3 = 0, pOut = 0;
+
+        // graphic EQ (linear block)
+        int qSrcIn = 0;
+        int rEqTop[7] = {}, rEqBot[7] = {};
+        NodalCircuit::Node qOut = 0;
 
         // power section
         int wSrcPre = 0, wSrcPi = 0, wSrcCt = 0, wSrcNeg = 0, wSrcVdr = 0;
@@ -102,7 +96,7 @@ private:
         NodalCircuit::Node wGridA = 0, wPlateA = 0, wPlateB = 0, wTail = 0, wDrvPlateA = 0,
                            wPowerGridA = 0, wPP1 = 0, wPP2 = 0, wOut = 0;
         double screenDropA = 0.0, screenDropB = 0.0;
-        double vScreen = 365.0;
+        double vScreen = 400.0;
 
         // supply
         int iA = 0, iB = 0, iC = 0, srcVoc = 0, srcVoc2 = 0, rRect = 0, rRect2 = 0;
@@ -115,18 +109,15 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double input, gain, ultraLo, ultraHi, bass, middle, midFreq, treble, master;
+        double input, volume, bright, bass, middle, treble, master;
+        double eq[7];
         double powerDrive, bias, tubeFeel;
         int speaker; // 0 = 2 ohm, 1 = 4, 2 = 8
     };
     void updatePots (const Knobs& k);
     void applySpeaker (Channel& ch, int index) const;
-    void applyMidFreq (Channel& ch, int index) const;
     void recover (Channel& ch) const;
     mutable int recoveries = 0;
-    long long sanityRejects = 0;
-    double worstRejectedVolts = 0.0;
-    double worstSaneVolts = 0.0;
     Knobs lastKnobs {};
     double speakerGain = 1.0;
     double idleSupplyCurrent = 0.0;
@@ -137,25 +128,22 @@ private:
     std::array<Channel, 2> channels;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
-    juce::AudioParameterFloat* inputParam = nullptr;
-    juce::AudioParameterFloat* gainParam = nullptr;
-    juce::AudioParameterFloat* ultraLoParam = nullptr;
-    juce::AudioParameterFloat* ultraHiParam = nullptr;
+    juce::AudioParameterFloat* volumeParam = nullptr;
+    juce::AudioParameterFloat* brightParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
     juce::AudioParameterFloat* middleParam = nullptr;
-    juce::AudioParameterFloat* midFreqParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* masterParam = nullptr;
+    juce::AudioParameterFloat* eqParam[7] = {};
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
-    juce::SmoothedValue<float> smoothedGain, smoothedBass, smoothedMiddle, smoothedTreble,
+    juce::SmoothedValue<float> smoothedVolume, smoothedBass, smoothedMiddle, smoothedTreble,
         smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
     int appliedSpeaker = -1;
-    int appliedMidFreq = -1;
 
     void forceReprepare()
     {
