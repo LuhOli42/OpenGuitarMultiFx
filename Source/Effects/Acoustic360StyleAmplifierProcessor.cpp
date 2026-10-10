@@ -226,7 +226,7 @@ double Acoustic360StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
     ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState));
     return ch.bmOutput;
 }
 
@@ -329,6 +329,7 @@ void Acoustic360StyleAmplifierProcessor::prepare (double newSampleRate, int, int
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.prepare (sampleRate, voicings::solidState, 1.0 / outputScale); // direct-coupled: speaker reaction only
     }
 
     smoothedVolume.reset (newSampleRate, 0.02);

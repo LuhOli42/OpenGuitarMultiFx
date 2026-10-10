@@ -513,7 +513,7 @@ double TwinReverbStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, dou
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (blocked - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState));
     return ch.bmOutput;
 }
 
@@ -600,6 +600,7 @@ void TwinReverbStyleAmplifierProcessor::prepare (double newSampleRate, int maxBl
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.prepare (sampleRate, voicings::fenderClean, 1.0 / outputScale);
     }
 
     const auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double time)

@@ -453,7 +453,7 @@ double CarrRamblerStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     const double biasTrim = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
     ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
     if (lastKnobs.mode == 1)
-        ch.bmRail *= 0.75;
+        ch.bmRail *= 0.5; // strapped triode swings far less than pentode (real amp: a quarter or less of the power)
 
     const double asym = (bmAsym + 0.3 * (biasTrim - 0.5)) * bmYmax;
     const double drive = (lastKnobs.mode == 1 ? 0.8 : 1.0) * driveVoltage + asym;
@@ -474,7 +474,7 @@ double CarrRamblerStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (blocked - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState));
     return ch.bmOutput;
 }
 
@@ -546,6 +546,9 @@ void CarrRamblerStyleAmplifierProcessor::prepare (double newSampleRate, int maxB
     {
         ch = Channel {};
         buildChannel (ch);
+        auto bmVoicing = voicings::classAChime;
+        bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
     const auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double time)

@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 #include "TubeModels.h"
 
 #include <array>
@@ -66,6 +67,7 @@ private:
         NodalCircuit::Node supplyA = 0, supplyB = 0, preRailNode = 0;
         int supplyCounter = 0, currentCount = 0;
         double currentSum = 0.0, preRailFiltered = 0.0, outputState = 0.0, envelope = 0.0;
+        tubeamp::PowerStageTail bmTail; // reducedOrder only: OT + speaker reaction + even-order tail
         double preDc = 0.0, pre2Dc = 0.0;
         int lastTonePosition = -1, lastSpeakerIndex = -1;
         // reducedOrder control folding (see updatePots' else branch)

@@ -658,7 +658,7 @@ double JCM800StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double 
                       - bmBaseA1 * ch.bmBaseY1 - bmBaseA2 * ch.bmBaseY2;
     ch.bmBaseX2 = ch.bmBaseX1; ch.bmBaseX1 = raw;
     ch.bmBaseY2 = ch.bmBaseY1; ch.bmBaseY1 = base;
-    ch.bmOutput = base * bmLevelTrim;
+    ch.bmOutput = ch.bmTail.process (base * bmLevelTrim);
     return ch.bmOutput;
 }
 
@@ -764,6 +764,9 @@ void JCM800StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        auto bmVoicing = voicings::britishNfb;
+        bmVoicing.resDb = 0.0; // the fitted base biquad already carries the speaker-resonance bump
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)

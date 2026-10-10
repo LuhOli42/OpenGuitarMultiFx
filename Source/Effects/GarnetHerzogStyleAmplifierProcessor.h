@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -61,6 +62,8 @@ public:
     static constexpr double bmKneeN = 5.0;
     static constexpr double bmShelfHz = 110.0;
     static constexpr double bmShelfHfGain = 1.0;
+    // +0.4 dB: the OT tail's core compression puts the noon level back at unity.
+    static constexpr double bmLevelTrim = 1.047;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -112,6 +115,7 @@ private:
 
         // reducedOrder only: behavioural power stage state (see behavioralPowerStage())
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
     };
 
     void buildChannel (Channel& ch);

@@ -2,6 +2,7 @@
 
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -93,6 +94,7 @@ private:
         NodalCircuit::Node wOut = 0;
         NodalCircuit::Node wTone = 0;
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
+        tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
     };
 
     void buildChannel (Channel& ch);

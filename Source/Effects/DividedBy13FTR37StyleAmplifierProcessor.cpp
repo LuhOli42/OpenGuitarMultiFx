@@ -605,7 +605,7 @@ double DividedBy13FTR37StyleAmplifierProcessor::behavioralPowerStage (Channel& c
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (blocked - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState));
     return ch.bmOutput;
 }
 
@@ -674,6 +674,9 @@ void DividedBy13FTR37StyleAmplifierProcessor::prepare (double newSampleRate, int
     {
         ch = Channel {};
         buildChannel (ch);
+        auto bmVoicing = voicings::classAChime;
+        bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
     const auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double time)

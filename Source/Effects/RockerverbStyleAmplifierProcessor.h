@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -126,6 +127,7 @@ private:
         // reducedOrder behavioural power stage state (see behavioralPowerStage()); bmRail is set to the real
         // nominal rail in prepare(). The two quads are the fitted sections' direct-form-I histories.
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
         double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
         double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
 

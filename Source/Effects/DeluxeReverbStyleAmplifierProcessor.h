@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -116,6 +117,7 @@ private:
         double vScreen = 458.0;
 
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
+        tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, srcVoc = 0;
