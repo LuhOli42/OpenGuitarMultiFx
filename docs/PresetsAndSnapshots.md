@@ -23,10 +23,10 @@ writes parameter values and bypass flags, so the graph is never rebuilt.
 
 That only sounds clean if the engine handles jumps well. The code has three gaps that stage 2 fixes:
 
-1. Bypass is a hard cut: `SignalGraph` skips the processor from one block to the next, which clicks.
+1. ~~Bypass is a hard cut~~: fixed in stage 2a -- a 10 ms crossfade in `EffectProcessor::processWithBypass()`.
 2. About 27 processors do not smooth parameter changes. Turning a knob by hand hides it; a snapshot jumps the
    value in one block and clicks.
-3. Delays and reverbs have no trails: bypassing one kills its repeats instantly.
+3. ~~Delays and reverbs have no trails~~: fixed in stage 2a -- `hasTrails()`, always on for the 14 delays/reverbs.
 
 ## How other units do it (research, 2026-10-10)
 

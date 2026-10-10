@@ -53,6 +53,7 @@ public:
             return false;
 
         prepare (sampleRate, maxBlockSize, numChannels);
+        bypassDry.setSize (numChannels, maxBlockSize, false, true, true);
         isPrepared = true;
         preparedRate = sampleRate;
         preparedBlockSize = maxBlockSize;
@@ -60,6 +61,118 @@ public:
         return true;
     }
     virtual void process (juce::AudioBuffer<float>& buffer) = 0;
+
+    /** What SignalGraph calls instead of process(): process() plus the bypass switch. Audio thread only.
+
+        Bypass used to be a hard cut (process() simply stopped being called), which clicks -- and snapshots
+        (docs/PresetsAndSnapshots.md) toggle bypass mid-note. Now the switch is a bypassRampSeconds crossfade between
+        the dry input and the processed output. A processor with hasTrails() is instead faded at its INPUT and keeps
+        running while bypassed, so its repeats/reverb tail die away naturally on top of the dry signal; once that tail
+        has been silent for trailsSilenceSeconds it stops being processed, so a bypassed block costs nothing again.
+        A processor first heard while already bypassed starts silent, with no ramp. */
+    void processWithBypass (juce::AudioBuffer<float>& buffer)
+    {
+        const float target = isBypassed() ? 0.0f : 1.0f;
+        const int numSamples = buffer.getNumSamples();
+        const int numChannels = buffer.getNumChannels();
+
+        if (wetAmount < 0.0f) // first block ever heard
+            wetAmount = target;
+
+        if (wetAmount == target && target == 1.0f)
+        {
+            process (buffer);
+            return;
+        }
+
+        const bool fits = numChannels <= bypassDry.getNumChannels() && numSamples <= bypassDry.getNumSamples();
+        if (! fits) // never prepared at this size -- fall back to the old hard switch rather than allocate here
+        {
+            wetAmount = target;
+            if (target == 1.0f)
+                process (buffer);
+            return;
+        }
+
+        if (wetAmount == target) // fully bypassed
+        {
+            if (! (hasTrails() && tailRunning))
+                return;
+
+            for (int ch = 0; ch < numChannels; ++ch)
+                bypassDry.copyFrom (ch, 0, buffer, ch, 0, numSamples);
+            buffer.clear();
+            process (buffer);
+
+            const bool silent = buffer.getMagnitude (0, numSamples) < trailsSilenceThreshold;
+            silentSamples = silent ? silentSamples + numSamples : 0;
+            if (silentSamples >= (int) (trailsSilenceSeconds * preparedRate))
+                tailRunning = false;
+
+            for (int ch = 0; ch < numChannels; ++ch)
+                buffer.addFrom (ch, 0, bypassDry, ch, 0, numSamples);
+            return;
+        }
+
+        // Ramping, either way.
+        if (target == 0.0f && hasTrails())
+        {
+            tailRunning = true;
+            silentSamples = 0;
+        }
+
+        const float step = (target > wetAmount ? 1.0f : -1.0f) / (float) juce::jmax (1.0, bypassRampSeconds * preparedRate);
+        const float start = wetAmount;
+        auto gainAt = [start, step, target] (int i)
+        {
+            const float g = start + step * (float) (i + 1);
+            return step > 0.0f ? juce::jmin (g, target) : juce::jmax (g, target);
+        };
+
+        for (int ch = 0; ch < numChannels; ++ch)
+            bypassDry.copyFrom (ch, 0, buffer, ch, 0, numSamples);
+
+        if (hasTrails())
+        {
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                auto* data = buffer.getWritePointer (ch);
+                for (int i = 0; i < numSamples; ++i)
+                    data[i] *= gainAt (i);
+            }
+            process (buffer);
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                auto* out = buffer.getWritePointer (ch);
+                const auto* dry = bypassDry.getReadPointer (ch);
+                for (int i = 0; i < numSamples; ++i)
+                    out[i] += dry[i] * (1.0f - gainAt (i));
+            }
+        }
+        else
+        {
+            process (buffer);
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                auto* out = buffer.getWritePointer (ch);
+                const auto* dry = bypassDry.getReadPointer (ch);
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const float g = gainAt (i);
+                    out[i] = out[i] * g + dry[i] * (1.0f - g);
+                }
+            }
+        }
+
+        wetAmount = gainAt (numSamples - 1);
+    }
+
+    /** True for delays and reverbs: bypassing them lets the repeats/tail ring out (see processWithBypass()). */
+    virtual bool hasTrails() const { return false; }
+
+    static constexpr double bypassRampSeconds = 0.010;
+    static constexpr double trailsSilenceSeconds = 0.5;
+    static constexpr float trailsSilenceThreshold = 1.0e-5f; // -100 dBFS
     virtual void reset() = 0;
 
     void setBypassed (bool shouldBypass) noexcept { bypassed.store (shouldBypass, std::memory_order_relaxed); }
@@ -237,6 +350,12 @@ private:
 
     std::atomic<bool> bypassed { false };
     std::vector<TempoSyncBinding> tempoSyncBindings;
+
+    // Audio-thread state of processWithBypass(). wetAmount < 0 = not heard yet.
+    juce::AudioBuffer<float> bypassDry; // sized in prepareIfNeeded(), never on the audio thread
+    float wetAmount = -1.0f;
+    bool tailRunning = false;
+    int silentSamples = 0;
 
     bool isPrepared = false; // control thread only, see prepareIfNeeded()
     double preparedRate = 0.0;
