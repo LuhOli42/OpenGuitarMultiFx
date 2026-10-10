@@ -666,8 +666,10 @@ public:
         // costs nothing until the input moves again. The comparison is exact by design: any
         // tolerance would also fire at a mode null mid-trajectory, where the state is merely
         // passing through a slow point, and freezing there leaves a stale state that the
-        // gain stages amplify on resume.
-        if (lastSolveOk)
+        // gain stages amplify on resume. A dirty model (a knob just moved a resistor,
+        // cap or inductor without touching E) must solve once to rebuild itself, so the
+        // skip is barred until it does.
+        if (lastSolveOk && ! modelsDirty)
         {
             bool settled = true;
             for (int e = 0; e < m; ++e)
