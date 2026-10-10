@@ -55,6 +55,14 @@ public:
             logMessage ("balance=0 out " + juce::String (dry, 3) + ", balance=1 out " + juce::String (wet, 3));
             expectGreaterThan (dry, 0.1);
             expect (std::isfinite (wet));
+
+            // Endpoint isolation: at balance 0 the clipped wet path must be inaudible.
+            // A 2 kHz probe rides the clipped path's harmonics but is above the clean
+            // leg's ~480 Hz lowpass -- the dry endpoint has to reject it hard.
+            const double dry2k = outAmp ({ 0.9, 0.5, 0.5, 0.0, 1.0 }, 2000.0, 0.2);
+            const double wet2k = outAmp ({ 0.9, 0.5, 0.5, 1.0, 1.0 }, 2000.0, 0.2);
+            logMessage ("2 kHz: balance=0 out " + juce::String (dry2k, 4) + ", balance=1 out " + juce::String (wet2k, 4));
+            expectGreaterThan (wet2k, dry2k * 4.0);
         }
 
         beginTest ("Gain saturates: the clipped path stops growing");

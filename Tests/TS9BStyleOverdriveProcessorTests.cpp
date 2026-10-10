@@ -55,6 +55,14 @@ public:
             logMessage ("mix=0 out " + juce::String (clean, 3) + ", mix=1 out " + juce::String (wet, 3));
             expectGreaterThan (clean, 0.05);
             expectLessThan (wet, 1.2); // the clipped path saturates, it doesn't keep growing
+
+            // Endpoint isolation: at mix=0 the clipped leg must be inaudible. The dry
+            // path is broadband, so the check is spectral: clipped-drive harmonics
+            // bleeding through would push the 2 kHz output well past the clean level.
+            const double dry2k = outAmp ({ 1.0, 0.0, 0.5, 0.9, 0.9 }, 2000.0, 0.1);
+            const double dry220 = outAmp ({ 1.0, 0.0, 0.5, 0.9, 0.9 }, 220.0, 0.1);
+            logMessage ("mix=0: 2 kHz out " + juce::String (dry2k, 4) + ", 220 Hz out " + juce::String (dry220, 4));
+            expectLessThan (dry2k, dry220 * 1.5);
         }
 
         beginTest ("Drive raises harmonic content: clipped output is compressed relative to the input");

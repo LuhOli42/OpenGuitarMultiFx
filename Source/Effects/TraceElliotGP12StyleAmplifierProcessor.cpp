@@ -228,11 +228,7 @@ void TraceElliotGP12StyleAmplifierProcessor::prepare (double newSampleRate, int,
 
     for (auto& ch : channels)
     {
-        const Biquad keepLo = ch.preLo, keepMid = ch.preMid, keepHi = ch.preHi;
-        ch = Channel {};
-        ch.preLo = keepLo;
-        ch.preMid = keepMid;
-        ch.preHi = keepHi;
+        ch = Channel {};   // zeroes the pre-shape biquads' z state too; updatePreShape() rewrites the coefficients below
         buildChannel (ch);
     }
 
@@ -323,26 +319,22 @@ void TraceElliotGP12StyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
             // EQ BALANCE: flat at centre (the complementary split sums back to x), favouring one band at the ends.
             double wet = 2.0 * ((1.0 - bal) * loOut + bal * hiOut);
 
-            if (graphicOn)
+            // The EQ stages always solve, Graphic out included: otherwise their capacitor and
+            // inductor histories go stale and re-engaging replays whatever was last in them.
+            ch.eq1.setSource (ch.srcEq1, vBias + wet);
+            bool ok = ch.eq1.solveSample();
+            ch.eq2.setSource (ch.srcEq2, ch.eq1.voltage (ch.nEq1Out));
+            ok = ch.eq2.solveSample() && ok;
+            if (chIdx == 0)
             {
-                ch.eq1.setSource (ch.srcEq1, vBias + wet);
-                bool ok = ch.eq1.solveSample();
-                ch.eq2.setSource (ch.srcEq2, ch.eq1.voltage (ch.nEq1Out));
-                ok = ch.eq2.solveSample() && ok;
-                wet = ch.eq2.voltage (ch.nEq2Out) - vBias;
-                wet *= gLevel;
+                ++sampleCount;
+                if (! ok)
+                    ++failureCount;
+            }
 
-                if (chIdx == 0)
-                {
-                    ++sampleCount;
-                    if (! ok)
-                        ++failureCount;
-                }
-            }
-            else
-            {
-                wet *= gLevel;
-            }
+            if (graphicOn)
+                wet = ch.eq2.voltage (ch.nEq2Out) - vBias;
+            wet *= gLevel;
 
             data[i] = (float) (wet * gOut);
         }

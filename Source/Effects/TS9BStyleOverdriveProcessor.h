@@ -117,7 +117,7 @@ private:
     static constexpr float trebleMax = 20.0e3f;   // B20K linear (TS9 value)
     static constexpr float bassMax = 20.0e3f;     // B20K linear (estimated on the same part)
     static constexpr float levelMax = 100.0e3f;   // A100K audio taper
-    static constexpr float mixSum = 100.0e3f;     // the blend pot's track (estimated); >> the ~10K source
+    static constexpr float mixSum = 1.0e6f;      // the blend pot's track; >> every source so the ends truly isolate
                                                   // impedances so each end of the knob really does mute its leg
 
     static constexpr float closedSwitchResistance = 100.0f;

@@ -322,9 +322,9 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TS10StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 500000.0), 11.34f); });
     // Bass variants of the family (docs/circuits/TS9BStyleOverdrive.md, ODB3StyleOverdrive.md).
     registry.markQualityDependent ("TS9BStyleOverdrive");
-    registry.registerType ("TS9BStyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TS9BStyleOverdriveProcessor> (Orders { 0, 0, 1 }), 500000.0), 13.5f); });
+    registry.registerType ("TS9BStyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<TS9BStyleOverdriveProcessor> (Orders { 0, 0, 1 }), 500000.0), 13.8f); });
     registry.markQualityDependent ("ODB3StyleOverdrive");
-    registry.registerType ("ODB3StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<ODB3StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 500000.0), 15.4f); });
+    registry.registerType ("ODB3StyleOverdrive", [] { return trimmed (pickupLoaded (oversampled<ODB3StyleOverdriveProcessor> (Orders { 0, 0, 1 }), 500000.0), 16.3f); });
 
     // A full tube amplifier modelled from its schematic (docs/circuits/Bassman5F6A.md): 8 tubes, an output transformer,
     // global feedback and a sagging supply. Quality tiers: 1x, 1x, 2x (the tubes' clipping is soft; see the doc).

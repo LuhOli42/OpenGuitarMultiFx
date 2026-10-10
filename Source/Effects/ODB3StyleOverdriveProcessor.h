@@ -58,7 +58,7 @@ private:
         double debugOp1Out = 0.0;
         double debugQ1Vb = 0.0, debugQ1Ve = 0.0;
         AsymmetricDiodePair clipper;  // feedback diode pair (silicon)
-        AsymmetricDiodePair ledPair;  // shunt LED clipper
+        double ledV = 0.0;            // shunt LED clipper's Newton warm-start state
     };
     std::array<ChannelState, 2> channels;
 
@@ -116,7 +116,7 @@ private:
     static constexpr float gainMax = 500.0e3f;
     static constexpr float toneMax = 20.0e3f;
     static constexpr float levelMax = 100.0e3f;
-    static constexpr float balanceSum = 100.0e3f;
+    static constexpr float balanceSum = 1.0e6f; // blend track; >> every source resistance so the ends truly isolate
 
     static constexpr float closedSwitchResistance = 100.0f;
     static constexpr float outputLoadResistance = 1.0e6f;

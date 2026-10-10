@@ -8,6 +8,41 @@
 namespace openguitarmultifx
 {
 
+namespace
+{
+    // The shared AsymmetricDiodePair clamps its exponentiation at +-1 V -- right for the
+    // ~0.3-0.6 V knees of the signal diodes it was built for, but that freezes this LED
+    // pair's 1.7 V knee below conduction. Same Newton solve with the clamp scaled to the
+    // LED's own knee (bounded well short of exp overflow).
+    bool solveLedPair (double is, double nVt, double rth, double vth, double& v) noexcept
+    {
+        constexpr double vClamp = 2.5;
+        auto clampLed = [] (double x) noexcept { return x < -vClamp ? -vClamp : (x > vClamp ? vClamp : x); };
+
+        // Thevenin-limited warm start: what the source alone could push through the pair.
+        if (vth >= 0.0)
+            v = std::min (vth, nVt * std::log1p ((vth / rth) / is));
+        else
+            v = -std::min (-vth, nVt * std::log1p ((-vth / rth) / is));
+
+        for (int iter = 0; iter < 40; ++iter)
+        {
+            const double eF = std::exp (clampLed (v) / nVt);
+            const double eR = std::exp (clampLed (-v) / nVt);
+            const double current = is * (eF - 1.0) - is * (eR - 1.0);
+            const double f = (vth - v) / rth - current;
+            if (std::abs (f) < 1.0e-9)
+                return true;
+            const double dIdv = (is / nVt) * eF + (is / nVt) * eR;
+            const double dfdv = -1.0 / rth - dIdv;
+            if (std::abs (dfdv) < 1.0e-18)
+                return false;
+            v -= f / dfdv;
+        }
+        return false;
+    }
+}
+
 ODB3StyleOverdriveProcessor::ODB3StyleOverdriveProcessor()
 {
     auto makeParam = [] (const char* id, const char* name)
@@ -39,7 +74,6 @@ ODB3StyleOverdriveProcessor::ODB3StyleOverdriveProcessor()
     for (auto& ch : channels)
     {
         ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage * diodeIdealityFactor, 1.0, 1.0);
-        ch.ledPair.setParameters (ledSaturationCurrent, ledNVt, 1.0, 1.0);
     }
 }
 
@@ -78,7 +112,7 @@ void ODB3StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         ch.c8.prepare (newSampleRate, c8Value);
         ch.c9.prepare (newSampleRate, c9Value);
         ch.clipper.reset (0.0);
-        ch.ledPair.reset (0.0);
+        ch.ledV = 0.0;
     }
 
     if (newSampleRate > 0.0)
@@ -227,12 +261,18 @@ void ODB3StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             // referenced to the rail, so the solve runs on u = vNode - bias. ----
             const Thevenin ledSource = combineParallel (Thevenin { rSeriesLed, op1Out },
                                                       Thevenin { rLedLoad, (double) bias });
-            double uLed;
+            double uLed = s.ledV; // warm-start Newton from last sample's solution
             {
-                const bool converged = s.ledPair.solve (ledSource.rth, ledSource.vth - (double) bias, uLed);
+                const bool converged = solveLedPair (ledSaturationCurrent, ledNVt,
+                                                     ledSource.rth, ledSource.vth - (double) bias, uLed);
                 ++solveCount;
                 if (! converged)
+                {
                     ++solveFailures;
+                    uLed = s.ledV; // hold the last good solution, same as the shared solver
+                }
+                else
+                    s.ledV = uLed;
             }
             const double vLed = (double) bias + uLed;
 
