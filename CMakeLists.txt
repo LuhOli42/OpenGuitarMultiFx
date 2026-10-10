@@ -122,6 +122,9 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/DS1StyleDistortionProcessor.cpp
   Source/Effects/OD1StyleOverdriveProcessor.cpp
   Source/Effects/TubeScreamerStyleOverdriveProcessor.cpp
+  Source/Effects/TS9BStyleOverdriveProcessor.cpp
+  Source/Effects/ODB3StyleOverdriveProcessor.cpp
+  Source/Effects/MuTronIIIStyleFilterProcessor.cpp
   Source/Effects/CentaurStyleOverdriveProcessor.cpp
   Source/Effects/BD2StyleOverdriveProcessor.cpp
   Source/Effects/BigMuffStyleFuzzProcessor.cpp
@@ -139,6 +142,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/BluesBreakerStyleOverdriveProcessor.cpp
   Source/Effects/RatStyleDistortionProcessor.cpp
   Source/Effects/GE7StyleEqualizerProcessor.cpp
+  Source/Effects/GEB7StyleEqualizerProcessor.cpp
   Source/Effects/ParametricEQProcessor.cpp
   Source/Effects/RingModProcessor.cpp
   Source/Effects/DS201StyleNoiseGateProcessor.cpp
@@ -173,6 +177,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/ENGLPowerballStyleAmplifierProcessor.cpp
   Source/Effects/RockerverbStyleAmplifierProcessor.cpp
   Source/Effects/SVTStyleAmplifierProcessor.cpp
+  Source/Effects/TraceElliotGP12StyleAmplifierProcessor.cpp
   Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
   Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
   Source/Effects/NAMProcessor.cpp
