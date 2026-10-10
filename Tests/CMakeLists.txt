@@ -49,6 +49,11 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   SunnModelTStyleAmplifierProcessorTests.cpp
   FryetteDeliveranceD120StyleAmplifierProcessorTests.cpp
   BognerUberschallStyleAmplifierProcessorTests.cpp
+||||||| parent of 14b92e8 (feat: register 4 bass amps, add test suites + circuit docs)
+  AmpegB15StyleAmplifierProcessorTests.cpp
+  AmpegV4BStyleAmplifierProcessorTests.cpp
+  MesaBass400PlusStyleAmplifierProcessorTests.cpp
+  Acoustic360StyleAmplifierProcessorTests.cpp
   ChannelKnobMemoryTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
@@ -190,6 +195,11 @@ set(OGMFX_SOURCES
   ../Source/Effects/SunnModelTStyleAmplifierProcessor.cpp
   ../Source/Effects/FryetteDeliveranceD120StyleAmplifierProcessor.cpp
   ../Source/Effects/BognerUberschallStyleAmplifierProcessor.cpp
+||||||| parent of 14b92e8 (feat: register 4 bass amps, add test suites + circuit docs)
+  ../Source/Effects/AmpegB15StyleAmplifierProcessor.cpp
+  ../Source/Effects/AmpegV4BStyleAmplifierProcessor.cpp
+  ../Source/Effects/MesaBass400PlusStyleAmplifierProcessor.cpp
+  ../Source/Effects/Acoustic360StyleAmplifierProcessor.cpp
   ../Source/Effects/NAMProcessor.cpp
   ../Source/Effects/IRLoaderProcessor.cpp
   ../Source/Effects/DynamicCabProcessor.cpp

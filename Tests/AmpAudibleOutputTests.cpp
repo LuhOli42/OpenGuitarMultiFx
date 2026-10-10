@@ -38,6 +38,9 @@ public:
                                  "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier",
                                  "DumbleSteelStringStyleAmplifier", "SunnModelTStyleAmplifier",
                                  "FryetteDeliveranceD120StyleAmplifier", "BognerUberschallStyleAmplifier" })
+||||||| parent of 14b92e8 (feat: register 4 bass amps, add test suites + circuit docs)
+                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier" })
+                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier", "AmpegB15StyleAmplifier", "AmpegV4BStyleAmplifier", "MesaBass400PlusStyleAmplifier", "Acoustic360StyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
@@ -110,6 +113,9 @@ public:
                                  "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier",
                                  "DumbleSteelStringStyleAmplifier", "SunnModelTStyleAmplifier",
                                  "FryetteDeliveranceD120StyleAmplifier", "BognerUberschallStyleAmplifier" })
+||||||| parent of 14b92e8 (feat: register 4 bass amps, add test suites + circuit docs)
+                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier" })
+                                 "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier", "AmpegB15StyleAmplifier", "AmpegV4BStyleAmplifier", "MesaBass400PlusStyleAmplifier", "Acoustic360StyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
