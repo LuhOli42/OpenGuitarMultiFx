@@ -82,7 +82,7 @@ namespace
             || displayName == "HC-30-Style Amplifier" || displayName == "Hot Cat 30-Style Amplifier"
             || displayName == "Carmen Ghia-Style Amplifier" || displayName == "Astroverb 16-Style Amplifier"
             || displayName == "Gibson EH-150-Style Amplifier" || displayName == "Garnet Herzog-Style Amplifier"
-            || displayName == "Rivera Knucklehead-Style Amplifier")
+            || displayName == "Rivera Knucklehead-Style Amplifier"
             || displayName == "Dumble Steel String-Style Amplifier" || displayName == "Sunn Model T-Style Amplifier"
             || displayName == "Fryette Deliverance D120-Style Amplifier" || displayName == "Bogner Uberschall-Style Amplifier"
             || displayName == "B-15-Style Amplifier" || displayName == "V4B-Style Amplifier"
