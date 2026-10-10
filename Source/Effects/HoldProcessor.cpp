@@ -34,6 +34,9 @@ void HoldProcessor::prepare (double sampleRate, int, int numChannels)
     const int bufferLength = (int) std::ceil (maxCaptureMs * 0.001 * sampleRate) + 4;
     circularBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
 
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -56,7 +59,7 @@ void HoldProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int bufferLength = circularBuffer.getNumSamples();
     const bool isHeld = hold->get() >= 0.5f;
-    const float wetAmount = mix->get();
+    smoothedMix.setTargetValue (mix->get());
 
     if (isHeld && ! wasHeld)
     {
@@ -80,6 +83,8 @@ void HoldProcessor::process (juce::AudioBuffer<float>& buffer)
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float wetAmount = smoothedMix.getNextValue();
+
         if (isHeld)
         {
             // loopStartPos and loopOffset are each individually < bufferLength,

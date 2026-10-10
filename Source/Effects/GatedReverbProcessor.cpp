@@ -73,6 +73,11 @@ void GatedReverbProcessor::prepare (double sampleRate, int, int)
     gateSmoother.setAttackTime (1.0f);
     gateSmoother.setReleaseTime (12.0f);
 
+    smoothedDecay.reset (sampleRate, paramRampSeconds);
+    smoothedDecay.setCurrentAndTargetValue (decay->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -101,9 +106,13 @@ void GatedReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
 
-    const float feedback = 0.75f + decay->get() * 0.2f;
-    const float wet = mix->get();
+    smoothedDecay.setTargetValue (decay->get());
+    const float feedback = 0.75f + smoothedDecay.skip (numSamples) * 0.2f;
+    smoothedMix.setTargetValue (mix->get());
     const float thresholdLinear = juce::Decibels::decibelsToGain (thresholdDb);
+    // holdMs stays unsmoothed -- it is only read when the gate re-arms
+    // (a discrete event), so a mid-ramp value could never glitch audio,
+    // and stepping it instantly matches the tempo-sync push model.
     const double holdSamples = (double) holdMs->get() * 0.001 * currentSampleRate;
 
     for (auto& bank : combs)
@@ -116,6 +125,8 @@ void GatedReverbProcessor::process (juce::AudioBuffer<float>& buffer)
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float wet = smoothedMix.getNextValue();
+
         // Trigger off the loudest channel's dry input -- the same
         // peak-across-channels convention GateProcessor uses, so a mono
         // pluck on one channel still opens the gate.

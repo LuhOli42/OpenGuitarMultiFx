@@ -68,6 +68,16 @@ Urei1176StyleCompressorProcessor::Urei1176StyleCompressorProcessor()
 void Urei1176StyleCompressorProcessor::prepare (double newSampleRate, int, int)
 {
     sampleRate = newSampleRate;
+
+    smoothedInputDb.reset (newSampleRate, paramRampSeconds);
+    smoothedInputDb.setCurrentAndTargetValue ((input->get() - 0.5f) * 40.0f);
+    smoothedOutputDb.reset (newSampleRate, paramRampSeconds);
+    smoothedOutputDb.setCurrentAndTargetValue (output->get());
+    smoothedAttack.reset (newSampleRate, paramRampSeconds);
+    smoothedAttack.setCurrentAndTargetValue (attack->get());
+    smoothedRelease.reset (newSampleRate, paramRampSeconds);
+    smoothedRelease.setCurrentAndTargetValue (release->get());
+
     reset();
 }
 
@@ -82,26 +92,33 @@ void Urei1176StyleCompressorProcessor::process (juce::AudioBuffer<float>& buffer
     if (sampleRate <= 0.0)
         return;
 
-    const auto& spec = specFor (juce::roundToInt (ratio->get()));
-    const double inputDb = (double) (input->get() - 0.5f) * 40.0;                       // the Input control: -20 .. +20 dB
-    const double inGain = dyn::fromDb (inputDb);
-    const double outGain = dyn::fromDb ((double) output->get() - dyn::toDb (preampGain));
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples = buffer.getNumSamples();
+
+    const auto& spec = specFor (juce::roundToInt (ratio->get())); // the ratio buttons: a selector -> stays instant
+    // Input/Output multiply the signal path -> per-sample ramp (in the dB
+    // domain, converted per sample). Attack/release are detector
+    // coefficients -> per-block stepped ramp.
+    smoothedInputDb.setTargetValue ((input->get() - 0.5f) * 40.0f);
+    smoothedOutputDb.setTargetValue (output->get());
 
     // The threshold, in volts at the preamplifier output: with Input at maximum (+20 dB) the input level at minimum limiting is spec.thresholdDb.
     const double thresholdVolts = dyn::fromDb (spec.thresholdDb + dbfsPerDbu + 20.0) * preampGain;
 
-    const double attackSeconds = 800.0e-6 * std::pow (20.0 / 800.0, (double) attack->get()) * spec.timeScale;
-    const double releaseSeconds = 1.1 * std::pow (50.0 / 1100.0, (double) release->get()) * spec.timeScale;
+    smoothedAttack.setTargetValue (attack->get());
+    smoothedRelease.setTargetValue (release->get());
+    const double attackSeconds = 800.0e-6 * std::pow (20.0 / 800.0, (double) smoothedAttack.skip (numSamples)) * spec.timeScale;
+    const double releaseSeconds = 1.1 * std::pow (50.0 / 1100.0, (double) smoothedRelease.skip (numSamples)) * spec.timeScale;
     const double aA = dyn::smoothingCoefficient (attackSeconds, sampleRate), aR = dyn::smoothingCoefficient (releaseSeconds, sampleRate);
 
     const double k = 2.0 * fetBeta * seriesOhms;
     const double a = spec.linearityError * fetBeta * seriesOhms;
 
-    const int numChannels = buffer.getNumChannels();
-    const int numSamples = buffer.getNumSamples();
-
     for (int i = 0; i < numSamples; ++i)
     {
+        const double inGain = dyn::fromDb ((double) smoothedInputDb.getNextValue());
+        const double outGain = dyn::fromDb ((double) smoothedOutputDb.getNextValue() - dyn::toDb (preampGain));
+
         const double u = std::min (fetControlMax, spec.sensitivity * detector); // the FET's gate overdrive (V above pinch-off)
         const double b = 1.0 + k * u;
 

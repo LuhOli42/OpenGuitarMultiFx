@@ -57,7 +57,11 @@ private:
 
     double sampleRate = 0.0;
     double hpCoeff = 0.0, envDecay = 0.0;
-    double directGain = 0.0, oct1Gain = 0.0, oct2Gain = 0.0;
+    // The three mixer gains ramp per sample -- they multiply the audio
+    // sum directly, so any step here is a click.
+    juce::SmoothedValue<float> smoothedDirectGain;
+    juce::SmoothedValue<float> smoothedOct1Gain;
+    juce::SmoothedValue<float> smoothedOct2Gain;
     int controlCounter = 0;
     DualMonoShortcut shortcut;
 

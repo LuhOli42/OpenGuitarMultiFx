@@ -35,6 +35,12 @@ void HarmonizerProcessor::prepare (double sampleRate, int, int)
     currentSampleRate = sampleRate;
     for (auto& shifter : shifters)
         shifter.prepare (sampleRate);
+
+    smoothedSemitones.reset (sampleRate, paramRampSeconds);
+    smoothedSemitones.setCurrentAndTargetValue (semitones->get());
+    smoothedLevel.reset (sampleRate, paramRampSeconds);
+    smoothedLevel.setCurrentAndTargetValue (level->get());
+
     reset();
 }
 
@@ -52,16 +58,22 @@ void HarmonizerProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
 
-    const float ratio = std::pow (2.0f, semitones->get() / 12.0f);
-    const float levelAmount = level->get();
+    // Semitones retunes the grain slews -> per-block stepped ramp; level
+    // scales the harmony into the dry signal -> per-sample ramp (sample-
+    // major so getNextValue() advances once per sample for both channels).
+    smoothedSemitones.setTargetValue (semitones->get());
+    const float ratio = std::pow (2.0f, smoothedSemitones.skip (numSamples) / 12.0f);
+    smoothedLevel.setTargetValue (level->get());
 
-    for (int ch = 0; ch < numChannels; ++ch)
+    for (int i = 0; i < numSamples; ++i)
     {
-        auto* data = buffer.getWritePointer (ch);
-        auto& shifter = shifters[(size_t) ch];
+        const float levelAmount = smoothedLevel.getNextValue();
 
-        for (int i = 0; i < numSamples; ++i)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
+            auto* data = buffer.getWritePointer (ch);
+            auto& shifter = shifters[(size_t) ch];
+
             const float input = data[i];
             const float harmony = shifter.process (input, ratio);
             data[i] = (input + harmony * levelAmount) * outputScale;

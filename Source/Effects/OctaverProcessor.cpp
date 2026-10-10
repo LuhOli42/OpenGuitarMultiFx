@@ -30,6 +30,10 @@ void OctaverProcessor::prepare (double sampleRate, int, int)
     currentSampleRate = sampleRate;
     for (auto& shifter : shifters)
         shifter.prepare (sampleRate);
+
+    smoothedLevel.reset (sampleRate, paramRampSeconds);
+    smoothedLevel.setCurrentAndTargetValue (level->get());
+
     reset();
 }
 
@@ -46,15 +50,19 @@ void OctaverProcessor::process (juce::AudioBuffer<float>& buffer)
 
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
-    const float levelAmount = level->get();
+    // Sample-major so smoothedLevel.getNextValue() advances once per
+    // sample (not once per channel-sample) and both channels share it.
+    smoothedLevel.setTargetValue (level->get());
 
-    for (int ch = 0; ch < numChannels; ++ch)
+    for (int i = 0; i < numSamples; ++i)
     {
-        auto* data = buffer.getWritePointer (ch);
-        auto& shifter = shifters[(size_t) ch];
+        const float levelAmount = smoothedLevel.getNextValue();
 
-        for (int i = 0; i < numSamples; ++i)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
+            auto* data = buffer.getWritePointer (ch);
+            auto& shifter = shifters[(size_t) ch];
+
             const float input = data[i];
             const float subOctave = shifter.process (input, octaveDownRatio);
             data[i] = (input + subOctave * levelAmount) * outputScale;

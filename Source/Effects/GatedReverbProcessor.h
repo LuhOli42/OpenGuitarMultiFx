@@ -108,6 +108,9 @@ private:
     bool gateOpen = false;
 
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedDecay;
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx

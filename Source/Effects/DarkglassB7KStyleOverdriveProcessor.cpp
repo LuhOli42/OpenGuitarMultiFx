@@ -209,9 +209,9 @@ void DarkglassB7KStyleOverdriveProcessor::buildChannel (Channel& ch)
 void DarkglassB7KStyleOverdriveProcessor::updatePots()
 {
     const auto clampFraction = [] (double x) { return juce::jlimit (0.001, 0.999, x); };
-    const double blend = clampFraction (blendParam->get());
-    const double drive = clampFraction (driveParam->get());
-    const double level = clampFraction (levelParam->get());
+    const double blend = clampFraction ((double) smoothedBlend.getCurrentValue());
+    const double drive = clampFraction ((double) smoothedDrive.getCurrentValue());
+    const double level = clampFraction ((double) smoothedLevel.getCurrentValue());
     const int grunt = juce::roundToInt (gruntParam->get());
     const int attack = juce::roundToInt (attackParam->get());
 
@@ -234,7 +234,7 @@ void DarkglassB7KStyleOverdriveProcessor::updatePots()
         ch.eq.setResistance (ch.rWetIn, 470.0 + (1.0 - blend) * 47.0e3);
         for (int k = 0; k < numBands; ++k)
         {
-            const double u = clampFraction (bandParam[k]->get());
+            const double u = clampFraction ((double) smoothedBands[(size_t) k].getCurrentValue());
             ch.eq.setResistance (ch.rUp[k], juce::jmax (10.0, 10.0e3 * u));
             ch.eq.setResistance (ch.rDown[k], juce::jmax (10.0, 10.0e3 * (1.0 - u)));
         }
@@ -255,6 +255,18 @@ void DarkglassB7KStyleOverdriveProcessor::prepare (double newSampleRate, int, in
     {
         ch = Channel {};
         buildChannel (ch);
+    }
+
+    smoothedBlend.reset (newSampleRate, paramRampSeconds);
+    smoothedBlend.setCurrentAndTargetValue (blendParam->get());
+    smoothedDrive.reset (newSampleRate, paramRampSeconds);
+    smoothedDrive.setCurrentAndTargetValue (driveParam->get());
+    smoothedLevel.reset (newSampleRate, paramRampSeconds);
+    smoothedLevel.setCurrentAndTargetValue (levelParam->get());
+    for (int k = 0; k < numBands; ++k)
+    {
+        smoothedBands[(size_t) k].reset (newSampleRate, paramRampSeconds);
+        smoothedBands[(size_t) k].setCurrentAndTargetValue (bandParam[k]->get());
     }
 
     updatePots();
@@ -291,6 +303,20 @@ void DarkglassB7KStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buf
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
+            // Same trick as GE7: ramp the pot values so a knob jump lands
+            // as ~30 small resistor edits over ~10 ms instead of one step.
+            // Grunt/Attack are 3-way switches -> keep them instant.
+            smoothedBlend.setTargetValue (blendParam->get());
+            smoothedBlend.skip (controlInterval);
+            smoothedDrive.setTargetValue (driveParam->get());
+            smoothedDrive.skip (controlInterval);
+            smoothedLevel.setTargetValue (levelParam->get());
+            smoothedLevel.skip (controlInterval);
+            for (int k = 0; k < numBands; ++k)
+            {
+                smoothedBands[(size_t) k].setTargetValue (bandParam[k]->get());
+                smoothedBands[(size_t) k].skip (controlInterval);
+            }
             updatePots();
         }
 

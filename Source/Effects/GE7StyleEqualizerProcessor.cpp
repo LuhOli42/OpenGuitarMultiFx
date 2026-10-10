@@ -203,7 +203,7 @@ void GE7StyleEqualizerProcessor::updateSliders()
     bool changed = false;
     for (int k = 0; k <= numBands; ++k)
     {
-        const float v = k < numBands ? bands[(size_t) k]->get() : level->get();
+        const float v = smoothedSliders[(size_t) k].getCurrentValue();
         if (v != appliedSliders[(size_t) k])
         {
             appliedSliders[(size_t) k] = v;
@@ -241,6 +241,12 @@ void GE7StyleEqualizerProcessor::prepare (double newSampleRate, int, int)
         buildChannel (ch);
     }
 
+    for (int k = 0; k <= numBands; ++k)
+    {
+        smoothedSliders[(size_t) k].reset (newSampleRate, paramRampSeconds);
+        smoothedSliders[(size_t) k].setCurrentAndTargetValue (k < numBands ? bands[(size_t) k]->get() : level->get());
+    }
+
     appliedSliders.fill (1.0e9f);
     updateSliders();
 
@@ -275,6 +281,13 @@ void GE7StyleEqualizerProcessor::process (juce::AudioBuffer<float>& buffer)
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
+            // A knob jump now becomes ~10 ms worth of small slider steps
+            // instead of one full refactor, which is what de-clicks it.
+            for (int k = 0; k <= numBands; ++k)
+            {
+                smoothedSliders[(size_t) k].setTargetValue (k < numBands ? bands[(size_t) k]->get() : level->get());
+                smoothedSliders[(size_t) k].skip (controlInterval);
+            }
             updateSliders();
         }
 

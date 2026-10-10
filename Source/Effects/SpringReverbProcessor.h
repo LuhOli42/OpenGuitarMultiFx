@@ -94,6 +94,10 @@ private:
     std::array<CombChannel, 2> comb;
 
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedDecay;
+    juce::SmoothedValue<float> smoothedTone;
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx

@@ -72,6 +72,14 @@ private:
         double bmDriveScale = 1.0, bmBias = 0.5, bmFeel = 1.0;
         double bmCutAlpha = 1.0, bmLp = 0.0, bmShelf = 0.0, bmPresAlpha = 0.0, bmLpPres = 0.0;
         long long failures = 0;
+
+        // One smoothed value per continuous pot read inside updatePots(),
+        // indexed by slot -- each read site owns a fixed slot number.
+        // They advance once per control tick (potTickSamples) so a knob
+        // jump becomes ~30 small resistor steps instead of one big one.
+        static constexpr int maxSmoothedParams = 20;
+        std::array<juce::SmoothedValue<float>, maxSmoothedParams> smoothedParams {};
+        bool smoothedParamsNeedSnap = true;
     };
 
     void buildChannel (Channel& channel);
@@ -84,6 +92,8 @@ private:
     juce::AudioParameterFloat* addFloat (juce::AudioProcessorParameterGroup& group, const char* id, const char* name, float value);
     juce::AudioParameterFloat* findParam (const char* id) const;
     double param (const juce::AudioParameterFloat* parameter, double fallback) const noexcept;
+    double smoothedParam (Channel& channel, int slot, const juce::AudioParameterFloat* parameter,
+                          double fallback) noexcept;
 
     Model model;
     TubeFits tubes;
@@ -118,6 +128,14 @@ private:
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;
     static constexpr int supplyInterval = 8;
+    static constexpr int potTickSamples = 16; // must match the `(i & 15) == 0` control tick in process()
+
+    // Master/Power/Output multiply the solved signal per sample -> their
+    // own per-sample ramps (in linear gain domain).
+    juce::SmoothedValue<float> smoothedVolumeGain;
+    juce::SmoothedValue<float> smoothedPowerDrive;
+    juce::SmoothedValue<float> smoothedOutputGain;
+    bool smoothedGainsNeedSnap = true;
 };
 
 } // namespace openguitarmultifx

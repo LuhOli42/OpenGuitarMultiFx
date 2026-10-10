@@ -34,6 +34,11 @@ void LooperProcessor::prepare (double sampleRate, int, int numChannels)
     const int bufferLength = (int) (maxLoopSeconds * sampleRate);
     loopBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
 
+    smoothedLevel.reset (sampleRate, paramRampSeconds);
+    smoothedLevel.setCurrentAndTargetValue (level->get());
+    smoothedOverdubDecay.reset (sampleRate, paramRampSeconds);
+    smoothedOverdubDecay.setCurrentAndTargetValue (overdubDecay->get());
+
     reset();
 }
 
@@ -112,11 +117,19 @@ void LooperProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), loopBuffer.getNumChannels());
     const int numSamples = buffer.getNumSamples();
     const int bufferCapacity = loopBuffer.getNumSamples();
-    const float lvl = level->get();
-    const float decay = overdubDecay->get();
+    // trigger/clear are edge-detected footswitches and must act on their
+    // edge, so they read the parameter directly (and stay unsmoothed).
+    // Level multiplies the loop into the live signal -> per-sample ramp;
+    // overdub decay only affects what is written back, so per-block is
+    // enough.
+    smoothedLevel.setTargetValue (level->get());
+    smoothedOverdubDecay.setTargetValue (overdubDecay->get());
+    const float decay = smoothedOverdubDecay.skip (numSamples);
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float lvl = smoothedLevel.getNextValue();
+
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* data = buffer.getWritePointer (ch);

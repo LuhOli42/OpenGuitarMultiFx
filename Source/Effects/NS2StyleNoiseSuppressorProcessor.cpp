@@ -23,6 +23,12 @@ NS2StyleNoiseSuppressorProcessor::NS2StyleNoiseSuppressorProcessor()
 void NS2StyleNoiseSuppressorProcessor::prepare (double newSampleRate, int, int)
 {
     sampleRate = newSampleRate;
+
+    smoothedThreshold.reset (newSampleRate, paramRampSeconds);
+    smoothedThreshold.setCurrentAndTargetValue (threshold->get());
+    smoothedDecay.reset (newSampleRate, paramRampSeconds);
+    smoothedDecay.setCurrentAndTargetValue (decay->get());
+
     reset();
 }
 
@@ -38,17 +44,21 @@ void NS2StyleNoiseSuppressorProcessor::process (juce::AudioBuffer<float>& buffer
     if (sampleRate <= 0.0)
         return;
 
-    const double thr = threshold->get();
+    const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
+    const int numSamples = buffer.getNumSamples();
+
+    // Detector-side params only steer the suppressed gain's slew, so a
+    // per-block stepped ramp is enough; mute is a switch and stays instant.
+    smoothedThreshold.setTargetValue (threshold->get());
+    const double thr = (double) smoothedThreshold.skip (numSamples);
+    smoothedDecay.setTargetValue (decay->get());
     // Decay knob: 40 ms .. 2 s to travel the full reduction, exponentially spaced.
-    const double closeSeconds = 0.04 * std::pow (50.0, (double) decay->get());
+    const double closeSeconds = 0.04 * std::pow (50.0, (double) smoothedDecay.skip (numSamples));
     const double closeStep = maxReductionDb / (closeSeconds * sampleRate);   // dB per sample
     const double openStep = maxReductionDb / (0.001 * sampleRate);            // full travel in 1 ms
     const double detRelease = std::exp (-1.0 / (0.01 * sampleRate));         // 10 ms
     const double muteStep = 1.0 / (0.005 * sampleRate);
     const bool muted = mute->get() >= 0.5f;
-
-    const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
-    const int numSamples = buffer.getNumSamples();
 
     for (int i = 0; i < numSamples; ++i)
     {

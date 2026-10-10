@@ -41,6 +41,18 @@ CompressorProcessor::CompressorProcessor()
 void CompressorProcessor::prepare (double sampleRate, int, int)
 {
     detector.prepare (sampleRate);
+
+    smoothedThresholdDb.reset (sampleRate, paramRampSeconds);
+    smoothedThresholdDb.setCurrentAndTargetValue (thresholdDb->get());
+    smoothedRatio.reset (sampleRate, paramRampSeconds);
+    smoothedRatio.setCurrentAndTargetValue (ratio->get());
+    smoothedMakeupDb.reset (sampleRate, paramRampSeconds);
+    smoothedMakeupDb.setCurrentAndTargetValue (makeupDb->get());
+    smoothedAttackMs.reset (sampleRate, paramRampSeconds);
+    smoothedAttackMs.setCurrentAndTargetValue (attackMs->get());
+    smoothedReleaseMs.reset (sampleRate, paramRampSeconds);
+    smoothedReleaseMs.setCurrentAndTargetValue (releaseMs->get());
+
     reset();
 }
 
@@ -51,15 +63,19 @@ void CompressorProcessor::reset()
 
 void CompressorProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    detector.setAttackTime (attackMs->get());
-    detector.setReleaseTime (releaseMs->get());
-
-    const float threshold = thresholdDb->get();
-    const float r = juce::jmax (1.0f, ratio->get());
-    const float makeup = makeupDb->get();
-
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
+
+    // Attack/release retune the detector (a coefficient, not audio) ->
+    // per-block stepped ramp. Threshold/ratio/makeup enter the per-sample
+    // gain law, so they ramp per sample below.
+    smoothedAttackMs.setTargetValue (attackMs->get());
+    smoothedReleaseMs.setTargetValue (releaseMs->get());
+    detector.setAttackTime (smoothedAttackMs.skip (numSamples));
+    detector.setReleaseTime (smoothedReleaseMs.skip (numSamples));
+    smoothedThresholdDb.setTargetValue (thresholdDb->get());
+    smoothedRatio.setTargetValue (ratio->get());
+    smoothedMakeupDb.setTargetValue (makeupDb->get());
 
     // Caching the write pointer once per channel avoids the bounds-checked
     // indirection getSample()/setSample() would otherwise do on every one of
@@ -78,6 +94,10 @@ void CompressorProcessor::process (juce::AudioBuffer<float>& buffer)
 
         const float envelope = detector.processSample (peak);
         const float envelopeDb = juce::Decibels::gainToDecibels (envelope, -100.0f);
+
+        const float threshold = smoothedThresholdDb.getNextValue();
+        const float r = juce::jmax (1.0f, smoothedRatio.getNextValue());
+        const float makeup = smoothedMakeupDb.getNextValue();
 
         float gainDb = makeup;
         const float overDb = envelopeDb - threshold;

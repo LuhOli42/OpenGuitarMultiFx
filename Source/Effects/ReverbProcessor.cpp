@@ -34,6 +34,14 @@ void ReverbProcessor::prepare (double sampleRate, int maxBlockSize, int numChann
     dryScratch.setSize (juce::jmax (1, numChannels), juce::jmax (1, maxBlockSize), false, false, true);
     for (auto& m : wetMatch)
         m.prepare (sampleRate, 1.43f);
+    smoothedSize.reset (sampleRate, paramRampSeconds);
+    smoothedSize.setCurrentAndTargetValue (size->get());
+    smoothedDamping.reset (sampleRate, paramRampSeconds);
+    smoothedDamping.setCurrentAndTargetValue (damping->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedWidth.reset (sampleRate, paramRampSeconds);
+    smoothedWidth.setCurrentAndTargetValue (width->get());
     updateReverbParameters();
     reset();
 }
@@ -48,23 +56,32 @@ void ReverbProcessor::reset()
 void ReverbProcessor::updateReverbParameters()
 {
     juce::dsp::Reverb::Parameters params;
-    params.roomSize = size->get();
-    params.damping = damping->get();
+    params.roomSize = smoothedSize.getCurrentValue();
+    params.damping = smoothedDamping.getCurrentValue();
     // juce::dsp::Reverb scales its wet level by 3 and its dry level by 2 internally: with the knob's own numbers Mix = 0 came out
     // 6 dB LOUDER than the input. The reverb here runs fully wet at unity (wetLevel 1/3, dryLevel 0) and the dry/wet crossfade is
     // done in process(), with the wet path level-matched to the dry (WetLevelMatcher).
     params.wetLevel = 1.0f / 3.0f;
     params.dryLevel = 0.0f;
-    params.width = width->get();
+    params.width = smoothedWidth.getCurrentValue();
     reverb.setParameters (params);
 }
 
 void ReverbProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    updateReverbParameters(); // cheap struct assignment, no allocation -- safe every block
-
     const int numChannels = juce::jmin (2, buffer.getNumChannels(), dryScratch.getNumChannels());
     const int numSamples = juce::jmin (buffer.getNumSamples(), dryScratch.getNumSamples());
+
+    // Room/damping/width only re-tune the internal filters -- a per-block
+    // stepped ramp (zipper-free at coefficient level, no per-sample cost).
+    smoothedSize.setTargetValue (size->get());
+    smoothedSize.skip (numSamples);
+    smoothedDamping.setTargetValue (damping->get());
+    smoothedDamping.skip (numSamples);
+    smoothedWidth.setTargetValue (width->get());
+    smoothedWidth.skip (numSamples);
+    smoothedMix.setTargetValue (mix->get());
+    updateReverbParameters(); // cheap struct assignment, no allocation -- safe every block
     for (int ch = 0; ch < numChannels; ++ch)
         dryScratch.copyFrom (ch, 0, buffer, ch, 0, numSamples);
 
@@ -72,15 +89,24 @@ void ReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     juce::dsp::ProcessContextReplacing<float> context (block);
     reverb.process (context); // the buffer is now the wet signal
 
-    const float wet = mix->get();
+    std::array<float*, 2> dataPtrs {};
+    std::array<const float*, 2> dryPtrs {};
     for (int ch = 0; ch < numChannels; ++ch)
     {
-        auto* data = buffer.getWritePointer (ch);
-        const auto* dry = dryScratch.getReadPointer (ch);
-        for (int i = 0; i < numSamples; ++i)
+        dataPtrs[(size_t) ch] = buffer.getWritePointer (ch);
+        dryPtrs[(size_t) ch] = dryScratch.getReadPointer (ch);
+    }
+
+    // Sample-major so smoothedMix.getNextValue() advances once per sample
+    // (not once per channel-sample) and both channels share the ramp.
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float wet = smoothedMix.getNextValue();
+        for (int ch = 0; ch < numChannels; ++ch)
         {
-            wetMatch[(size_t) ch].accumulate (dry[i], data[i]);
-            data[i] = dry[i] * (1.0f - wet) + data[i] * wet * wetMatch[(size_t) ch].gain();
+            wetMatch[(size_t) ch].accumulate (dryPtrs[(size_t) ch][i], dataPtrs[(size_t) ch][i]);
+            dataPtrs[(size_t) ch][i] = dryPtrs[(size_t) ch][i] * (1.0f - wet)
+                + dataPtrs[(size_t) ch][i] * wet * wetMatch[(size_t) ch].gain();
         }
     }
     for (int ch = 0; ch < numChannels; ++ch)

@@ -7,6 +7,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RunTests.cpp
   SignalGraphTests.cpp
   BypassCrossfadeTests.cpp
+  ParamSmoothingTests.cpp
   DeferredReclaimerTests.cpp
   ParameterManagerTests.cpp
   PitchDetectorTests.cpp

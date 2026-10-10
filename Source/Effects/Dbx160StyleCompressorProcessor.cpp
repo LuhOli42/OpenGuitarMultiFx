@@ -26,6 +26,14 @@ Dbx160StyleCompressorProcessor::Dbx160StyleCompressorProcessor()
 void Dbx160StyleCompressorProcessor::prepare (double newSampleRate, int, int)
 {
     sampleRate = newSampleRate;
+
+    smoothedThreshold.reset (newSampleRate, paramRampSeconds);
+    smoothedThreshold.setCurrentAndTargetValue (threshold->get());
+    smoothedRatio.reset (newSampleRate, paramRampSeconds);
+    smoothedRatio.setCurrentAndTargetValue (ratio->get());
+    smoothedOutputDb.reset (newSampleRate, paramRampSeconds);
+    smoothedOutputDb.setCurrentAndTargetValue (output->get());
+
     reset();
 }
 
@@ -42,10 +50,12 @@ void Dbx160StyleCompressorProcessor::process (juce::AudioBuffer<float>& buffer)
         return;
 
     const double alpha = dyn::smoothingCoefficient (rmsSeconds, sampleRate);
-    const double thr = threshold->get();
-    const double r = ratio->get() >= 39.5f ? 1.0e4 : (double) ratio->get(); // the top of the knob is infinity : 1
+    // The static curve's inputs multiply into the per-sample gain, so
+    // they ramp per sample below; OverEasy is a mode switch -> instant.
+    smoothedThreshold.setTargetValue (threshold->get());
+    smoothedRatio.setTargetValue (ratio->get());
+    smoothedOutputDb.setTargetValue (output->get());
     const double knee = overEasy->get() >= 0.5f ? kneeDb : 0.0;
-    const double outGain = dyn::fromDb (output->get());
 
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
@@ -61,6 +71,10 @@ void Dbx160StyleCompressorProcessor::process (juce::AudioBuffer<float>& buffer)
         power += (sum / (double) juce::jmax (1, numChannels) - power) * alpha; // true RMS: a first-order average of the power
         levelDb = 10.0 * std::log10 (std::max (power, 1.0e-18));
 
+        const double thr = (double) smoothedThreshold.getNextValue();
+        const double rKnob = (double) smoothedRatio.getNextValue();
+        const double r = rKnob >= 39.5 ? 1.0e4 : rKnob; // the top of the knob is infinity : 1
+        const double outGain = dyn::fromDb ((double) smoothedOutputDb.getNextValue());
         grDb = dyn::staticReductionDb (levelDb, thr, r, knee); // feed-forward: from the input's own level
         const float g = (float) (dyn::fromDb (-grDb) * outGain);
         for (int ch = 0; ch < numChannels; ++ch)

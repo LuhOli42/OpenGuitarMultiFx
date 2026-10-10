@@ -184,6 +184,10 @@ void IRLoaderProcessor::prepare (double newSampleRate, int maxBlockSize, int num
     const float initialGain = isReverbRole() ? 1.0f / 0.125f : 2.5f;
     for (auto& m : wetMatch)
         m.prepare (sampleRate, initialGain);
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mixParam->get());
+    smoothedOutputGainDb.reset (sampleRate, paramRampSeconds);
+    smoothedOutputGainDb.setCurrentAndTargetValue (outputGainDb->get());
 
     // Same reasoning as NAMProcessor::prepare(): a sample-rate/block-size
     // change invalidates an already-prepared Convolution, so rebuilding
@@ -208,7 +212,7 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
         return; // no IR loaded -- pass through unchanged
 
     const int numSamples = buffer.getNumSamples();
-    const float mix = mixParam->get();
+    smoothedMix.setTargetValue (mixParam->get());
 
     // Reaching here means an IR IS loaded, and the Mix law then applies in
     // full: the wet path is level-matched to the dry so Mix is a real
@@ -223,22 +227,41 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
     juce::dsp::ProcessContextReplacing<float> context (block);
     conv->process (context);
 
-    for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+    std::array<float*, 2> irDataPtrs {};
+    std::array<const float*, 2> irDryPtrs {};
+    const int mixChannels = juce::jmin (2, buffer.getNumChannels());
+    for (int ch = 0; ch < mixChannels; ++ch)
     {
-        auto* data = buffer.getWritePointer (ch);
-        const auto* dry = dryScratch.getReadPointer (ch);
-        for (int i = 0; i < numSamples; ++i)
+        irDataPtrs[(size_t) ch] = buffer.getWritePointer (ch);
+        irDryPtrs[(size_t) ch] = dryScratch.getReadPointer (ch);
+    }
+
+    // Sample-major so smoothedMix.getNextValue() advances once per sample
+    // (not once per channel-sample) and both channels share the ramp.
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float mix = smoothedMix.getNextValue();
+        for (int ch = 0; ch < mixChannels; ++ch)
         {
-            wetMatch[(size_t) ch].accumulate (dry[i], data[i]);
-            data[i] = dry[i] * (1.0f - mix) + data[i] * mix * wetMatch[(size_t) ch].gain();
+            wetMatch[(size_t) ch].accumulate (irDryPtrs[(size_t) ch][i], irDataPtrs[(size_t) ch][i]);
+            irDataPtrs[(size_t) ch][i] = irDryPtrs[(size_t) ch][i] * (1.0f - mix)
+                + irDataPtrs[(size_t) ch][i] * mix * wetMatch[(size_t) ch].gain();
         }
     }
     for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
         wetMatch[(size_t) ch].endBlock (numSamples, 1);
 
-    const float outGain = juce::Decibels::decibelsToGain (outputGainDb->get());
-    if (outGain != 1.0f)
-        buffer.applyGain (outGain);
+    // Same ramp as the mix: an output-gain step multiplies audio exactly
+    // like a mix step, so it de-clicks the same way (skipped entirely while
+    // the trim sits at 0 dB, which is the common case).
+    smoothedOutputGainDb.setTargetValue (outputGainDb->get());
+    if (smoothedOutputGainDb.getCurrentValue() != 0.0f || smoothedOutputGainDb.getTargetValue() != 0.0f)
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float g = juce::Decibels::decibelsToGain (smoothedOutputGainDb.getNextValue());
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                buffer.setSample (ch, i, buffer.getSample (ch, i) * g);
+        }
 }
 
 juce::Colour IRLoaderProcessor::getAccentColour() const

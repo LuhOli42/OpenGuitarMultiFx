@@ -36,6 +36,12 @@ private:
     juce::AudioParameterFloat* makeupDb = nullptr;
 
     EnvelopeFollower detector;
+
+    juce::SmoothedValue<float> smoothedThresholdDb;
+    juce::SmoothedValue<float> smoothedRatio;
+    juce::SmoothedValue<float> smoothedMakeupDb;
+    juce::SmoothedValue<float> smoothedAttackMs;
+    juce::SmoothedValue<float> smoothedReleaseMs;
 };
 
 } // namespace openguitarmultifx

@@ -46,6 +46,11 @@ void ReverseDelayProcessor::prepare (double sampleRate, int, int numChannels)
         c.chunkLengthSamples = initialChunkSamples;
         c.playbackPos = c.chunkLengthSamples - 1;
     }
+
+    smoothedFeedback.reset (sampleRate, paramRampSeconds);
+    smoothedFeedback.setCurrentAndTargetValue (feedback->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
 }
 
 void ReverseDelayProcessor::reset()
@@ -67,17 +72,28 @@ void ReverseDelayProcessor::process (juce::AudioBuffer<float>& buffer)
 
     const int numChannels = juce::jmin (buffer.getNumChannels(), (int) channels.size());
     const int numSamples = buffer.getNumSamples();
-    const float fb = feedback->get();
-    const float wetAmount = mix->get();
+    // Feedback multiplies into the record buffer (its effect is delayed by
+    // a full chunk anyway), so a per-block ramp suffices; mix multiplies
+    // live audio and ramps per sample below. timeMs stays unsmoothed on
+    // purpose: it is re-read only at each chunk boundary (see below), so
+    // a mid-ramp value could never corrupt an in-progress chunk -- and
+    // the boundary resample already de-clicks time jumps.
+    smoothedFeedback.setTargetValue (feedback->get());
+    const float fb = smoothedFeedback.skip (numSamples);
+    smoothedMix.setTargetValue (mix->get());
     const int maxChunkSamples = (int) channels[0].chunkBuffers[0].size();
 
-    for (int ch = 0; ch < numChannels; ++ch)
+    // Sample-major so smoothedMix.getNextValue() advances once per sample
+    // (not once per channel-sample) and both channels share the ramp.
+    for (int i = 0; i < numSamples; ++i)
     {
-        auto* data = buffer.getWritePointer (ch);
-        auto& c = channels[(size_t) ch];
+        const float wetAmount = smoothedMix.getNextValue();
 
-        for (int i = 0; i < numSamples; ++i)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
+            auto* data = buffer.getWritePointer (ch);
+            auto& c = channels[(size_t) ch];
+
             auto& playbackBuffer = c.chunkBuffers[(size_t) (1 - c.activeRecordBuffer)];
             const float wet = (c.playbackPos >= 0 && c.playbackPos < (int) playbackBuffer.size())
                                    ? playbackBuffer[(size_t) c.playbackPos]

@@ -137,6 +137,23 @@ double EL84BoutiqueAmpCore::param (const juce::AudioParameterFloat* parameter, d
     return parameter != nullptr ? (double) parameter->get() : fallback;
 }
 
+// One slot per continuous read site inside updatePots(). The slot's
+// SmoothedValue is advanced by potTickSamples here because updatePots()
+// runs exactly once per channel per control tick -- a knob jump then
+// lands as ~30 small resistor edits over ~10 ms instead of one step,
+// which is what de-clicks it.
+double EL84BoutiqueAmpCore::smoothedParam (Channel& ch, int slot,
+                                           const juce::AudioParameterFloat* parameter,
+                                           double fallback) noexcept
+{
+    auto& s = ch.smoothedParams[(size_t) slot];
+    const float v = parameter != nullptr ? parameter->get() : (float) fallback;
+    s.setTargetValue (v);
+    if (ch.smoothedParamsNeedSnap)
+        s.setCurrentAndTargetValue (v);
+    return (double) s.skip (potTickSamples);
+}
+
 void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channelTwo)
 {
     const auto gnd = NodalCircuit::ground;
@@ -450,22 +467,22 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         if (bottom >= 0) c.setResistance (bottom, juce::jmax (1.0, max * juce::jlimit (0.0, 1.0, value)));
     };
 
-    const double power = param (powerParam, 1.0);
-    const double bias = param (biasParam, 0.5);
-    const double feel = param (feelParam, 1.0);
+    const double power = smoothedParam (ch, 0, powerParam, 1.0);
+    const double bias = smoothedParam (ch, 1, biasParam, 0.5);
+    const double feel = smoothedParam (ch, 2, feelParam, 1.0);
     ch.pre.setSource (ch.preRail, ch.preRailFiltered > 0.0 ? ch.preRailFiltered : railNominal * 0.725);
 
     if (model == Model::matchlessHC30)
     {
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, param (volume1Param, 0.4));
-        setPot (ch.pre2, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, param (volume2Param, 0.4));
-        const double bass = param (bass1Param, 0.5), treble = param (treble1Param, 0.5);
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, smoothedParam (ch, 3, volume1Param, 0.4));
+        setPot (ch.pre2, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, smoothedParam (ch, 4, volume2Param, 0.4));
+        const double bass = smoothedParam (ch, 5, bass1Param, 0.5), treble = smoothedParam (ch, 6, treble1Param, 0.5);
         ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 1.0e6));
         ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 1.0e6));
         ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
         ch.pre.setResistance (ch.rBassBottom, boundedPot (bass, 1.0e6));
         if (! reducedOrder)
-            ch.power.setResistance (ch.rCut, boundedPot (1.0 - param (cutParam, 0.5), 100.0e3));
+            ch.power.setResistance (ch.rCut, boundedPot (1.0 - smoothedParam (ch, 7, cutParam, 0.5), 100.0e3));
         const int tonePosition = juce::jlimit (0, 5, juce::roundToInt ((float) param (tone2Param, 0.0)));
         if (tonePosition != ch.lastTonePosition)
         {
@@ -476,30 +493,34 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     }
     else if (model == Model::hotCat30)
     {
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, param (gainParam, 0.5));
-        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - param (trebleParam, 0.5), 250.0e3));
-        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (param (trebleParam, 0.5), 250.0e3));
-        ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - param (bassParam, 0.5), 1.0e6));
-        ch.pre.setResistance (ch.rBassBottom, boundedPot (param (bassParam, 0.5), 1.0e6));
-        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - param (midParam, 0.5), 25.0e3));
+        const double treble = smoothedParam (ch, 9, trebleParam, 0.5);
+        const double bass = smoothedParam (ch, 10, bassParam, 0.5);
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, smoothedParam (ch, 8, gainParam, 0.5));
+        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 250.0e3));
+        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 250.0e3));
+        ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
+        ch.pre.setResistance (ch.rBassBottom, boundedPot (bass, 1.0e6));
+        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - smoothedParam (ch, 11, midParam, 0.5), 25.0e3));
     }
     else if (model == Model::carmenGhia)
     {
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, param (volume1Param, 0.4));
-        const double tone = param (toneParam, 0.5);
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, smoothedParam (ch, 3, volume1Param, 0.4));
+        const double tone = smoothedParam (ch, 12, toneParam, 0.5);
         ch.pre.setCapacitance (ch.toneCap, 4.7e-9 * (0.2 + 1.6 * (1.0 - tone)));
     }
     else
     {
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, param (preampParam, 0.5));
-        setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, param (volume1Param, 0.5));
-        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - param (trebleParam, 0.5), 250.0e3));
-        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (param (trebleParam, 0.5), 250.0e3));
-        ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - param (bassParam, 0.5), 1.0e6));
-        ch.pre.setResistance (ch.rBassBottom, boundedPot (param (bassParam, 0.5), 1.0e6));
-        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - param (midParam, 0.5), 25.0e3));
+        const double treble = smoothedParam (ch, 9, trebleParam, 0.5);
+        const double bass = smoothedParam (ch, 10, bassParam, 0.5);
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, smoothedParam (ch, 13, preampParam, 0.5));
+        setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, smoothedParam (ch, 3, volume1Param, 0.5));
+        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 250.0e3));
+        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 250.0e3));
+        ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
+        ch.pre.setResistance (ch.rBassBottom, boundedPot (bass, 1.0e6));
+        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - smoothedParam (ch, 11, midParam, 0.5), 25.0e3));
         if (! reducedOrder)
-            ch.power.setResistance (ch.rPresence, boundedPot (1.0 - param (presenceParam, 0.5), 25.0e3));
+            ch.power.setResistance (ch.rPresence, boundedPot (1.0 - smoothedParam (ch, 14, presenceParam, 0.5), 25.0e3));
     }
 
     if (! reducedOrder)
@@ -510,7 +531,7 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
             (model == Model::carmenGhia ? 400.0 : 130.0) * (0.05 + 0.95 * feel));
         if (model == Model::carmenGhia)
         {
-            const double master = param (masterParam, 1.0);
+            const double master = smoothedParam (ch, 15, masterParam, 1.0);
             ch.power.setResistance (ch.rMasterTopA, boundedPot (1.0 - master, 250.0e3));
             ch.power.setResistance (ch.rMasterTopB, boundedPot (1.0 - master, 250.0e3));
         }
@@ -534,15 +555,16 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         // into the behavioural stage instead -- master attenuates the drive, bias shifts
         // the knee's operating point, tube feel scales the sag depth, and cut/presence
         // run as cheap one-poles on the output.
-        ch.bmDriveScale = param (masterParam, 1.0);
+        ch.bmDriveScale = smoothedParam (ch, 15, masterParam, 1.0);
         ch.bmBias = bias;
         ch.bmFeel = feel;
-        const double cutHz = 20000.0 * std::pow (0.15, param (cutParam, 0.5));
+        const double cutHz = 20000.0 * std::pow (0.15, smoothedParam (ch, 7, cutParam, 0.5));
         ch.bmCutAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cutHz / juce::jmax (1.0, sampleRate));
-        ch.bmShelf = (param (presenceParam, 0.5) - 0.5) * 4.0;
+        ch.bmShelf = (smoothedParam (ch, 14, presenceParam, 0.5) - 0.5) * 4.0;
         ch.bmPresAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 3500.0 / juce::jmax (1.0, sampleRate));
     }
     (void) power;
+    ch.smoothedParamsNeedSnap = false;
 }
 
 void EL84BoutiqueAmpCore::updateSupply (Channel& ch)
@@ -618,6 +640,10 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
         ch.preDc = ch.pre.voltage (ch.preOut);
         if (model == Model::matchlessHC30)
             ch.pre2Dc = ch.pre2.voltage (ch.preOut2);
+        for (auto& s : ch.smoothedParams)
+            s.reset (sampleRate, EffectProcessor::paramRampSeconds);
+        ch.smoothedParamsNeedSnap = true;
+        smoothedGainsNeedSnap = true;
         updatePots (ch);
     }
 }
@@ -637,15 +663,36 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
     if (solveChannels == 0)
         return;
-    const double volume = model == Model::hotCat30 ? param (masterParam, 0.7) :
+    const double volumeTarget = model == Model::hotCat30 ? param (masterParam, 0.7) :
         model == Model::matchlessHC30 ? param (masterParam, 0.7) : 1.0;
-    const double powerDrive = std::pow (10.0, (param (powerParam, 1.0) - 1.0) * 18.0 / 20.0);
-    const double output = std::pow (10.0, (param (outputParam, 0.5) - 0.5) * 48.0 / 20.0);
+    const double powerDriveTarget = std::pow (10.0, (param (powerParam, 1.0) - 1.0) * 18.0 / 20.0);
+    const double outputTarget = std::pow (10.0, (param (outputParam, 0.5) - 0.5) * 48.0 / 20.0);
+
+    // The solved-signal gains (master drive, power drive, output trim)
+    // multiply audio per sample -- snap them on the first block after
+    // prepare (preset load stays instant) then ramp afterwards.
+    if (smoothedGainsNeedSnap)
+    {
+        smoothedVolumeGain.reset (sampleRate, EffectProcessor::paramRampSeconds);
+        smoothedVolumeGain.setCurrentAndTargetValue ((float) volumeTarget);
+        smoothedPowerDrive.reset (sampleRate, EffectProcessor::paramRampSeconds);
+        smoothedPowerDrive.setCurrentAndTargetValue ((float) powerDriveTarget);
+        smoothedOutputGain.reset (sampleRate, EffectProcessor::paramRampSeconds);
+        smoothedOutputGain.setCurrentAndTargetValue ((float) outputTarget);
+        smoothedGainsNeedSnap = false;
+    }
+    smoothedVolumeGain.setTargetValue ((float) volumeTarget);
+    smoothedPowerDrive.setTargetValue ((float) powerDriveTarget);
+    smoothedOutputGain.setTargetValue ((float) outputTarget);
     const int speakerIndex = juce::jlimit (0, 2, juce::roundToInt ((float) param (speakerParam, 2.0)));
     const bool useSecondChannel = model == Model::matchlessHC30 && param (channelParam, 1.0) >= 0.5;
 
     for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
+        const double volume = (double) smoothedVolumeGain.getNextValue();
+        const double powerDrive = (double) smoothedPowerDrive.getNextValue();
+        const double output = (double) smoothedOutputGain.getNextValue();
+
         if ((i & 15) == 0)
             for (auto& ch : channels)
                 updatePots (ch);

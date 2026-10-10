@@ -41,6 +41,15 @@ void FlangerProcessor::prepare (double sampleRate, int, int numChannels)
     const int bufferLength = (int) std::ceil (bufferHeadroomMs * 0.001 * sampleRate) + 4;
     delayBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
 
+    smoothedRateHz.reset (sampleRate, paramRampSeconds);
+    smoothedRateHz.setCurrentAndTargetValue (rateHz->get());
+    smoothedDepth.reset (sampleRate, paramRampSeconds);
+    smoothedDepth.setCurrentAndTargetValue (depth->get());
+    smoothedFeedback.reset (sampleRate, paramRampSeconds);
+    smoothedFeedback.setCurrentAndTargetValue (feedback->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -60,16 +69,19 @@ void FlangerProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int bufferLength = delayBuffer.getNumSamples();
 
-    const double phaseIncrement = twoPi * (double) rateHz->get() / currentSampleRate;
-    const float depthMs = depth->get() * maxDepthMs;
-    const float fb = feedback->get();
-    const float wet = mix->get();
+    smoothedRateHz.setTargetValue (rateHz->get());
+    smoothedDepth.setTargetValue (depth->get());
+    smoothedFeedback.setTargetValue (feedback->get());
+    smoothedMix.setTargetValue (mix->get());
+    const double phaseIncrement = twoPi * (double) smoothedRateHz.skip (numSamples) / currentSampleRate;
 
     for (int i = 0; i < numSamples; ++i)
     {
         // Centred so the sweep never reaches (or crosses) zero delay --
         // a true zero-crossing would need a discontinuous read index.
-        const float delayMs = centreDelayMs + depthMs * (float) std::sin (lfoPhase);
+        const float delayMs = centreDelayMs + smoothedDepth.getNextValue() * maxDepthMs * (float) std::sin (lfoPhase);
+        const float fb = smoothedFeedback.getNextValue();
+        const float wet = smoothedMix.getNextValue();
         const float delaySamples = delayMs * 0.001f * (float) currentSampleRate;
 
         float readPos = (float) writePos - delaySamples;

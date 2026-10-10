@@ -67,6 +67,9 @@ private:
     int writePos = 0;
     int loopLengthSamples = 0;
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedLevel;
+    juce::SmoothedValue<float> smoothedOverdubDecay;
 };
 
 } // namespace openguitarmultifx

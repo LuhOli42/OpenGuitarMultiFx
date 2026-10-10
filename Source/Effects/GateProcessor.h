@@ -34,6 +34,10 @@ private:
 
     EnvelopeFollower levelDetector; // fixed, fast timing -- not user-exposed
     EnvelopeFollower gainSmoother;  // timing == the Attack/Release parameters above
+
+    juce::SmoothedValue<float> smoothedThresholdDb;
+    juce::SmoothedValue<float> smoothedAttackMs;
+    juce::SmoothedValue<float> smoothedReleaseMs;
 };
 
 } // namespace openguitarmultifx

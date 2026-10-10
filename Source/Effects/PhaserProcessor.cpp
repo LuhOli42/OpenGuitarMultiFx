@@ -38,6 +38,14 @@ PhaserProcessor::PhaserProcessor()
 void PhaserProcessor::prepare (double sampleRate, int, int)
 {
     currentSampleRate = sampleRate;
+    smoothedRateHz.reset (sampleRate, paramRampSeconds);
+    smoothedRateHz.setCurrentAndTargetValue (rateHz->get());
+    smoothedDepth.reset (sampleRate, paramRampSeconds);
+    smoothedDepth.setCurrentAndTargetValue (depth->get());
+    smoothedFeedback.reset (sampleRate, paramRampSeconds);
+    smoothedFeedback.setCurrentAndTargetValue (feedback->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
     reset();
 }
 
@@ -58,16 +66,20 @@ void PhaserProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
 
-    const double phaseIncrement = twoPi * (double) rateHz->get() / currentSampleRate;
-    const float depthAmount = depth->get();
-    const float fb = feedback->get();
-    const float wet = mix->get();
+    smoothedRateHz.setTargetValue (rateHz->get());
+    smoothedDepth.setTargetValue (depth->get());
+    smoothedFeedback.setTargetValue (feedback->get());
+    smoothedMix.setTargetValue (mix->get());
+    const double phaseIncrement = twoPi * (double) smoothedRateHz.skip (numSamples) / currentSampleRate;
 
     constexpr float centreFreq = (minFreqHz + maxFreqHz) * 0.5f;
     constexpr float halfRange = (maxFreqHz - minFreqHz) * 0.5f;
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float depthAmount = smoothedDepth.getNextValue();
+        const float fb = smoothedFeedback.getNextValue();
+        const float wet = smoothedMix.getNextValue();
         const float freqHz = centreFreq + halfRange * depthAmount * (float) std::sin (lfoPhase);
         const float tanTerm = (float) std::tan (pi * (double) freqHz / currentSampleRate);
         const float coeff = (tanTerm - 1.0f) / (tanTerm + 1.0f);

@@ -101,6 +101,10 @@ private:
     DualMonoShortcut shortcut;
 
     static constexpr int controlInterval = 64; // samples between slider -> resistance checks (a change refactors a block)
+
+    // One smoothed value per slider (bands 0..numBands-1 plus Level at
+    // index numBands); advanced once per control tick -- see process().
+    std::array<juce::SmoothedValue<float>, numBands + 1> smoothedSliders;
 };
 
 } // namespace openguitarmultifx

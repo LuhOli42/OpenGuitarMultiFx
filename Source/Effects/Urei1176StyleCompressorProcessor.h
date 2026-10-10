@@ -66,6 +66,11 @@ private:
     double sampleRate = 0.0;
     double detector = 0.0; // the side-chain's DC (C27): volts above the threshold
     double grDb = 0.0;
+
+    juce::SmoothedValue<float> smoothedInputDb;
+    juce::SmoothedValue<float> smoothedOutputDb;
+    juce::SmoothedValue<float> smoothedAttack;
+    juce::SmoothedValue<float> smoothedRelease;
 };
 
 } // namespace openguitarmultifx

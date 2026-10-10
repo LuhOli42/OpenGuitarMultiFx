@@ -55,6 +55,11 @@ private:
     double gainDb = 0.0;
     long long holdCounter = 0;
     bool open = false;
+
+    juce::SmoothedValue<float> smoothedThreshold;
+    juce::SmoothedValue<float> smoothedRange;
+    juce::SmoothedValue<float> smoothedLowCut;
+    juce::SmoothedValue<float> smoothedHighCut;
 };
 
 } // namespace openguitarmultifx

@@ -54,6 +54,13 @@ void RoomReverbProcessor::prepare (double sampleRate, int, int)
         }
     }
 
+    smoothedDecay.reset (sampleRate, paramRampSeconds);
+    smoothedDecay.setCurrentAndTargetValue (decay->get());
+    smoothedTone.reset (sampleRate, paramRampSeconds);
+    smoothedTone.setCurrentAndTargetValue (tone->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -78,27 +85,40 @@ void RoomReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
 
     // Capped well below Hall's 0.98 -- a real small room's reflections die
-    // out in a few hundred ms, not seconds.
-    const float feedback = 0.5f + decay->get() * 0.4f;
-    const float damp1 = tone->get();
+    // out in a few hundred ms, not seconds. The comb coefficients ramp
+    // per block; mix ramps per sample below.
+    smoothedDecay.setTargetValue (decay->get());
+    const float feedback = 0.5f + smoothedDecay.skip (numSamples) * 0.4f;
+    smoothedTone.setTargetValue (tone->get());
+    const float damp1 = smoothedTone.skip (numSamples);
     const float damp2 = 1.0f - damp1;
-    const float wet = mix->get();
+    smoothedMix.setTargetValue (mix->get());
 
+    std::array<float*, 2> dataPtrs {};
     for (int ch = 0; ch < numChannels; ++ch)
     {
-        auto* data = buffer.getWritePointer (ch);
+        dataPtrs[(size_t) ch] = buffer.getWritePointer (ch);
         auto& combBank = combs[(size_t) ch];
-        auto& allpassBank = allpass[(size_t) ch];
-
         for (auto& c : combBank)
         {
             c.feedback = feedback;
             c.damp1 = damp1;
             c.damp2 = damp2;
         }
+    }
 
-        for (int i = 0; i < numSamples; ++i)
+    // Sample-major so smoothedMix.getNextValue() advances once per sample
+    // (not once per channel-sample) and both channels share the ramp.
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float wet = smoothedMix.getNextValue();
+
+        for (int ch = 0; ch < numChannels; ++ch)
         {
+            auto* data = dataPtrs[(size_t) ch];
+            auto& combBank = combs[(size_t) ch];
+            auto& allpassBank = allpass[(size_t) ch];
+
             const float input = data[i];
 
             float combSum = 0.0f;

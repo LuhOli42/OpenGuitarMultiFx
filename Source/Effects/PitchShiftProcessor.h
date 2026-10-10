@@ -418,6 +418,9 @@ private:
     std::array<GrainShifter, 2> shifters;
     PeriodTracker tracker;
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedSemitones;
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx

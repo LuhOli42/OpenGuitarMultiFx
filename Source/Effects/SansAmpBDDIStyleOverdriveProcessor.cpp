@@ -216,12 +216,12 @@ void SansAmpBDDIStyleOverdriveProcessor::buildChannel (Channel& ch)
 void SansAmpBDDIStyleOverdriveProcessor::updatePots()
 {
     const auto clampFraction = [] (double x) { return juce::jlimit (0.001, 0.999, x); };
-    const double pres = clampFraction (presenceParam->get());
-    const double drive = clampFraction (driveParam->get());
-    const double blend = clampFraction (blendParam->get());
-    const double bass = clampFraction (bassParam->get());
-    const double treble = clampFraction (trebleParam->get());
-    const double level = clampFraction (levelParam->get());
+    const double pres = clampFraction ((double) smoothedPresence.getCurrentValue());
+    const double drive = clampFraction ((double) smoothedDrive.getCurrentValue());
+    const double blend = clampFraction ((double) smoothedBlend.getCurrentValue());
+    const double bass = clampFraction ((double) smoothedBass.getCurrentValue());
+    const double treble = clampFraction ((double) smoothedTreble.getCurrentValue());
+    const double level = clampFraction ((double) smoothedLevel.getCurrentValue());
 
     for (auto& ch : channels)
     {
@@ -251,6 +251,19 @@ void SansAmpBDDIStyleOverdriveProcessor::prepare (double newSampleRate, int, int
         ch = Channel {};
         buildChannel (ch);
     }
+
+    smoothedPresence.reset (newSampleRate, paramRampSeconds);
+    smoothedPresence.setCurrentAndTargetValue (presenceParam->get());
+    smoothedDrive.reset (newSampleRate, paramRampSeconds);
+    smoothedDrive.setCurrentAndTargetValue (driveParam->get());
+    smoothedBlend.reset (newSampleRate, paramRampSeconds);
+    smoothedBlend.setCurrentAndTargetValue (blendParam->get());
+    smoothedBass.reset (newSampleRate, paramRampSeconds);
+    smoothedBass.setCurrentAndTargetValue (bassParam->get());
+    smoothedTreble.reset (newSampleRate, paramRampSeconds);
+    smoothedTreble.setCurrentAndTargetValue (trebleParam->get());
+    smoothedLevel.reset (newSampleRate, paramRampSeconds);
+    smoothedLevel.setCurrentAndTargetValue (levelParam->get());
 
     updatePots();
 
@@ -288,6 +301,18 @@ void SansAmpBDDIStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buff
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
+            smoothedPresence.setTargetValue (presenceParam->get());
+            smoothedPresence.skip (controlInterval);
+            smoothedDrive.setTargetValue (driveParam->get());
+            smoothedDrive.skip (controlInterval);
+            smoothedBlend.setTargetValue (blendParam->get());
+            smoothedBlend.skip (controlInterval);
+            smoothedBass.setTargetValue (bassParam->get());
+            smoothedBass.skip (controlInterval);
+            smoothedTreble.setTargetValue (trebleParam->get());
+            smoothedTreble.skip (controlInterval);
+            smoothedLevel.setTargetValue (levelParam->get());
+            smoothedLevel.skip (controlInterval);
             updatePots();
         }
 

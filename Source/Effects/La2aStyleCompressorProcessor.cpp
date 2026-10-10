@@ -67,6 +67,12 @@ double La2aStyleCompressorProcessor::stage (double x) const noexcept
 void La2aStyleCompressorProcessor::prepare (double newSampleRate, int, int)
 {
     sampleRate = newSampleRate;
+
+    smoothedPeakReduction.reset (newSampleRate, paramRampSeconds);
+    smoothedPeakReduction.setCurrentAndTargetValue (peakReduction->get());
+    smoothedGainDb.reset (newSampleRate, paramRampSeconds);
+    smoothedGainDb.setCurrentAndTargetValue ((gain->get() - 50.0f) * 0.6f);
+
     reset();
 }
 
@@ -81,9 +87,12 @@ void La2aStyleCompressorProcessor::process (juce::AudioBuffer<float>& buffer)
     if (sampleRate <= 0.0)
         return;
 
-    const double sideGain = peakReduction->get() <= 0.0f ? 0.0 : std::pow (10.0, (peakReduction->get() / 100.0 - 1.0) * 2.0); // 1 at 100, 0.1 at 50, 0.01 at 0+
-    const double lawExponent = mode->get() >= 0.5f ? 14.0 : 3.0;                                                           // (n + 1):1 at depth in the loop; ~2.7:1 and ~9:1 measured between -8 and 0 dBFS
-    const double makeup = dyn::fromDb (((double) gain->get() - 50.0) * 0.6);
+    // Peak Reduction and Gain drive the opto cell and the output trim --
+    // both ramp per sample below; the Compress/Limit mode is a switch and
+    // stays instant.
+    smoothedPeakReduction.setTargetValue (peakReduction->get());
+    smoothedGainDb.setTargetValue ((gain->get() - 50.0f) * 0.6f);
+    const double lawExponent = mode->get() >= 0.5f ? 14.0 : 3.0; // (n + 1):1 at depth in the loop; ~2.7:1 and ~9:1 measured between -8 and 0 dBFS
 
     const double envAttack = dyn::smoothingCoefficient (0.0005, sampleRate), envRelease = dyn::smoothingCoefficient (0.005, sampleRate);
     const double aFast = dyn::smoothingCoefficient (attackFastSeconds, sampleRate);
@@ -97,6 +106,9 @@ void La2aStyleCompressorProcessor::process (juce::AudioBuffer<float>& buffer)
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const double pr = (double) smoothedPeakReduction.getNextValue();
+        const double sideGain = pr <= 0.0 ? 0.0 : std::pow (10.0, (pr / 100.0 - 1.0) * 2.0); // 1 at 100, 0.1 at 50, 0.01 at 0+
+        const double makeup = dyn::fromDb ((double) smoothedGainDb.getNextValue());
         const double atten = dyn::fromDb (-grDb);
         double peak = 0.0;
         for (int ch = 0; ch < numChannels; ++ch)

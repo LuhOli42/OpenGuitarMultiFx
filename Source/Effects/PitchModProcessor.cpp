@@ -36,6 +36,12 @@ void PitchModProcessor::prepare (double sampleRate, int, int)
     currentSampleRate = sampleRate;
     for (auto& shifter : shifters)
         shifter.prepare (sampleRate);
+    smoothedRateHz.reset (sampleRate, paramRampSeconds);
+    smoothedRateHz.setCurrentAndTargetValue (rateHz->get());
+    smoothedDepth.reset (sampleRate, paramRampSeconds);
+    smoothedDepth.setCurrentAndTargetValue (depth->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
     reset();
 }
 
@@ -54,13 +60,15 @@ void PitchModProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
 
-    const double phaseIncrement = twoPi * (double) rateHz->get() / currentSampleRate;
-    const float depthAmount = depth->get();
-    const float wet = mix->get();
+    smoothedRateHz.setTargetValue (rateHz->get());
+    smoothedDepth.setTargetValue (depth->get());
+    smoothedMix.setTargetValue (mix->get());
+    const double phaseIncrement = twoPi * (double) smoothedRateHz.skip (numSamples) / currentSampleRate;
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const float semitones = maxSemitones * depthAmount * (float) std::sin (lfoPhase);
+        const float semitones = maxSemitones * smoothedDepth.getNextValue() * (float) std::sin (lfoPhase);
+        const float wet = smoothedMix.getNextValue();
         const float ratio = std::pow (2.0f, semitones / 12.0f);
 
         for (int ch = 0; ch < numChannels; ++ch)

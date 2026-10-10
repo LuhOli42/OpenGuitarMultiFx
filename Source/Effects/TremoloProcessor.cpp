@@ -32,6 +32,10 @@ TremoloProcessor::TremoloProcessor()
 void TremoloProcessor::prepare (double sampleRate, int, int)
 {
     currentSampleRate = sampleRate;
+    smoothedRateHz.reset (sampleRate, paramRampSeconds);
+    smoothedRateHz.setCurrentAndTargetValue (rateHz->get());
+    smoothedDepth.reset (sampleRate, paramRampSeconds);
+    smoothedDepth.setCurrentAndTargetValue (depth->get());
     reset();
 }
 
@@ -47,8 +51,9 @@ void TremoloProcessor::process (juce::AudioBuffer<float>& buffer)
 
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
-    const double phaseIncrement = twoPi * (double) rateHz->get() / currentSampleRate;
-    const float depthAmount = depth->get();
+    smoothedRateHz.setTargetValue (rateHz->get());
+    smoothedDepth.setTargetValue (depth->get());
+    const double phaseIncrement = twoPi * (double) smoothedRateHz.skip (numSamples) / currentSampleRate;
 
     std::array<float*, 2> channelData {};
     const int cachedChannels = juce::jmin (numChannels, 2);
@@ -59,7 +64,7 @@ void TremoloProcessor::process (juce::AudioBuffer<float>& buffer)
     {
         // Oscillates between (1-depth) and 1.0 -- full depth reaches
         // silence at the trough, zero depth leaves the signal untouched.
-        const float gain = 1.0f - depthAmount * 0.5f * (1.0f - (float) std::cos (lfoPhase));
+        const float gain = 1.0f - smoothedDepth.getNextValue() * 0.5f * (1.0f - (float) std::cos (lfoPhase));
 
         for (int ch = 0; ch < cachedChannels; ++ch)
             channelData[(size_t) ch][i] *= gain;

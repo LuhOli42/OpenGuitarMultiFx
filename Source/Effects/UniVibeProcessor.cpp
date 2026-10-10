@@ -48,6 +48,12 @@ UniVibeProcessor::UniVibeProcessor()
 void UniVibeProcessor::prepare (double sampleRate, int, int)
 {
     currentSampleRate = sampleRate;
+    smoothedRateHz.reset (sampleRate, paramRampSeconds);
+    smoothedRateHz.setCurrentAndTargetValue (rateHz->get());
+    smoothedDepth.reset (sampleRate, paramRampSeconds);
+    smoothedDepth.setCurrentAndTargetValue (depth->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
     reset();
 }
 
@@ -67,15 +73,18 @@ void UniVibeProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
 
-    const double phaseIncrement = twoPi * (double) rateHz->get() / currentSampleRate;
-    const float depthAmount = depth->get();
-    const float wet = mix->get();
+    smoothedRateHz.setTargetValue (rateHz->get());
+    smoothedDepth.setTargetValue (depth->get());
+    smoothedMix.setTargetValue (mix->get());
+    const double phaseIncrement = twoPi * (double) smoothedRateHz.skip (numSamples) / currentSampleRate;
 
     constexpr float centreFreq = (minFreqHz + maxFreqHz) * 0.5f;
     constexpr float halfRange = (maxFreqHz - minFreqHz) * 0.5f;
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float depthAmount = smoothedDepth.getNextValue();
+        const float wet = smoothedMix.getNextValue();
         const float lfoValue = asymmetricLfo (lfoPhase);
         const float freqHz = centreFreq + halfRange * depthAmount * lfoValue;
         const float tanTerm = (float) std::tan (pi * (double) freqHz / currentSampleRate);

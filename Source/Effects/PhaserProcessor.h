@@ -66,6 +66,11 @@ private:
 
     double currentSampleRate = 0.0;
     double lfoPhase = 0.0;
+
+    juce::SmoothedValue<float> smoothedRateHz;
+    juce::SmoothedValue<float> smoothedDepth;
+    juce::SmoothedValue<float> smoothedFeedback;
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx
