@@ -286,7 +286,9 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("DT1StyleDistortion");
     registry.registerType ("DT1StyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<DT1StyleDistortionProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), 10.17f); });
     registry.markQualityDependent ("HM2StyleDistortion");
-    registry.registerType ("HM2StyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<HM2StyleDistortionProcessor> (Orders { 1, 2, 2 }, 2.0), 470000.0), 6.3f); });
+    // HM-2 at balanced is 2x: its 2x aliasing (-62.7 dB nonharmonic, docs/circuits/Oversampling.md) is already
+    // inaudible, and 4x there doubled the pedal's cost for nothing.
+    registry.registerType ("HM2StyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<HM2StyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 6.3f); });
     using ClipModel = OpAmpClipperDistortionProcessor::Model;
     registry.markQualityDependent ("DistortionPlusStyleDistortion");
     registry.registerType ("DistortionPlusStyleDistortion", [] { return trimmed (pickupLoaded (oversampledSlew<OpAmpClipperDistortionProcessor> (Orders { 0, 0, 1 }, 0.5, ClipModel::distortionPlus), 1000000.0), 8.95f); });
