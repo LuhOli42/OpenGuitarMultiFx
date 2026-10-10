@@ -989,7 +989,9 @@ void RockerverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone) * bmPostGain) : ch.power.voltage (ch.wOut);
+            // negated to match the full path's net polarity at wOut (the bypassed recovery pair
+            // leaves the reduced path an inversion short of the reference).
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, -ch.power.voltage (ch.wTone) * bmPostGain) : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

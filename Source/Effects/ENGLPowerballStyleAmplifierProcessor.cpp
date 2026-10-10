@@ -959,8 +959,9 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
                 updateSupply (ch);
             }
 
+            // negated: the bypassed post-tonestack triodes invert an odd number of times in the full path.
             const double speakerVolts = reducedOrder
-                ? behavioralPowerStage (ch, ch.tapDcOut[channelSel] * bmTapGain[channelSel])
+                ? behavioralPowerStage (ch, -ch.tapDcOut[channelSel] * bmTapGain[channelSel])
                 : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
