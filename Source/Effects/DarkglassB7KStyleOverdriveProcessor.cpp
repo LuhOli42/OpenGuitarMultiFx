@@ -81,8 +81,10 @@ void DarkglassB7KStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addOpAmp (plus, buf, buf);           // follower
         ch.nBuf = buf;
 
-        // Grunt: series-RC shunt (1 uF then the switched resistor) bleeds highs pre-clip = more low end
-        c.addCapacitor (buf, g1, 1.0e-6);
+        // Grunt: series-RC shunt (1 uF then the switched resistor) bleeds highs pre-clip = more low end.
+        // It hangs off drvIn, not buf: the follower output is ideal (zero output Z) so a shunt there
+        // can never move the node voltage — through the Attack series R it bleeds the drive input.
+        c.addCapacitor (drvIn, g1, 1.0e-6);
         ch.rGrunt = c.addResistor (g1, nb, 1.0e9);
 
         // Attack: handled series R into drvIn, a bright cap across it, a shunt cap to the bias
