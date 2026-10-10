@@ -159,7 +159,10 @@ private:
         static constexpr float cmndThreshold = 0.5f;
         static constexpr float minFreqHz = 40.0f; // ~E1 -- below this a lock helps nobody
         static constexpr float maxFreqHz = 700.0f;
-        static constexpr int maxTau = 512;        // lag budget: fsd/minFreqHz up to ~96k input
+        // Lag budget = the ring's usable history (analysisLen is reserved for
+        // the reference window). At 96 kHz this covers ~41 Hz (E1), which a
+        // hardcoded 512 did not; below that the fsd/minFreqHz term binds anyway.
+        static constexpr int maxTau = ringSize - analysisLen;
         static constexpr int fineRingSize = 3072;
         static constexpr int fineWindow = 1024;
 
@@ -248,6 +251,10 @@ private:
             {
                 stableCount = 0;
                 periodSamples = 0.0f;
+                // Drift the grain back toward neutral: keeping the previous
+                // note's grain into the next attack detunes/combs the onset
+                // until tracking settles again.
+                grainTarget += (defaultGrain - grainTarget) * 0.05f;
                 return;
             }
 

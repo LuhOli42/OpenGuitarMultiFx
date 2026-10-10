@@ -102,6 +102,17 @@ void NAMProcessor::normalizeLevels (nam::DSP& model)
 
     *inputGainDb = 0.0f;
     *outputGainDb = juce::jlimit (-24.0f, 24.0f, (float) juce::Decibels::gainToDecibels (inRms / outRms));
+
+    // Flush the probe's residual filter/LSTM state: the published model must
+    // not carry a decaying 220 Hz tail into its first live block.
+    std::fill (in.begin(), in.end(), 0.0f);
+    for (int pos = 0; pos < signalLen; pos += block)
+    {
+        const int n = juce::jmin (block, signalLen - pos);
+        float* inPtrs[1] = { in.data() + pos };
+        float* outPtrs[1] = { out.data() + pos };
+        model.process (inPtrs, outPtrs, n);
+    }
 }
 
 juce::String NAMProcessor::getLoadedModelName() const
