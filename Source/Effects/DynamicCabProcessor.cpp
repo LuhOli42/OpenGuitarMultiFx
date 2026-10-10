@@ -348,6 +348,13 @@ void DynamicCabProcessor::setState (const juce::XmlElement& state)
         {
             // New-format preset that explicitly picked a bundled IR -- that
             // selection wins over any stale irPath attribute also on it.
+            // Keep the saved path for a later flip back to File source.
+            if (path.isNotEmpty())
+            {
+                const juce::File file (path);
+                if (file.existsAsFile())
+                    (slot == 0 ? lastLoadedFileA : lastLoadedFileB) = file;
+            }
             applySourceSelection (slot);
             continue;
         }

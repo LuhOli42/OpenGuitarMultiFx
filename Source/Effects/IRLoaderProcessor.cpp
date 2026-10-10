@@ -267,6 +267,14 @@ void IRLoaderProcessor::setState (const juce::XmlElement& state)
     {
         // New-format preset that explicitly picked a bundled IR -- that
         // selection wins over any stale irPath attribute also on the preset.
+        // But keep the saved path around: flipping the selector back to File
+        // afterwards must still find the custom IR.
+        if (path.isNotEmpty())
+        {
+            const juce::File file (path);
+            if (file.existsAsFile())
+                lastLoadedFile = file;
+        }
         applySourceSelection();
         return;
     }
