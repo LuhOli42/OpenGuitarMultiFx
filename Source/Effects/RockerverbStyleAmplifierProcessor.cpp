@@ -390,7 +390,14 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (g7a, vb, 1.0e6);                         // R16
         ch.wPlateV7a = vd;
         ch.wCathodeV7a = c.addNode();
-        c.addTriode (vd, g7a, ch.wCathodeV7a, triode12AT7());
+        // reducedOrder replaces the two 12AT7s with linear stand-ins so the whole always-solved post block
+        // stays linear: a ~1 k output-impedance wire for the cathode follower (its R4/R16/C4 grid pole and
+        // R15 cathode load still shape the response) and a ~3 k wire for the V7B gain stage -- the lost
+        // ~x25 stage gain folds into bmPostGain on the behavioural stage's input.
+        if (reducedOrder)
+            c.addResistor (g7a, ch.wCathodeV7a, 1.0e3);         // V7A as a unity follower
+        else
+            c.addTriode (vd, g7a, ch.wCathodeV7a, triode12AT7());
         c.addResistor (ch.wCathodeV7a, gnd, 22.0e3);            // R15
         c.setInitialGuess (g7a, 47.0);
         c.setInitialGuess (ch.wCathodeV7a, 49.0);
@@ -403,7 +410,10 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (c1, gnd, 1.0e6);                         // R20
         c.addResistor (c1, g7b, 68.0e3);                        // R7
         ch.wPlateV7b = c.addNode();
-        c.addTriode (ch.wPlateV7b, g7b, k7b, triode12AT7());
+        if (reducedOrder)
+            c.addResistor (g7b, ch.wPlateV7b, 3.0e3);           // V7B as a passive gain-block stand-in
+        else
+            c.addTriode (ch.wPlateV7b, g7b, k7b, triode12AT7());
         c.addCapacitor (g7b, ch.wPlateV7b, cgp);
         c.addResistor (vd, ch.wPlateV7b, 56.0e3);               // R18
         c.addResistor (k7b, gnd, 1.5e3);                        // R19
@@ -675,7 +685,7 @@ double RockerverbStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, dou
                      - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
     ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
     ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
-    ch.bmOutput = top * bmLevelTrim;
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, top * bmLevelTrim);
     return ch.bmOutput;
 }
 
@@ -979,7 +989,7 @@ void RockerverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone)) : ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone) * bmPostGain) : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

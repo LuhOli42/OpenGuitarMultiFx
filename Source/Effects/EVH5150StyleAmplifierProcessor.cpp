@@ -390,20 +390,25 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
 
         // V3B: post-tone-stack gain recovery (12AX7). 100K plate (V3/PI rail), 1M grid leak,
         // 1K cathode bypassed with 1µF. Coupling from tone stack wiper through .047µF.
-        const auto gRec = c.addNode(), kRec = c.addNode(), coupRec = c.addNode();
-        const auto vccRec = c.addNode();
-        ch.wRecoveryPlate = c.addNode();
-        ch.wSrcRecovery = c.addSource (vccRec, 435.0);    // fed from sC (PI/V3 rail)
-        c.addCapacitor (ch.wTone, coupRec, 0.047e-6);     // coupling from master/tonestack
-        c.addResistor (coupRec, gRec, 100.0e3);           // series stopper
-        c.addResistor (gRec, gnd, 1.0e6);                 // R79 grid leak
-        c.addTriode (ch.wRecoveryPlate, gRec, kRec, triode12AX7());
-        c.addCapacitor (gRec, ch.wRecoveryPlate, cgp);
-        c.addResistor (vccRec, ch.wRecoveryPlate, 100.0e3); // R16 plate load
-        c.addResistor (kRec, gnd, 1.0e3);                 // R80 cathode
-        c.addCapacitor (kRec, gnd, 1.0e-6);               // bypassed
-        c.setInitialGuess (ch.wRecoveryPlate, 250.0);
-        c.setInitialGuess (kRec, 1.6);
+        // reducedOrder removes this last nonlinear stage too -- its contribution is folded into the
+        // behavioural power stage's fitted knee/filters, leaving the whole always-solved block linear.
+        if (! reducedOrder)
+        {
+            const auto gRec = c.addNode(), kRec = c.addNode(), coupRec = c.addNode();
+            const auto vccRec = c.addNode();
+            ch.wRecoveryPlate = c.addNode();
+            ch.wSrcRecovery = c.addSource (vccRec, 435.0);    // fed from sC (PI/V3 rail)
+            c.addCapacitor (ch.wTone, coupRec, 0.047e-6);     // coupling from master/tonestack
+            c.addResistor (coupRec, gRec, 100.0e3);           // series stopper
+            c.addResistor (gRec, gnd, 1.0e6);                 // R79 grid leak
+            c.addTriode (ch.wRecoveryPlate, gRec, kRec, triode12AX7());
+            c.addCapacitor (gRec, ch.wRecoveryPlate, cgp);
+            c.addResistor (vccRec, ch.wRecoveryPlate, 100.0e3); // R16 plate load
+            c.addResistor (kRec, gnd, 1.0e3);                 // R80 cathode
+            c.addCapacitor (kRec, gnd, 1.0e-6);               // bypassed
+            c.setInitialGuess (ch.wRecoveryPlate, 250.0);
+            c.setInitialGuess (kRec, 1.6);
+        }
     }
 
     // ================================================================ phase inverter, power amp (full reference only)
@@ -635,7 +640,7 @@ void EVH5150StyleAmplifierProcessor::updateSupply (Channel& ch) const
         ch.power.setSource (ch.wSrcCt, rail (ch.sA, 560.0));
         ch.power.setSource (ch.wSrcPi, rail (ch.sC, 520.0));
     }
-    ch.power.setSource (ch.wSrcRecovery, rail (ch.sC, 520.0)); // V3B recovery from PI rail
+    if (! reducedOrder) ch.power.setSource (ch.wSrcRecovery, rail (ch.sC, 520.0)); // V3B recovery from PI rail
     ch.pre.setSource (ch.pSrcV2, rail (ch.sD, 480.0));   // V2B/V5B/V5A from D
     ch.pre.setSource (ch.pSrcV1, rail (ch.sE, 480.0));   // V1A/V1B/V2A from E
     ch.vScreen = rail (ch.sB, 560.0);
@@ -655,10 +660,55 @@ double EVH5150StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double
     const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
     const double raw = std::copysign (y * ch.bmRail, toneVoltage);
 
-    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
-    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    // The frequency response the removed stages used to provide: two fixed biquads fitted to this netlist's
+    // own measured transfer (resonant high-pass LF bump + zero/pole top section) plus a one-pole low cut.
+    const double lf = bmAB0 * raw + bmAB1 * ch.bmAX1 + bmAB2 * ch.bmAX2
+                    - bmAA1 * ch.bmAY1 - bmAA2 * ch.bmAY2;
+    ch.bmAX2 = ch.bmAX1; ch.bmAX1 = raw;
+    ch.bmAY2 = ch.bmAY1; ch.bmAY1 = lf;
+    const double top = bmBB0 * lf + bmBB1 * ch.bmBX1 + bmBB2 * ch.bmBX2
+                     - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
+    ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
+    ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
+    const double notch = bmCB0 * top + bmCB1 * ch.bmCX1 + bmCB2 * ch.bmCX2
+                       - bmCA1 * ch.bmCY1 - bmCA2 * ch.bmCY2;
+    ch.bmCX2 = ch.bmCX1; ch.bmCX1 = top;
+    ch.bmCY2 = ch.bmCY1; ch.bmCY1 = notch;
+    const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmCutHz / juce::jmax (1.0, sampleRate));
+    ch.bmCutState += cut * (notch - ch.bmCutState);
+    // physical ceiling: the stages this replaces clip at the rail -- the fitted filters' resonance can overshoot
+    // the knee's bound by ~2x on saturated LF, which would otherwise trip the pluck peak and sanity bounds.
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (notch - ch.bmCutState) * bmLevelTrim);
     return ch.bmOutput;
+}
+
+void EVH5150StyleAmplifierProcessor::designPowerFilters()
+{
+    // Bilinear transform (s = c(1-z^-1)/(1+z^-1), c = 2*fs) of an analog biquad n2 s^2 + n1 s + n0 over d2 s^2 + d1 s + d0.
+    const auto bilinear = [] (double n2, double n1, double n0, double d2, double d1, double d0, double fs,
+                              double& b0, double& b1, double& b2, double& a1, double& a2)
+    {
+        const double c = 2.0 * fs;
+        const double A0 = d2 * c * c + d1 * c + d0;
+        a1 = 2.0 * (d0 - d2 * c * c) / A0;
+        a2 = (d2 * c * c - d1 * c + d0) / A0;
+        b0 = (n2 * c * c + n1 * c + n0) / A0;
+        b1 = 2.0 * (n0 - n2 * c * c) / A0;
+        b2 = (n2 * c * c - n1 * c + n0) / A0;
+    };
+    const double wb = 2.0 * juce::MathConstants<double>::pi * bmBumpHz;
+    // resonant high-pass: peaks +20log10(Qp) dB at bmBumpHz, -12 dB/oct below, unity above
+    bilinear (1.0 / (wb * wb), 0.0, 0.0,
+              1.0 / (wb * wb), 1.0 / (bmBumpQp * wb), 1.0,
+              sampleRate, bmAB0, bmAB1, bmAB2, bmAA1, bmAA2);
+    const double wz = 2.0 * juce::MathConstants<double>::pi * bmTopZHz, wp = 2.0 * juce::MathConstants<double>::pi * bmTopPHz;
+    bilinear (0.0, 1.0 / wz, 1.0,
+              1.0 / (wp * wp), 1.0 / (bmTopQp * wp), 1.0,
+              sampleRate, bmBB0, bmBB1, bmBB2, bmBA1, bmBA2);
+    const double wn = 2.0 * juce::MathConstants<double>::pi * bmNotchHz;
+    bilinear (1.0 / (wn * wn), 0.0, 1.0,
+              1.0 / (wn * wn), 1.0 / (bmNotchQ * wn), 1.0,
+              sampleRate, bmCB0, bmCB1, bmCB2, bmCA1, bmCA2);
 }
 
 double EVH5150StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
@@ -777,7 +827,7 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
 
             ch.power.setSource (ch.wSrcCf, ch.followerDc);
             ch.power.setInitialGuess (ch.wToneIn, ch.followerDc);
-            ch.power.setSource (ch.wSrcRecovery, ch.supply.voltage (ch.sC)); // recovery supply
+            if (! reducedOrder) ch.power.setSource (ch.wSrcRecovery, ch.supply.voltage (ch.sC)); // recovery supply
             ch.vScreen = ch.supply.voltage (ch.sB);
             double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0, iPi = 0.0;
             if (! reducedOrder)
@@ -797,9 +847,9 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
                 const double vPi = ch.supply.voltage (ch.sC);
                 iPi = (vPi - ch.power.voltage (ch.wPlateA)) / 82.0e3 + (vPi - ch.power.voltage (ch.wPlateB)) / 100.0e3;
             }
-            // Recovery stage also draws from PI rail (sC)
+            // Recovery stage also draws from PI rail (sC); it does not exist under reducedOrder
             const double vPiR = ch.supply.voltage (ch.sC);
-            const double iRecovery = (vPiR - ch.power.voltage (ch.wRecoveryPlate)) / 100.0e3;
+            const double iRecovery = reducedOrder ? 0.0 : (vPiR - ch.power.voltage (ch.wRecoveryPlate)) / 100.0e3;
             const double vV2 = ch.supply.voltage (ch.sD);
             const double iV2 = (vV2 - ch.pre.voltage (ch.pPlateV2b)) / 220.0e3
                              + (vV2 - ch.pre.voltage (ch.pPlateV5b)) / 220.0e3;
@@ -838,9 +888,15 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmRail = railPlatesNominal;
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
-        ch.bmToneState = 0.0;
-        ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6, ch.power.voltage (ch.wRecoveryPlate));
+        ch.bmOutput = 0.0;
+        ch.bmAX1 = ch.bmAX2 = ch.bmAY1 = ch.bmAY2 = 0.0;
+        ch.bmBX1 = ch.bmBX2 = ch.bmBY1 = ch.bmBY2 = 0.0;
+        ch.bmCX1 = ch.bmCX2 = ch.bmCY1 = ch.bmCY2 = 0.0;
+        ch.bmCutState = 0.0;
+        ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6,
+                               ch.power.voltage (reducedOrder ? ch.wTone : ch.wRecoveryPlate));
     }
+    designPowerFilters();
     updatePots (lastKnobs);
 
     controlCounter = 0;
@@ -943,7 +999,7 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.piCoupling.process (ch.power.voltage (ch.wRecoveryPlate))) : ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.piCoupling.process (ch.power.voltage (ch.wTone))) : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;

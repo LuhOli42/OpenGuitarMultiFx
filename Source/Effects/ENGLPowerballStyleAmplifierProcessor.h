@@ -32,8 +32,19 @@ public:
     static constexpr double bmGain0 = 10.5;
     static constexpr double bmYmax = 0.195;
     static constexpr double bmKneeN = 6.0;
-    static constexpr double bmShelfHz = 85.0;
-    static constexpr double bmShelfHfGain = 0.55;
+    // Fitted to THIS amp's own full-order lock-in sweep (toneStackOut -> speaker, ch3 @ gain .85): a resonant
+    // LF bump ~+9 dB at ~80-90 Hz whose level stays flat below it (bell, not a high-pass -- ENGL's depth/resonance
+    // voicing), flat-ish mids, +1.5 dB ridge at ~4-5 kHz, rolloff ~-9 dB @ 10.8 kHz. reducedOrder also removes
+    // the three post-tonestack triodes (U6B/U7A/U7B); their cumulative gain is folded into the knee and the
+    // per-channel drive scales bmTapGain (each channel taps progressively later in the real amp).
+    // The reference's presence/depth pots sit in the dead NFB loop and measure 0.0 dB at every setting.
+    static constexpr double bmBumpHz = 80.0, bmBumpQp = 2.0, bmBumpQz = 0.9;
+    static constexpr double bmCutHz = 50.0;
+    static constexpr double bmTopZHz = 5000.0, bmTopPHz = 5000.0, bmTopQp = 1.4;
+    // physical ceiling: the stages this replaces clip at the rail; caps resonant overshoot inside the sanity bound.
+    static constexpr double bmOutMax = 64.0;
+    static constexpr double bmLevelTrim = 0.65;
+    static constexpr double bmTapGain[4] = { 1.0, 40.0, 1200.0, 36000.0 };
 
     bool dcConverged() const noexcept { return dcOk; }
     enum class Probe { u5aPlate, u5bPlate, u6aPlate, u6bPlate, u7aPlate, u7bPlate,
@@ -87,7 +98,10 @@ private:
         double screenDropA = 0.0, screenDropB = 0.0;
         double vScreen = 460.0;
 
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0;
+        double bmAX1 = 0.0, bmAX2 = 0.0, bmAY1 = 0.0, bmAY2 = 0.0;
+        double bmBX1 = 0.0, bmBX2 = 0.0, bmBY1 = 0.0, bmBY2 = 0.0;
+        double bmCutState = 0.0;
         double mwDcPrev = 0.0, mwDcOut = 0.0;
         double mwTarget = 0.0;
 
@@ -121,6 +135,10 @@ private:
     double idleSupplyCurrent = 0.0;
     void updateSupply (Channel& ch) const;
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
+    void designPowerFilters();
+    // power-stage biquads (bilinear-transformed in designPowerFilters())
+    double bmAB0 = 1.0, bmAB1 = 0.0, bmAB2 = 0.0, bmAA1 = 0.0, bmAA2 = 0.0;
+    double bmBB0 = 1.0, bmBB1 = 0.0, bmBB2 = 0.0, bmBA1 = 0.0, bmBA2 = 0.0;
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;

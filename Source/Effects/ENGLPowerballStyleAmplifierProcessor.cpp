@@ -311,9 +311,10 @@ void ENGLPowerballStyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto pre = c.addNode();
         ch.tSrcPre = c.addSource (pre, 0.0);
 
-        // VCC for post-tonestack triodes (fed from sC rail)
+        // VCC for post-tonestack triodes (fed from sC rail); not built under reducedOrder
         const auto vccPost = c.addNode();
-        ch.tSrcVcc = c.addSource (vccPost, 430.0);
+        if (! reducedOrder)
+            ch.tSrcVcc = c.addSource (vccPost, 430.0);
 
         // Lead tone stack (FMV style): R32=330K slope, P14=250KB treble, P11=1MA bass, P15=250KB focused mid.
         const auto ti = c.addNode(), top = c.addNode(), nB = c.addNode(), nT = c.addNode(), nM = c.addNode(), nMw = c.addNode();
@@ -334,47 +335,51 @@ void ENGLPowerballStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rMaster = c.addResistor (postNode, ch.tTone, 125.0e3);
 
         // ---- post-tonestack gain stages: U6B → U7A → U7B ----
+        // reducedOrder removes these three triodes too -- their response is folded into the behavioural
+        // power stage's fitted knee/filters and per-channel drive scales, leaving the tone block linear.
+        if (! reducedOrder)
+        {
+            // U6B: R24=100K plate, R22=1M grid leak, R23=1.5K cathode, CE5=22µF bypass
+            const auto gU6B = c.addNode(), kU6B = c.addNode();
+            ch.tPlateU6b = c.addNode();
+            c.addCapacitor (ch.tTone, gU6B, 100.0e-9);
+            c.addResistor (gU6B, gnd, 1.0e6);
+            c.addTriode (ch.tPlateU6b, gU6B, kU6B, triode12AX7());
+            c.addResistor (vccPost, ch.tPlateU6b, 100.0e3);
+            c.addResistor (kU6B, gnd, 1.5e3);
+            c.addCapacitor (kU6B, gnd, 22.0e-6);
+            c.setInitialGuess (ch.tPlateU6b, 250.0);
+            c.setInitialGuess (kU6B, 1.5);
 
-        // U6B: R24=100K plate, R22=1M grid leak, R23=1.5K cathode, CE5=22µF bypass
-        const auto gU6B = c.addNode(), kU6B = c.addNode();
-        ch.tPlateU6b = c.addNode();
-        c.addCapacitor (ch.tTone, gU6B, 100.0e-9);
-        c.addResistor (gU6B, gnd, 1.0e6);
-        c.addTriode (ch.tPlateU6b, gU6B, kU6B, triode12AX7());
-        c.addResistor (vccPost, ch.tPlateU6b, 100.0e3);
-        c.addResistor (kU6B, gnd, 1.5e3);
-        c.addCapacitor (kU6B, gnd, 22.0e-6);
-        c.setInitialGuess (ch.tPlateU6b, 250.0);
-        c.setInitialGuess (kU6B, 1.5);
+            // U7A: R43=100K plate, C17=10nF coupling, R42=1K cathode, CE6=4.7µF bypass
+            const auto gU7A = c.addNode(), kU7A = c.addNode();
+            ch.tPlateU7a = c.addNode();
+            c.addCapacitor (ch.tPlateU6b, gU7A, 10.0e-9);
+            c.addResistor (gU7A, gnd, 1.0e6);
+            c.addTriode (ch.tPlateU7a, gU7A, kU7A, triode12AX7());
+            c.addResistor (vccPost, ch.tPlateU7a, 100.0e3);
+            c.addResistor (kU7A, gnd, 1.0e3);
+            c.addCapacitor (kU7A, gnd, 4.7e-6);
+            c.setInitialGuess (ch.tPlateU7a, 250.0);
+            c.setInitialGuess (kU7A, 1.2);
 
-        // U7A: R43=100K plate, C17=10nF coupling, R42=1K cathode, CE6=4.7µF bypass
-        const auto gU7A = c.addNode(), kU7A = c.addNode();
-        ch.tPlateU7a = c.addNode();
-        c.addCapacitor (ch.tPlateU6b, gU7A, 10.0e-9);
-        c.addResistor (gU7A, gnd, 1.0e6);
-        c.addTriode (ch.tPlateU7a, gU7A, kU7A, triode12AX7());
-        c.addResistor (vccPost, ch.tPlateU7a, 100.0e3);
-        c.addResistor (kU7A, gnd, 1.0e3);
-        c.addCapacitor (kU7A, gnd, 4.7e-6);
-        c.setInitialGuess (ch.tPlateU7a, 250.0);
-        c.setInitialGuess (kU7A, 1.2);
+            // U7B: R49=100K plate, C18=100nF coupling, R48=1.5K cathode, CE7=22µF bypass
+            const auto gU7B = c.addNode(), kU7B = c.addNode();
+            ch.tPlateU7b = c.addNode();
+            c.addCapacitor (ch.tPlateU7a, gU7B, 100.0e-9);
+            c.addResistor (gU7B, gnd, 1.0e6);
+            c.addTriode (ch.tPlateU7b, gU7B, kU7B, triode12AX7());
+            c.addResistor (vccPost, ch.tPlateU7b, 100.0e3);
+            c.addResistor (kU7B, gnd, 1.5e3);
+            c.addCapacitor (kU7B, gnd, 22.0e-6);
+            c.setInitialGuess (ch.tPlateU7b, 250.0);
+            c.setInitialGuess (kU7B, 1.5);
 
-        // U7B: R49=100K plate, C18=100nF coupling, R48=1.5K cathode, CE7=22µF bypass
-        const auto gU7B = c.addNode(), kU7B = c.addNode();
-        ch.tPlateU7b = c.addNode();
-        c.addCapacitor (ch.tPlateU7a, gU7B, 100.0e-9);
-        c.addResistor (gU7B, gnd, 1.0e6);
-        c.addTriode (ch.tPlateU7b, gU7B, kU7B, triode12AX7());
-        c.addResistor (vccPost, ch.tPlateU7b, 100.0e3);
-        c.addResistor (kU7B, gnd, 1.5e3);
-        c.addCapacitor (kU7B, gnd, 22.0e-6);
-        c.setInitialGuess (ch.tPlateU7b, 250.0);
-        c.setInitialGuess (kU7B, 1.5);
-
-        // Master wiper: coupling from U7B plate + 1M rheostat to ground
-        ch.tMasterWiper = c.addNode();
-        c.addCapacitor (ch.tPlateU7b, ch.tMasterWiper, 100.0e-9);
-        c.addResistor (ch.tMasterWiper, gnd, 1.0e6);
+            // Master wiper: coupling from U7B plate + 1M rheostat to ground
+            ch.tMasterWiper = c.addNode();
+            c.addCapacitor (ch.tPlateU7b, ch.tMasterWiper, 100.0e-9);
+            c.addResistor (ch.tMasterWiper, gnd, 1.0e6);
+        }
     }
 
     // ================================================================ power block: PI + power amp + OT + speaker + NFB (full reference only)
@@ -566,13 +571,13 @@ void ENGLPowerballStyleAmplifierProcessor::recover (Channel& ch) const
     ch.failStreak = 0;
     ch.alignOutput = true;
     ch.vScreen = ch.supply.voltage (ch.sB);
-    ch.mwDcPrev = ch.tone.voltage (ch.tMasterWiper);
+    ch.mwDcPrev = reducedOrder ? 0.0 : ch.tone.voltage (ch.tMasterWiper);
     ch.mwDcOut = 0.0;
     {
         const NodalCircuit::Node taps[] = { ch.tTone, ch.tPlateU6b, ch.tPlateU7a, ch.tPlateU7b };
         for (int t = 0; t < 4; ++t)
         {
-            ch.tapDcPrev[t] = ch.tone.voltage (taps[t]) - ch.toneTapDc[t];
+            ch.tapDcPrev[t] = (reducedOrder ? ch.tone.voltage (ch.tTone) : ch.tone.voltage (taps[t])) - ch.toneTapDc[t];
             ch.tapDcOut[t] = 0.0;
         }
     }
@@ -613,10 +618,45 @@ double ENGLPowerballStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
     const double raw = std::copysign (y * ch.bmRail, toneVoltage);
 
-    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
-    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    // The frequency response the removed stages used to provide: two fixed biquads fitted to this netlist's
+    // own measured transfer (resonant LF bell + zero/pole top section) plus a one-pole low cut.
+    const double lf = bmAB0 * raw + bmAB1 * ch.bmAX1 + bmAB2 * ch.bmAX2
+                    - bmAA1 * ch.bmAY1 - bmAA2 * ch.bmAY2;
+    ch.bmAX2 = ch.bmAX1; ch.bmAX1 = raw;
+    ch.bmAY2 = ch.bmAY1; ch.bmAY1 = lf;
+    const double top = bmBB0 * lf + bmBB1 * ch.bmBX1 + bmBB2 * ch.bmBX2
+                     - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
+    ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
+    ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
+    const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmCutHz / juce::jmax (1.0, sampleRate));
+    ch.bmCutState += cut * (top - ch.bmCutState);
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (top - ch.bmCutState) * bmLevelTrim);
     return ch.bmOutput;
+}
+
+void ENGLPowerballStyleAmplifierProcessor::designPowerFilters()
+{
+    // Bilinear transform (s = c(1-z^-1)/(1+z^-1), c = 2*fs) of an analog biquad n2 s^2 + n1 s + n0 over d2 s^2 + d1 s + d0.
+    const auto bilinear = [] (double n2, double n1, double n0, double d2, double d1, double d0, double fs,
+                              double& b0, double& b1, double& b2, double& a1, double& a2)
+    {
+        const double c = 2.0 * fs;
+        const double A0 = d2 * c * c + d1 * c + d0;
+        a1 = 2.0 * (d0 - d2 * c * c) / A0;
+        a2 = (d2 * c * c - d1 * c + d0) / A0;
+        b0 = (n2 * c * c + n1 * c + n0) / A0;
+        b1 = 2.0 * (n0 - n2 * c * c) / A0;
+        b2 = (n2 * c * c - n1 * c + n0) / A0;
+    };
+    const double wb = 2.0 * juce::MathConstants<double>::pi * bmBumpHz;
+    // resonant bell: peaks +20log10(Qp/Qz) dB at bmBumpHz, unity far away
+    bilinear (1.0 / (wb * wb), 1.0 / (bmBumpQz * wb), 1.0,
+              1.0 / (wb * wb), 1.0 / (bmBumpQp * wb), 1.0,
+              sampleRate, bmAB0, bmAB1, bmAB2, bmAA1, bmAA2);
+    const double wz = 2.0 * juce::MathConstants<double>::pi * bmTopZHz, wp = 2.0 * juce::MathConstants<double>::pi * bmTopPHz;
+    bilinear (0.0, 1.0 / wz, 1.0,
+              1.0 / (wp * wp), 1.0 / (bmTopQp * wp), 1.0,
+              sampleRate, bmBB0, bmBB1, bmBB2, bmBA1, bmBA2);
 }
 
 double ENGLPowerballStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
@@ -697,10 +737,10 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
             ch.plateDcU6a = ch.pre.voltage (ch.pPlateU6a);
 
             ch.tone.setSource (ch.tSrcPre, 0.0);
-            ch.tone.setSource (ch.tSrcVcc, ch.supply.voltage (ch.sC));
+            if (! reducedOrder) ch.tone.setSource (ch.tSrcVcc, ch.supply.voltage (ch.sC));
             passOk = ch.tone.prepare (newSampleRate) && passOk;
             ch.tone.solveSample();
-            ch.plateDcU7b = ch.tone.voltage (ch.tPlateU7b);
+            ch.plateDcU7b = reducedOrder ? 0.0 : ch.tone.voltage (ch.tPlateU7b);
 
             ch.vScreen = ch.supply.voltage (ch.sB);
             double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0, iPi = 0.0;
@@ -718,9 +758,10 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
                 const double vPi = ch.supply.voltage (ch.sC);
                 iPi = (vPi - ch.power.voltage (ch.wPlateA)) / 82.0e3 + (vPi - ch.power.voltage (ch.wPlateB)) / 100.0e3;
             }
-            // Post-tonestack stages draw from sC
+            // Post-tonestack stages draw from sC; they do not exist under reducedOrder
             const double vPost = ch.supply.voltage (ch.sC);
-            const double iPost = (vPost - ch.tone.voltage (ch.tPlateU6b)) / 100.0e3
+            const double iPost = reducedOrder ? 0.0
+                               : (vPost - ch.tone.voltage (ch.tPlateU6b)) / 100.0e3
                                + (vPost - ch.tone.voltage (ch.tPlateU7a)) / 100.0e3
                                + (vPost - ch.tone.voltage (ch.tPlateU7b)) / 100.0e3;
             const double vPre = ch.supply.voltage (ch.sD);
@@ -747,7 +788,7 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
             ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
         }
-        ch.tone.setSource (ch.tSrcVcc, ch.supply.voltage (ch.sC));
+        if (! reducedOrder) ch.tone.setSource (ch.tSrcVcc, ch.supply.voltage (ch.sC));
         ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sD));
 
         ch.pre.solveSample();
@@ -757,15 +798,15 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         ch.preampTapDc[2] = ch.plateDcU6a;
         ch.tone.setSource (ch.tSrcPre, 0.0);
         ch.tone.solveSample();
-        ch.plateDcU7b = ch.tone.voltage (ch.tPlateU7b);
+        ch.plateDcU7b = reducedOrder ? 0.0 : ch.tone.voltage (ch.tPlateU7b);
         ch.toneTapDc[0] = ch.tone.voltage (ch.tTone);
-        ch.toneTapDc[1] = ch.tone.voltage (ch.tPlateU6b);
-        ch.toneTapDc[2] = ch.tone.voltage (ch.tPlateU7a);
-        ch.toneTapDc[3] = ch.plateDcU7b;
+        ch.toneTapDc[1] = reducedOrder ? ch.toneTapDc[0] : ch.tone.voltage (ch.tPlateU6b);
+        ch.toneTapDc[2] = reducedOrder ? ch.toneTapDc[0] : ch.tone.voltage (ch.tPlateU7a);
+        ch.toneTapDc[3] = reducedOrder ? ch.toneTapDc[0] : ch.plateDcU7b;
         if (! reducedOrder)
             ch.power.solveSample();
 
-        ch.mwTarget = ch.tone.voltage (ch.tMasterWiper);
+        ch.mwTarget = reducedOrder ? 0.0 : ch.tone.voltage (ch.tMasterWiper);
 
         ch.mwDcPrev = ch.mwTarget;
         ch.mwDcOut = 0.0;
@@ -783,8 +824,12 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         ch.bmRail = railPlatesNominal;
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
-        ch.bmToneState = 0.0;
+        ch.bmOutput = 0.0;
+        ch.bmAX1 = ch.bmAX2 = ch.bmAY1 = ch.bmAY2 = 0.0;
+        ch.bmBX1 = ch.bmBX2 = ch.bmBY1 = ch.bmBY2 = 0.0;
+        ch.bmCutState = 0.0;
     }
+    designPowerFilters();
     updatePots (lastKnobs);
 
     controlCounter = 0;
@@ -869,6 +914,7 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
 
             // DC-block inter-block signals
             constexpr double dcR = 0.999935; // HPF fc ≈ 0.5 Hz at 48 kHz
+            if (! reducedOrder)
             {
                 const double mw = ch.tone.voltage (ch.tMasterWiper);
                 ch.mwDcOut = dcR * ch.mwDcOut + mw - ch.mwDcPrev;
@@ -878,7 +924,10 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
                 const NodalCircuit::Node tapNodes[] = { ch.tTone, ch.tPlateU6b, ch.tPlateU7a, ch.tPlateU7b };
                 for (int t = 0; t < 4; ++t)
                 {
-                    const double raw = ch.tone.voltage (tapNodes[t]) - ch.toneTapDc[t];
+                    // under reducedOrder the post-tonestack triodes are gone: every channel taps the tone
+                    // stack and bmTapGain reproduces how deep into the removed stages that channel used to tap
+                    const double raw = (reducedOrder ? ch.tone.voltage (ch.tTone) : ch.tone.voltage (tapNodes[t]))
+                                     - ch.toneTapDc[t];
                     ch.tapDcOut[t] = dcR * ch.tapDcOut[t] + raw - ch.tapDcPrev[t];
                     ch.tapDcPrev[t] = raw;
                 }
@@ -911,7 +960,7 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
             }
 
             const double speakerVolts = reducedOrder
-                ? behavioralPowerStage (ch, ch.tapDcOut[channelSel])
+                ? behavioralPowerStage (ch, ch.tapDcOut[channelSel] * bmTapGain[channelSel])
                 : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
