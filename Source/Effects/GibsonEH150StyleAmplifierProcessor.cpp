@@ -412,7 +412,7 @@ double GibsonEH150StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     // reducedOrder folds the power-only controls into the fit (same recipe as the
     // big-iron amps): tube feel scales sag depth, bias shifts the knee's operating
     // point, presence scales the HF shelf, focus tightens the low-end sag — all
-    // centred on the shipped defaults so noon response is unchanged.
+    // centred on the shipped defaults so the calibrated noon response is unchanged.
     const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
     ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
