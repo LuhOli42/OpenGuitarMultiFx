@@ -10,6 +10,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ParameterManagerTests.cpp
   PitchDetectorTests.cpp
   PresetManagerTests.cpp
+  MidiLearnPresetXmlTests.cpp
   GateProcessorTests.cpp
   CompressorProcessorTests.cpp
   PositiveGroundBoosterProcessorTests.cpp
