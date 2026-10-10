@@ -88,6 +88,14 @@ void ParameterPanel::refresh()
         // stored knobs): keep what is drawn in step with the real value.
         for (auto& row : sliders)
         {
+            if (row.param != nullptr && row.label != nullptr && getSnapshotMarkerColour)
+            {
+                const auto marker = getSnapshotMarkerColour (current, row.param);
+                const auto colour = marker.isTransparent() ? juce::Colours::white : marker;
+                if (row.label->findColour (juce::Label::textColourId) != colour)
+                    row.label->setColour (juce::Label::textColourId, colour);
+            }
+
             if (row.param == nullptr || row.slider == nullptr || row.slider->isMouseButtonDown())
                 continue;
             const float v = row.param->get();

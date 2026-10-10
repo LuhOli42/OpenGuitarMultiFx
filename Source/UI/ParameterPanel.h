@@ -76,6 +76,9 @@ public:
         long-press menu is about to open, to word its "Clear MIDI Mapping
         (CC n)" item. */
     std::function<int (juce::AudioParameterFloat*)> getMidiCcForParam;
+    /** The colour a knob's name is drawn in when its value differs between the preset's snapshots (the snapshot
+        marker of docs/PresetsAndSnapshots.md), transparent when it doesn't. Polled on refresh(), like the MIDI one. */
+    std::function<juce::Colour (EffectProcessor*, juce::AudioParameterFloat*)> getSnapshotMarkerColour;
 
 private:
     void rebuildForCurrentProcessor();

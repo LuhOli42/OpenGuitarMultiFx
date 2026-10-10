@@ -44,6 +44,9 @@ That only sounds clean if the engine handles jumps well. The code has three gaps
    preset, rename, duplicate.
 2. **Engine**: bypass crossfade, parameter smoothing in every processor that lacks it, trails for delays and
    reverbs.
-3. **Snapshots**: XML format, A–H bar, CC 69, "3B" badge, Recall editing.
+3. **Snapshots**: XML format, A–H bar, CC 69, "3B" badge, Recall editing. Editor (follow-up): press and hold a letter on
+   the A–H bar for Rename / Colour / Copy to; the live snapshot's name shows in the title ("orange fat · Solo") and
+   small inside its cell; a knob whose value differs between snapshots has its name drawn in the live snapshot's
+   colour.
 4. **Preset browser**: card grid with the chain's icons, banks of 4/8, setlists, search, tags, favourites.
 5. **Preset spillover**: delay/reverb tails surviving a preset change. Hardest; last.

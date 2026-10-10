@@ -127,6 +127,14 @@ private:
     /** Captures the live chain into `snapshots[currentSnapshot]` -- where
         unsaved knob edits live until the preset is saved or discarded. */
     void storeCurrentSnapshot();
+    /** Press-and-hold menu of snapshot `index` on the A-H bar: Rename..., Colour, Copy to A-H. Names and colours are
+        part of the preset (a change marks it unsaved); copying overwrites only the target's knobs/bypass, it keeps the
+        target's own name and colour. */
+    void showSnapshotMenu (int index);
+    void copySnapshot (int from, int to);
+    juce::Colour colourOfSnapshot (int index) const;
+    /** True when `param` of `processor` has a different value in any other snapshot than it has live now. */
+    bool snapshotVaries (EffectProcessor* processor, juce::AudioParameterFloat* param) const;
     /** Re-fits every snapshot's block list to the chain's current size --
         pads missing entries from live state (new blocks, or slots an old
         preset never stored) and drops extras. Called after preset load and

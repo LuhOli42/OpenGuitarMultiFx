@@ -199,6 +199,11 @@ MainComponent::MainComponent()
     addAndMakeVisible (snapshotBar);
     snapshotBar.setCurrent (currentSnapshot);
     snapshotBar.onSnapshotSelected = [this] (int index) { selectSnapshot (index); };
+    snapshotBar.onSnapshotLongPressed = [this] (int index) { showSnapshotMenu (index); };
+    parameterPanel.getSnapshotMarkerColour = [this] (EffectProcessor* processor, juce::AudioParameterFloat* param)
+    {
+        return snapshotVaries (processor, param) ? colourOfSnapshot (currentSnapshot) : juce::Colours::transparentBlack;
+    };
     presetBadge.setSnapshotIndex (currentSnapshot);
 
     addChildComponent (quickSaveButton); // only shown once a preset is actually loaded -- see updatePresetDisplay()
@@ -1426,6 +1431,112 @@ void MainComponent::selectSnapshot (int index)
     updatePresetDisplay();
 }
 
+void MainComponent::showSnapshotMenu (int index)
+{
+    index = juce::jlimit (0, snapshotxml::maxSnapshots - 1, index);
+    const auto label = [this] (int i)
+    {
+        const auto& name = snapshots[(size_t) i].name;
+        return snapshotxml::letterFor (i) + (name.isNotEmpty() ? " - " + name : juce::String());
+    };
+
+    juce::PopupMenu colours;
+    colours.addItem (100, "Default", true, snapshots[(size_t) index].colour.isEmpty());
+    static const char* colourNames[] = { "Green", "Blue", "Orange", "Purple", "Yellow", "Red", "Teal", "Magenta" }; // defaultColourFor()'s order
+    for (int c = 0; c < snapshotxml::maxSnapshots; ++c)
+    {
+        const auto colour = snapshotxml::defaultColourFor (c);
+        colours.addColouredItem (101 + c, colourNames[c], colour, true, snapshots[(size_t) index].colour == colour.toString());
+    }
+
+    juce::PopupMenu copyTo;
+    for (int t = 0; t < snapshotxml::maxSnapshots; ++t)
+        if (t != index)
+            copyTo.addItem (200 + t, label (t));
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("Snapshot " + label (index));
+    menu.addItem (1, "Rename...");
+    menu.addSubMenu ("Colour", colours);
+    menu.addSubMenu ("Copy to", copyTo);
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapshotBar),
+                        [this, index, alive = aliveFlag] (int result)
+    {
+        if (! alive->load() || result == 0)
+            return;
+
+        if (result == 1)
+        {
+            overlayHost.pushOverlay (std::make_unique<TextPromptCard> (
+                "Rename snapshot " + snapshotxml::letterFor (index), snapshots[(size_t) index].name,
+                [this, index] (juce::String newName)
+                {
+                    snapshots[(size_t) index].name = newName;
+                    overlayHost.popOverlay();
+                    updatePresetDisplay();
+                },
+                [this] { overlayHost.popOverlay(); }));
+        }
+        else if (result >= 100 && result < 100 + 1 + snapshotxml::maxSnapshots)
+        {
+            snapshots[(size_t) index].colour = result == 100 ? juce::String()
+                                                             : snapshotxml::defaultColourFor (result - 101).toString();
+            updatePresetDisplay();
+        }
+        else if (result >= 200 && result < 200 + snapshotxml::maxSnapshots)
+        {
+            copySnapshot (index, result - 200);
+        }
+    });
+}
+
+juce::Colour MainComponent::colourOfSnapshot (int index) const
+{
+    const auto& hex = snapshots[(size_t) index].colour;
+    return hex.isNotEmpty() ? juce::Colour::fromString (hex) : snapshotxml::defaultColourFor (index);
+}
+
+bool MainComponent::snapshotVaries (EffectProcessor* processor, juce::AudioParameterFloat* param) const
+{
+    int block = -1;
+    for (int i = 0; i < (int) chain.size(); ++i)
+        if (chain[(size_t) i].get() == processor)
+            block = i;
+    if (block < 0 || param == nullptr)
+        return false;
+
+    // The live value stands in for the current snapshot (it may hold an edit not stored yet -- Recall).
+    const float live = param->get();
+    for (int s = 0; s < snapshotxml::maxSnapshots; ++s)
+    {
+        if (s == currentSnapshot || block >= (int) snapshots[(size_t) s].blocks.size())
+            continue;
+        for (auto& [id, value] : snapshots[(size_t) s].blocks[(size_t) block].params)
+            if (id == param->paramID && std::abs (value - live) > 1.0e-4f * juce::jmax (1.0f, std::abs (live)))
+                return true;
+    }
+    return false;
+}
+
+void MainComponent::copySnapshot (int from, int to)
+{
+    if (from == to)
+        return;
+
+    if (from == currentSnapshot)
+        storeCurrentSnapshot(); // the live chain IS the source's latest state (Recall)
+
+    snapshots[(size_t) to].blocks = snapshots[(size_t) from].blocks;
+
+    // Copying onto the live snapshot: make the chain sound like it now, through the same gapless path as a recall.
+    if (to == currentSnapshot)
+        for (int i = 0; i < (int) chain.size() && i < (int) snapshots[(size_t) to].blocks.size(); ++i)
+            snapshotxml::applyBlock (*chain[(size_t) i], snapshots[(size_t) to].blocks[(size_t) i]);
+
+    updatePresetDisplay();
+}
+
 void MainComponent::storeCurrentSnapshot()
 {
     auto& snapshot = snapshots[(size_t) currentSnapshot];
@@ -1543,7 +1654,23 @@ void MainComponent::updatePresetDisplay()
     presetBadge.setNumber (currentPresetNumber);
     presetBadge.setSnapshotIndex (currentSnapshot);
     snapshotBar.setCurrent (currentSnapshot);
-    titleLabel.setText (currentPresetName.isNotEmpty() ? currentPresetName + (presetDirty ? " *" : "") : "No preset loaded",
+
+    std::array<juce::String, snapshotxml::maxSnapshots> names;
+    std::array<juce::Colour, snapshotxml::maxSnapshots> colours;
+    for (int i = 0; i < snapshotxml::maxSnapshots; ++i)
+    {
+        names[(size_t) i] = snapshots[(size_t) i].name;
+        colours[(size_t) i] = snapshots[(size_t) i].colour.isNotEmpty() ? juce::Colour::fromString (snapshots[(size_t) i].colour)
+                                                                       : juce::Colours::transparentBlack;
+    }
+    snapshotBar.setLabels (names, colours);
+
+    // "Lead Show · Solo": the live snapshot's name, when it has one, so the player can read which part is on.
+    const auto& snapshotName = snapshots[(size_t) currentSnapshot].name;
+    titleLabel.setText (currentPresetName.isNotEmpty()
+                            ? currentPresetName + (snapshotName.isNotEmpty() ? juce::String::fromUTF8 (" \xc2\xb7 ") + snapshotName : juce::String())
+                                  + (presetDirty ? " *" : "")
+                            : "No preset loaded",
                          juce::dontSendNotification);
     quickSaveButton.setVisible (currentPresetName.isNotEmpty());
     resized(); // quickSaveButton's visibility changes how much room titleLabel gets
