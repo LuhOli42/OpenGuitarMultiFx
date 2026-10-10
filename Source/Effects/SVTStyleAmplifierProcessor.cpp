@@ -453,12 +453,10 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (pd2, m2, 300.0e3);                // R30 + R31 side
         c.addResistor (m2, nbb, 120.0e3);                // R33-side
         ch.rBiasTapB = c.addResistor (nbb, neg, 265.0e3);
-        // The level-shifter taps feed the 6550 grids through 47k stoppers; when a bank swings into grid
-        // current the current lands on a ~150k-impedance node. The real amp bypasses these taps (the bias
-        // network carries electrolytics) -- 0.1 uF also gives Newton a linear capacitor state to walk on
-        // instead of a pure-resistor discontinuity.
-        c.addCapacitor (nab, gnd, 0.1e-6);
-        c.addCapacitor (nbb, gnd, 0.1e-6);
+        // A 0.1 uF bypass ON THE TAP (an earlier Newton aid, justified as the bias network's
+        // electrolytics) is wrong: at audio it is a ~10k shunt that collapses the divider's ~0.31
+        // transfer to ~0.02 -- -33 dB on the output grids, i.e. the amp's missing level. The real
+        // amp's electrolytics sit on the bias supply, an ideal source here (already AC ground).
         c.setInitialGuess (m1, 100.0);
         c.setInitialGuess (m2, 100.0);
         c.setInitialGuess (nab, -45.0);
@@ -470,6 +468,12 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
                    a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode();
         c.addResistor (nab, g3, 47.0e3);
         c.addResistor (nbb, g4, 47.0e3);
+        // The capacitance that does belong in this signal path is the 6550s' input capacitance on
+        // the grid side of the 47k stoppers: ~3 x 27 pF + socket strays. It also keeps a linear
+        // capacitor state on the node where grid-current onset actually lands, serving the same
+        // Newton-smoothing role as the misplaced tap bypass did.
+        c.addCapacitor (g3, gnd, 330.0e-12);
+        c.addCapacitor (g4, gnd, 330.0e-12);
         ch.wPowerGridA = g3;
         ch.penA = c.addPentode (pp1, g3, gnd, pentode6550Triple(), railScreensNominal);
         ch.penB = c.addPentode (pp2, g4, gnd, pentode6550Triple(), railScreensNominal);

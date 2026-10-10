@@ -392,7 +392,9 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // in the preamp, Baxandall + tapped-inductor mid section, a 12AX7 phase splitter, two 12AU7 drivers and
     // six 6550s. No reducedOrder yet: the full reference netlist always runs (trim measured by PedalUnityLevelTests).
     registry.markQualityDependent ("SVTStyleAmplifier");
-    registry.registerType ("SVTStyleAmplifier", [] { return trimmed (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.69f); });
+    // Measured +10.32 dB at noon for the PedalUnityLevel reference, after the level-shifter tap
+    // bypass (0.1 uF to ground) was removed -- it had low-passed the driver->6550 drive ~30 dB.
+    registry.registerType ("SVTStyleAmplifier", [] { return trimmed (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -10.32f); });
     // Trainwreck Express (docs/circuits/TrainwreckExpress.md) and the Trainwreck-descended Komet Concorde
     // (docs/circuits/KometConcorde.md): three-12AX7 anode-driven preamps, LTP, 2x EL34, no global feedback. Full netlist.
     registry.markQualityDependent ("TrainwreckExpressStyleAmplifier");
