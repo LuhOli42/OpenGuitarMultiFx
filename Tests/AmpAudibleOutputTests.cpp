@@ -35,7 +35,9 @@ public:
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
                                  "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier",
                                  "MatchlessHC30StyleAmplifier", "HotCat30StyleAmplifier",
-                                 "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier" })
+                                 "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier",
+                                 "DumbleSteelStringStyleAmplifier", "SunnModelTStyleAmplifier",
+                                 "FryetteDeliveranceD120StyleAmplifier", "BognerUberschallStyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
@@ -105,7 +107,9 @@ public:
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
                                  "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier",
                                  "MatchlessHC30StyleAmplifier", "HotCat30StyleAmplifier",
-                                 "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier" })
+                                 "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier",
+                                 "DumbleSteelStringStyleAmplifier", "SunnModelTStyleAmplifier",
+                                 "FryetteDeliveranceD120StyleAmplifier", "BognerUberschallStyleAmplifier" })
         {
             auto amp = registry.create (key);
             amp->prepare (sr, 512, 1);
