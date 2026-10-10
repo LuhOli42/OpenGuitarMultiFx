@@ -34,6 +34,10 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   AC30StyleAmplifierProcessorTests.cpp
   TrainwreckExpressStyleAmplifierProcessorTests.cpp
   KometConcordeStyleAmplifierProcessorTests.cpp
+  MatchlessHC30StyleAmplifierProcessorTests.cpp
+  HotCat30StyleAmplifierProcessorTests.cpp
+  CarmenGhiaStyleAmplifierProcessorTests.cpp
+  Astroverb16StyleAmplifierProcessorTests.cpp
   SLO100StyleAmplifierProcessorTests.cpp
   MarkIICPlusStyleAmplifierProcessorTests.cpp
   DualRectifierStyleAmplifierProcessorTests.cpp
@@ -164,6 +168,11 @@ set(OGMFX_SOURCES
   ../Source/Effects/JCM800StyleAmplifierProcessor.cpp
   ../Source/Effects/AC15StyleAmplifierProcessor.cpp
   ../Source/Effects/AC30StyleAmplifierProcessor.cpp
+  ../Source/Effects/EL84BoutiqueAmpCore.cpp
+  ../Source/Effects/MatchlessHC30StyleAmplifierProcessor.cpp
+  ../Source/Effects/HotCat30StyleAmplifierProcessor.cpp
+  ../Source/Effects/CarmenGhiaStyleAmplifierProcessor.cpp
+  ../Source/Effects/Astroverb16StyleAmplifierProcessor.cpp
   ../Source/Effects/SLO100StyleAmplifierProcessor.cpp
   ../Source/Effects/MarkIICPlusStyleAmplifierProcessor.cpp
   ../Source/Effects/DualRectifierStyleAmplifierProcessor.cpp
