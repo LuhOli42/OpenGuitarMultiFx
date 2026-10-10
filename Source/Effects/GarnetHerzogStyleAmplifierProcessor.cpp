@@ -298,16 +298,23 @@ double GarnetHerzogStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, d
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
-    ch.bmRail = sagRailLookup (ch.bmEnvelope);
+    // reducedOrder folds the power-only controls into the fit (same recipe as the
+    // big-iron amps): tube feel scales sag depth, bias shifts the knee's operating
+    // point, presence scales the HF shelf, focus tightens the low-end sag — all
+    // centred on the shipped defaults so noon response is unchanged.
+    const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
+    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
+    const double drive = driveVoltage;
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double u = absDrive / juce::jmax (1.0e-9, k);
-    const double y = bmYmax * u / std::pow (1.0 + std::pow (u, bmKneeN), 1.0 / bmKneeN);
-    const double raw = std::copysign (y * ch.bmRail, driveVoltage);
+    const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
+    const double u = std::abs (drive) / juce::jmax (1.0e-9, k);
+    const double raw = std::copysign (knee (u) * ch.bmRail, drive);
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    const double hfGain = bmShelfHfGain;
+    ch.bmOutput = ch.bmToneState + hfGain * (raw - ch.bmToneState);
     return ch.bmOutput;
 }
 
