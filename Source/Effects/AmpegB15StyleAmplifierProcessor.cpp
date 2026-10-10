@@ -369,7 +369,7 @@ double AmpegB15StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, doubl
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
     ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
-    ch.bmOutput = ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState));
     return ch.bmOutput;
 }
 
@@ -523,6 +523,9 @@ void AmpegB15StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        auto bmVoicing = voicings::bassAmp;
+        bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
     smoothedVolume.reset (newSampleRate, 0.02);

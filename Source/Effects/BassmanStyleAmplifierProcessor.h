@@ -2,6 +2,7 @@
 
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -140,6 +141,7 @@ private:
 
         // reducedOrder only: behavioural power stage state (see behavioralPowerStage())
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
 
         // follower-drive conditioner state (notch + lowpass on the follower AC before it couples into
         // the power block -- removes the preamp solve's fs/2 weave artifact; see process())

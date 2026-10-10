@@ -695,7 +695,7 @@ double RockerverbStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, dou
                      - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
     ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
     ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
-    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, top * bmLevelTrim);
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, ch.bmTail.process (top * bmLevelTrim));
     return ch.bmOutput;
 }
 
@@ -798,6 +798,7 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.prepare (sampleRate, voicings::highGain, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)

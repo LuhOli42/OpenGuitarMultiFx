@@ -271,9 +271,10 @@ public:
             logMessage ("reducedOrder cost: avg " + juce::String (avgPct, 2) + "%, worst block " + juce::String (worstPct, 1)
                         + "%, failures " + juce::String (amp.getSolveFailureRate(), 6) + ", recoveries " + juce::String (amp.debugRecoveries()));
             // The SLO-100 has FIVE preamp gain stages (the most of any amp on the roadmap), so its
-            // reducedOrder cost is higher than a 3-4 stage amp. Allow up to 15% avg.
+            // reducedOrder cost is higher than a 3-4 stage amp; the OT/speaker tail adds ~1% on top.
+            // Allow up to 17% avg.
             if (! testEnvironment::underEmulation())
-                expectLessThan (avgPct, 15.0);
+                expectLessThan (avgPct, 17.0);
             SLO100StyleAmplifierProcessor::reducedOrder = false;
         }
 

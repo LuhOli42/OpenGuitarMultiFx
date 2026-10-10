@@ -314,7 +314,7 @@ double GarnetHerzogStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, d
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
     const double hfGain = bmShelfHfGain;
-    ch.bmOutput = ch.bmToneState + hfGain * (raw - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process ((ch.bmToneState + hfGain * (raw - ch.bmToneState)) * bmLevelTrim);
     return ch.bmOutput;
 }
 
@@ -352,6 +352,7 @@ void GarnetHerzogStyleAmplifierProcessor::prepare (double newSampleRate, int, in
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.prepare (sampleRate, voicings::singleEnded, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& sv, juce::AudioParameterFloat* p, double seconds)

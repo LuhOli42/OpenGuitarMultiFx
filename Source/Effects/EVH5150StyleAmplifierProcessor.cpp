@@ -700,7 +700,7 @@ double EVH5150StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double
     ch.bmCutState += cut * (notch - ch.bmCutState);
     // physical ceiling: the stages this replaces clip at the rail -- the fitted filters' resonance can overshoot
     // the knee's bound by ~2x on saturated LF, which would otherwise trip the pluck peak and sanity bounds.
-    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, (notch - ch.bmCutState) * bmLevelTrim);
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, ch.bmTail.process ((notch - ch.bmCutState) * bmLevelTrim));
     return ch.bmOutput;
 }
 
@@ -806,6 +806,7 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.prepare (sampleRate, voicings::highGain, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)

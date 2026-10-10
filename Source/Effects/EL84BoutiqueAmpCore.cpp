@@ -617,6 +617,9 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        auto bmVoicing = tubeamp::voicings::classAChime;
+        bmVoicing.asym = 0.06; // half-strength: the knee already shifts with the Bias control
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
         bool ok = ch.supply.prepare (sampleRate / (double) supplyInterval);
         ok = ch.pre.prepare (sampleRate) && ok;
         if (model == Model::matchlessHC30)
@@ -724,6 +727,7 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
                     ch.bmLpPres += ch.bmPresAlpha * (speakerVolts - ch.bmLpPres);
                     speakerVolts = ch.bmLpPres + (1.0 + ch.bmShelf) * (speakerVolts - ch.bmLpPres);
                 }
+                speakerVolts = ch.bmTail.process (speakerVolts);
             }
             else
             {
