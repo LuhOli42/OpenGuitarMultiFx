@@ -6,6 +6,7 @@ juce_add_console_app(OpenGuitarMultiFx_Tests
 target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RunTests.cpp
   SignalGraphTests.cpp
+  BypassCrossfadeTests.cpp
   DeferredReclaimerTests.cpp
   ParameterManagerTests.cpp
   PitchDetectorTests.cpp
@@ -67,6 +68,10 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
   BigMuffStyleFuzzProcessorTests.cpp
+  BassBigMuffStyleFuzzProcessorTests.cpp
+  DarkglassB7KStyleOverdriveProcessorTests.cpp
+  SansAmpBDDIStyleOverdriveProcessorTests.cpp
+  BossOC2StyleOctaverProcessorTests.cpp
   DT1StyleDistortionProcessorTests.cpp
   ODR1StyleOverdriveProcessorTests.cpp
   OverdriverStyleOverdriveProcessorTests.cpp
@@ -153,6 +158,10 @@ set(OGMFX_SOURCES
   ../Source/Effects/CentaurStyleOverdriveProcessor.cpp
   ../Source/Effects/BD2StyleOverdriveProcessor.cpp
   ../Source/Effects/BigMuffStyleFuzzProcessor.cpp
+  ../Source/Effects/BassBigMuffStyleFuzzProcessor.cpp
+  ../Source/Effects/DarkglassB7KStyleOverdriveProcessor.cpp
+  ../Source/Effects/SansAmpBDDIStyleOverdriveProcessor.cpp
+  ../Source/Effects/BossOC2StyleOctaverProcessor.cpp
   ../Source/Effects/DT1StyleDistortionProcessor.cpp
   ../Source/Effects/ODR1StyleOverdriveProcessor.cpp
   ../Source/Effects/OverdriverStyleOverdriveProcessor.cpp

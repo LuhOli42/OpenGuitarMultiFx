@@ -27,6 +27,7 @@ public:
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Analog Delay"; }
+    bool hasTrails() const override { return true; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff3d72b8); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

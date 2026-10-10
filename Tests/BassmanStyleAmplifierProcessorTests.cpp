@@ -463,7 +463,7 @@ public:
                         amp.process (one);
                         if (n >= settle + 2 * cycle && n < settle + 6 * cycle)
                         {
-                            const double y = one.getSample (0, 0) / BassmanStyleAmplifierProcessor::outputScale / 2.0; // volts at the original 2 ohm tap
+                            const double y = one.getSample (0, 0) / BassmanStyleAmplifierProcessor::fullOutputScale / 2.0; // volts at the original 2 ohm tap
                             s1 += y * std::sin (ph);
                             c1 += y * std::cos (ph);
                             s3 += y * std::sin (3 * ph);
@@ -596,14 +596,14 @@ public:
                 const auto t0 = std::chrono::steady_clock::now();
                 const double rms = runSine (amp, 440.0, level, 0.5, 0.3, &peak);
                 const double sec = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
-                const double speakerRms = rms / BassmanStyleAmplifierProcessor::outputScale / 2.0; // volts at the original 2 ohm tap
-                logMessage ("input " + juce::String (level) + ": speaker " + juce::String (speakerRms, 2) + " V rms (" + juce::String (speakerRms * speakerRms / 2.0, 1) + " W), peak " + juce::String (peak / BassmanStyleAmplifierProcessor::outputScale / 2.0, 1) + " V, cpu " + juce::String (100.0 * sec / 0.8, 1) + " % of a core at 1x");
+                const double speakerRms = rms / BassmanStyleAmplifierProcessor::fullOutputScale / 2.0; // volts at the original 2 ohm tap
+                logMessage ("input " + juce::String (level) + ": speaker " + juce::String (speakerRms, 2) + " V rms (" + juce::String (speakerRms * speakerRms / 2.0, 1) + " W), peak " + juce::String (peak / BassmanStyleAmplifierProcessor::fullOutputScale / 2.0, 1) + " V, cpu " + juce::String (100.0 * sec / 0.8, 1) + " % of a core at 1x");
                 expectEquals (amp.getSolveFailureRate(), 0.0);
                 expect (std::isfinite (rms));
                 if (level > 0.05)
                 {
                     expect (speakerRms > 8.0 && speakerRms < 12.5, "full-drive output " + juce::String (speakerRms) + " V rms");
-                    expect (peak / BassmanStyleAmplifierProcessor::outputScale / 2.0 < 40.0, "peaks stay bounded (a speaker's inductance makes the terminal voltage peaky)");
+                    expect (peak / BassmanStyleAmplifierProcessor::fullOutputScale / 2.0 < 40.0, "peaks stay bounded (a speaker's inductance makes the terminal voltage peaky)");
                 }
             }
         }
@@ -651,7 +651,7 @@ public:
                 apply (amp, s);
                 setParam (amp, "bm_power", power);
                 amp.prepare (sr, 128, 2);
-                const double rms = runSine (amp, 440.0, level, 0.4, 0.2) / BassmanStyleAmplifierProcessor::outputScale / 2.0;
+                const double rms = runSine (amp, 440.0, level, 0.4, 0.2) / BassmanStyleAmplifierProcessor::fullOutputScale / 2.0;
                 expectEquals (amp.getSolveFailureRate(), 0.0);
                 return rms;
             };
@@ -759,7 +759,7 @@ public:
                 setParam (amp, "bm_speaker", speaker);
                 amp.prepare (sr, 128, 2);
                 const double rms = runSine (amp, 200.0, 0.1, 0.4, 0.2);
-                return std::pair<double, double> { rms / BassmanStyleAmplifierProcessor::outputScale / 2.0, amp.getSolveFailureRate() };
+                return std::pair<double, double> { rms / BassmanStyleAmplifierProcessor::fullOutputScale / 2.0, amp.getSolveFailureRate() };
             };
             const auto r4 = rmsFor (0.0f), r8 = rmsFor (1.0f), r16 = rmsFor (2.0f);
             logMessage ("full-drive output at 4 / 8 / 16 ohm (level-compensated): " + juce::String (r4.first, 2) + " / " + juce::String (r8.first, 2) + " / " + juce::String (r16.first, 2) + " V rms");
@@ -1017,7 +1017,7 @@ public:
             // block took 13 ms and dropped out. See docs/circuits/Bassman5F6A.md.
             expectLessThan (amp.debugIterations (1), 12.0);
             expect (finite);
-            expect (peak <= 150.0 * BassmanStyleAmplifierProcessor::outputScale * 2.0 + 1.0e-3); // a failing state never prints more than the speaker can
+            expect (peak <= 150.0 * BassmanStyleAmplifierProcessor::fullOutputScale * 2.0 + 1.0e-3); // a failing state never prints more than the speaker can
             expectLessThan (amp.getSolveFailureRate(), 2.0e-3);
         }
 

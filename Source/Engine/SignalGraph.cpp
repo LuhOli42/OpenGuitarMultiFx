@@ -92,8 +92,7 @@ void SignalGraph::process (juce::AudioBuffer<float>& buffer)
                 addClamped (lane.buffer, lanes[(size_t) connection.first].buffer, numSamples);
 
         for (auto* p : lane.processors)
-            if (! p->isBypassed())
-                p->process (lane.buffer);
+            p->processWithBypass (lane.buffer); // bypass is a crossfade now, not a skip -- see EffectProcessor
 
         if (lane.writesDeviceOutput)
             anyLaneWritesOutput = true;

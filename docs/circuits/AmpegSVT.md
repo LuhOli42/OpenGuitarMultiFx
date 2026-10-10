@@ -61,13 +61,13 @@ POWER BLOCK (the global feedback loop lives here; replaced by a fitted curve whe
   preOut --C .1-- g7 --R7 1k-- g(PI:A);  R8 470k leak (coupling cap -- without it the 1k holds g1
     at the source's 0 V while g2 floats to bn, unbalancing the pair on silence)
   PI 12AX7 LTP: pa --R12 100k-- +345;  pb --R15 68k-- +345;  shared k --R14 220-- bn --R13 47k-- -180 V
-  pa --C8 .047-- g(drvA);  pb --C11 .047-- g(drvB);  470k grid leaks
+  pa --C8 2.2-- gs --47k stopper-- g(drvA);  pb --C11 2.2-- gs --47k stopper-- g(drvB);  470k grid leaks
   DrvA/DrvB 12AU7: plate --47k-- +365;  k --1.8k-- gnd;  C9 1u k-to-k
   Level shift:  plate --300k-- m --120k-- tap --~265k-- -180 V   → tap ≈ -45 V, ~0.31 x plate signal
                 (0.1 uF bypass on each tap; the Bias knob sweeps the tap resistor 180k..350k)
   tap --47k-- composite 6550 grid (each bank of three = one pentode with 3x current)
   OT:  CT --+690;  two halves -> plates;  secondary -> speaker (2/4/8 ohm)
-  NFB:  speaker --Rfb-- fp --C-- g2(PI:B)   [+ stray cap to gnd]
+  NFB:  speaker --Rfb 150k-- fp --C 2.2-- g2(PI:B)   [+ stray cap to gnd]
 ```
 
 Supply model: rectified ~690 V node (plate), a ~365 V node (screens + drivers, separate winding modelled as
@@ -119,6 +119,19 @@ Speaker (2/4/8 ohm) and Output (plug-in level — the real amp has no output-lev
   feedback and the amp self-oscillates a ~9 Hz relaxation (motorboating) that buries the output —
   measured 2026-10-09 as 0.109 RMS of low rumble on a zero-signal input; caught by the
   `AmpAudibleOutput` silence regression test.
+- The NFB loop is where this amp is fragile: with the sign right it still sustained a rail-to-rail
+  relaxation (~2 Hz at the published values, ~0.25-4 Hz once disturbed) at Master = 0 under a driven
+  input — audible as DC/rumble and a thump when the knob moves. Measured 2026-10-10: opening the
+  150k return is the only single edit that silences it outright. The applied fix is two-part:
+  (1) the PI LTP gets kg1 softened 24x (self-biased tail, so the DC points hold; the fixed-bias
+  6550s cannot be softened without starving their ~0.3 A idle), cutting the loop's incremental
+  gain below what re-arms the hop; (2) every high-pass pole inside the loop — C8/C11 and the NFB
+  injection cap — is pushed far below the OT's own LF corner (2.2 uF each, electrolytic-sized),
+  because stacked HP poles each add up to +90 deg of phase lead below their corner and flip the
+  feedback positive right where the relaxation runs. Driver grids also get the same 47k stoppers
+  the 6550s have, limiting grid-conduction charging of C8/C11. Residual: at Bias = max with a
+  slammed input a ~-35 dBFS infrasonic rumble survives — physically real (a real SVT motorboats
+  biased hot); every normal setting is silent.
 - V2:A's grid leak R14 returns to the kx cathode-resistor tap, not ground (bootstrapped bias): the
   follower idles with its cathode ~100 V. Wired to ground it idles near 5 V on the grid-current knee.
 
