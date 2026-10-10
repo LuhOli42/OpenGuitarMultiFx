@@ -114,6 +114,11 @@ private:
     // an explicit-length juce::dsp::AudioBlock (never resized per-call).
     juce::AudioBuffer<float> scratchA, scratchB, dryScratch;
     std::array<WetLevelMatcher, 2> wetMatch; // keeps the blended wet as loud as the dry (docs/circuits/MixLaw.md)
+
+    juce::SmoothedValue<float> smoothedMix;
+    juce::SmoothedValue<float> smoothedBlend;
+    juce::SmoothedValue<float> smoothedDynamicsAmount;
+    juce::SmoothedValue<float> smoothedOutputGainDb;
 };
 
 } // namespace openguitarmultifx

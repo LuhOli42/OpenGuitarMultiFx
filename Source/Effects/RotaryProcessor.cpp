@@ -39,6 +39,13 @@ void RotaryProcessor::prepare (double sampleRate, int, int)
     // highpass band is simply (input - lowpassed).
     crossoverCoeff = (float) (1.0 / (1.0 + (double) sampleRate / (twoPi * (double) crossoverHz)));
 
+    smoothedRateHz.reset (sampleRate, paramRampSeconds);
+    smoothedRateHz.setCurrentAndTargetValue (rateHz->get());
+    smoothedDepth.reset (sampleRate, paramRampSeconds);
+    smoothedDepth.setCurrentAndTargetValue (depth->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -57,15 +64,19 @@ void RotaryProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
 
-    const double hornPhaseInc = twoPi * (double) (rateHz->get() * hornRateMultiplier) / currentSampleRate;
-    const double woofPhaseInc = twoPi * (double) (rateHz->get() * woofRateMultiplier) / currentSampleRate;
-    const float depthAmount = depth->get();
-    const float wet = mix->get();
+    smoothedRateHz.setTargetValue (rateHz->get());
+    smoothedDepth.setTargetValue (depth->get());
+    smoothedMix.setTargetValue (mix->get());
+    const float rateNow = smoothedRateHz.skip (numSamples);
+    const double hornPhaseInc = twoPi * (double) (rateNow * hornRateMultiplier) / currentSampleRate;
+    const double woofPhaseInc = twoPi * (double) (rateNow * woofRateMultiplier) / currentSampleRate;
 
     for (int i = 0; i < numSamples; ++i)
     {
         // Same "oscillate between (1-depth) and 1.0" AM shape as
         // TremoloProcessor, just computed twice at two different rates.
+        const float depthAmount = smoothedDepth.getNextValue();
+        const float wet = smoothedMix.getNextValue();
         const float hornGain = 1.0f - depthAmount * 0.5f * (1.0f - (float) std::cos (hornPhase));
         const float woofGain = 1.0f - depthAmount * 0.5f * (1.0f - (float) std::cos (woofPhase));
 

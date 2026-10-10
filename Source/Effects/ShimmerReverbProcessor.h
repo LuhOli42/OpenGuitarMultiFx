@@ -189,6 +189,10 @@ private:
     std::array<float, 2> lastCombSum {};
 
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedDecay;
+    juce::SmoothedValue<float> smoothedShimmerAmount;
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx

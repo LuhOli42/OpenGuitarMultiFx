@@ -60,6 +60,16 @@ void DS201StyleNoiseGateProcessor::prepare (double newSampleRate, int, int)
 {
     sampleRate = newSampleRate;
     appliedLow = appliedHigh = -1.0f;
+
+    smoothedThreshold.reset (newSampleRate, paramRampSeconds);
+    smoothedThreshold.setCurrentAndTargetValue (threshold->get());
+    smoothedRange.reset (newSampleRate, paramRampSeconds);
+    smoothedRange.setCurrentAndTargetValue (range->get());
+    smoothedLowCut.reset (newSampleRate, paramRampSeconds);
+    smoothedLowCut.setCurrentAndTargetValue (lowCut->get());
+    smoothedHighCut.reset (newSampleRate, paramRampSeconds);
+    smoothedHighCut.setCurrentAndTargetValue (highCut->get());
+
     updateFilters();
     reset();
 }
@@ -78,7 +88,7 @@ void DS201StyleNoiseGateProcessor::reset()
 
 void DS201StyleNoiseGateProcessor::updateFilters() noexcept
 {
-    const float lo = lowCut->get(), hi = highCut->get();
+    const float lo = smoothedLowCut.getCurrentValue(), hi = smoothedHighCut.getCurrentValue();
     if (lo == appliedLow && hi == appliedHigh)
         return;
     appliedLow = lo;
@@ -104,10 +114,22 @@ void DS201StyleNoiseGateProcessor::process (juce::AudioBuffer<float>& buffer)
     if (sampleRate <= 0.0)
         return;
 
+    const int numSamples = buffer.getNumSamples();
+
+    // Side-chain cutoffs plus the gate's threshold/range steer
+    // coefficient/dB bookkeeping -> per-block stepped ramp. Attack/decay/
+    // hold are timings (hold is also tempo-syncable) and key-listen is a
+    // monitor toggle, so they keep reading the parameter directly.
+    smoothedLowCut.setTargetValue (lowCut->get());
+    smoothedLowCut.skip (numSamples);
+    smoothedHighCut.setTargetValue (highCut->get());
+    smoothedHighCut.skip (numSamples);
+    smoothedThreshold.setTargetValue (threshold->get());
+    smoothedRange.setTargetValue (range->get());
     updateFilters();
 
-    const double thresholdLin = std::pow (10.0, (double) threshold->get() / 20.0);
-    const double rangeDb = -(double) range->get(); // positive
+    const double thresholdLin = std::pow (10.0, (double) smoothedThreshold.skip (numSamples) / 20.0);
+    const double rangeDb = -(double) smoothedRange.skip (numSamples); // positive
     const double attackSamples = juce::jmax (1.0, (double) attack->get() * 0.001 * sampleRate);
     const double decaySamples = juce::jmax (1.0, (double) decay->get() * 0.001 * sampleRate);
     const long long holdSamples = (long long) ((double) hold->get() * 0.001 * sampleRate);
@@ -117,7 +139,6 @@ void DS201StyleNoiseGateProcessor::process (juce::AudioBuffer<float>& buffer)
     const double detRelease = std::exp (-1.0 / (0.001 * sampleRate));
 
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
-    const int numSamples = buffer.getNumSamples();
 
     for (int i = 0; i < numSamples; ++i)
     {

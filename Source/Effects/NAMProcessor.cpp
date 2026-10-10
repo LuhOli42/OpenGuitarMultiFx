@@ -135,6 +135,13 @@ void NAMProcessor::prepare (double newSampleRate, int maxBlockSize, int)
     outputScratch.assign ((size_t) maxBlockSize, 0.0f);
     sag.prepare (newSampleRate);
 
+    smoothedInputGainDb.reset (newSampleRate, paramRampSeconds);
+    smoothedInputGainDb.setCurrentAndTargetValue (inputGainDb->get());
+    smoothedOutputGainDb.reset (newSampleRate, paramRampSeconds);
+    smoothedOutputGainDb.setCurrentAndTargetValue (outputGainDb->get());
+    smoothedSagAmount.reset (newSampleRate, paramRampSeconds);
+    smoothedSagAmount.setCurrentAndTargetValue (sagAmount != nullptr ? sagAmount->get() : 0.0f);
+
     // A sample-rate/block-size change invalidates an already-Reset() model.
     // Reloading builds a fresh instance and swaps it in atomically, rather
     // than mutating the live one (which the audio thread might be using).
@@ -157,24 +164,29 @@ void NAMProcessor::process (juce::AudioBuffer<float>& buffer)
     if (model == nullptr)
         return; // no model loaded -- pass through unchanged
 
-    const float inGain = juce::Decibels::decibelsToGain (inputGainDb->get());
-    const float outGain = juce::Decibels::decibelsToGain (outputGainDb->get());
+    // In/out trims multiply the signal -> per-sample ramp (dB domain,
+    // converted per sample). Sag retunes the power-supply model -> a
+    // per-block stepped ramp is enough there.
+    smoothedInputGainDb.setTargetValue (inputGainDb->get());
+    smoothedOutputGainDb.setTargetValue (outputGainDb->get());
+    smoothedSagAmount.setTargetValue (sagAmount != nullptr ? sagAmount->get() : 0.0f);
 
     const auto* inChannel = buffer.getReadPointer (0);
     for (int i = 0; i < numSamples; ++i)
-        inputScratch[(size_t) i] = inChannel[i] * inGain;
+        inputScratch[(size_t) i] = inChannel[i]
+            * juce::Decibels::decibelsToGain (smoothedInputGainDb.getNextValue());
 
     float* inPtrs[1] = { inputScratch.data() };
     float* outPtrs[1] = { outputScratch.data() };
     model->process (inPtrs, outPtrs, numSamples);
 
     if (sagAmount != nullptr)
-        sag.process (outputScratch.data(), numSamples, sagAmount->get());
+        sag.process (outputScratch.data(), numSamples, smoothedSagAmount.skip (numSamples));
 
     // outputScratch * outGain is identical for every output channel -- scale
     // once into itself, then copy, instead of redoing the multiply per channel.
     for (int i = 0; i < numSamples; ++i)
-        outputScratch[(size_t) i] *= outGain;
+        outputScratch[(size_t) i] *= juce::Decibels::decibelsToGain (smoothedOutputGainDb.getNextValue());
 
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
         buffer.copyFrom (ch, 0, outputScratch.data(), numSamples);

@@ -204,7 +204,7 @@ void GEB7StyleEqualizerProcessor::updateSliders()
     bool changed = false;
     for (int k = 0; k <= numBands; ++k)
     {
-        const float v = k < numBands ? bands[(size_t) k]->get() : level->get();
+        const float v = smoothedSliders[(size_t) k].getCurrentValue();
         if (v != appliedSliders[(size_t) k])
         {
             appliedSliders[(size_t) k] = v;
@@ -255,6 +255,13 @@ void GEB7StyleEqualizerProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.d.prepare (newSampleRate) && dcOk;
     }
 
+    for (int k = 0; k <= numBands; ++k)
+    {
+        smoothedSliders[(size_t) k].reset (newSampleRate, paramRampSeconds);
+        smoothedSliders[(size_t) k].setCurrentAndTargetValue (k < numBands ? bands[(size_t) k]->get() : level->get());
+    }
+    updateSliders();
+
     controlCounter = 0;
     sampleCount = 0;
     failureCount = 0;
@@ -274,6 +281,13 @@ void GEB7StyleEqualizerProcessor::process (juce::AudioBuffer<float>& buffer)
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
+            // A knob jump now becomes ~10 ms worth of small slider steps
+            // instead of one full refactor, which is what de-clicks it.
+            for (int k = 0; k <= numBands; ++k)
+            {
+                smoothedSliders[(size_t) k].setTargetValue (k < numBands ? bands[(size_t) k]->get() : level->get());
+                smoothedSliders[(size_t) k].skip (controlInterval);
+            }
             updateSliders();
         }
 

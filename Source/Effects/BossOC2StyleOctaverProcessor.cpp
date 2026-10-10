@@ -43,9 +43,9 @@ BossOC2StyleOctaverProcessor::BossOC2StyleOctaverProcessor()
 void BossOC2StyleOctaverProcessor::updateLevels()
 {
     // Mixer gain: each knob is a linear level; the ~2x rescale keeps noon near unity (trimmed upstream).
-    directGain = 2.0 * (double) directParam->get();
-    oct1Gain = 2.0 * (double) oct1Param->get();
-    oct2Gain = 2.0 * (double) oct2Param->get();
+    smoothedDirectGain.setTargetValue (2.0f * directParam->get());
+    smoothedOct1Gain.setTargetValue (2.0f * oct1Param->get());
+    smoothedOct2Gain.setTargetValue (2.0f * oct2Param->get());
 }
 
 void BossOC2StyleOctaverProcessor::prepare (double newSampleRate, int, int)
@@ -65,6 +65,13 @@ void BossOC2StyleOctaverProcessor::prepare (double newSampleRate, int, int)
     const double pi2 = 2.0 * 3.14159265358979323846;
     hpCoeff = std::exp (-pi2 * hpHz / newSampleRate);
     envDecay = std::exp (-1.0 / (newSampleRate * envReleaseMs * 1.0e-3));
+
+    smoothedDirectGain.reset (newSampleRate, paramRampSeconds);
+    smoothedDirectGain.setCurrentAndTargetValue (2.0f * directParam->get());
+    smoothedOct1Gain.reset (newSampleRate, paramRampSeconds);
+    smoothedOct1Gain.setCurrentAndTargetValue (2.0f * oct1Param->get());
+    smoothedOct2Gain.reset (newSampleRate, paramRampSeconds);
+    smoothedOct2Gain.setCurrentAndTargetValue (2.0f * oct2Param->get());
 
     updateLevels();
     controlCounter = 0;
@@ -86,6 +93,10 @@ void BossOC2StyleOctaverProcessor::process (juce::AudioBuffer<float>& buffer)
             controlCounter = 0;
             updateLevels();
         }
+
+        const double directGain = (double) smoothedDirectGain.getNextValue();
+        const double oct1Gain = (double) smoothedOct1Gain.getNextValue();
+        const double oct2Gain = (double) smoothedOct2Gain.getNextValue();
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {

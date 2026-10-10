@@ -135,7 +135,9 @@ void SqueezerStyleCompressorProcessor::prepare (double newSampleRate, int, int)
 
     smoothedVolume.reset (newSampleRate, 0.02);
     smoothedVolume.setCurrentAndTargetValue (volume->get());
-    updatePots (volume->get(), bias->get());
+    smoothedBias.reset (newSampleRate, 0.02);
+    smoothedBias.setCurrentAndTargetValue (bias->get());
+    updatePots ((double) smoothedVolume.getCurrentValue(), (double) smoothedBias.getCurrentValue());
 
     dcOk = true;
     for (auto& ch : channels)
@@ -162,7 +164,7 @@ void SqueezerStyleCompressorProcessor::process (juce::AudioBuffer<float>& buffer
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots (v, bias->get());
+            updatePots (v, (double) smoothedBias.getNextValue());
         }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)

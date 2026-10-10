@@ -70,6 +70,9 @@ private:
     double envelope = 0.0;          // fast peak follower of the output (the rectifier in front of the EL panel)
     double grFast = 0.0, grSlow = 0.0, grDb = 0.0;
     double memory = 0.0;            // 0..1: how long / how deep the cell has been lit
+
+    juce::SmoothedValue<float> smoothedPeakReduction;
+    juce::SmoothedValue<float> smoothedGainDb;
 };
 
 } // namespace openguitarmultifx

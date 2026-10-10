@@ -94,6 +94,11 @@ private:
     DualMonoShortcut shortcut;
 
     static constexpr int controlInterval = 16;
+
+    juce::SmoothedValue<float> smoothedBlend;
+    juce::SmoothedValue<float> smoothedDrive;
+    juce::SmoothedValue<float> smoothedLevel;
+    std::array<juce::SmoothedValue<float>, numBands> smoothedBands;
 };
 
 } // namespace openguitarmultifx

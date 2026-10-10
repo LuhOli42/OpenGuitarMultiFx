@@ -59,6 +59,9 @@ private:
 
     std::vector<ChannelState> channels;
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedFeedback;
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx

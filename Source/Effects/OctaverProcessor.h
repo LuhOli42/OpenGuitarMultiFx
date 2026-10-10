@@ -103,6 +103,8 @@ private:
 
     std::array<GrainShifter, 2> shifters;
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedLevel;
 };
 
 } // namespace openguitarmultifx

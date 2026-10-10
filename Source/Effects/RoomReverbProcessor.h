@@ -99,6 +99,10 @@ private:
     std::array<std::array<AllpassFilter, numAllpassStages>, 2> allpass;
 
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedDecay;
+    juce::SmoothedValue<float> smoothedTone;
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx

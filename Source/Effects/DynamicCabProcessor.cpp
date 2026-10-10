@@ -206,6 +206,15 @@ void DynamicCabProcessor::prepare (double newSampleRate, int maxBlockSize, int n
 
     // Same reasoning as IRLoaderProcessor::prepare(): a sample-rate/block-
     // size change invalidates an already-prepared Convolution, so rebuilding
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mixParam->get());
+    smoothedBlend.reset (sampleRate, paramRampSeconds);
+    smoothedBlend.setCurrentAndTargetValue (blend->get());
+    smoothedDynamicsAmount.reset (sampleRate, paramRampSeconds);
+    smoothedDynamicsAmount.setCurrentAndTargetValue (dynamicsAmount->get());
+    smoothedOutputGainDb.reset (sampleRate, paramRampSeconds);
+    smoothedOutputGainDb.setCurrentAndTargetValue (outputGainDb->get());
+
     // whichever source is selected and swapping it in atomically rather
     // than mutating the live one.
     appliedSourceA = appliedSourceB = -1;
@@ -231,7 +240,11 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
 
     const int numSamples = buffer.getNumSamples();
     const int numChannels = juce::jmin (buffer.getNumChannels(), preparedNumChannels);
-    const float mix = mixParam->get();
+    smoothedMix.setTargetValue (mixParam->get());
+    smoothedBlend.setTargetValue (blend->get());
+    const float blendNow = smoothedBlend.skip (numSamples);
+    smoothedDynamicsAmount.setTargetValue (dynamicsAmount->get());
+    const float dynamicsNow = smoothedDynamicsAmount.skip (numSamples);
 
     // With any IR loaded the wet is level-matched to the dry so Mix is a
     // real crossfade (docs/circuits/MixLaw.md) -- see IRLoaderProcessor.
@@ -241,9 +254,11 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
     // Only one slot loaded -- behave exactly like a single-IR cab, ignoring
     // Blend/Dynamics entirely, rather than crossfading toward silence in
     // whichever slot is still empty.
-    float effectiveBlend = (convA == nullptr) ? 1.0f : (convB == nullptr) ? 0.0f : blend->get();
+    // Blend only re-weights the two convolved outputs once per block, so a
+    // per-block stepped ramp suffices; same for the Dynamics depth.
+    float effectiveBlend = (convA == nullptr) ? 1.0f : (convB == nullptr) ? 0.0f : blendNow;
 
-    if (convA != nullptr && convB != nullptr && dynamicsAmount->get() > 0.0f)
+    if (convA != nullptr && convB != nullptr && dynamicsNow > 0.0f)
     {
         // Block-level peak (all channels) drives how hard the room/ribbon
         // IR gets pulled in on louder playing -- see class doc comment for
@@ -251,7 +266,7 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
         // existing algorithm.
         const float peak = buffer.getMagnitude (0, numSamples);
         const float envelopeLevel = inputEnvelope.processSample (peak);
-        effectiveBlend = juce::jlimit (0.0f, 1.0f, effectiveBlend + dynamicsAmount->get() * envelopeLevel);
+        effectiveBlend = juce::jlimit (0.0f, 1.0f, effectiveBlend + dynamicsNow * envelopeLevel);
     }
 
     if (convA != nullptr)
@@ -290,22 +305,38 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
             buffer.copyFrom (ch, 0, onlyLoaded, ch, 0, numSamples);
     }
 
-    for (int ch = 0; ch < juce::jmin (2, numChannels); ++ch)
+    std::array<float*, 2> cabDataPtrs {};
+    std::array<const float*, 2> cabDryPtrs {};
+    const int mixChannels = juce::jmin (2, numChannels);
+    for (int ch = 0; ch < mixChannels; ++ch)
     {
-        auto* data = buffer.getWritePointer (ch);
-        const auto* dry = dryScratch.getReadPointer (ch);
-        for (int i = 0; i < numSamples; ++i)
+        cabDataPtrs[(size_t) ch] = buffer.getWritePointer (ch);
+        cabDryPtrs[(size_t) ch] = dryScratch.getReadPointer (ch);
+    }
+
+    // Sample-major so smoothedMix.getNextValue() advances once per sample
+    // (not once per channel-sample) and both channels share the ramp.
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float mix = smoothedMix.getNextValue();
+        for (int ch = 0; ch < mixChannels; ++ch)
         {
-            wetMatch[(size_t) ch].accumulate (dry[i], data[i]);
-            data[i] = dry[i] * (1.0f - mix) + data[i] * mix * wetMatch[(size_t) ch].gain();
+            wetMatch[(size_t) ch].accumulate (cabDryPtrs[(size_t) ch][i], cabDataPtrs[(size_t) ch][i]);
+            cabDataPtrs[(size_t) ch][i] = cabDryPtrs[(size_t) ch][i] * (1.0f - mix)
+                + cabDataPtrs[(size_t) ch][i] * mix * wetMatch[(size_t) ch].gain();
         }
     }
     for (int ch = 0; ch < juce::jmin (2, numChannels); ++ch)
         wetMatch[(size_t) ch].endBlock (numSamples, 1);
 
-    const float outGain = juce::Decibels::decibelsToGain (outputGainDb->get());
-    if (outGain != 1.0f)
-        buffer.applyGain (outGain);
+    smoothedOutputGainDb.setTargetValue (outputGainDb->get());
+    if (smoothedOutputGainDb.getCurrentValue() != 0.0f || smoothedOutputGainDb.getTargetValue() != 0.0f)
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float g = juce::Decibels::decibelsToGain (smoothedOutputGainDb.getNextValue());
+            for (int ch = 0; ch < mixChannels; ++ch)
+                cabDataPtrs[(size_t) ch][i] *= g;
+        }
 }
 
 juce::String DynamicCabProcessor::getStatusText() const

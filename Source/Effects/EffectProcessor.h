@@ -171,6 +171,14 @@ public:
     virtual bool hasTrails() const { return false; }
 
     static constexpr double bypassRampSeconds = 0.010;
+    /** Ramp every smoothed float parameter applies on the audio thread:
+        a knob or snapshot jump reaches the target over this many seconds
+        instead of stepping in one block (zipper noise). ~10 ms is short
+        enough to feel instant at the knob and long enough to make a
+        0->1 gain jump inaudible; matching the bypass crossfade keeps the
+        two transitions feeling identical. Parameters that must act
+        immediately (triggers, selectors) read param->get() directly. */
+    static constexpr double paramRampSeconds = 0.010;
     static constexpr double trailsSilenceSeconds = 0.5;
     static constexpr float trailsSilenceThreshold = 1.0e-5f; // -100 dBFS
     virtual void reset() = 0;

@@ -45,6 +45,9 @@ private:
     double envelope = 0.0; // linear peak, instant attack
     double gainDb = 0.0;
     double muteGain = 1.0;
+
+    juce::SmoothedValue<float> smoothedThreshold;
+    juce::SmoothedValue<float> smoothedDecay;
 };
 
 } // namespace openguitarmultifx

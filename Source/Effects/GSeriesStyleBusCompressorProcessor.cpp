@@ -43,6 +43,12 @@ void GSeriesStyleBusCompressorProcessor::prepare (double newSampleRate, int, int
 {
     sampleRate = newSampleRate;
     appliedHpf = -1.0f;
+
+    smoothedThreshold.reset (newSampleRate, paramRampSeconds);
+    smoothedThreshold.setCurrentAndTargetValue (threshold->get());
+    smoothedMakeup.reset (newSampleRate, paramRampSeconds);
+    smoothedMakeup.setCurrentAndTargetValue (makeup->get());
+
     reset();
 }
 
@@ -60,13 +66,16 @@ void GSeriesStyleBusCompressorProcessor::process (juce::AudioBuffer<float>& buff
 
     const int ratioIndex = juce::jlimit (0, 2, juce::roundToInt (ratio->get()));
     const double r = ratios[(size_t) ratioIndex];
-    const double thr = threshold->get() + thresholdShiftDb[(size_t) ratioIndex];
+    // Threshold and makeup enter the per-sample gain law -> per-sample
+    // ramp below; ratio/attack/release/highPass are stepped selectors and
+    // keep their instant, index-quantised behaviour.
+    smoothedThreshold.setTargetValue (threshold->get());
+    smoothedMakeup.setTargetValue (makeup->get());
     const double aA = dyn::smoothingCoefficient (attackSeconds[(size_t) juce::jlimit (0, 5, juce::roundToInt (attack->get()))], sampleRate);
     const int releaseIndex = juce::jlimit (0, 4, juce::roundToInt (release->get()));
     const bool autoRelease = releaseIndex == 4;
     const double aR = dyn::smoothingCoefficient (autoRelease ? 0.1 : releaseSeconds[(size_t) releaseIndex], sampleRate);
     const double aRslow = dyn::smoothingCoefficient (1.2, sampleRate);
-    const double makeupGain = dyn::fromDb (makeup->get());
 
     const int hpfIndex = juce::jlimit (0, 2, juce::roundToInt (highPass->get()));
     if ((float) hpfIndex != appliedHpf)
@@ -91,6 +100,8 @@ void GSeriesStyleBusCompressorProcessor::process (juce::AudioBuffer<float>& buff
         for (int ch = 0; ch < numChannels; ++ch)
             peak = std::max (peak, std::abs (scHpf[(size_t) ch].process ((double) buffer.getSample (ch, i))));
 
+        const double thr = (double) smoothedThreshold.getNextValue() + thresholdShiftDb[(size_t) ratioIndex];
+        const double makeupGain = dyn::fromDb ((double) smoothedMakeup.getNextValue());
         const double targetDb = dyn::staticReductionDb (dyn::toDb (peak), thr, r, kneeDb);
 
         if (autoRelease)

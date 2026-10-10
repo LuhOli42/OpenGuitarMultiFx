@@ -46,6 +46,13 @@ void SpringReverbProcessor::prepare (double sampleRate, int, int)
     for (auto& c : comb)
         c.prepare (sampleRate, 45.0f);
 
+    smoothedDecay.reset (sampleRate, paramRampSeconds);
+    smoothedDecay.setCurrentAndTargetValue (decay->get());
+    smoothedTone.reset (sampleRate, paramRampSeconds);
+    smoothedTone.setCurrentAndTargetValue (tone->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -68,21 +75,29 @@ void SpringReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
 
-    const float decayAmount = decay->get();
+    // Decay/tone only re-tune loop coefficients -- a per-block stepped
+    // ramp; mix multiplies audio, so it ramps per sample instead.
+    smoothedDecay.setTargetValue (decay->get());
+    const float decayAmount = smoothedDecay.skip (numSamples);
+    smoothedTone.setTargetValue (tone->get());
     // Freeverb-style damped comb: dampCoeff closer to 1 means the loop's
     // one-pole filter tracks the input more slowly -- i.e. darker. Tone is
     // brightness, so invert it for the damping coefficient.
-    const float dampCoeff = 1.0f - tone->get();
-    const float wet = mix->get();
+    const float dampCoeff = 1.0f - smoothedTone.skip (numSamples);
+    smoothedMix.setTargetValue (mix->get());
 
-    for (int ch = 0; ch < numChannels; ++ch)
+    // Sample-major so smoothedMix.getNextValue() advances once per sample
+    // (not once per channel-sample) and both channels share the ramp.
+    for (int i = 0; i < numSamples; ++i)
     {
-        auto* data = buffer.getWritePointer (ch);
-        auto& stages = allpass[(size_t) ch];
-        auto& c = comb[(size_t) ch];
+        const float wet = smoothedMix.getNextValue();
 
-        for (int i = 0; i < numSamples; ++i)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
+            auto* data = buffer.getWritePointer (ch);
+            auto& stages = allpass[(size_t) ch];
+            auto& c = comb[(size_t) ch];
+
             const float input = data[i];
 
             float allpassOut = input;

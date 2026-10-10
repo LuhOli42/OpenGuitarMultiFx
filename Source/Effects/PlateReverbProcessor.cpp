@@ -47,6 +47,13 @@ void PlateReverbProcessor::prepare (double sampleRate, int, int)
     tank[0].prepare (sampleRate, 29.7f);
     tank[1].prepare (sampleRate, 33.1f);
 
+    smoothedDecay.reset (sampleRate, paramRampSeconds);
+    smoothedDecay.setCurrentAndTargetValue (decay->get());
+    smoothedTone.reset (sampleRate, paramRampSeconds);
+    smoothedTone.setCurrentAndTargetValue (tone->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -76,10 +83,12 @@ void PlateReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     // this range was tuned down empirically to keep worst-case (loud,
     // fully decorrelated stereo noise) headroom comparable to the other
     // reverbs here rather than mirroring Hall's constants blindly.
-    const float feedback = 0.4f + decay->get() * 0.15f;
-    const float damp1 = 1.0f - tone->get();
-    const float damp2 = tone->get();
-    const float wet = mix->get();
+    smoothedDecay.setTargetValue (decay->get());
+    const float feedback = 0.4f + smoothedDecay.skip (numSamples) * 0.15f;
+    smoothedTone.setTargetValue (tone->get());
+    const float damp1 = 1.0f - smoothedTone.skip (numSamples);
+    const float damp2 = 1.0f - damp1;
+    smoothedMix.setTargetValue (mix->get());
 
     std::array<float*, 2> channelData {};
     for (int ch = 0; ch < numChannels; ++ch)
@@ -87,6 +96,7 @@ void PlateReverbProcessor::process (juce::AudioBuffer<float>& buffer)
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float wet = smoothedMix.getNextValue();
         std::array<float, 2> diffused { 0.0f, 0.0f };
 
         for (int ch = 0; ch < numChannels; ++ch)

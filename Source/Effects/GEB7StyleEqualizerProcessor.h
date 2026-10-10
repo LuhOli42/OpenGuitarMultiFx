@@ -93,6 +93,8 @@ private:
     DualMonoShortcut shortcut;
 
     static constexpr int controlInterval = 64;
+
+    std::array<juce::SmoothedValue<float>, numBands + 1> smoothedSliders; // bands + Level, see GE7
 };
 
 } // namespace openguitarmultifx

@@ -36,6 +36,14 @@ void GateProcessor::prepare (double sampleRate, int, int)
     levelDetector.setReleaseTime (2.0f);
 
     gainSmoother.prepare (sampleRate);
+
+    smoothedThresholdDb.reset (sampleRate, paramRampSeconds);
+    smoothedThresholdDb.setCurrentAndTargetValue (thresholdDb->get());
+    smoothedAttackMs.reset (sampleRate, paramRampSeconds);
+    smoothedAttackMs.setCurrentAndTargetValue (attackMs->get());
+    smoothedReleaseMs.reset (sampleRate, paramRampSeconds);
+    smoothedReleaseMs.setCurrentAndTargetValue (releaseMs->get());
+
     reset();
 }
 
@@ -47,12 +55,18 @@ void GateProcessor::reset()
 
 void GateProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    gainSmoother.setAttackTime (attackMs->get());
-    gainSmoother.setReleaseTime (releaseMs->get());
-
-    const float thresholdLinear = juce::Decibels::decibelsToGain (thresholdDb->get());
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
+
+    // Detector-side parameters only steer the gate's own slewed gain, so a
+    // per-block stepped ramp is enough -- the actual output multiply is
+    // already per-sample inside gainSmoother.
+    smoothedAttackMs.setTargetValue (attackMs->get());
+    smoothedReleaseMs.setTargetValue (releaseMs->get());
+    gainSmoother.setAttackTime (smoothedAttackMs.skip (numSamples));
+    gainSmoother.setReleaseTime (smoothedReleaseMs.skip (numSamples));
+    smoothedThresholdDb.setTargetValue (thresholdDb->get());
+    const float thresholdLinear = juce::Decibels::decibelsToGain (smoothedThresholdDb.skip (numSamples));
 
     // Caching the write pointer once per channel avoids the bounds-checked
     // indirection getSample()/setSample() would otherwise do on every one of

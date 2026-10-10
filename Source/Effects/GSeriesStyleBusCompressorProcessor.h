@@ -58,6 +58,9 @@ private:
 
     double sampleRate = 0.0;
     double grDb = 0.0, grFast = 0.0, grSlow = 0.0;
+
+    juce::SmoothedValue<float> smoothedThreshold;
+    juce::SmoothedValue<float> smoothedMakeup;
 };
 
 } // namespace openguitarmultifx

@@ -47,6 +47,10 @@ private:
     // One-pole lowpass filter state, per channel -- shared state would
     // leak left/right crossover filtering into each other.
     std::array<float, 2> lowState {};
+
+    juce::SmoothedValue<float> smoothedRateHz;
+    juce::SmoothedValue<float> smoothedDepth;
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx

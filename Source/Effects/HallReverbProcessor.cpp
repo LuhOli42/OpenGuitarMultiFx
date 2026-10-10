@@ -64,6 +64,13 @@ void HallReverbProcessor::prepare (double sampleRate, int, int)
         }
     }
 
+    smoothedDecay.reset (sampleRate, paramRampSeconds);
+    smoothedDecay.setCurrentAndTargetValue (decay->get());
+    smoothedTone.reset (sampleRate, paramRampSeconds);
+    smoothedTone.setCurrentAndTargetValue (tone->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -89,27 +96,40 @@ void HallReverbProcessor::process (juce::AudioBuffer<float>& buffer)
 
     // Same decay/tone -> feedback/damping mapping style as SpringReverbProcessor,
     // just applied across 8 combs instead of 1: long, bright-capable tails
-    // without needing separate scale/offset constants per parameter.
-    const float feedback = 0.7f + decay->get() * 0.28f;
-    const float damp1 = tone->get();
+    // without needing separate scale/offset constants per parameter. The
+    // comb coefficients ramp per block; mix ramps per sample below.
+    smoothedDecay.setTargetValue (decay->get());
+    const float feedback = 0.7f + smoothedDecay.skip (numSamples) * 0.28f;
+    smoothedTone.setTargetValue (tone->get());
+    const float damp1 = smoothedTone.skip (numSamples);
     const float damp2 = 1.0f - damp1;
-    const float wet = mix->get();
+    smoothedMix.setTargetValue (mix->get());
 
+    std::array<float*, 2> dataPtrs {};
     for (int ch = 0; ch < numChannels; ++ch)
     {
-        auto* data = buffer.getWritePointer (ch);
+        dataPtrs[(size_t) ch] = buffer.getWritePointer (ch);
         auto& combBank = combs[(size_t) ch];
-        auto& allpassBank = allpass[(size_t) ch];
-
         for (auto& c : combBank)
         {
             c.feedback = feedback;
             c.damp1 = damp1;
             c.damp2 = damp2;
         }
+    }
 
-        for (int i = 0; i < numSamples; ++i)
+    // Sample-major so smoothedMix.getNextValue() advances once per sample
+    // (not once per channel-sample) and both channels share the ramp.
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float wet = smoothedMix.getNextValue();
+
+        for (int ch = 0; ch < numChannels; ++ch)
         {
+            auto* data = dataPtrs[(size_t) ch];
+            auto& combBank = combs[(size_t) ch];
+            auto& allpassBank = allpass[(size_t) ch];
+
             const float input = data[i];
 
             float combSum = 0.0f;

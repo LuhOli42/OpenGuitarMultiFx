@@ -68,6 +68,7 @@ private:
     juce::AudioParameterFloat* bias = nullptr;
 
     juce::SmoothedValue<float> smoothedVolume;
+    juce::SmoothedValue<float> smoothedBias;
 
         /** JUCE's reset() must return the circuit to its DC operating point -- an
         empty reset() (the bug this fixes) left stale capacitor state forever.

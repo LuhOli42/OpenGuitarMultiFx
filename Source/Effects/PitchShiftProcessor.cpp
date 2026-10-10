@@ -28,6 +28,12 @@ void PitchShiftProcessor::prepare (double sampleRate, int, int)
     currentSampleRate = sampleRate;
     for (auto& shifter : shifters)
         shifter.prepare (sampleRate);
+
+    smoothedSemitones.reset (sampleRate, paramRampSeconds);
+    smoothedSemitones.setCurrentAndTargetValue (semitones->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -46,14 +52,19 @@ void PitchShiftProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numChannels = juce::jmin (buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
 
-    const float ratio = std::pow (2.0f, semitones->get() / 12.0f);
-    const float wet = mix->get();
+    // Semitones retunes the grain slews (a pitch coefficient) -> per-block
+    // stepped ramp; mix crossfades wet/dry per sample below.
+    smoothedSemitones.setTargetValue (semitones->get());
+    const float ratio = std::pow (2.0f, smoothedSemitones.skip (numSamples) / 12.0f);
+    smoothedMix.setTargetValue (mix->get());
 
     float* channels[2] = { buffer.getWritePointer (0),
                           numChannels > 1 ? buffer.getWritePointer (1) : nullptr };
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float wet = smoothedMix.getNextValue();
+
         if (wet > 0.0f)
         {
             tracker.push (channels[0][i]);

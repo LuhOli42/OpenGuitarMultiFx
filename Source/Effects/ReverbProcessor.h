@@ -46,6 +46,11 @@ private:
     juce::dsp::Reverb reverb;
     juce::AudioBuffer<float> dryScratch;
     std::array<WetLevelMatcher, 2> wetMatch; // keeps Mix = 1 as loud as the dry signal (docs/circuits/MixLaw.md)
+
+    juce::SmoothedValue<float> smoothedSize;
+    juce::SmoothedValue<float> smoothedDamping;
+    juce::SmoothedValue<float> smoothedMix;
+    juce::SmoothedValue<float> smoothedWidth;
 };
 
 } // namespace openguitarmultifx

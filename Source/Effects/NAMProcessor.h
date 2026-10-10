@@ -114,6 +114,10 @@ private:
     // is mono going in (see AudioEngine); NAM models are inherently mono
     // nonlinear transforms, so we sum channel 0 in and broadcast back out.
     std::vector<float> inputScratch, outputScratch;
+
+    juce::SmoothedValue<float> smoothedInputGainDb;
+    juce::SmoothedValue<float> smoothedOutputGainDb;
+    juce::SmoothedValue<float> smoothedSagAmount;
 };
 
 } // namespace openguitarmultifx

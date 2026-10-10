@@ -54,6 +54,8 @@ private:
     int loopOffset = 0;
     int frozenLoopLengthSamples = 0;
     double currentSampleRate = 0.0;
+
+    juce::SmoothedValue<float> smoothedMix;
 };
 
 } // namespace openguitarmultifx

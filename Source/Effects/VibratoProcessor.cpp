@@ -35,6 +35,11 @@ void VibratoProcessor::prepare (double sampleRate, int, int numChannels)
     const int bufferLength = (int) std::ceil (bufferHeadroomMs * 0.001 * sampleRate) + 4;
     delayBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
 
+    smoothedRateHz.reset (sampleRate, paramRampSeconds);
+    smoothedRateHz.setCurrentAndTargetValue (rateHz->get());
+    smoothedDepth.reset (sampleRate, paramRampSeconds);
+    smoothedDepth.setCurrentAndTargetValue (depth->get());
+
     reset();
 }
 
@@ -54,12 +59,13 @@ void VibratoProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int bufferLength = delayBuffer.getNumSamples();
 
-    const double phaseIncrement = twoPi * (double) rateHz->get() / currentSampleRate;
-    const float depthMs = depth->get() * maxDepthMs;
+    smoothedRateHz.setTargetValue (rateHz->get());
+    smoothedDepth.setTargetValue (depth->get());
+    const double phaseIncrement = twoPi * (double) smoothedRateHz.skip (numSamples) / currentSampleRate;
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const float delayMs = centreDelayMs + depthMs * (float) std::sin (lfoPhase);
+        const float delayMs = centreDelayMs + smoothedDepth.getNextValue() * maxDepthMs * (float) std::sin (lfoPhase);
         const float delaySamples = delayMs * 0.001f * (float) currentSampleRate;
 
         float readPos = (float) writePos - delaySamples;

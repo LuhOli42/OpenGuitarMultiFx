@@ -47,6 +47,10 @@ private:
     double sampleRate = 0.0;
     double power = 0.0;
     double levelDb = -120.0, grDb = 0.0;
+
+    juce::SmoothedValue<float> smoothedThreshold;
+    juce::SmoothedValue<float> smoothedRatio;
+    juce::SmoothedValue<float> smoothedOutputDb;
 };
 
 } // namespace openguitarmultifx

@@ -126,6 +126,9 @@ private:
     // Pre-allocated in prepare() for the dry/wet mix -- process() must never allocate.
     juce::AudioBuffer<float> dryScratch;
     std::array<WetLevelMatcher, 2> wetMatch; // any loaded IR: keeps Mix = 1 as loud as the dry signal (docs/circuits/MixLaw.md)
+
+    juce::SmoothedValue<float> smoothedMix;
+    juce::SmoothedValue<float> smoothedOutputGainDb;
 };
 
 } // namespace openguitarmultifx

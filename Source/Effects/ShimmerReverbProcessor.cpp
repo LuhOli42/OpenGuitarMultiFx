@@ -54,6 +54,13 @@ void ShimmerReverbProcessor::prepare (double sampleRate, int, int)
         shifters[(size_t) ch].prepare (sampleRate);
     }
 
+    smoothedDecay.reset (sampleRate, paramRampSeconds);
+    smoothedDecay.setCurrentAndTargetValue (decay->get());
+    smoothedShimmerAmount.reset (sampleRate, paramRampSeconds);
+    smoothedShimmerAmount.setCurrentAndTargetValue (shimmerAmount->get());
+    smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedMix.setCurrentAndTargetValue (mix->get());
+
     reset();
 }
 
@@ -84,23 +91,35 @@ void ShimmerReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     // CombFilter::process's doc comment -- so their worst-case sum
     // (0.85 + 0.1 = 0.95) stays a safe margin under 1 regardless of how
     // Decay and Shimmer are set together.
-    const float feedback = 0.6f + decay->get() * 0.25f;
-    const float shimmerGain = shimmerAmount->get() * 0.1f;
-    const float wet = mix->get();
+    smoothedDecay.setTargetValue (decay->get());
+    const float feedback = 0.6f + smoothedDecay.skip (numSamples) * 0.25f;
+    smoothedShimmerAmount.setTargetValue (shimmerAmount->get());
+    const float shimmerGain = smoothedShimmerAmount.skip (numSamples) * 0.1f;
+    smoothedMix.setTargetValue (mix->get());
 
+    std::array<float*, 2> dataPtrs {};
     for (int ch = 0; ch < numChannels; ++ch)
     {
-        auto* data = buffer.getWritePointer (ch);
+        dataPtrs[(size_t) ch] = buffer.getWritePointer (ch);
         auto& combBank = combs[(size_t) ch];
-        auto& allpassBank = allpass[(size_t) ch];
-        auto& shifter = shifters[(size_t) ch];
-        auto& lastSum = lastCombSum[(size_t) ch];
-
         for (auto& c : combBank)
             c.feedback = feedback;
+    }
 
-        for (int i = 0; i < numSamples; ++i)
+    // Sample-major so smoothedMix.getNextValue() advances once per sample
+    // (not once per channel-sample) and both channels share the ramp.
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float wet = smoothedMix.getNextValue();
+
+        for (int ch = 0; ch < numChannels; ++ch)
         {
+            auto* data = dataPtrs[(size_t) ch];
+            auto& combBank = combs[(size_t) ch];
+            auto& allpassBank = allpass[(size_t) ch];
+            auto& shifter = shifters[(size_t) ch];
+            auto& lastSum = lastCombSum[(size_t) ch];
+
             const float input = data[i];
 
             // Fed from the PREVIOUS sample's comb sum (a one-sample-old
