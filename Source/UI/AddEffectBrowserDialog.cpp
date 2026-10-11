@@ -126,7 +126,10 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     railViewport.setViewedComponent (&rail, false);
 
     addChildComponent (chipsViewport);
-    chipsViewport.setScrollBarsShown (false, true);
+    // No scrollbar: on the touch target the chip row scrolls by drag, and a
+    // horizontal bar would steal height from the 48px chips when scrolling
+    // ever becomes necessary. The clipped chip edge is the overflow cue.
+    chipsViewport.setScrollBarsShown (false, false);
     chipsViewport.setViewedComponent (&chipsBar, false);
 
     rowList.onRowTap = [this] (EffectRow& row)
