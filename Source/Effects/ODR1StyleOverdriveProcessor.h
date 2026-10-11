@@ -57,6 +57,13 @@ public:
         return channels[0].a.averageIterations() + channels[0].b1.averageIterations() + channels[0].b2.averageIterations();
     }
 
+    /** Eco tier: U1A keeps its GBW pole via addOpAmpMacroLite (one Newton port instead of two,
+        same anti-windup bound); U2A and U2B, whose closed-loop pole sits far above the audio band,
+        become plain rail-switched op-amps (no ports); Q2's collector is bolted to the 9 V rail so
+        its bc junction never conducts -- a one-port saturating BJT. Fitted in
+        ReducedOrderEquivalenceTests. */
+    static inline bool reducedOrder = false;
+
 private:
     struct Channel
     {

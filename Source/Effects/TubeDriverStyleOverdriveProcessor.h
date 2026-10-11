@@ -52,6 +52,12 @@ public:
     }
     double debugIterations() const noexcept { return channels[0].b.averageIterations() + channels[0].a.averageIterations(); }
 
+    /** Eco tier: IC1b becomes addOpAmpMacroLite -- one Newton port for the integrator bound instead
+        of the two-diode clamp, same GBW pole, same rails. The two 12AX7s stay the full two-port
+        Koren models: the tube nonlinearity is the pedal's sound. Fitted in
+        ReducedOrderEquivalenceTests. */
+    static inline bool reducedOrder = false;
+
 private:
     struct Channel
     {

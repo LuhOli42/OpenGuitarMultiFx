@@ -56,3 +56,15 @@ Alias (`PEDAL_ALIAS=1`, a hard-driven probe, IC1b clipping against its rails): 1
 pedals so far**: the op-amp's rails give it the hardest edges. Orders {0, 1, 2} like the HM-2 (4x would be ~4x the cost); a hard-driven
 pedal here still carries audible aliasing at the balanced tier. Cost ~6.2% of a core at 1x (above the 5% target, like the HM-2 / BD-2), ~12% at 2x.
 Unity trim +4.01 dB.
+
+## Reduced order
+* **reducedOrder (shipped, 2026-10-11):** IC1b's macro becomes `NodalCircuit::addOpAmpMacroLite` -- same finite
+  gain, the GBW dominant pole kept (it sits at 9 kHz at full drive, inside the band), same output swing and
+  75-ohm output; the two anti-windup clamp diodes (2 Newton ports) are replaced by a 470-ohm bleed resistor
+  from the integrator node to the rail-held output. In linear operation V(px)==V(ob) so the bleed carries no
+  current; on a rail it bounds the windup to ~bleed/1M of the open-loop error with a ~2.5 us recovery constant.
+  `ReducedOrderEquivalenceTests`: worst level 0.02 dB / worst octave band 0.17 dB over drive x hi x input.
+  The two triodes stay two-port (no cheaper surrogate exists, cf. the HM-2's conclusion); eco-tier cost
+  (dev box, 48k/256/mono): **18.1% -> 15.7%** (audit r2 23.9% -> ~19-23% projected on the A7S -- still the
+  worst pedal; a deeper cut would need a fitted triode surrogate). Alias on the reduced path: -11.9 dB at
+  1x, -21.3 at 2x, so the Orders {0,1,2} tiers above stand.

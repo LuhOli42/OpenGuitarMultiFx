@@ -85,6 +85,13 @@ void BassBigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
     const auto gnd = NodalCircuit::ground;
     const NodalCircuit::BjtParams npn { 1.0e-14, 25.85e-3, beta, 4.0 };
 
+    // reducedOrder: each stage's collector current saturates smoothly at the load line
+    // (same multipliers the Russian Big Muff shipped in #79 -- identical resistor values).
+    constexpr double vceSat = 0.2;
+    const double satIn = 1.5 * (v9 - vceSat) / (rCollector + rEmitter1);
+    const double satClip = 2.0 * (v9 - vceSat) / (rCollector + rEmitterClip);
+    const double satOut = 1.5 * (v9 - vceSat) / (rOutCollector + rOutEmitter);
+
     const auto vcc = c.addNode(), nIn = c.addNode();
     c.addSource (vcc, v9);
     ch.srcIn = c.addSource (nIn, 0.0);
@@ -98,7 +105,10 @@ void BassBigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
     c.addCapacitor (b1, c1, cFeedback);
     c.addResistor (c1, vcc, rCollector);
     c.addResistor (e1, gnd, rEmitter1);
-    c.addBjt (c1, b1, e1, false, npn);
+    if (reducedOrder)
+        c.addBjtSaturating (c1, b1, e1, false, npn, satIn);
+    else
+        c.addBjt (c1, b1, e1, false, npn);
     ch.nCollector[0] = c1;
 
     // ---- Sustain pot. ----
@@ -123,7 +133,10 @@ void BassBigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
         c.addDiode (col, dmid, siIs, siNVt, 4.0e-9);
         c.addResistor (col, vcc, rCollector);
         c.addResistor (e, gnd, rEmitterClip);
-        c.addBjt (col, b, e, false, npn);
+        if (reducedOrder)
+            c.addBjtSaturating (col, b, e, false, npn, satClip);
+        else
+            c.addBjt (col, b, e, false, npn);
         ch.nCollector[stage + 1] = col;
         previousOut = col;
     }
@@ -144,7 +157,10 @@ void BassBigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
     c.addResistor (b4, gnd, rOutBaseBottom);
     c.addResistor (c4, vcc, rOutCollector);
     c.addResistor (e4, gnd, rOutEmitter);
-    c.addBjt (c4, b4, e4, false, npn);
+    if (reducedOrder)
+        c.addBjtSaturating (c4, b4, e4, false, npn, satOut);
+    else
+        c.addBjt (c4, b4, e4, false, npn);
     ch.nCollector[3] = c4;
 
     const auto volTop = c.addNode(), volW = c.addNode(), o = c.addNode();

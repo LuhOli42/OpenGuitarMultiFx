@@ -1,8 +1,11 @@
 #include "Effects/BD2StyleOverdriveProcessor.h"
+#include "Effects/BassBigMuffStyleFuzzProcessor.h"
 #include "Effects/BigMuffStyleFuzzProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
 #include "Effects/MetalZoneStyleDistortionProcessor.h"
+#include "Effects/ODR1StyleOverdriveProcessor.h"
 #include "Effects/ToneBenderStyleFuzzProcessor.h"
+#include "Effects/TubeDriverStyleOverdriveProcessor.h"
 
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
@@ -276,6 +279,41 @@ public:
             expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");
         }
 
+        beginTest ("Bass Big Muff: the one-port gain transistors sound like the two-port ones");
+        {
+            double worstLevel = 0.0, worstBand = 0.0;
+            for (float sus : { 0.3f, 0.8f })
+                for (float tone : { 0.2f, 0.8f })
+                    for (float boost : { 0.0f, 1.0f })
+                        for (double rms : { 0.05, 0.3 })
+                        {
+                            const auto c = compare<BassBigMuffStyleFuzzProcessor> (
+                                { { "bbmp_sustain", sus }, { "bbmp_tone", tone }, { "bbmp_volume", 0.7f },
+                                  { "bbmp_bass_boost", boost }, { "bbmp_dry", 0.0f } }, rms);
+                            expect (c.sane, "solver trouble at sustain " + juce::String (sus));
+                            logMessage ("Bass Big Muff sustain " + juce::String (sus) + " tone " + juce::String (tone)
+                                        + " boost " + juce::String (boost) + " in " + juce::String (rms)
+                                        + ": level " + juce::String (c.levelDb, 2) + " dB, worst audible band " + juce::String (c.worstBandDb, 2) + " dB");
+                            worstLevel = std::max (worstLevel, std::abs (c.levelDb));
+                            worstBand = std::max (worstBand, c.worstBandDb);
+                        }
+            // The DRY path bypasses the clip stages entirely, so it only needs one spot check
+            // (a dry-only comparison is by construction near-exact -- the wet half is what the
+            // one-port surrogate has to track).
+            {
+                const auto c = compare<BassBigMuffStyleFuzzProcessor> (
+                    { { "bbmp_sustain", 0.8f }, { "bbmp_tone", 0.5f }, { "bbmp_volume", 0.7f },
+                      { "bbmp_bass_boost", 0.0f }, { "bbmp_dry", 1.0f } }, 0.3);
+                expect (c.sane, "solver trouble with DRY on");
+                logMessage ("Bass Big Muff dry on: level " + juce::String (c.levelDb, 2) + " dB, worst audible band " + juce::String (c.worstBandDb, 2) + " dB");
+                worstLevel = std::max (worstLevel, std::abs (c.levelDb));
+                worstBand = std::max (worstBand, c.worstBandDb);
+            }
+            logMessage ("Bass Big Muff worst level " + juce::String (worstLevel, 2) + " dB, worst band " + juce::String (worstBand, 2) + " dB");
+            expect (worstLevel < 2.0, "level within 2 dB");
+            expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");
+        }
+
         beginTest ("BD-2: small-signal response of the macro-model matches the transistor-level stages (every Gain, 60 Hz - 8 kHz)");
         {
             double worst = 0.0;
@@ -341,6 +379,53 @@ public:
                     }
             logMessage ("Tone Bender worst level " + juce::String (worstLevel, 2) + " dB, worst band " + juce::String (worstBand, 2) + " dB");
             if (ToneBenderStyleFuzzProcessor::reducedOrder)
+            {
+                expect (worstLevel < 2.0, "level within 2 dB");
+                expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");
+            }
+        }
+
+        beginTest ("ODR-1: the lite/switched op-amps + one-port Q2 sound like the macro netlist");
+        {
+            double worstLevel = 0.0, worstBand = 0.0;
+            for (float drive : { 0.2f, 0.5f, 0.9f })
+                for (float spectrum : { 0.2f, 0.8f })
+                    for (double rms : { 0.02, 0.1, 0.3 })
+                    {
+                        const auto c = compare<ODR1StyleOverdriveProcessor> (
+                            { { "odr1_drive", drive }, { "odr1_spectrum", spectrum }, { "odr1_level", 0.5f } }, rms);
+                        expect (c.sane, "solver trouble at drive " + juce::String (drive));
+                        logMessage ("ODR-1 drive " + juce::String (drive) + " spectrum " + juce::String (spectrum) + " in " + juce::String (rms)
+                                    + ": level " + juce::String (c.levelDb, 2) + " dB, worst audible band " + juce::String (c.worstBandDb, 2) + " dB");
+                        worstLevel = std::max (worstLevel, std::abs (c.levelDb));
+                        worstBand = std::max (worstBand, c.worstBandDb);
+                    }
+            logMessage ("ODR-1 worst level " + juce::String (worstLevel, 2) + " dB, worst band " + juce::String (worstBand, 2) + " dB");
+            if (ODR1StyleOverdriveProcessor::reducedOrder)
+            {
+                expect (worstLevel < 2.0, "level within 2 dB");
+                expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");
+            }
+        }
+
+        beginTest ("Tube Driver: the one-port macro-lite IC1b sounds like the two-diode macro");
+        {
+            double worstLevel = 0.0, worstBand = 0.0;
+            for (float drive : { 0.2f, 0.5f, 0.9f })
+                for (float hi : { 0.2f, 0.8f })
+                    for (double rms : { 0.02, 0.1, 0.3 })
+                    {
+                        const auto c = compare<TubeDriverStyleOverdriveProcessor> (
+                            { { "tubedriver_drive", drive }, { "tubedriver_hi", hi },
+                              { "tubedriver_lo", 0.5f }, { "tubedriver_level", 0.5f } }, rms);
+                        expect (c.sane, "solver trouble at drive " + juce::String (drive));
+                        logMessage ("Tube Driver drive " + juce::String (drive) + " hi " + juce::String (hi) + " in " + juce::String (rms)
+                                    + ": level " + juce::String (c.levelDb, 2) + " dB, worst audible band " + juce::String (c.worstBandDb, 2) + " dB");
+                        worstLevel = std::max (worstLevel, std::abs (c.levelDb));
+                        worstBand = std::max (worstBand, c.worstBandDb);
+                    }
+            logMessage ("Tube Driver worst level " + juce::String (worstLevel, 2) + " dB, worst band " + juce::String (worstBand, 2) + " dB");
+            if (TubeDriverStyleOverdriveProcessor::reducedOrder)
             {
                 expect (worstLevel < 2.0, "level within 2 dB");
                 expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");

@@ -32,3 +32,17 @@ recovery stage), voiced in the Sovtek/Russian family, plus the two bass-specific
 - Transistor betas assumed at 500 (2N5089-class), same as the Russian model.
 - Controls: Sustain, Tone, Volume + Bass Boost and Dry toggles (stepped params so the unity suite
   leaves them at their defaults).
+
+## Cost, oversampling, reduced order
+One `NodalCircuit` block: four two-port BJTs plus two anti-parallel diode pairs.
+
+* **reducedOrder (shipped, 2026-10-11):** the four transistors become one-port saturating devices
+  (`NodalCircuit::addBjtSaturating`), 4 Newton ports dropped. Same saturation load lines fitted for the
+  Russian family (x1.5 input, x2.0 clip, x1.5 output of (rail - Vce(sat)) / (Rc + Re) -- identical resistor
+  values, so the multipliers carry over). `ReducedOrderEquivalenceTests`: worst level 0.32 dB / worst
+  octave band 0.45 dB over sustain x tone x bass-boost x input.
+* Aliasing (non-harmonic/harmonic): **-26.2 dB at 1x, -46.5 at 2x, -69.3 at 4x** -- the Russian row in
+  `BigMuffStyleFuzz.md` measured the same, so tiers **1x / 2x / 4x**.
+* Eco-tier cost (dev box, 48k/256/mono): **21.9% -> 12.8% of a core** with the reduced netlist
+  (audit `tools/fx-audit/cpu-bench-2026-10-11-r2.md`: 26.8% -> ~16-19% projected on the A7S).
+* Unity trim **-8.40 dB** (the Russian voice plus the low stage gains is quiet at noon).

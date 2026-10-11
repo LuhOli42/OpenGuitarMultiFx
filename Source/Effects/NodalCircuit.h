@@ -258,6 +258,26 @@ public:
         addResistor (ob, out, m.outputOhms);
     }
 
+    /** The eco-tier version of addOpAmpMacro(): same finite gain, dominant pole, output swing and output
+        resistance, minus the two clamp-diode Newton ports. Anti-windup comes from a bleed resistor from the
+        integrator node to the (rail-held) output instead: while the follower tracks, V(px) == V(ob) and the
+        bleed carries no current at all, so the linear response is identical; the moment the output sits on a
+        rail the bleed becomes the dominant pull on px, bounding the windup to ~(bleed / 1M) of the open-loop
+        error with a bleed*C recovery time constant (~2.5 us here) instead of the ~seconds an unclamped
+        integrator takes. Zero Newton ports. Verified against the two-diode macro in
+        ReducedOrderEquivalenceTests. */
+    void addOpAmpMacroLite (Node inPlus, Node inMinus, Node out, const OpAmpMacro& m)
+    {
+        const Node amp = addNode(), px = addNode(), ob = addNode();
+        const double pole = m.gainBandwidth / m.dcGain;
+        addFiniteGainOpAmp (inPlus, inMinus, amp, m.dcGain, m.offset, m.commonMode);
+        addResistor (amp, px, 1.0e6);
+        addCapacitor (px, ground, 1.0 / (2.0 * 3.14159265358979323846 * 1.0e6 * pole));
+        addSaturatingOpAmp (px, ob, ob, { m.lowRail, m.highRail });
+        addResistor (px, ob, 470.0); // anti-windup bleed: see above
+        addResistor (ob, out, m.outputOhms);
+    }
+
     /** Emitter/source follower without the transistor: `out` = `in` - `drop` exactly, `in` draws no current. For a
         follower whose collector sits on a rail and whose job is to buffer (unity gain 0.95-0.99 in the real part, and
         nothing that clips) this is the same sound with no Newton port at all; the DC level shift is kept so the
