@@ -70,7 +70,8 @@ public:
         // The amp split into voicing classes: every guitar amp has to land
         // in exactly one of Clean / Crunch / High-Gain, or the browser's
         // chip row silently leaves it under All only.
-        for (const char* key : { "TwinReverbStyleAmplifier", "DeluxeReverbStyleAmplifier", "JC120StyleAmplifier" })
+        for (const char* key : { "TwinReverbStyleAmplifier", "DeluxeReverbStyleAmplifier", "JC120StyleAmplifier",
+                                 "DumbleSteelStringStyleAmplifier" }) // the SSS is the ultra-clean Dumble
             expect (registry.subcategoryForKey (key) == "Clean",
                     juce::String (key) + " should be a Clean amp");
         for (const char* key : { "AC15StyleAmplifier", "AC30StyleAmplifier", "JTM45StyleAmplifier",

@@ -125,7 +125,9 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     railViewport.setScrollBarsShown (true, false);
     railViewport.setViewedComponent (&rail, false);
 
-    addChildComponent (chipsBar);
+    addChildComponent (chipsViewport);
+    chipsViewport.setScrollBarsShown (false, true);
+    chipsViewport.setViewedComponent (&chipsBar, false);
 
     rowList.onRowTap = [this] (EffectRow& row)
     {
@@ -173,11 +175,11 @@ void AddEffectBrowserDialog::rebuildChips()
     const auto subcategories = registry.subcategoriesForCategory (selectedCategory);
     if (subcategories.size() <= 1)
     {
-        chipsBar.setVisible (false);
+        chipsViewport.setVisible (false);
         return;
     }
 
-    chipsBar.setVisible (true);
+    chipsViewport.setVisible (true);
 
     // "All" plus one chip per subcategory, radio-grouped like the rail.
     juce::StringArray labels;
@@ -212,7 +214,7 @@ void AddEffectBrowserDialog::rebuildRows()
 
     // Chips are a within-category filter -- meaningless across a global
     // search, so they hide until the field is cleared again.
-    chipsBar.setVisible (! searching && registry.subcategoriesForCategory (selectedCategory).size() > 1);
+    chipsViewport.setVisible (! searching && registry.subcategoriesForCategory (selectedCategory).size() > 1);
 
     // Sorted by display name (what the rows actually show), not by key.
     juce::StringArray keys = registry.getRegisteredNames();
@@ -281,22 +283,23 @@ void AddEffectBrowserDialog::resized()
     railViewport.setBounds (area.removeFromLeft (railWidth));
     area.removeFromLeft (10);
 
-    if (chipsBar.isVisible())
+    if (chipsViewport.isVisible())
     {
-        chipsBar.setBounds (area.removeFromTop (touch::minTapTarget));
+        chipsViewport.setBounds (area.removeFromTop (touch::minTapTarget));
         area.removeFromTop (8);
 
         // Chips size to their labels (48px tall, like every tap target).
-        auto chipArea = chipsBar.getBounds();
+        // The bar's width is the full chip run -- the viewport scrolls
+        // sideways when that run outgrows the card's width.
         const juce::Font chipFont (15.0f);
         int x = 0;
         for (auto* chip : chipButtons)
         {
             const int w = juce::jmax (64, chipFont.getStringWidth (chip->getButtonText()) + 32);
-            chip->setBounds (x, 0, w, chipsBar.getHeight());
+            chip->setBounds (x, 0, w, touch::minTapTarget);
             x += w + 8;
         }
-        (void) chipArea;
+        chipsBar.setSize (x, chipsViewport.getMaximumVisibleHeight());
     }
 
     gridViewport.setBounds (area);

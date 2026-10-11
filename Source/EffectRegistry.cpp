@@ -595,7 +595,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
     DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DumbleSteelStringStyleAmplifier");
-    registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.05f); }, "High-Gain");
+    registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.05f); }, "Clean");
     SunnModelTStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SunnModelTStyleAmplifier");
     registry.registerType ("SunnModelTStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 16.70f); }, "High-Gain");
@@ -772,6 +772,8 @@ void EffectRegistry::registerType (const juce::String& key, Category category, C
     categoriesByKey[key] = category;
     if (subcategory.isNotEmpty())
         subcategoriesByKey[key] = subcategory;
+    else
+        subcategoriesByKey.erase (key);
     // Probing with a real (immediately discarded) instance instead of
     // asking the call site to also type the display name by hand: that
     // second string would have no way to stay in sync if a processor's

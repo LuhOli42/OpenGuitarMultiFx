@@ -95,6 +95,9 @@ private:
     juce::Component rail;
     juce::OwnedArray<juce::TextButton> categoryButtons;
 
+    // Chips live in a horizontal Viewport: wide chip sets (Reverb has six)
+    // would otherwise clip the rightmost filters on a narrow window.
+    juce::Viewport chipsViewport;
     juce::Component chipsBar;
     juce::OwnedArray<juce::TextButton> chipButtons;
 
