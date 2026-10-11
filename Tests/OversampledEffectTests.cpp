@@ -286,10 +286,12 @@ public:
                 { "Tone Bender Ge", [] { return std::make_unique<ToneBenderStyleFuzzProcessor> (ToneBenderStyleFuzzProcessor::Model::germanium); } },
                 { "Tone Bender Si", [] { return std::make_unique<ToneBenderStyleFuzzProcessor> (ToneBenderStyleFuzzProcessor::Model::silicon); } },
                 { "DT-1", [] { return std::make_unique<DT1StyleDistortionProcessor>(); } },
-                { "ODR-1", [] { return std::make_unique<ODR1StyleOverdriveProcessor>(); } },
+                { "ODR-1", [] { ODR1StyleOverdriveProcessor::reducedOrder = true; // shipped eco path
+                                 return std::make_unique<ODR1StyleOverdriveProcessor>(); } },
                 { "Overdriver", [] { return std::make_unique<OverdriverStyleOverdriveProcessor>(); } },
                 { "EP Booster", [] { return std::make_unique<EPStyleBoosterProcessor>(); } },
-                { "Tube Driver", [] { return std::make_unique<TubeDriverStyleOverdriveProcessor>(); } },
+                { "Tube Driver", [] { TubeDriverStyleOverdriveProcessor::reducedOrder = true; // shipped eco path
+                                      return std::make_unique<TubeDriverStyleOverdriveProcessor>(); } },
                 { "Metal Zone", [] { return std::make_unique<MetalZoneStyleDistortionProcessor>(); } },
                 { "RAT (original)", [] { return std::make_unique<RatStyleDistortionProcessor> (RatStyleDistortionProcessor::Model::original); } },
                 { "RAT 2", [] { return std::make_unique<RatStyleDistortionProcessor> (RatStyleDistortionProcessor::Model::rat2); } },
@@ -302,7 +304,8 @@ public:
                               return std::make_unique<HM2StyleDistortionProcessor>(); } },
                 { "BD-2", [] { return std::make_unique<BD2StyleOverdriveProcessor>(); } },
                 { "Big Muff Sovtek", [] { return std::make_unique<BigMuffStyleFuzzProcessor> (BigMuffStyleFuzzProcessor::Model::sovtekFirstEdition); } },
-                { "Bass Big Muff", [] { return std::make_unique<BassBigMuffStyleFuzzProcessor>(); } },
+                { "Bass Big Muff", [] { BassBigMuffStyleFuzzProcessor::reducedOrder = true; // shipped eco path
+                                        return std::make_unique<BassBigMuffStyleFuzzProcessor>(); } },
                 { "SansAmp BDDI", [] { return std::make_unique<SansAmpBDDIStyleOverdriveProcessor>(); } },
                 { "Darkglass B7K", [] { return std::make_unique<DarkglassB7KStyleOverdriveProcessor>(); } },
             };

@@ -315,6 +315,9 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("RussianBigMuffStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<BigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }, MuffModel::russianGreen), 65000.0), -9.71f); });
     // The bass variant of the same circuit family: Sovtek voicing + Bass Boost / DRY switches
     // (docs/circuits/BassBigMuffStyleFuzz.md). Same input loading as the other muffs' ~100k.
+    // Same reducedOrder treatment as BigMuff above -- identical resistor values, same fitted
+    // saturation multipliers (equivalence measured in ReducedOrderEquivalenceTests).
+    BassBigMuffStyleFuzzProcessor::reducedOrder = true;
     registry.markQualityDependent ("BassBigMuffStyleFuzz");
     registry.registerType ("BassBigMuffStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<BassBigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }), 100000.0), -8.40f); });
     using FFModel = FuzzFaceStyleFuzzProcessor::Model;
@@ -341,6 +344,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/MetalZoneStyleDistortion.md.
     registry.markQualityDependent ("MetalZoneStyleDistortion");
     registry.registerType ("MetalZoneStyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<MetalZoneStyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 2.23f); });
+    // reducedOrder: IC1b swaps the two-diode macro for the zero-port macro-lite (same pole, same
+    // rails, bleed-resistor anti-windup); the 12AX7 pair stays the full Koren model. Fitted in
+    // ReducedOrderEquivalenceTests.
+    TubeDriverStyleOverdriveProcessor::reducedOrder = true;
     registry.markQualityDependent ("TubeDriverStyleOverdrive");
     registry.registerType ("TubeDriverStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampledSlew<TubeDriverStyleOverdriveProcessor> (Orders { 1, 1, 2 }, 13.0), 1000000.0), 4.01f); });
     registry.markQualityDependent ("EPStyleBooster");
@@ -350,6 +357,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // lift through the audio band (measured +2..+4 dB at 9-12 kHz with no pole), so the corner sits just
     // below the band edge rather than at the 7 kHz estimate that killed the top end.
     registry.registerType ("EPStyleBooster", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (std::make_unique<TransistorBandwidthEffect> (oversampled<EPStyleBoosterProcessor> (Orders { 0, 1, 1 }), 20000.0), 1000000.0), -6.66f); });
+    // reducedOrder: U1A keeps its pole via the zero-port macro-lite, U2A/U2B collapse to plain rail
+    // switches (their GBW poles are above the audio band), Q2's rail-bolted collector becomes a
+    // one-port BJT. Fitted in ReducedOrderEquivalenceTests.
+    ODR1StyleOverdriveProcessor::reducedOrder = true;
     registry.markQualityDependent ("ODR1StyleOverdrive");
     registry.registerType ("ODR1StyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampledSlew<ODR1StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), -1.77f); });
     registry.markQualityDependent ("DT1StyleDistortion");

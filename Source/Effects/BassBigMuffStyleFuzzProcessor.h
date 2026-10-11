@@ -43,6 +43,12 @@ public:
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
     }
 
+    /** Eco tier: the four transistors become one-port devices with a smooth collector-current limit
+        (NodalCircuit::addBjtSaturating), the same treatment BigMuffStyleFuzzProcessor's russian model
+        shipped in #79 -- identical component values. Fitted against the two-port netlist in
+        ReducedOrderEquivalenceTests. */
+    static inline bool reducedOrder = false;
+
 private:
     struct Channel
     {

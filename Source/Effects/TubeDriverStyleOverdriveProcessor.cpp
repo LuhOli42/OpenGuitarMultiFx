@@ -82,7 +82,12 @@ void TubeDriverStyleOverdriveProcessor::buildChannel (Channel& ch)
         const auto nC4 = c.addNode(), m = c.addNode(), o = c.addNode();
         c.addCapacitor (nBuf, nC4, 5.0e-6);
         c.addResistor (nC4, m, 1.5e3);
-        c.addOpAmpMacro (gnd, m, o, opAmp);
+        // reducedOrder: same stage with the bleed-bounded integrator. The GBW pole stays -- at full
+        // Tube Drive the feedback rheostat puts the closed-loop corner inside the audio band.
+        if (reducedOrder)
+            c.addOpAmpMacroLite (gnd, m, o, opAmp);
+        else
+            c.addOpAmpMacro (gnd, m, o, opAmp);
         ch.rDrive = c.addResistor (m, o, 1.0e3);
         c.addCapacitor (m, o, 120.0e-12);
 
