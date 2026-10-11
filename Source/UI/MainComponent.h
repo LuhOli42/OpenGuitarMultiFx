@@ -14,6 +14,7 @@
 #include "../Presets/PresetManager.h"
 #include "../Presets/PresetLibrary.h"
 #include "../Tone3000/Tone3000Manager.h"
+#include "../Updater/AppUpdater.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -210,6 +211,13 @@ private:
     AudioEngine audioEngine;
     Tone3000Manager tone3000;
 
+    // Long-lived here (not inside the Settings card, which gets rebuilt on
+    // every open) so a running check/download isn't orphaned when the
+    // overlay closes.
+    AppUpdater appUpdater { juce::JUCEApplication::getInstance() != nullptr
+                                ? juce::JUCEApplication::getInstance()->getApplicationVersion()
+                                : juce::String ("0.0.0-dev") };
+
     std::vector<std::unique_ptr<EffectProcessor>> chain;
     juce::OwnedArray<EffectBlockComponent> blocks;
     EffectProcessor* selectedProcessor = nullptr;
@@ -318,6 +326,7 @@ private:
     int currentPresetNumber = 0;      // 0 = none yet; a real preset's number is always >= 1
     std::unique_ptr<juce::XmlElement> presetBaseline; // see capturePresetBaseline()
     bool presetDirty = false;         // last value shown in the title; refreshed every dirtyCheckIntervalTicks
+    bool audioDeviceOk = true;        // false when the audio device failed to open; cpuLabel becomes a persistent warning
     int ticksUntilDirtyCheck = 0;
     static constexpr int dirtyCheckIntervalTicks = 10; // x 50ms timer: rebuilding the preset XML twice a second is plenty
 

@@ -38,7 +38,7 @@ La2aStyleCompressorProcessor::La2aStyleCompressorProcessor()
     auto m = std::make_unique<juce::AudioParameterFloat> ("la2a_mode", "Mode", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return juce::String (v < 0.5f ? "Compress" : "Limit"); }));
     peakReduction = pr.get(); gain = g.get(); mode = m.get();
-    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("la2a", "LA-2A-Style Compressor", "|", std::move (pr), std::move (g), std::move (m));
+    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("la2a", "LA-2A", "|", std::move (pr), std::move (g), std::move (m));
     buildStage();
 }
 

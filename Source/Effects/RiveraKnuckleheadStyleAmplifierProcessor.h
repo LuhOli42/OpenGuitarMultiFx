@@ -39,7 +39,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Rivera Knucklehead-Style Amplifier"; }
+    const char* getName() const override { return "Rivera Knucklehead"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff274a63); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

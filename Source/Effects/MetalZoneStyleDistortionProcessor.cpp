@@ -864,7 +864,7 @@ MetalZoneStyleDistortionProcessor::MetalZoneStyleDistortionProcessor()
     levelParam = level.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "metalzone", "Metal Zone-Style Distortion", "|", std::move (dist));
+        "metalzone", "Metal Zone", "|", std::move (dist));
     group->addChild (std::move (high));
     group->addChild (std::move (middle));
     group->addChild (std::move (midFreq));

@@ -33,7 +33,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Tube Driver-Style Overdrive"; }
+    const char* getName() const override { return "Tube Driver"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb5793b); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
@@ -51,6 +51,12 @@ public:
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
     }
     double debugIterations() const noexcept { return channels[0].b.averageIterations() + channels[0].a.averageIterations(); }
+
+    /** Eco tier: IC1b becomes addOpAmpMacroLite -- one Newton port for the integrator bound instead
+        of the two-diode clamp, same GBW pole, same rails. The two 12AX7s stay the full two-port
+        Koren models: the tube nonlinearity is the pedal's sound. Fitted in
+        ReducedOrderEquivalenceTests. */
+    static inline bool reducedOrder = false;
 
 private:
     struct Channel

@@ -21,6 +21,34 @@ FetchContent_MakeAvailable(JUCE)
 include(cmake/NAMCore.cmake)
 include(cmake/ChowdspWDF.cmake)
 
+# Version baked into the binary (shown in Settings -> Software update and
+# used by the in-app updater's is-this-newer comparison). Same scheme as
+# scripts/package.sh's VERSION file so a packaged install and the app
+# inside it report the same string: `git describe --tags --match 'v*'
+# --dirty` -> e.g. v1.2.3, v1.2.3-4-gabc123, v1.2.3-dirty; untagged trees
+# get 0.0.0-dev+<sha>. Fallback when git/the repo is unavailable:
+# <project version>-dev.
+set(OGMFX_VERSION "${PROJECT_VERSION}-dev")
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" describe --tags --match "v*" --dirty
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE OGMFX_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(NOT OGMFX_VERSION)
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      OUTPUT_VARIABLE OGMFX_SHORT_SHA
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET)
+    set(OGMFX_VERSION "0.0.0-dev+${OGMFX_SHORT_SHA}")
+  endif()
+endif()
+message(STATUS "OGMFX_VERSION: ${OGMFX_VERSION}")
+
 # Sora (SIL OFL, see Assets/Fonts/SORA-LICENSE.txt), embedded rather than
 # relying on the OS having a decent font installed -- the final target is a
 # from-scratch embedded Linux build with no guaranteed font at all. Static
@@ -111,10 +139,15 @@ juce_add_gui_app(OpenGuitarMultiFx
   BUNDLE_ID "com.openguitarmultifx.OpenGuitarMultiFx"
 )
 
-target_sources(OpenGuitarMultiFx PRIVATE
-  Source/Main.cpp
+# Production sources shared by the GUI app, the test runner and the offline
+# RenderFx tool. They used to be listed in each of the three targets, so a
+# clean build compiled these ~110 heavy TUs three times; a single static
+# archive compiles them once and links everywhere. STATIC is safe here --
+# unlike nam_core (see cmake/NAMCore.cmake) nothing in this set relies on
+# static-initializer registration: every processor is reached through
+# EffectRegistry's ordinary symbol references.
+set(OGMFX_CORE_SOURCES
   Source/EffectRegistry.cpp
-  Source/Engine/AudioEngine.cpp
   Source/Engine/MasterEq.cpp
   Source/Engine/PitchDetector.cpp
   Source/Engine/SignalGraph.cpp
@@ -231,6 +264,77 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/OctaverProcessor.cpp
   Source/Effects/HarmonizerProcessor.cpp
   Source/Effects/LooperProcessor.cpp
+  Source/Presets/PresetManager.cpp
+  Source/Presets/PresetLibrary.cpp
+  Source/UI/SnapshotPresetXml.cpp
+  Source/Updater/UpdaterCore.cpp
+)
+
+add_library(OpenGuitarMultiFx_Core STATIC ${OGMFX_CORE_SOURCES})
+
+target_include_directories(OpenGuitarMultiFx_Core PUBLIC Source)
+
+# Same web/curl-off profile the test runner always compiled these sources
+# with -- nothing under Effects/Engine/Presets touches the browser or curl
+# code paths (those live in Source/Tone3000 and the UI, which stay in the
+# app target where JUCE_WEB_BROWSER=1 applies). PRIVATE so the defines
+# don't leak into the app's own TUs.
+target_compile_definitions(OpenGuitarMultiFx_Core PRIVATE
+  JUCE_WEB_BROWSER=0
+  JUCE_USE_CURL=0
+)
+
+target_link_libraries(OpenGuitarMultiFx_Core PUBLIC
+  juce::juce_audio_basics
+  juce::juce_audio_formats
+  juce::juce_audio_processors
+  juce::juce_core
+  juce::juce_cryptography
+  juce::juce_dsp
+  juce::juce_events
+  juce::juce_gui_basics
+  juce::juce_recommended_config_flags
+  juce::juce_recommended_warning_flags
+  nam_core
+  chowdsp::chowdsp_wdf
+  OpenGuitarMultiFx_Icons
+  OpenGuitarMultiFx_IRs
+)
+
+# The headers every TU in this target pays to parse: the JUCE module
+# umbrellas (every processor reaches them through EffectProcessor.h) and
+# the nodal-solver stack (63 TUs include NodalCircuit.h directly). One .gch
+# covers all ~110 TUs instead of each one re-parsing the same ~5k lines.
+#
+# JUCE injects a C source (juce_graphics_Sheenbidi.c) into every target that
+# links juce_graphics, which makes CMake emit a C-mode PCH alongside the C++
+# one. The prologue/epilogue guards keep the shared cmake_pch.h empty for the
+# C stub instead of failing on C++-only headers.
+set(CMAKE_PCH_PROLOGUE "#ifdef __cplusplus")
+set(CMAKE_PCH_EPILOGUE "#endif")
+
+# ...and every JUCE module .cpp must never see a PCH at all: they #error on
+# prefix headers ("avoiding any automatic prefix header files"). Module
+# implementation sources are injected into every linked target as interface
+# sources, so exempt them by glob once here.
+file(GLOB_RECURSE OGMFX_JUCE_IMPL_SOURCES
+  "${juce_SOURCE_DIR}/modules/*.cpp"
+  "${juce_SOURCE_DIR}/modules/*.c"
+  "${juce_SOURCE_DIR}/modules/*.mm"
+)
+set_source_files_properties(${OGMFX_JUCE_IMPL_SOURCES}
+  PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
+target_precompile_headers(OpenGuitarMultiFx_Core PRIVATE
+  <juce_audio_processors/juce_audio_processors.h>
+  <juce_dsp/juce_dsp.h>
+  <juce_gui_basics/juce_gui_basics.h>
+  "${CMAKE_CURRENT_SOURCE_DIR}/Source/Effects/NodalCircuit.h"
+)
+
+target_sources(OpenGuitarMultiFx PRIVATE
+  Source/Main.cpp
+  Source/Engine/AudioEngine.cpp
   Source/UI/AddEffectBrowserDialog.cpp
   Source/UI/ChainContainer.cpp
   Source/UI/MasterEqDialog.cpp
@@ -247,14 +351,12 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/PresetBrowserDialog.cpp
   Source/UI/PromptCards.cpp
   Source/UI/SnapshotBar.cpp
-  Source/UI/SnapshotPresetXml.cpp
   Source/UI/Tone3000Panel.cpp
   Source/UI/Tone3000SearchDialog.cpp
   Source/UI/OAuthLoginDialog.cpp
-  Source/Presets/PresetManager.cpp
-  Source/Presets/PresetLibrary.cpp
   Source/Tone3000/LoopbackServer.cpp
   Source/Tone3000/Tone3000Manager.cpp
+  Source/Updater/AppUpdater.cpp
 )
 
 target_include_directories(OpenGuitarMultiFx PRIVATE Source)
@@ -266,6 +368,7 @@ target_include_directories(OpenGuitarMultiFx PRIVATE Source)
 target_compile_definitions(OpenGuitarMultiFx PRIVATE
   JUCE_WEB_BROWSER=1
   JUCE_USE_CURL=1
+  OGMFX_VERSION="${OGMFX_VERSION}"
 )
 
 # JUCE_USE_CURL only makes juce_core.cpp call into libcurl -- it doesn't link
@@ -288,6 +391,7 @@ pkg_check_modules(WEBKIT2GTK REQUIRED IMPORTED_TARGET webkit2gtk-4.1)
 # between a slow build and a hard crash -- see scripts/build.sh for the
 # incident this comment refers to. Revisit for an actual release build.
 target_link_libraries(OpenGuitarMultiFx PRIVATE
+  OpenGuitarMultiFx_Core
   juce::juce_audio_basics
   juce::juce_audio_devices
   juce::juce_audio_processors
@@ -325,6 +429,7 @@ install(FILES
   DESTINATION systemd)
 install(PROGRAMS packaging/install.sh DESTINATION .)
 install(FILES packaging/updater.conf DESTINATION etc/ogmfx)
+install(FILES packaging/ogmfx-updater.sudoers DESTINATION sudoers)
 # ogmfx-update.sh lives in updater/ (W4's tree) — absent on branches that
 # don't have the merged updater yet, so guard the rule instead of failing
 # configure.

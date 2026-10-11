@@ -172,7 +172,7 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "twinreverb", "Twin Reverb-Style Amplifier", "|", std::move (input));
+        "twinreverb", "Twin Reverb", "|", std::move (input));
     group->addChild (std::move (nBright));
     group->addChild (std::move (nVolume));
     group->addChild (std::move (nTreble));

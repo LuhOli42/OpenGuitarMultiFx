@@ -51,7 +51,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "BD-2-Style Overdrive"; }
+    const char* getName() const override { return "BD-2"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2f6fd0); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

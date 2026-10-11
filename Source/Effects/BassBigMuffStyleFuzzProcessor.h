@@ -31,7 +31,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Bass Big Muff-Style Fuzz"; }
+    const char* getName() const override { return "Bass Big Muff"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff5f6fb4); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
@@ -42,6 +42,12 @@ public:
     {
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
     }
+
+    /** Eco tier: the four transistors become one-port devices with a smooth collector-current limit
+        (NodalCircuit::addBjtSaturating), the same treatment BigMuffStyleFuzzProcessor's russian model
+        shipped in #79 -- identical component values. Fitted against the two-port netlist in
+        ReducedOrderEquivalenceTests. */
+    static inline bool reducedOrder = false;
 
 private:
     struct Channel

@@ -97,7 +97,7 @@ TraceElliotGP12StyleAmplifierProcessor::TraceElliotGP12StyleAmplifierProcessor()
     output = outputParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "tegp12", "Trace Elliot GP12-Style Amplifier", "|", std::move (gainParam));
+        "tegp12", "Trace Elliot GP12", "|", std::move (gainParam));
     group->addChild (std::move (shapeParam));
     group->addChild (std::move (loCompParam));
     group->addChild (std::move (balanceParam));

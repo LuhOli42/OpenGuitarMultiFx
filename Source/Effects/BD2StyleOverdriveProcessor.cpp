@@ -64,7 +64,7 @@ BD2StyleOverdriveProcessor::BD2StyleOverdriveProcessor()
     level = levelParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "bd2", "BD-2-Style Overdrive", "|", std::move (gainParam));
+        "bd2", "BD-2", "|", std::move (gainParam));
     group->addChild (std::move (toneParam));
     group->addChild (std::move (levelParam));
     parameters = std::move (group);

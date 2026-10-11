@@ -26,7 +26,7 @@ namespace
 }
 CarmenGhiaStyleAmplifierProcessor::CarmenGhiaStyleAmplifierProcessor()
     : EL84BoutiqueAmpCore (Model::carmenGhia,
-        { triode12AX7(), pentodeEF86(), pentodeEL84(), pentodeEL84Pair() }, reducedOrder, "Carmen Ghia-Style Amplifier")
+        { triode12AX7(), pentodeEF86(), pentodeEL84(), pentodeEL84Pair() }, reducedOrder, "Carmen Ghia")
 {
 }
 }

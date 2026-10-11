@@ -42,7 +42,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "V4B-Style Amplifier"; }
+    const char* getName() const override { return "V4B"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffc94a5a); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

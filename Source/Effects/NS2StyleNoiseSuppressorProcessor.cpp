@@ -17,7 +17,7 @@ NS2StyleNoiseSuppressorProcessor::NS2StyleNoiseSuppressorProcessor()
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return juce::String (v < 0.5f ? "Reduction" : "Mute"); }));
 
     threshold = thr.get(); decay = dcy.get(); mute = mut.get();
-    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("ns2", "NS-2-Style Noise Suppressor", "|", std::move (thr), std::move (dcy), std::move (mut));
+    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("ns2", "NS-2", "|", std::move (thr), std::move (dcy), std::move (mut));
 }
 
 void NS2StyleNoiseSuppressorProcessor::prepare (double newSampleRate, int, int)

@@ -28,7 +28,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Mu-Tron III-Style Filter"; }
+    const char* getName() const override { return "Mu-Tron III"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8f6fb0); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

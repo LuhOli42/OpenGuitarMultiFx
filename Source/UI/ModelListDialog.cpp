@@ -27,6 +27,19 @@ ModelListDialog::ModelListDialog (juce::String titleText, juce::Array<juce::File
     emptyStateLabel.setMinimumHorizontalScale (1.0f);
     emptyStateLabel.setVisible (files.isEmpty());
 
+    // Hidden until resized() decides it applies (wired host + empty list).
+    addChildComponent (searchButton);
+    searchButton.onClick = [this]
+    {
+        // Copy before popping: popOverlay destroys this card.
+        auto search = onSearchRequested;
+        auto pop = onPopOverlay;
+        if (pop)
+            pop();
+        if (search)
+            search();
+    };
+
     addAndMakeVisible (importButton);
     importButton.onClick = [this]
     {
@@ -35,11 +48,13 @@ ModelListDialog::ModelListDialog (juce::String titleText, juce::Array<juce::File
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
             [this] (const juce::FileChooser& chooser)
             {
-                auto file = chooser.getResult();
-                if (file != juce::File() && onFileChosen)
-                    onFileChosen (file);
-                if (onPopOverlay)
-                    onPopOverlay();
+                const auto file = chooser.getResult();
+                auto chosen = onFileChosen;
+                auto pop = onPopOverlay;
+                if (pop)
+                    pop();
+                if (file != juce::File() && chosen)
+                    chosen (file);
             });
     };
 
@@ -73,10 +88,16 @@ void ModelListDialog::listBoxItemClicked (int row, const juce::MouseEvent&)
     if (row < 0 || row >= files.size())
         return;
 
-    if (onFileChosen)
-        onFileChosen (files.getReference (row));
-    if (onPopOverlay)
-        onPopOverlay();
+    // Pop FIRST, then notify: a failure card pushed inside onFileChosen (a
+    // corrupt/incompatible model file) has to survive on screen instead of
+    // being instantly popped by this dialog's own close.
+    auto chosen = onFileChosen;
+    auto pop = onPopOverlay;
+    const auto file = files.getReference (row);
+    if (pop)
+        pop();
+    if (chosen)
+        chosen (file);
 }
 
 void ModelListDialog::resized()
@@ -93,7 +114,41 @@ void ModelListDialog::resized()
 
     area.removeFromBottom (10);
     listBox.setBounds (area);
-    emptyStateLabel.setBounds (area);
+    updateEmptyState();
+}
+
+void ModelListDialog::parentHierarchyChanged()
+{
+    // The host wires onSearchRequested AFTER construction (right before the
+    // overlay push), and JUCE only calls resized() on SIZE changes -- the
+    // host's centring move doesn't refire it. Re-checking here is the only
+    // point that's both post-wiring and guaranteed to run.
+    updateEmptyState();
+}
+
+void ModelListDialog::updateEmptyState()
+{
+    searchButton.setVisible (files.isEmpty() && onSearchRequested != nullptr);
+    if (getWidth() == 0)
+        return; // before the first setSize()/resized()
+
+    // Same rect arithmetic as resized(), computed for just the empty-state
+    // area so this can run from either hook.
+    auto area = getLocalBounds().reduced (14);
+    area.removeFromTop (32);                          // title + gap
+    area.removeFromBottom (touch::minTapTarget + 10); // buttons row + gap
+
+    if (searchButton.isVisible())
+    {
+        emptyStateLabel.setBounds (area.removeFromTop (60));
+        area.removeFromTop (16);
+        searchButton.setBounds (area.removeFromTop (touch::minTapTarget)
+                                    .withSizeKeepingCentre (220, touch::minTapTarget));
+    }
+    else
+    {
+        emptyStateLabel.setBounds (area);
+    }
 }
 
 void ModelListDialog::paint (juce::Graphics& g)

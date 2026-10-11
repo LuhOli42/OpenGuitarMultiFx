@@ -118,7 +118,7 @@ RiveraKnuckleheadStyleAmplifierProcessor::RiveraKnuckleheadStyleAmplifierProcess
     speakerParam = speaker.get();
     outputParam = output.get();
 
-    auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("rivera_knucklehead", "Rivera Knucklehead-Style Amplifier", "|", std::move (channel));
+    auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("rivera_knucklehead", "Rivera Knucklehead", "|", std::move (channel));
     group->addChild (std::move (volume));
     group->addChild (std::move (gain));
     group->addChild (std::move (treble));

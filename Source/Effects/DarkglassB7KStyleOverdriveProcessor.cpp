@@ -36,7 +36,7 @@ DarkglassB7KStyleOverdriveProcessor::DarkglassB7KStyleOverdriveProcessor()
     driveParam = drive.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "b7k", "Darkglass B7K-Style Overdrive", "|", std::move (blend));
+        "b7k", "Darkglass B7K", "|", std::move (blend));
     group->addChild (std::move (level));
     group->addChild (std::move (drive));
 

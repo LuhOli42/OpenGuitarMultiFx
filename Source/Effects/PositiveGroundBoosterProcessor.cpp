@@ -31,7 +31,7 @@ PositiveGroundBoosterProcessor::PositiveGroundBoosterProcessor()
     boost = boostParam.get();
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "posboost", "Rangemaster-Style Booster", "|", std::move (boostParam));
+        "posboost", "Rangemaster", "|", std::move (boostParam));
 
     for (auto& ch : channels)
         ch.transistor.setParameters (5.0e-12, 25.85e-3, 200.0, 4.0);

@@ -43,7 +43,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Carr Rambler-Style Amplifier"; }
+    const char* getName() const override { return "Carr Rambler"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffc8813a); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

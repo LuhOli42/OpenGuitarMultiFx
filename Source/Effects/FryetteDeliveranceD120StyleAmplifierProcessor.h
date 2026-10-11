@@ -38,7 +38,7 @@ public:
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     std::unique_ptr<juce::XmlElement> getState() const override { return EffectProcessor::getState(); }
     void setState (const juce::XmlElement& state) override { EffectProcessor::setState (state); }
-    const char* getName() const override { return "Fryette Deliverance D120-Style Amplifier"; }
+    const char* getName() const override { return "Fryette Deliverance D120"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2e1a0a); } // dark bronze
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

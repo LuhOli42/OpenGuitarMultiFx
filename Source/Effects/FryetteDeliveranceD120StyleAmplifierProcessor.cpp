@@ -257,7 +257,7 @@ FryetteDeliveranceD120StyleAmplifierProcessor::FryetteDeliveranceD120StyleAmplif
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "fryette_d120", "Fryette Deliverance D120-Style Amplifier", "|", std::move (gain1));
+        "fryette_d120", "Fryette Deliverance D120", "|", std::move (gain1));
     group->addChild (std::move (gain2));
     group->addChild (std::move (more));
     group->addChild (std::move (treble));

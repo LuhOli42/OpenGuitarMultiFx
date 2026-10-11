@@ -46,7 +46,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Divided by 13 FTR 37-Style Amplifier"; }
+    const char* getName() const override { return "Divided by 13 FTR 37"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb03030); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

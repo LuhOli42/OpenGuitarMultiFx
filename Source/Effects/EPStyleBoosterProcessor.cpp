@@ -24,7 +24,7 @@ EPStyleBoosterProcessor::EPStyleBoosterProcessor()
 {
     auto level = std::make_unique<juce::AudioParameterFloat> ("epbooster_level", "Level", juce::NormalisableRange<float> (0.0f, 1.0f), 0.6f);
     levelParam = level.get();
-    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("epbooster", "EP-Style Booster", "|", std::move (level));
+    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("epbooster", "EP Booster", "|", std::move (level));
 }
 
 void EPStyleBoosterProcessor::buildChannel (Channel& ch)

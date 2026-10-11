@@ -39,7 +39,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "ODR-1-Style Overdrive"; }
+    const char* getName() const override { return "ODR-1"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff3f8f4f); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
@@ -56,6 +56,13 @@ public:
     {
         return channels[0].a.averageIterations() + channels[0].b1.averageIterations() + channels[0].b2.averageIterations();
     }
+
+    /** Eco tier: U1A keeps its GBW pole via addOpAmpMacroLite (one Newton port instead of two,
+        same anti-windup bound); U2A and U2B, whose closed-loop pole sits far above the audio band,
+        become plain rail-switched op-amps (no ports); Q2's collector is bolted to the 9 V rail so
+        its bc junction never conducts -- a one-port saturating BJT. Fitted in
+        ReducedOrderEquivalenceTests. */
+    static inline bool reducedOrder = false;
 
 private:
     struct Channel

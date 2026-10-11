@@ -366,7 +366,7 @@ MarkIICPlusStyleAmplifierProcessor::MarkIICPlusStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "mk2cplus", "Mark IIC+-Style Amplifier", "|", std::move (channel));
+        "mk2cplus", "Mark IIC+", "|", std::move (channel));
     group->addChild (std::move (volume1));
     group->addChild (std::move (pullBright));
     group->addChild (std::move (treble));

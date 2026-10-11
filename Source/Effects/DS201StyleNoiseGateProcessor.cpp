@@ -52,7 +52,7 @@ DS201StyleNoiseGateProcessor::DS201StyleNoiseGateProcessor()
     threshold = thr.get(); range = rng.get(); attack = atk.get(); hold = hld.get(); decay = dcy.get();
     lowCut = lf.get(); highCut = hf.get(); keyListen = key.get();
 
-    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("ds201", "DS201-Style Noise Gate", "|", std::move (thr), std::move (rng),
+    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("ds201", "DS201", "|", std::move (thr), std::move (rng),
         std::move (atk), std::move (hld), std::move (dcy), std::move (lf), std::move (hf), std::move (key));
 }
 

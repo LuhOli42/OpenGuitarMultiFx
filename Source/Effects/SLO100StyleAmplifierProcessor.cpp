@@ -163,7 +163,7 @@ SLO100StyleAmplifierProcessor::SLO100StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "slo100", "SLO-100-Style Amplifier", "|", std::move (channel));
+        "slo100", "SLO-100", "|", std::move (channel));
     group->addChild (std::move (input));
     group->addChild (std::move (crunch));
     group->addChild (std::move (nGain));

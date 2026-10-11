@@ -19,6 +19,7 @@
 #   systemd/ogmfx-updater.service  one-shot update check
 #   systemd/ogmfx-updater.timer    periodic trigger
 #   sbin/ogmfx-update.sh           installed to /usr/local/sbin by install.sh
+#   sudoers/ogmfx-updater          in-app updater privilege (ogmfx -> root script)
 #   etc/ogmfx/updater.conf         default config (installed only if absent)
 #   install.sh                     idempotent device-side installer
 #   VERSION                        the version string
@@ -80,6 +81,7 @@ install -D -m 0644 packaging/ogmfx.service         "$stage/systemd/ogmfx.service
 install -D -m 0644 packaging/ogmfx-updater.service "$stage/systemd/ogmfx-updater.service"
 install -D -m 0644 packaging/ogmfx-updater.timer   "$stage/systemd/ogmfx-updater.timer"
 install -D -m 0755 "$UPDATER_DIR/ogmfx-update.sh"  "$stage/sbin/ogmfx-update.sh"
+install -D -m 0440 packaging/ogmfx-updater.sudoers "$stage/sudoers/ogmfx-updater"
 install -D -m 0644 packaging/updater.conf          "$stage/etc/ogmfx/updater.conf"
 install -D -m 0755 packaging/install.sh            "$stage/install.sh"
 printf '%s\n' "$VERSION" > "$stage/VERSION"
@@ -87,7 +89,7 @@ printf '%s\n' "$VERSION" > "$stage/VERSION"
 fname="ogmfx-$VERSION-$ARCH.tar.gz"
 mkdir -p "$OUT_DIR"
 tar -C "$stage" -czf "$OUT_DIR/$fname" \
-    bin systemd sbin etc install.sh VERSION
+    bin systemd sbin sudoers etc install.sh VERSION
 ( cd "$OUT_DIR" && sha256sum "$fname" > "$fname.sha256" )
 
 sha="$(awk '{print $1}' "$OUT_DIR/$fname.sha256")"

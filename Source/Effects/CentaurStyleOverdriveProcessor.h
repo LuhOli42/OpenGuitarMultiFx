@@ -38,7 +38,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Centaur-Style Overdrive"; }
+    const char* getName() const override { return "Centaur"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffc9a227); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

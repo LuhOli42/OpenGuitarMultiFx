@@ -31,7 +31,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Orange Squeezer-Style Compressor"; }
+    const char* getName() const override { return "Orange Squeezer"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffe8792b); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

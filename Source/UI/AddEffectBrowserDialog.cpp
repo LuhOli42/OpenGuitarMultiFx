@@ -7,91 +7,87 @@ namespace openguitarmultifx
 
 namespace
 {
-    const juce::Colour tileBackground { 0xff242424 };
-    constexpr int tileGap = 10;
+    const juce::Colour rowBackground { 0xff242424 };
+    constexpr int rowGap = 6;
     constexpr int railWidth = 210;
 }
 
 //==============================================================================
-// EffectTile
+// EffectRow
 //==============================================================================
-void AddEffectBrowserDialog::EffectTile::paint (juce::Graphics& g)
+void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat().reduced (1.5f);
+    auto bounds = getLocalBounds().toFloat().reduced (1.0f);
     const auto accent = probe != nullptr ? probe->getAccentColour() : juce::Colours::grey;
 
-    // Same look as EffectBlockComponent: dark fill, outline in the effect's
-    // own category colour -- what you pick previews what lands on the grid.
-    g.setColour (tileBackground);
+    g.setColour (rowBackground);
     g.fillRoundedRectangle (bounds, 8.0f);
+
+    // Thin accent strip on the left edge + the effect's own glyph as a
+    // small ornament -- the name carries the row now, not the tile icon.
     g.setColour (accent);
-    g.drawRoundedRectangle (bounds, 8.0f, 2.0f);
+    g.fillRect (bounds.getX(), bounds.getY() + 4.0f, 3.0f, bounds.getHeight() - 8.0f);
 
-    auto area = bounds.reduced (6.0f);
-    auto nameArea = area.removeFromBottom (subline.isNotEmpty() ? 40.0f : 28.0f);
-    area.removeFromBottom (2.0f);
-
-    // drawIcon() implementations expect a square -- hand it a centred one,
-    // same guard EffectBlockComponent uses.
-    const float squareSize = juce::jmin (area.getWidth(), area.getHeight()) * 0.86f;
+    auto area = bounds.reduced (14.0f, 6.0f);
+    auto iconArea = area.removeFromLeft (area.getHeight());
+    area.removeFromLeft (6.0f);
     if (probe != nullptr)
-        probe->drawIcon (g, area.withSizeKeepingCentre (squareSize, squareSize));
+    {
+        const float glyph = iconArea.getWidth() * 0.92f;
+        probe->drawIcon (g, iconArea.withSizeKeepingCentre (glyph, glyph));
+    }
+
+    // The context line (category while searching, else the subcategory)
+    // gets a fixed right-hand column so it never crowds the name.
+    const float sublineWidth = subline.isNotEmpty() ? 150.0f : 0.0f;
+    auto nameArea = area;
+    auto subArea = nameArea.removeFromRight (sublineWidth);
 
     g.setColour (juce::Colours::white);
-    g.setFont (15.0f);
-    g.drawFittedText (name, nameArea.toNearestInt().removeFromTop (subline.isNotEmpty() ? 24 : 28),
-                      juce::Justification::centred, 2);
+    g.setFont (16.0f);
+    g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::centredLeft, 1);
 
     if (subline.isNotEmpty())
     {
         g.setColour (juce::Colours::grey);
-        g.setFont (12.0f);
-        g.drawFittedText (subline, nameArea.toNearestInt(), juce::Justification::centred, 1);
+        g.setFont (12.5f);
+        g.drawFittedText (subline, subArea.toNearestInt(), juce::Justification::centredRight, 1);
     }
 }
 
-void AddEffectBrowserDialog::EffectTile::mouseUp (const juce::MouseEvent& event)
+void AddEffectBrowserDialog::EffectRow::mouseUp (const juce::MouseEvent& event)
 {
     if (! event.mouseWasDraggedSinceMouseDown() && onTap)
         onTap();
 }
 
 //==============================================================================
-// TileGrid
+// RowList
 //==============================================================================
-void AddEffectBrowserDialog::TileGrid::clearTiles()
+void AddEffectBrowserDialog::RowList::clearRows()
 {
-    tiles.clear (true);
+    rows.clear (true);
 }
 
-AddEffectBrowserDialog::EffectTile& AddEffectBrowserDialog::TileGrid::addTile()
+AddEffectBrowserDialog::EffectRow& AddEffectBrowserDialog::RowList::addRow()
 {
-    auto* tile = tiles.add (new EffectTile());
-    addAndMakeVisible (*tile);
-    tile->onTap = [this, tile]
+    auto* row = rows.add (new EffectRow());
+    addAndMakeVisible (*row);
+    row->onTap = [this, row]
     {
-        if (onTileTap)
-            onTileTap (*tile);
+        if (onRowTap)
+            onRowTap (*row);
     };
-    return *tile;
+    return *row;
 }
 
-int AddEffectBrowserDialog::TileGrid::layoutForWidth (int width)
+int AddEffectBrowserDialog::RowList::layoutForWidth (int width)
 {
-    // Taller than wide on purpose: the icon row needs room above a two-line
-    // name, and finger-sized tiles beat dense ones (touch::minTapTarget is
-    // the floor, not the target).
-    constexpr int tileW = 148, tileH = 112;
-    const int cols = juce::jmax (1, (width + tileGap) / (tileW + tileGap));
-    const int rows = (tiles.size() + cols - 1) / cols;
+    const int rowH = touch::minTapTarget;
+    for (int i = 0; i < rows.size(); ++i)
+        rows[i]->setBounds (0, i * (rowH + rowGap), width, rowH);
 
-    for (int i = 0; i < tiles.size(); ++i)
-    {
-        const int row = i / cols, col = i % cols;
-        tiles[i]->setBounds (col * (tileW + tileGap), row * (tileH + tileGap), tileW, tileH);
-    }
-
-    return juce::jmax (rows, 1) * (tileH + tileGap);
+    return juce::jmax (rows.size(), 1) * (rowH + rowGap);
 }
 
 //==============================================================================
@@ -109,10 +105,10 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
 
     addAndMakeVisible (searchField);
     searchField.setTextToShowWhenEmpty ("Search effects...", juce::Colours::grey);
-    searchField.onTextChange = [this] { rebuildTiles(); };
+    searchField.onTextChange = [this] { rebuildRows(); };
 
     // One rail button per category, in the registry's display order, each
-    // labelled with its tile count. Radio-grouped so exactly one is lit.
+    // labelled with its effect count. Radio-grouped so exactly one is lit.
     int radioId = 1;
     for (auto category : EffectRegistry::categoriesInDisplayOrder())
     {
@@ -129,15 +125,22 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     railViewport.setScrollBarsShown (true, false);
     railViewport.setViewedComponent (&rail, false);
 
-    tileGrid.onTileTap = [this] (EffectTile& tile)
+    addChildComponent (chipsViewport);
+    // No scrollbar: on the touch target the chip row scrolls by drag, and a
+    // horizontal bar would steal height from the 48px chips when scrolling
+    // ever becomes necessary. The clipped chip edge is the overflow cue.
+    chipsViewport.setScrollBarsShown (false, false);
+    chipsViewport.setViewedComponent (&chipsBar, false);
+
+    rowList.onRowTap = [this] (EffectRow& row)
     {
-        if (tile.key.isNotEmpty() && onEffectChosen)
-            onEffectChosen (tile.key);
+        if (row.key.isNotEmpty() && onEffectChosen)
+            onEffectChosen (row.key);
     };
 
     addAndMakeVisible (gridViewport);
     gridViewport.setScrollBarsShown (true, false);
-    gridViewport.setViewedComponent (&tileGrid, false);
+    gridViewport.setViewedComponent (&rowList, false);
 
     addAndMakeVisible (emptyStateLabel);
     emptyStateLabel.setJustificationType (juce::Justification::centred);
@@ -147,7 +150,8 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
-    rebuildTiles();
+    rebuildChips();
+    rebuildRows();
     setSize (1040, 700);
 }
 
@@ -162,17 +166,60 @@ const EffectProcessor* AddEffectBrowserDialog::probeForKey (const juce::String& 
 void AddEffectBrowserDialog::selectCategory (EffectRegistry::Category category)
 {
     selectedCategory = category;
-    rebuildTiles();
+    selectedSubcategory = {};
+    rebuildChips();
+    rebuildRows();
 }
 
-void AddEffectBrowserDialog::rebuildTiles()
+void AddEffectBrowserDialog::rebuildChips()
 {
-    tileGrid.clearTiles();
+    chipButtons.clear (true);
+
+    const auto subcategories = registry.subcategoriesForCategory (selectedCategory);
+    if (subcategories.size() <= 1)
+    {
+        chipsViewport.setVisible (false);
+        return;
+    }
+
+    chipsViewport.setVisible (true);
+
+    // "All" plus one chip per subcategory, radio-grouped like the rail.
+    juce::StringArray labels;
+    labels.add ("All");
+    for (const auto& s : subcategories)
+        labels.add (s);
+
+    constexpr int chipRadioId = 2;
+    for (const auto& label : labels)
+    {
+        auto* chip = chipButtons.add (new juce::TextButton (label));
+        chipsBar.addAndMakeVisible (*chip);
+        chip->setRadioGroupId (chipRadioId, juce::dontSendNotification);
+        chip->setClickingTogglesState (true);
+        chip->setToggleState ((label == "All" && selectedSubcategory.isEmpty())
+                              || label == selectedSubcategory,
+                              juce::dontSendNotification);
+        chip->onClick = [this, label]
+        {
+            selectedSubcategory = label == "All" ? juce::String() : label;
+            rebuildRows();
+        };
+    }
+}
+
+void AddEffectBrowserDialog::rebuildRows()
+{
+    rowList.clearRows();
 
     const auto query = searchField.getText().trim();
     const bool searching = query.isNotEmpty();
 
-    // Sorted by display name (what the tiles actually show), not by key.
+    // Chips are a within-category filter -- meaningless across a global
+    // search, so they hide until the field is cleared again.
+    chipsViewport.setVisible (! searching && registry.subcategoriesForCategory (selectedCategory).size() > 1);
+
+    // Sorted by display name (what the rows actually show), not by key.
     juce::StringArray keys = registry.getRegisteredNames();
     std::sort (keys.strings.begin(), keys.strings.end(),
                [this] (const juce::String& a, const juce::String& b)
@@ -181,27 +228,36 @@ void AddEffectBrowserDialog::rebuildTiles()
     for (auto& key : keys)
     {
         const auto category = registry.categoryForKey (key);
+        const auto subcategory = registry.subcategoryForKey (key);
         const auto name = registry.displayNameForKey (key);
 
-        // The query matches the tile name OR its category's name: a user
+        // The query matches the row name OR its category's name: a user
         // typing "reverb" expects Hall/Plate/Spring too -- their display
         // names never contain the word "reverb" themselves.
         const bool matches = ! searching
             || name.containsIgnoreCase (query)
-            || EffectRegistry::categoryDisplayName (category).containsIgnoreCase (query);
+            || EffectRegistry::categoryDisplayName (category).containsIgnoreCase (query)
+            || subcategory.containsIgnoreCase (query);
         if (! matches || (! searching && category != selectedCategory))
             continue;
+        if (! searching && selectedSubcategory.isNotEmpty() && subcategory != selectedSubcategory)
+            continue;
 
-        auto& tile = tileGrid.addTile();
-        tile.key = key;
-        tile.name = name;
-        tile.subline = searching ? EffectRegistry::categoryDisplayName (category) : juce::String {};
-        tile.probe = probeForKey (key);
+        auto& row = rowList.addRow();
+        row.key = key;
+        row.name = name;
+        row.subline = searching
+            ? EffectRegistry::categoryDisplayName (category)
+                + (subcategory.isNotEmpty() ? " · " + subcategory : juce::String())
+            : subcategory;
+        row.probe = probeForKey (key);
     }
 
-    emptyStateLabel.setText (tileGrid.tiles.isEmpty()
+    emptyStateLabel.setText (rowList.rows.isEmpty()
                                  ? (searching ? "No effects match \"" + query + "\"."
-                                              : "Nothing in this category yet.")
+                                              : (selectedSubcategory.isNotEmpty()
+                                                     ? "Nothing in this subcategory yet."
+                                                     : "Nothing in this category yet."))
                                  : juce::String {},
                              juce::dontSendNotification);
     emptyStateLabel.setVisible (emptyStateLabel.getText().isNotEmpty());
@@ -220,15 +276,35 @@ void AddEffectBrowserDialog::resized()
 
     auto header = area.removeFromTop (touch::minTapTarget);
     titleLabel.setBounds (header.removeFromLeft (240));
-    searchField.setBounds (header.removeFromRight (320).withSizeKeepingCentre (320, 40));
+    searchField.setBounds (header.removeFromRight (320).withSizeKeepingCentre (320, touch::minTapTarget));
 
     area.removeFromTop (10);
     auto footer = area.removeFromBottom (touch::minTapTarget);
-    closeButton.setBounds (footer.removeFromRight (120).withSizeKeepingCentre (120, 44));
+    closeButton.setBounds (footer.removeFromRight (120).withSizeKeepingCentre (120, touch::minTapTarget));
     area.removeFromBottom (8);
 
     railViewport.setBounds (area.removeFromLeft (railWidth));
     area.removeFromLeft (10);
+
+    if (chipsViewport.isVisible())
+    {
+        chipsViewport.setBounds (area.removeFromTop (touch::minTapTarget));
+        area.removeFromTop (8);
+
+        // Chips size to their labels (48px tall, like every tap target).
+        // The bar's width is the full chip run -- the viewport scrolls
+        // sideways when that run outgrows the card's width.
+        const juce::Font chipFont (15.0f);
+        int x = 0;
+        for (auto* chip : chipButtons)
+        {
+            const int w = juce::jmax (64, chipFont.getStringWidth (chip->getButtonText()) + 32);
+            chip->setBounds (x, 0, w, touch::minTapTarget);
+            x += w + 8;
+        }
+        chipsBar.setSize (x, chipsViewport.getMaximumVisibleHeight());
+    }
+
     gridViewport.setBounds (area);
     emptyStateLabel.setBounds (area);
 
@@ -241,7 +317,7 @@ void AddEffectBrowserDialog::resized()
         categoryButtons[i]->setBounds (0, i * buttonStep, railContentWidth, touch::minTapTarget);
 
     const int gridContentWidth = gridViewport.getMaximumVisibleWidth();
-    tileGrid.setSize (gridContentWidth, tileGrid.layoutForWidth (gridContentWidth));
+    rowList.setSize (gridContentWidth, rowList.layoutForWidth (gridContentWidth));
 }
 
 void AddEffectBrowserDialog::paint (juce::Graphics& g)

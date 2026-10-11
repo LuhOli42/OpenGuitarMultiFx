@@ -36,7 +36,7 @@ ODR1StyleOverdriveProcessor::ODR1StyleOverdriveProcessor()
     levelParam = level.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "odr1", "ODR-1-Style Overdrive", "|", std::move (drive));
+        "odr1", "ODR-1", "|", std::move (drive));
     group->addChild (std::move (spectrum));
     group->addChild (std::move (level));
     parameters = std::move (group);
@@ -66,8 +66,12 @@ void ODR1StyleOverdriveProcessor::buildChannel (Channel& ch)
 
         // U1A: non-inverting. (-) leg = (820 + 82 nF) || (1K5 + 2.2 uF): two shelves. Feedback: two 4148 back to back
         // and 120 pF straight across, and the Drive pot (250KA) between (-) and the output, its wiper tied back to
-        // (-) through R14 1K8.
-        c.addOpAmpMacro (nP, m1, o1, njm4558);
+        // (-) through R14 1K8. reducedOrder: the GBW pole matters here (gain up to ~470 -> ~6 kHz of bandwidth),
+        // so it is the one-port macro-lite, not a plain rail switch.
+        if (reducedOrder)
+            c.addOpAmpMacroLite (nP, m1, o1, njm4558);
+        else
+            c.addOpAmpMacro (nP, m1, o1, njm4558);
         c.addResistor (m1, nL1, 820.0);
         c.addCapacitor (nL1, nb, 82.0e-9);
         c.addResistor (m1, nR1, 1.5e3);
@@ -117,7 +121,12 @@ void ODR1StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (nPl, nb, 43.0e3);
         c.addResistor (nPl, nM, 5.1e3);
         c.addCapacitor (nPl, nM, 22.0e-9);
-        c.addOpAmpMacro (nPl, m2, o3, njm4558);
+        // reducedOrder: at a closed-loop gain of ~3 the GBW pole is at ~1 MHz -- inaudible either way, so the
+        // stage collapses to the rail switch alone (no Newton ports, no integrator to wind up).
+        if (reducedOrder)
+            c.addSaturatingOpAmp (nPl, m2, o3, { njm4558.lowRail, njm4558.highRail });
+        else
+            c.addOpAmpMacro (nPl, m2, o3, njm4558);
         c.addResistor (m2, nb, 10.0e3);
         c.addResistor (m2, o3, 20.0e3);
         c.addCapacitor (m2, o3, 560.0e-12);
@@ -134,7 +143,13 @@ void ODR1StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (nBase, nb, 150.0e3);
         c.addResistor (nF, nE, 2.2e3);
         c.addResistor (nE, gnd, 3.3e3);
-        c.addBjt (v9, nBase, nE, false, q2Params);
+        // reducedOrder: the collector sits on the 9 V rail, so the bc junction only conducts if the base ever
+        // exceeds the rail -- it cannot (its drive is the AC-coupled Spectrum network). A one-port device whose
+        // saturation current is the emitter resistor's ceiling is the same transistor here.
+        if (reducedOrder)
+            c.addBjtSaturating (v9, nBase, nE, false, q2Params, (supplyVolts - 0.2) / 3.3e3);
+        else
+            c.addBjt (v9, nBase, nE, false, q2Params);
 
         ch.nOp2 = o3;
         for (auto n : { nO1, n20, nD, nA2, nB2, nPl, nM, m2, o3, nSp4, nWs, nF, nBase })
@@ -157,7 +172,11 @@ void ODR1StyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addCapacitor (nQ, gnd, 8.2e-9);
 
         // U2B: non-inverting. Leg R35 1K2 + C32 1 uF; feedback R33 22K || C33 4.7 nF || (R34 5K1 + C34 82 nF)
-        c.addOpAmpMacro (nQ, m3, o4, njm4558);
+        // reducedOrder: closed-loop gain ~19 puts the GBW pole at ~160 kHz -- the rail switch alone.
+        if (reducedOrder)
+            c.addSaturatingOpAmp (nQ, m3, o4, { njm4558.lowRail, njm4558.highRail });
+        else
+            c.addOpAmpMacro (nQ, m3, o4, njm4558);
         c.addResistor (m3, n35, 1.2e3);
         c.addCapacitor (n35, nb, 1.0e-6);
         c.addResistor (m3, o4, 22.0e3);

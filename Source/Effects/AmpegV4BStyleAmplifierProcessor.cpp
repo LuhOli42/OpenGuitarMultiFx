@@ -163,7 +163,7 @@ AmpegV4BStyleAmplifierProcessor::AmpegV4BStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "ampegv4b", "V4B-Style Amplifier", "|", std::move (input));
+        "ampegv4b", "V4B", "|", std::move (input));
     group->addChild (std::move (gain));
     group->addChild (std::move (ultraLo));
     group->addChild (std::move (ultraHi));

@@ -66,6 +66,14 @@ is at least consistent with what the wiring does); Level clockwise = louder.
 * **6.83% of a core at 1x** (dev PC, dual-mono): three blocks, three op-amp macros, a BJT and four diode ports.
 * Aliasing (non-harmonic/harmonic, `Oversampling.md`): **-32.3 dB at 1x, -52.1 dB at 2x, -64.8 dB at 4x**, -90.6 dB at 8x. Worse
   at 1x than the Tube Screamer (-41 dB; two 4148 in feedback plus a shunt clipper both clip), so tiers **1x / 2x / 4x**.
+* **reducedOrder (shipped, 2026-10-11):** U1A keeps its finite gain + dominant pole + output swing via
+  `NodalCircuit::addOpAmpMacroLite` (anti-windup bleed resistor instead of the two clamp diodes, 2 ports saved);
+  U2A/U2B's macros become plain `addSaturatingOpAmp` rail switches (their 1 MHz GBW is inaudible at noise gains
+  3 and 19); Q2 becomes a one-port `addBjtSaturating` on the C-E pair with the limit railed at (rail-0.2)/Rc so
+  the saturation corner never engages (the real Q2 never saturates). 7 of 12 Newton ports dropped.
+  `ReducedOrderEquivalenceTests`: worst level 0.01 dB / worst octave band 0.02 dB over drive x spectrum x input.
+  Eco-tier cost (dev box, 48k/256/mono): **16.1% -> 10.5%** (audit r2 23.4% -> ~13-15% projected on the A7S).
+  Alias on the reduced path unchanged: -32.4 dB at 1x, -52.5 at 2x.
 * Unity trim **-1.77 dB** (the pedal is 1.8 dB louder than the reference at noon).
 
 ## Not modelled

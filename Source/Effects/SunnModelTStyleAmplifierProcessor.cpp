@@ -240,7 +240,7 @@ SunnModelTStyleAmplifierProcessor::SunnModelTStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "sunn_modelt", "Sunn Model T-Style Amplifier", "|", std::move (volBrite));
+        "sunn_modelt", "Sunn Model T", "|", std::move (volBrite));
     group->addChild (std::move (volNormal));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));

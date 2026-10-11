@@ -37,7 +37,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Metal Zone-Style Distortion"; }
+    const char* getName() const override { return "Metal Zone"; }
 
     /** Eco-tier CPU: buildChannel() swaps blocks 0-2 (input buffer, the two gain stages and the diode
         clipper) for a per-component behavioural solve that keeps the same trapezoidal capacitor models
