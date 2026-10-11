@@ -1,4 +1,5 @@
 #include "VibratoProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -63,7 +64,7 @@ void VibratoProcessor::process (juce::AudioBuffer<float>& buffer)
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const float delayMs = centreDelayMs + smoothedDepth.getNextValue() * maxDepthMs * (float) std::sin (lfoPhase);
+        const float delayMs = centreDelayMs + smoothedDepth.getNextValue() * maxDepthMs * fast::sinRadians (lfoPhase);
         const float delaySamples = delayMs * 0.001f * (float) currentSampleRate;
 
         int readIndex0, readIndex1;
