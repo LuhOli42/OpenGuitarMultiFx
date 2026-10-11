@@ -6,25 +6,36 @@ BIN = os.environ.get('RENDERFX_BIN', 'build/Tests/OpenGuitarMultiFx_RenderFx_art
 DI = os.environ.get('DI_WAV', 'Tests/fixtures/di/guitar-di.wav')
 NAM = os.environ.get('NAM_FIXTURE', 'Tests/fixtures/lstm.nam')
 CABIR = os.environ.get('CAB_IR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ir', 'cab-4x12.wav'))
-OUT = '/home/ubuntu/fx-audit/out'
+A = os.environ.get('FX_AUDIT_DIR', '/tmp/fx-audit')
+OUT = A + '/out'
 os.makedirs(OUT, exist_ok=True)
 
-ALL_KEYS = """AC15StyleAmplifier AC30StyleAmplifier Ambient AnalogDelay BD2StyleOverdrive BassmanStyleAmplifier
-BigMuffStyleFuzz BluesBreakerStyleOverdrive Cab CentaurStyleOverdrive Chorus Compressor
+ALL_KEYS = """AC15StyleAmplifier AC30StyleAmplifier Acoustic360StyleAmplifier Ambient
+AmpegB15StyleAmplifier AmpegV4BStyleAmplifier AnalogDelay Astroverb16StyleAmplifier
+BD2StyleOverdrive BassBigMuffStyleFuzz BassmanStyleAmplifier BigMuffStyleFuzz
+BluesBreakerStyleOverdrive BognerUberschallStyleAmplifier BossOC2StyleOctaver Cab
+CarmenGhiaStyleAmplifier CarrRamblerStyleAmplifier CentaurStyleOverdrive Chorus Compressor
 CrunchBoxStyleDistortion DOD250StyleOverdrive DS1StyleDistortion DS201StyleNoiseGate DT1StyleDistortion
-Dbx160StyleCompressor DeluxeReverbStyleAmplifier DigitalDelay DistortionPlusStyleDistortion DualDelay
-DualRectifierStyleAmplifier DynaCompStyleCompressor DynamicCab ENGLPowerballStyleAmplifier EPStyleBooster
-EVH5150StyleAmplifier Flanger FuzzFaceStyleFuzz GE7StyleEqualizer GSeriesStyleBusCompressor GatedReverb
-GuvnorStyleDistortion HM2StyleDistortion Hall Harmonizer Hold JC120StyleAmplifier JCM800StyleAmplifier
-JTM45StyleAmplifier La2aStyleCompressor Looper MarkIICPlusStyleAmplifier MetalZoneStyleDistortion
+DarkglassB7KStyleOverdrive Dbx160StyleCompressor DeluxeReverbStyleAmplifier DigitalDelay
+DistortionPlusStyleDistortion DividedBy13FTR37StyleAmplifier DualDelay DualRectifierStyleAmplifier
+DumbleSteelStringStyleAmplifier DynaCompStyleCompressor DynamicCab ENGLPowerballStyleAmplifier EPStyleBooster
+EVH5150StyleAmplifier Flanger FryetteDeliveranceD120StyleAmplifier FuzzFaceStyleFuzz GE7StyleEqualizer
+GEB7StyleEqualizer GSeriesStyleBusCompressor GarnetHerzogStyleAmplifier GatedReverb
+GibsonEH150StyleAmplifier GuvnorStyleDistortion HM2StyleDistortion Hall Harmonizer Hold
+HotCat30StyleAmplifier JC120StyleAmplifier JCM800StyleAmplifier JTM45StyleAmplifier
+KometConcordeStyleAmplifier La2aStyleCompressor Looper MarkIICPlusStyleAmplifier
+MatchlessHC30StyleAmplifier MesaBass400PlusStyleAmplifier MetalZoneStyleDistortion MuTronIIIStyleFilter
 MultiTapDelay NS2StyleNoiseSuppressor NeuralAmp NeuralAmpCab NeuralPedal NoiseGate OCDStyleOverdrive
-OD1StyleOverdrive ODR1StyleOverdrive Octaver OverdriverStyleOverdrive ParametricEQ Phaser PingPong
-PitchMod PitchShift Plate PositiveGroundBooster RAT2StyleDistortion RatStyleDistortion Reverb
-ReverseDelay RingMod RockerverbStyleAmplifier Room RossStyleCompressor Rotary RussianBigMuffStyleFuzz
-SLO100StyleAmplifier Shimmer SiliconFuzzFaceStyleFuzz SiliconToneBenderStyleFuzz SovtekBigMuffStyleFuzz
-Spring SqueezerStyleCompressor SuperLeadStyleAmplifier TS10StyleOverdrive TS808StyleOverdrive
-TS9StyleOverdrive TapeDelay ToneBenderStyleFuzz Tremolo TubeDriverStyleOverdrive TurboRatStyleDistortion
-TwinReverbStyleAmplifier UniVibe Urei1176StyleCompressor Vibrato ZendriveStyleOverdrive""".split()
+OD1StyleOverdrive ODB3StyleOverdrive ODR1StyleOverdrive Octaver OverdriverStyleOverdrive ParametricEQ
+Phaser PingPong PitchMod PitchShift Plate PositiveGroundBooster RAT2StyleDistortion RatStyleDistortion
+Reverb ReverseDelay RingMod RiveraKnuckleheadStyleAmplifier RockerverbStyleAmplifier Room
+RossStyleCompressor Rotary RussianBigMuffStyleFuzz SLO100StyleAmplifier SVTStyleAmplifier
+SansAmpBDDIStyleOverdrive Shimmer SiliconFuzzFaceStyleFuzz SiliconToneBenderStyleFuzz
+SovtekBigMuffStyleFuzz Spring SqueezerStyleCompressor SunnModelTStyleAmplifier SuperLeadStyleAmplifier
+TS10StyleOverdrive TS808StyleOverdrive TS9BStyleOverdrive TS9StyleOverdrive TapeDelay
+ToneBenderStyleFuzz TraceElliotGP12StyleAmplifier TrainwreckExpressStyleAmplifier Tremolo
+TubeDriverStyleOverdrive TurboRatStyleDistortion TwinReverbStyleAmplifier UniVibe
+Urei1176StyleCompressor Vibrato ZendriveStyleOverdrive""".split()
 
 # main gain/distortion param pushed for the "hot" audition variant
 HOT = {
@@ -41,6 +52,9 @@ HOT = {
  'FuzzFaceStyleFuzz':'ff_fuzz=1.0','SiliconFuzzFaceStyleFuzz':'ffsi_fuzz=1.0',
  'ToneBenderStyleFuzz':'tb_attack=1.0','SiliconToneBenderStyleFuzz':'tbsi_attack=1.0',
  'PositiveGroundBooster':'posboost_boost=0.9','EPStyleBooster':'epbooster_level=0.9',
+ 'BassBigMuffStyleFuzz':'bbmp_sustain=0.85','DarkglassB7KStyleOverdrive':'b7k_drive=0.85',
+ 'ODB3StyleOverdrive':'odb3_gain=0.85','SansAmpBDDIStyleOverdrive':'bddi_drive=0.85',
+ 'TS9BStyleOverdrive':'ts9b_drive=0.85',
 }
 
 AMPS = {
@@ -55,6 +69,17 @@ AMPS = {
  'DualRectifierStyleAmplifier':'drec_channel=2 drec_gain=0.85','EVH5150StyleAmplifier':'evh_channel=1 evh_gain=0.85',
  'ENGLPowerballStyleAmplifier':'engl_pb_channel=3 engl_pb_gain=0.85',
  'RockerverbStyleAmplifier':'rv_channel=1 rv_gain=0.85',
+ 'Acoustic360StyleAmplifier':'acoustic360_volume=0.85',
+ 'AmpegB15StyleAmplifier':'ampegb15_volume=0.85','AmpegV4BStyleAmplifier':'ampegv4b_volume=0.85',
+ 'Astroverb16StyleAmplifier':'astro16_preamp=0.85','BognerUberschallStyleAmplifier':'uber_gain=0.85',
+ 'CarmenGhiaStyleAmplifier':'cghia_volume=0.85','CarrRamblerStyleAmplifier':'cr_volume=0.85',
+ 'DividedBy13FTR37StyleAmplifier':'f37_ch1_volume=0.85','DumbleSteelStringStyleAmplifier':'sss_volume=0.85',
+ 'FryetteDeliveranceD120StyleAmplifier':'del_gain1=0.85','GarnetHerzogStyleAmplifier':'hzg_volume=0.85',
+ 'GibsonEH150StyleAmplifier':'eh150_volume=0.85','HotCat30StyleAmplifier':'hotcat30_gain=0.85',
+ 'KometConcordeStyleAmplifier':'kcd_volume=0.85','MatchlessHC30StyleAmplifier':'hc30_volume1=0.85',
+ 'MesaBass400PlusStyleAmplifier':'mesa400p_volume=0.85','RiveraKnuckleheadStyleAmplifier':'knk_gain=0.85',
+ 'SVTStyleAmplifier':'svt_gain=0.85','SunnModelTStyleAmplifier':'smt_vol_normal=0.9 smt_vol_brite=0.2',
+ 'TraceElliotGP12StyleAmplifier':'tegp12_input_gain=0.85','TrainwreckExpressStyleAmplifier':'twx_volume=0.85',
 }
 
 def model_args(key):
@@ -87,7 +112,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
         results.append(res)
         print(res[0], '|', res[2][:160], ('STDERR ' + res[3][:200]) if res[3] else '', flush=True)
 
-with open('/home/ubuntu/fx-audit/renders.csv', 'w', newline='') as f:
+with open(A + '/renders.csv', 'w', newline='') as f:
     w = csv.writer(f)
     w.writerow(['variant', 'key', 'stdout', 'stderr', 'rc'])
     w.writerows(results)

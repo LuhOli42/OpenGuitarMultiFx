@@ -11,8 +11,9 @@ use it to verify voicing/calibration fixes reproducibly.
   `probe-clicks.wav` (impulse train for echo/reverb tails), `probe-noise.wav`.
 - `ir/cab-4x12.wav` — small synthetic 4x12 cab IR for `*+Cab` chains
   (amps render raw power-amp output without it).
-- `metrics.json` — measured results from the Oct-2026 audit run
-  (`music` = per-effect band deltas vs DI, `probes` = THD/FR/echo metrics).
+- `metrics.json` — measured results, refreshed 2026-10-11 (see
+  `audit-2026-10-11.md` for the delta vs the Oct-2026 baseline;
+  `music` = per-effect band deltas vs DI, `probes` = THD/FR/echo metrics).
 - Guitar DI comes from `Tests/fixtures/di/guitar-di.wav` (override `DI_WAV`).
 
 ## Run

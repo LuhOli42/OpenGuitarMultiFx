@@ -10,20 +10,27 @@ PROBES_DIR = os.environ.get('PROBE_WAV_DIR', os.path.join(os.path.dirname(os.pat
 OUT = A + '/probes'
 os.makedirs(OUT, exist_ok=True)
 
-LINEAR = """AC15StyleAmplifier AC30StyleAmplifier BD2StyleOverdrive BassmanStyleAmplifier
-BigMuffStyleFuzz BluesBreakerStyleOverdrive CentaurStyleOverdrive
+LINEAR = """AC15StyleAmplifier AC30StyleAmplifier Acoustic360StyleAmplifier
+AmpegB15StyleAmplifier AmpegV4BStyleAmplifier Astroverb16StyleAmplifier BD2StyleOverdrive
+BassBigMuffStyleFuzz BassmanStyleAmplifier BigMuffStyleFuzz BluesBreakerStyleOverdrive
+BognerUberschallStyleAmplifier CarmenGhiaStyleAmplifier CarrRamblerStyleAmplifier CentaurStyleOverdrive
 CrunchBoxStyleDistortion DOD250StyleOverdrive DS1StyleDistortion DT1StyleDistortion
-DeluxeReverbStyleAmplifier DistortionPlusStyleDistortion DualRectifierStyleAmplifier
-ENGLPowerballStyleAmplifier EPStyleBooster EVH5150StyleAmplifier FuzzFaceStyleFuzz
-GE7StyleEqualizer GuvnorStyleDistortion HM2StyleDistortion JC120StyleAmplifier
-JCM800StyleAmplifier JTM45StyleAmplifier MarkIICPlusStyleAmplifier MetalZoneStyleDistortion
-NeuralAmp NeuralAmpCab NeuralPedal OCDStyleOverdrive OD1StyleOverdrive ODR1StyleOverdrive
+DarkglassB7KStyleOverdrive DeluxeReverbStyleAmplifier DistortionPlusStyleDistortion
+DividedBy13FTR37StyleAmplifier DualRectifierStyleAmplifier DumbleSteelStringStyleAmplifier
+ENGLPowerballStyleAmplifier EPStyleBooster EVH5150StyleAmplifier FryetteDeliveranceD120StyleAmplifier
+FuzzFaceStyleFuzz GE7StyleEqualizer GEB7StyleEqualizer GarnetHerzogStyleAmplifier
+GibsonEH150StyleAmplifier GuvnorStyleDistortion HM2StyleDistortion HotCat30StyleAmplifier
+JC120StyleAmplifier JCM800StyleAmplifier JTM45StyleAmplifier KometConcordeStyleAmplifier
+MarkIICPlusStyleAmplifier MatchlessHC30StyleAmplifier MesaBass400PlusStyleAmplifier
+MetalZoneStyleDistortion MuTronIIIStyleFilter NeuralAmp NeuralAmpCab NeuralPedal
+OCDStyleOverdrive OD1StyleOverdrive ODB3StyleOverdrive ODR1StyleOverdrive
 OverdriverStyleOverdrive ParametricEQ PositiveGroundBooster RAT2StyleDistortion
-RatStyleDistortion RockerverbStyleAmplifier RussianBigMuffStyleFuzz SLO100StyleAmplifier
-SiliconFuzzFaceStyleFuzz SiliconToneBenderStyleFuzz SovtekBigMuffStyleFuzz
-SuperLeadStyleAmplifier TS10StyleOverdrive TS808StyleOverdrive TS9StyleOverdrive
-ToneBenderStyleFuzz TubeDriverStyleOverdrive TurboRatStyleDistortion
-TwinReverbStyleAmplifier ZendriveStyleOverdrive""".split()
+RatStyleDistortion RiveraKnuckleheadStyleAmplifier RockerverbStyleAmplifier RussianBigMuffStyleFuzz
+SLO100StyleAmplifier SVTStyleAmplifier SansAmpBDDIStyleOverdrive SiliconFuzzFaceStyleFuzz
+SiliconToneBenderStyleFuzz SovtekBigMuffStyleFuzz SunnModelTStyleAmplifier SuperLeadStyleAmplifier
+TS10StyleOverdrive TS808StyleOverdrive TS9BStyleOverdrive TS9StyleOverdrive
+ToneBenderStyleFuzz TraceElliotGP12StyleAmplifier TrainwreckExpressStyleAmplifier
+TubeDriverStyleOverdrive TurboRatStyleDistortion TwinReverbStyleAmplifier ZendriveStyleOverdrive""".split()
 
 DYN = """Compressor DynaCompStyleCompressor Dbx160StyleCompressor GSeriesStyleBusCompressor
 La2aStyleCompressor RossStyleCompressor SqueezerStyleCompressor Urei1176StyleCompressor
@@ -32,7 +39,8 @@ DYN = [d for d in DYN if d != 'GateProcessor']
 
 TIME = """DigitalDelay TapeDelay AnalogDelay DualDelay MultiTapDelay PingPong ReverseDelay
 Ambient Spring Hall Plate Room Shimmer GatedReverb Reverb Tremolo Chorus Vibrato
-Flanger Phaser Rotary UniVibe PitchMod PitchShift Octaver Harmonizer RingMod Hold""".split()
+Flanger Phaser Rotary UniVibe PitchMod PitchShift Octaver BossOC2StyleOctaver Harmonizer
+RingMod Hold""".split()
 
 HOT = {
  'TS808StyleOverdrive':'ts808_drive=0.85','TS9StyleOverdrive':'ts9_drive=0.85','TS10StyleOverdrive':'ts10_drive=0.85',
@@ -48,6 +56,9 @@ HOT = {
  'FuzzFaceStyleFuzz':'ff_fuzz=1.0','SiliconFuzzFaceStyleFuzz':'ffsi_fuzz=1.0',
  'ToneBenderStyleFuzz':'tb_attack=1.0','SiliconToneBenderStyleFuzz':'tbsi_attack=1.0',
  'PositiveGroundBooster':'posboost_boost=0.9','EPStyleBooster':'epbooster_level=0.9',
+ 'BassBigMuffStyleFuzz':'bbmp_sustain=0.85','DarkglassB7KStyleOverdrive':'b7k_drive=0.85',
+ 'ODB3StyleOverdrive':'odb3_gain=0.85','SansAmpBDDIStyleOverdrive':'bddi_drive=0.85',
+ 'TS9BStyleOverdrive':'ts9b_drive=0.85',
 }
 AMPS = {
  'AC15StyleAmplifier':'a15_volume=0.85','AC30StyleAmplifier':'a30_volume=0.85',
@@ -61,6 +72,17 @@ AMPS = {
  'DualRectifierStyleAmplifier':'drec_channel=2 drec_gain=0.85','EVH5150StyleAmplifier':'evh_channel=1 evh_gain=0.85',
  'ENGLPowerballStyleAmplifier':'engl_pb_channel=3 engl_pb_gain=0.85',
  'RockerverbStyleAmplifier':'rv_channel=1 rv_gain=0.85',
+ 'Acoustic360StyleAmplifier':'acoustic360_volume=0.85',
+ 'AmpegB15StyleAmplifier':'ampegb15_volume=0.85','AmpegV4BStyleAmplifier':'ampegv4b_volume=0.85',
+ 'Astroverb16StyleAmplifier':'astro16_preamp=0.85','BognerUberschallStyleAmplifier':'uber_gain=0.85',
+ 'CarmenGhiaStyleAmplifier':'cghia_volume=0.85','CarrRamblerStyleAmplifier':'cr_volume=0.85',
+ 'DividedBy13FTR37StyleAmplifier':'f37_ch1_volume=0.85','DumbleSteelStringStyleAmplifier':'sss_volume=0.85',
+ 'FryetteDeliveranceD120StyleAmplifier':'del_gain1=0.85','GarnetHerzogStyleAmplifier':'hzg_volume=0.85',
+ 'GibsonEH150StyleAmplifier':'eh150_volume=0.85','HotCat30StyleAmplifier':'hotcat30_gain=0.85',
+ 'KometConcordeStyleAmplifier':'kcd_volume=0.85','MatchlessHC30StyleAmplifier':'hc30_volume1=0.85',
+ 'MesaBass400PlusStyleAmplifier':'mesa400p_volume=0.85','RiveraKnuckleheadStyleAmplifier':'knk_gain=0.85',
+ 'SVTStyleAmplifier':'svt_gain=0.85','SunnModelTStyleAmplifier':'smt_vol_normal=0.9 smt_vol_brite=0.2',
+ 'TraceElliotGP12StyleAmplifier':'tegp12_input_gain=0.85','TrainwreckExpressStyleAmplifier':'twx_volume=0.85',
 }
 
 def model_args(key):
