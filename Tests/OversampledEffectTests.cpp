@@ -316,8 +316,13 @@ public:
                     std::unique_ptr<EffectProcessor> chain = make();
                     setKnobs (*chain, 0.7f);
                     for (auto* prm : chain->getParameters()->getParameters (true)) // a selector at 0.7 would snap to its last position
-                        if (prm->getName (32) == "Clipping")
+                    {
+                        const auto name = prm->getName (32);
+                        if (name == "Clipping" || name == "Dry") // Dry on would dilute the clipper's alias with clean signal
                             dynamic_cast<juce::AudioParameterFloat&> (*prm) = 0.0f;
+                        else if (name == "Blend") // worst case for alias: fully wet
+                            dynamic_cast<juce::AudioParameterFloat&> (*prm) = 1.0f;
+                    }
                     if (order > 0)
                         chain = std::make_unique<OversampledEffect> (std::move (chain), order);
                     chain->prepare (sr, 512, 1);

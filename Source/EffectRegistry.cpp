@@ -316,7 +316,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // The bass variant of the same circuit family: Sovtek voicing + Bass Boost / DRY switches
     // (docs/circuits/BassBigMuffStyleFuzz.md). Same input loading as the other muffs' ~100k.
     registry.markQualityDependent ("BassBigMuffStyleFuzz");
-    registry.registerType ("BassBigMuffStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<BassBigMuffStyleFuzzProcessor> (Orders { 0, 1, 2 }), 100000.0), -8.40f); });
+    registry.registerType ("BassBigMuffStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<BassBigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }), 100000.0), -8.40f); });
     using FFModel = FuzzFaceStyleFuzzProcessor::Model;
     registry.markQualityDependent ("FuzzFaceStyleFuzz");
     registry.registerType ("FuzzFaceStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<FuzzFaceStyleFuzzProcessor> (Orders { 1, 1, 2 }, FFModel::germanium), 15000.0), 13.40f); });

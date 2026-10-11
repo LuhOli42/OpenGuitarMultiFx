@@ -120,8 +120,8 @@ The -40 dB bar decided which eco orders could drop a step and which needed a red
 | Pedal | alias at 1x | verdict |
 |---|---|---|
 | Overdriver | -41.2 | eco 2x -> 1x (8.8% -> 2.2% eco) |
-| Bass Big Muff | -43.3 | eco 2x -> 1x (16.5% -> 5.1% eco) |
-| SansAmp BDDI | -58.3 | eco 2x -> 1x (11.2% -> 2.8% eco) |
+| Bass Big Muff | -26.2 (wet-only; -43.3 with Dry on was dilution, not headroom) | stays 2x |
+| SansAmp BDDI | -59.8 (fully wet) | eco 2x -> 1x (11.2% -> 2.8% eco) |
 | Zendrive | -39.8 | borderline, kept |
 | Big Muff USA / Russian / Sovtek | -21.2 / -26.2 / -23.3 | reducedOrder: 4 saturating 1-port BJTs (~16% -> ~12% eco) |
 | Metal Zone | -21.9 (2x only -27.8) | stays 2x; reduced model is a bigger job (m5218 macros) |
