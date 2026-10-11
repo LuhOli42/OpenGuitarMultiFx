@@ -1,6 +1,8 @@
 #include "Effects/BD2StyleOverdriveProcessor.h"
 #include "Effects/BigMuffStyleFuzzProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
+#include "Effects/MetalZoneStyleDistortionProcessor.h"
+#include "Effects/ToneBenderStyleFuzzProcessor.h"
 
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
@@ -257,6 +259,13 @@ public:
             logMessage ("BD-2 worst small-signal difference " + juce::String (worst, 2) + " dB");
             expect (worst < 0.8, "small-signal response within 0.8 dB");
         }
+
+        // MetalZone has no suite here: the companion-model front-end misses the bar (worst band
+        // ~8 dB at hot inputs, level ~5 dB at mid-boost) -- the leg BJTs want a real nonlinear
+        // device the affine follower can't fake. reducedOrder stays off; the numbers and the
+        // abandoned real-BJT attempt are in docs/circuits/MetalZoneStyleDistortion.md, and
+        // MZ_EXPLORE's per-stage diff probe in MetalZoneStyleDistortionProcessorTests.cpp still
+        // measures full-vs-reduced for the next attempt.
 
         beginTest ("BD-2: the macro-model gain stages sound like the transistor-level ones");
         {

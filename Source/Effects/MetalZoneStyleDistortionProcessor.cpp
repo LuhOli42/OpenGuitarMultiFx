@@ -55,7 +55,405 @@ namespace
         c.addFollower (px, ob, 0.0);
         c.addResistor (ob, out, m.outputOhms);
     }
+
+    // ---------- reducedOrder: what the three front blocks collapse to (docs/circuits/MetalZoneStyleDistortion.md) ----------
+    //
+    // The same circuit, same trapezoidal capacitor model, solved with scalar KCL instead of the
+    // Newton-over-ports machine: every device that is not a clip element becomes its linear
+    // equivalent (JFET/emitter followers -> addFollower's ideal part, BJT-emitter-follower
+    // "inductors" -> an ideal follower), and each op-amp keeps the exact addOpAmpMacro structure
+    // (finite gain -> R*C dominant pole -> diode-clamped integrator node -> rail-switched
+    // follower -> 75 ohm). In the linear region each stage solves exactly, one shot; past the
+    // rails a short fixed-point pass resolves the broken feedback loop, exactly like the
+    // netlist's satMode switch. Nothing allocates.
+    constexpr double reducedTheta = 0.6;      // NodalCircuit::defaultTheta -- the companion model must match
+    constexpr double reducedHistW = (1.0 - reducedTheta) / reducedTheta;
+    constexpr double macroPoleCap = 1.0 / (2.0 * 3.14159265358979323846 * 1.0e6 * 25.0); // m5218: GBW/dcGain = 25 Hz pole
+    constexpr double railClampIs = 1.0e-9, railClampNVt = 25.85e-3; // addOpAmpMacro's integrator clamp diodes
+    constexpr double jfetDrop = -1.05;                            // Q011 source follower DC seed (fitted)
+    constexpr double jfetIdss = 4.5e-3, jfetPinch = -1.2, jfetLambda = 0.02;   // jfet2SK184
+    constexpr double followerDrop = 0.65;                          // bootstrap-branch emitter followers
+
+    struct ReducedCap
+    {
+        double g = 0.0, vp = 0.0, ip = 0.0, ieq = 0.0;
+        void prepare (double farads, double fs) noexcept { g = farads * fs / reducedTheta; vp = ip = ieq = 0.0; }
+        void begin() noexcept { ieq = g * vp + reducedHistW * ip; }
+        void commit (double v) noexcept { ip = g * v - ieq; vp = v; }
+    };
+
+    /** The integrator node of one addOpAmpMacro: px solves g_rc (vAmp - px) = i_C + the two rail
+        clamp diodes; the follower output is px inside the rails, held at a rail outside. */
+    struct ReducedAmp
+    {
+        ReducedCap cpx;
+        double px = vBias, out = vBias, vm = vBias;   // vm: last m-node voltage (Newton warm start)
+
+        void prepare (double fs) noexcept { cpx.prepare (macroPoleCap, fs); px = out = vm = vBias; }
+
+        double solvePx (double vAmp) noexcept
+        {
+            double v = px;
+            for (int i = 0; i < 8; ++i)
+            {
+                const double eh = std::exp (std::min ((v - m5218.highRail) / railClampNVt, 40.0));
+                const double el = std::exp (std::min ((m5218.lowRail - v) / railClampNVt, 40.0));
+                const double f = 1.0e-6 * (vAmp - v) - cpx.g * v + cpx.ieq - railClampIs * (eh - el);
+                const double d = -1.0e-6 - cpx.g - railClampIs / railClampNVt * (eh + el);
+                const double dv = f / d;
+                v -= dv;
+                if (std::abs (dv) < 1.0e-10)
+                    break;
+            }
+            return v;
+        }
+
+        /** One iteration of {m-KCL, integrator}: given the (+) input, the inverting-node solve and
+            the output from the previous pass, return the new output. */
+        double finish (double vPlus, double vm) noexcept
+        {
+            px = solvePx (m5218.dcGain * (vPlus - vm));
+            out = juce::jlimit (m5218.lowRail, m5218.highRail, px);
+            return out;
+        }
+    };
+
+    /** IC3b/IC4b's inverting-leg branch: series cap C1 into node n1; n1 -> rE -> the emitter
+        (an ideal follower of the base, drop 0.65); n1 -> C2 -> the base; base -> rBase -> vBias.
+        Idealising the emitter follower misses the 2SC3378's Vbe knee, its can't-sink cut-off and
+        its base current -- measured vs the netlist that's worth ~8 dB of worst-band error at hot
+        inputs (the real-BJT replacement was tried and abandoned: the m-node's solve loses its
+        closed form and every iteration scheme tried either latched the amp's parasitic rail
+        state or 2-cycled across the rails). */
+    struct BootstrapLeg
+    {
+        ReducedCap c1, c2;
+        double f1, f2, rE, rBase;
+        double gE = 0.0, gB = 0.0, v1 = vBias, vb2 = vBias, ve = vBias;
+
+        BootstrapLeg (double c1F, double c2F, double emitterOhms, double baseOhms)
+            : f1 (c1F), f2 (c2F), rE (emitterOhms), rBase (baseOhms) {}
+
+        void prepare (double fs) noexcept
+        {
+            c1.prepare (f1, fs);
+            c2.prepare (f2, fs);
+            gE = 1.0 / rE;
+            gB = 1.0 / rBase;
+            v1 = vb2 = vBias;
+            ve = vBias - followerDrop;
+        }
+
+        /** v1 as an affine function of v_m: v1 = aL*v_m + bL -- what the m-node KCL needs to
+            express the whole leg as one admittance (i_leg = c1.g*(1-aL)*v_m - c1.g*bL - c1.ieq). */
+        double aL() const noexcept
+        {
+            const double dvb = c2.g + gB;
+            return c1.g / (c1.g + gE + c2.g - (gE + c2.g) * c2.g / dvb);
+        }
+        double bL() const noexcept
+        {
+            const double dvb = c2.g + gB;
+            const double rhs = -c1.ieq + c2.ieq + (gE + c2.g) * (gB * vBias - c2.ieq) / dvb - gE * followerDrop;
+            return rhs / (c1.g + gE + c2.g - (gE + c2.g) * c2.g / dvb);
+        }
+        double kLeg() const noexcept { return c1.g * (1.0 - aL()); }          // d i_leg / d v_m
+        double cLeg() const noexcept { return -c1.g * bL() - c1.ieq; }        // i_leg at v_m = 0
+
+        void solveNodes (double vm) noexcept
+        {
+            v1 = aL() * vm + bL();
+            vb2 = (c2.g * v1 - c2.ieq + gB * vBias) / (c2.g + gB);
+            ve = vb2 - followerDrop;
+        }
+
+        void commit (double vm) noexcept
+        {
+            c1.commit (vm - v1);
+            c2.commit (v1 - vb2);
+        }
+    };
 }
+
+/** The reducedOrder substitute for blocks 0-2. See the netlist in buildChannel() for the topology
+    this mirrors -- node names match, the comments there explain the circuit itself. */
+struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
+{
+    // input ladder: (10k + C042) -> g -> [JFET follower] -> C039 -> nA -> 200R -> nB -> C033 -> nC
+    ReducedCap c042, c039, c033;
+    // IC3b: fb 220k || C032; (-) leg = the Q010 bootstrap branch
+    ReducedCap c032;
+    BootstrapLeg leg3b { 0.027e-6, 0.01e-6, 2.2e3, 47.0e3 };
+    ReducedAmp amp3b;
+    // IC3a interstage: p {10k, C031} -> C029 -> q {100k}; leg = 1k -> nR -> C030; fb = (rDist+1k) || C028
+    ReducedCap c031, c029, c030, c028;
+    ReducedAmp amp3a;
+    // clipper: C027 -> n27 -> 2k2 -> k {diode pair, 10k -> l}; l: 4k7 -> n31 {C023}, C021 -> m2 {100k}
+    ReducedCap c027, c023, c021;
+    // IC4b: fb 3k3 || C022; legs = the Q008 and Q007 bootstrap branches
+    ReducedCap c022;
+    BootstrapLeg legA4b { 0.015e-6, 0.0015e-6, 1.0e3, 47.0e3 };
+    BootstrapLeg legB4b { 0.22e-6, 0.047e-6, 470.0, 470.0e3 };
+    ReducedAmp amp4b;
+    // IC4a inverter: 22k in, 22k || C018 fb, (+) at vBias
+    ReducedCap c018;
+    ReducedAmp amp4a;
+
+    double gDist = 1.0 / 2.0e3;   // 1 / (rDist + R051): set from updatePots()
+    double vk = 0.0;              // clipper node warm start
+
+    // probe mirrors of the netlist taps (vBias-centred, same picture)
+    double ic3b = vBias, ic3a = vBias, ic4b = vBias, ic4a = vBias, ic3aPrev = vBias, ic3aP = vBias, ic3aQ = vBias;
+    double jfetS = vBias + 0.9;   // Q011 source warm start (real solve below)
+
+    void prepare (double fs) noexcept
+    {
+        const double v = vBias;
+        c042.prepare (0.047e-6, fs);
+        c039.prepare (1.0e-6, fs);
+        c033.prepare (0.015e-6, fs);
+        c032.prepare (100.0e-12, fs);
+        leg3b.prepare (fs);
+        amp3b.prepare (fs);
+        c031.prepare (0.047e-6, fs);
+        c029.prepare (0.033e-6, fs);
+        c030.prepare (10.0e-6, fs);
+        c028.prepare (47.0e-12, fs);
+        amp3a.prepare (fs);
+        c027.prepare (10.0e-6, fs);
+        c023.prepare (0.015e-6, fs);
+        c021.prepare (1.0e-6, fs);
+        c022.prepare (47.0e-12, fs);
+        legA4b.prepare (fs);
+        legB4b.prepare (fs);
+        amp4b.prepare (fs);
+        c018.prepare (10.0e-12, fs);
+        amp4a.prepare (fs);
+        // Seed the DC operating point directly (caps open, amps linear at vBias) -- running the
+        // solver from zero falls into a parasitic fixed point where an amp sits at its rail.
+        c042.vp = -v;                     // gate at vBias, nR at vin = 0
+        c039.vp = -jfetDrop;              // s at vBias - drop, nA at vBias
+        c033.vp = 0.0;                    // nB = nC = vBias
+        c032.vp = 0.0;                    // m = o = vBias
+        leg3b.c1.vp = followerDrop;       // m at vBias, v1 at vBias - drop
+        leg3b.c2.vp = -followerDrop;      // v1 at vBias - drop, base at vBias
+        c031.vp = 0.0;
+        c029.vp = 0.0;
+        c030.vp = v;                      // nR at vm = vBias (no DC path to ground)
+        c028.vp = 0.0;
+        c027.vp = v;                      // prev at vBias, n27 pulled to ~0 by the diodes
+        c023.vp = 0.0;
+        c021.vp = -v;                     // l at ~0, m2 at vBias
+        c022.vp = 0.0;
+        legA4b.c1.vp = followerDrop;
+        legA4b.c2.vp = -followerDrop;
+        legB4b.c1.vp = followerDrop;
+        legB4b.c2.vp = -followerDrop;
+        c018.vp = 0.0;
+        amp3b.cpx.vp = v;
+        amp3a.cpx.vp = v;
+        amp4b.cpx.vp = v;
+        amp4a.cpx.vp = v;
+        vk = 0.0;
+        ic3b = ic3a = ic4b = ic4a = ic3aPrev = ic3aP = ic3aQ = v;
+        for (int i = 0; i < 300; ++i)
+            step (0.0); // settle whatever the analytic seed missed
+    }
+
+    /** One feedback-amp macro stage: solves {v_m, px} exactly while the integrator node sits inside
+        the rails; past them it re-solves m with the loop broken (v_out held at the rail) and runs
+        the clamp-diode Newton -- the netlist's two satMode passes. K = feedback conductance sum,
+        G = K + sum of leg admittances, Hm = the m-node history terms. */
+    static double stage (double vPlus, double kFb, double gSum, double hm, ReducedAmp& amp) noexcept
+    {
+        const double gRc = 1.0e-6, gain = m5218.dcGain;
+        const double pxLin = (gRc * gain * (vPlus - hm / gSum) + amp.cpx.ieq) / (gRc * gain * kFb / gSum + gRc + amp.cpx.g);
+        double vo;
+        if (pxLin > m5218.lowRail && pxLin < m5218.highRail)
+        {
+            amp.px = pxLin;
+            vo = pxLin;
+        }
+        else
+        {
+            vo = juce::jlimit (m5218.lowRail, m5218.highRail, pxLin);
+            const double vm = (kFb * vo + hm) / gSum;
+            amp.px = amp.solvePx (gain * (vPlus - vm));
+            vo = juce::jlimit (m5218.lowRail, m5218.highRail, amp.px);
+        }
+        amp.out = vo;
+        amp.cpx.commit (amp.px);
+        return vo;
+    }
+
+    double step (double vin) noexcept
+    {
+        c042.begin(); c039.begin(); c033.begin(); c032.begin();
+        leg3b.c1.begin(); leg3b.c2.begin();
+        c031.begin(); c029.begin(); c030.begin(); c028.begin();
+        c027.begin(); c023.begin(); c021.begin(); c022.begin();
+        legA4b.c1.begin(); legA4b.c2.begin();
+        legB4b.c1.begin(); legB4b.c2.begin();
+        c018.begin();
+        amp3b.cpx.begin(); amp3a.cpx.begin(); amp4b.cpx.begin(); amp4a.cpx.begin();
+
+        // ---- input ladder: in ->(10k+C042)-> gate ->[JFET follower]-> C039 -> nA ->200R-> nB ->C033-> nC
+        const double gE1 = c042.g / (1.0 + c042.g * 10.0e3), hE1 = c042.ieq / (1.0 + c042.g * 10.0e3);
+        const double vg = (gE1 * vin - hE1 + 1.0e-6 * vBias) / (gE1 + 1.0e-6); // gate is b-side of C042
+        // Q011's 2SK184GR source follower, drain pinned to the 9 V rail, source -> 10K to ground.
+        // It sits near pinch-off (vgs ~= -0.9 of -1.2) where the transconductance swings hard, so a
+        // fixed-gain follower misses the 2nd-order sag the real part adds: solve iD(vgs,vds) = vs/10K.
+        double vs = jfetS;
+        for (int i = 0; i < 6; ++i)
+        {
+            const double vds = 9.0 - vs;
+            const double u = juce::jmax (0.0, 1.0 - (vg - vs) / jfetPinch);
+            const double iD = jfetIdss * u * u * (1.0 + jfetLambda * vds);
+            const double f = iD - vs * 1.0e-4;
+            const double df = -jfetIdss * u * (2.0 * (1.0 + jfetLambda * vds) / -jfetPinch + jfetLambda * u) - 1.0e-4;
+            vs = juce::jlimit (0.0, 9.0, vs - f / df);
+            if (std::abs (f / df) < 1.0e-9)
+                break;
+        }
+        jfetS = vs;
+        const double gA = 1.0e-5, gSw = 1.0 / jfetSwitchOhms, gM = 1.0e-6;
+        const double aC = c033.g / (c033.g + gA), bC = (-c033.ieq + gA * vBias) / (c033.g + gA); // nC = aC*nB + bC
+        const double dB = gSw + gM + c033.g * (1.0 - aC);
+        const double aB = gSw / dB, bB = (gM * vBias + c033.ieq + c033.g * bC) / dB;           // nB = aB*nA + bB
+        const double vnA = (c039.g * vs - c039.ieq + gA * vBias + gSw * bB) / (c039.g + gA + gSw - gSw * aB); // nA is b-side of C039
+        const double vnB = aB * vnA + bB;
+        const double vnC = aC * vnB + bC;
+
+        // ---- IC3b ----
+        const double kFb3b = 1.0 / 220.0e3 + c032.g;
+        const double g3b = kFb3b + leg3b.kLeg();
+        const double hm3b = c032.ieq - leg3b.cLeg();
+        const double vo3b = stage (vnC, kFb3b, g3b, hm3b, amp3b);
+        const double vm3b = (kFb3b * vo3b + hm3b) / g3b;
+        ic3b = vo3b;
+
+        // ---- interstage + IC3a ----
+        const double g45 = 1.0 / 10150.0, g42 = 1.0e-4, g40 = 1.0e-5;
+        const double aQ = c029.g / (c029.g + g40), bQ = (-c029.ieq + g40 * vBias) / (c029.g + g40); // q = aQ*p + bQ
+        const double vp = (g45 * vo3b + g42 * vBias + c031.g * vBias + c031.ieq + c029.ieq + c029.g * bQ)
+                          / (g45 + g42 + c031.g + c029.g * (1.0 - aQ));
+        const double vq = aQ * vp + bQ;
+        const double g41 = 1.0e-3, kLeg3a = g41 * c030.g / (g41 + c030.g), cLeg3a = -g41 * c030.ieq / (g41 + c030.g);
+        const double kFb3a = gDist + c028.g;
+        const double g3a = kFb3a + kLeg3a;
+        const double hm3a = c028.ieq - cLeg3a;
+        const double vo3a = stage (vq, kFb3a, g3a, hm3a, amp3a);
+        const double vm3a = (kFb3a * vo3a + hm3a) / g3a;
+        const double vnR3a = (g41 * vm3a + c030.ieq) / (g41 + c030.g);
+        ic3a = vo3a;
+        ic3aPrev = vo3b;
+        ic3aP = vp;
+        ic3aQ = vq;
+
+        // ---- clipper: (150R+C027) -> n27 -> 2k2 -> k {diode pair to gnd, 10k -> l}; l: 4k7 -> n31 {C023}, C021 -> m2 {100k}
+        const double gE27 = c027.g / (1.0 + c027.g * 150.0), hE27 = c027.ieq / (1.0 + c027.g * 150.0);
+        const double g28 = 1.0 / 2.2e3, g32 = 1.0e-4, g47 = 1.0 / 4.7e3, g29 = 1.0e-5;
+        const double a31 = g47 / (g47 + c023.g), b31 = c023.ieq / (g47 + c023.g);
+        const double a2 = c021.g / (c021.g + g29), b2 = (-c021.ieq + g29 * vBias) / (c021.g + g29);
+        const double dL = g32 + g47 * (1.0 - a31) + c021.g * (1.0 - a2);
+        const double aL = g32 / dL, bL = (c021.ieq + g47 * b31 + c021.g * b2) / dL;
+        const double aK = g28 * gE27 / (gE27 + g28) + g32 * (1.0 - aL);
+        const double bK = g28 * (gE27 * vo3a - hE27) / (gE27 + g28) + g32 * bL;
+        for (int i = 0; i < 8; ++i)
+        {
+            const double ep = std::exp (std::min (vk / siNVt, 40.0)), em = std::exp (std::min (-vk / siNVt, 40.0));
+            const double f = aK * vk + siIs * (ep - em) - bK;
+            const double d = aK + siIs / siNVt * (ep + em);
+            const double dv = f / d;
+            vk -= dv;
+            if (std::abs (dv) < 1.0e-10)
+                break;
+        }
+        const double vn27 = (gE27 * vo3a - hE27 + g28 * vk) / (gE27 + g28);
+        const double vl = aL * vk + bL;
+        const double vn31 = a31 * vl + b31;
+        const double vm2 = a2 * vl + b2;
+
+        // ---- IC4b ----
+        const double kFb4b = 1.0 / 3.3e3 + c022.g;
+        const double g4b = kFb4b + legA4b.kLeg() + legB4b.kLeg();
+        const double hm4b = c022.ieq - legA4b.cLeg() - legB4b.cLeg();
+        const double vo4b = stage (vm2, kFb4b, g4b, hm4b, amp4b);
+        const double vm4b = (kFb4b * vo4b + hm4b) / g4b;
+        ic4b = vo4b;
+
+        // ---- IC4a inverter: m sees g22->vo4b and (g22||C018)->out; same stage() solve, the
+        // input conductance folded into the history term. An iterate-the-output loop period-2
+        // oscillates between the rails here, so it cannot be used. ----
+        const double g22 = 1.0 / 22.0e3;
+        const double vo4a = stage (vBias, g22 + c018.g, g22 + g22 + c018.g, g22 * vo4b + c018.ieq, amp4a);
+        const double vm4a = (g22 * vo4b + (g22 + c018.g) * vo4a + c018.ieq) / (g22 + g22 + c018.g);
+        ic4a = vo4a;
+
+        // ---- commit every capacitor's terminal voltage ----
+        const double iE1 = gE1 * (vin - vg) - hE1;
+        c042.commit (vin - iE1 * 10.0e3 - vg);
+        c039.commit (vs - vnA);
+        c033.commit (vnB - vnC);
+        c032.commit (vm3b - vo3b);
+        leg3b.solveNodes (vm3b);
+        leg3b.commit (vm3b);
+        c031.commit (vp - vBias);
+        c029.commit (vp - vq);
+        c030.commit (vnR3a);
+        c028.commit (vm3a - vo3a);
+        const double iE27 = gE27 * (vo3a - vn27) - hE27;
+        c027.commit (vo3a - iE27 * 150.0 - vn27);
+        c023.commit (vn31);
+        c021.commit (vl - vm2);
+        c022.commit (vm4b - vo4b);
+        legA4b.solveNodes (vm4b);
+        legB4b.solveNodes (vm4b);
+        legA4b.commit (vm4b);
+        legB4b.commit (vm4b);
+        c018.commit (vm4a - vo4a);
+
+        return vo4a;
+    }
+};
+
+auto MetalZoneStyleDistortionProcessor::Channel::operator= (const Channel& o) -> Channel&
+{
+    if (this == &o)
+        return *this;
+    blk = o.blk;
+    srcIn = o.srcIn;
+    srcPrev = o.srcPrev;
+    out = o.out;
+    nOut = o.nOut;
+    dbgPrev = o.dbgPrev;
+    dbgP = o.dbgP;
+    dbgQ = o.dbgQ;
+    dbgIc4b = o.dbgIc4b;
+    rDist = o.rDist;
+    rHighA = o.rHighA;
+    rHighB = o.rHighB;
+    rLowA = o.rLowA;
+    rLowB = o.rLowB;
+    rMidA = o.rMidA;
+    rMidB = o.rMidB;
+    rFreqA = o.rFreqA;
+    rFreqB = o.rFreqB;
+    rLevTop = o.rLevTop;
+    rLevBottom = o.rLevBottom;
+    if (o.reduced != nullptr)
+    {
+        if (reduced == nullptr)
+            reduced = std::make_unique<ReducedFrontEnd> (*o.reduced); // prepare() only -- never after
+        else
+            *reduced = *o.reduced;                                  // DualMono's per-block state sync
+    }
+    else
+        reduced.reset();
+    return *this;
+}
+
+MetalZoneStyleDistortionProcessor::~MetalZoneStyleDistortionProcessor() = default;
 
 MetalZoneStyleDistortionProcessor::MetalZoneStyleDistortionProcessor()
 {
@@ -108,6 +506,8 @@ void MetalZoneStyleDistortionProcessor::buildChannel (Channel& ch)
         }
     };
 
+    if (! reducedOrder)
+    {
     // ================================================================ a: input JFET, bypass switch, IC3b
     {
         auto& c = ch.blk[0];
@@ -219,6 +619,7 @@ void MetalZoneStyleDistortionProcessor::buildChannel (Channel& ch)
             c.setInitialGuess (n, 0.0);
         ch.dbgIc4b = o;
         ch.out[2] = o4a;
+    }
     }
 
     // ================================================================ e: IC1a with High and Low
@@ -348,7 +749,10 @@ void MetalZoneStyleDistortionProcessor::updatePots (const Knobs& k)
 
     for (auto& ch : channels)
     {
-        ch.blk[1].setResistance (ch.rDist, rDist);
+        if (ch.reduced != nullptr)
+            ch.reduced->gDist = 1.0 / (rDist + 1.0e3);
+        else
+            ch.blk[1].setResistance (ch.rDist, rDist);
         ch.blk[3].setResistance (ch.rHighA, highA);
         ch.blk[3].setResistance (ch.rHighB, highB);
         ch.blk[3].setResistance (ch.rLowA, lowA);
@@ -365,6 +769,22 @@ void MetalZoneStyleDistortionProcessor::updatePots (const Knobs& k)
 double MetalZoneStyleDistortionProcessor::debugVoltage (Probe p) const noexcept
 {
     const auto& ch = channels[0];
+    if (ch.reduced != nullptr)
+    {
+        switch (p)
+        {
+            case Probe::ic3b:   return ch.reduced->ic3b;
+            case Probe::ic3a:   return ch.reduced->ic3a;
+            case Probe::ic4b:   return ch.reduced->ic4b;
+            case Probe::ic4a:   return ch.reduced->ic4a;
+            case Probe::ic1a:   return ch.blk[3].voltage (ch.out[3]);
+            case Probe::ic2a:   return ch.blk[4].voltage (ch.out[4]);
+            case Probe::output: return ch.blk[4].voltage (ch.nOut);
+            case Probe::ic3aPrev: return ch.reduced->ic3aPrev;
+            case Probe::ic3aP: return ch.reduced->ic3aP;
+            case Probe::ic3aQ: return ch.reduced->ic3aQ;
+        }
+    }
     switch (p)
     {
         case Probe::ic3b:   return ch.blk[0].voltage (ch.out[0]);
@@ -384,7 +804,10 @@ double MetalZoneStyleDistortionProcessor::debugVoltage (Probe p) const noexcept
 double MetalZoneStyleDistortionProcessor::debugIterations() const noexcept
 {
     double total = 0.0;
-    for (const auto& b : channels[0].blk)
+    const auto& ch = channels[0];
+    if (ch.reduced != nullptr)
+        return ch.blk[3].averageIterations() + ch.blk[4].averageIterations();
+    for (const auto& b : ch.blk)
         total += b.averageIterations();
     return total;
 }
@@ -399,6 +822,11 @@ void MetalZoneStyleDistortionProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        if (reducedOrder)
+        {
+            ch.reduced = std::make_unique<ReducedFrontEnd>();
+            ch.reduced->prepare (newSampleRate);
+        }
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p)
@@ -417,12 +845,22 @@ void MetalZoneStyleDistortionProcessor::prepare (double newSampleRate, int, int)
 
     dcOk = true;
     for (auto& ch : channels)
-        for (int b = 0; b < numBlocks; ++b)
+    {
+        if (ch.reduced != nullptr)
         {
-            if (b > 0)
-                ch.blk[(size_t) b].setSource (ch.srcPrev[(size_t) b], ch.blk[(size_t) b - 1].voltage (ch.out[(size_t) b - 1]));
-            dcOk = ch.blk[(size_t) b].prepare (newSampleRate) && dcOk;
+            ch.blk[3].setSource (ch.srcPrev[3], ch.reduced->ic4a);
+            dcOk = ch.blk[3].prepare (newSampleRate) && dcOk;
+            ch.blk[4].setSource (ch.srcPrev[4], ch.blk[3].voltage (ch.out[3]));
+            dcOk = ch.blk[4].prepare (newSampleRate) && dcOk;
         }
+        else
+            for (int b = 0; b < numBlocks; ++b)
+            {
+                if (b > 0)
+                    ch.blk[(size_t) b].setSource (ch.srcPrev[(size_t) b], ch.blk[(size_t) b - 1].voltage (ch.out[(size_t) b - 1]));
+                dcOk = ch.blk[(size_t) b].prepare (newSampleRate) && dcOk;
+            }
+    }
 
     controlCounter = 0;
     sampleCount = 0;
@@ -461,12 +899,23 @@ void MetalZoneStyleDistortionProcessor::process (juce::AudioBuffer<float>& buffe
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
-            ch.blk[0].setSource (ch.srcIn, (double) data[i]);
-            bool ok = ch.blk[0].solveSample();
-            for (int b = 1; b < numBlocks; ++b)
+            bool ok = true;
+            if (ch.reduced != nullptr)
             {
-                ch.blk[(size_t) b].setSource (ch.srcPrev[(size_t) b], ch.blk[(size_t) b - 1].voltage (ch.out[(size_t) b - 1]));
-                ok = ch.blk[(size_t) b].solveSample() && ok;
+                ch.blk[3].setSource (ch.srcPrev[3], ch.reduced->step ((double) data[i]));
+                ok = ch.blk[3].solveSample();
+                ch.blk[4].setSource (ch.srcPrev[4], ch.blk[3].voltage (ch.out[3]));
+                ok = ch.blk[4].solveSample() && ok;
+            }
+            else
+            {
+                ch.blk[0].setSource (ch.srcIn, (double) data[i]);
+                ok = ch.blk[0].solveSample();
+                for (int b = 1; b < numBlocks; ++b)
+                {
+                    ch.blk[(size_t) b].setSource (ch.srcPrev[(size_t) b], ch.blk[(size_t) b - 1].voltage (ch.out[(size_t) b - 1]));
+                    ok = ch.blk[(size_t) b].solveSample() && ok;
+                }
             }
 
             data[i] = (float) ch.blk[4].voltage (ch.nOut);

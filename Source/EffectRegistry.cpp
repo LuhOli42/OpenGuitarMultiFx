@@ -329,6 +329,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("SiliconToneBenderStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<ToneBenderStyleFuzzProcessor> (Orders { 1, 2, 3 }, TBModel::silicon), 8000.0), 1.14f); });
     registry.markQualityDependent ("OverdriverStyleOverdrive");
     registry.registerType ("OverdriverStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<OverdriverStyleOverdriveProcessor> (Orders { 0, 1, 2 }), 1000000.0), -12.73f); });
+    // reducedOrder stays OFF: the companion-model implementation in
+    // MetalZoneStyleDistortionProcessor.cpp misses the equivalence bar (worst band ~8 dB at hot
+    // inputs -- the legs' 2SC3378 needs a real BJT, and every iteration scheme tried to put one
+    // in lost the m-node's closed-form solve). See docs/circuits/MetalZoneStyleDistortion.md.
     registry.markQualityDependent ("MetalZoneStyleDistortion");
     registry.registerType ("MetalZoneStyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<MetalZoneStyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 2.23f); });
     registry.markQualityDependent ("TubeDriverStyleOverdrive");
@@ -344,6 +348,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("ODR1StyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampledSlew<ODR1StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), -1.77f); });
     registry.markQualityDependent ("DT1StyleDistortion");
     registry.registerType ("DT1StyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<DT1StyleDistortionProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), 10.17f); });
+    // reducedOrder stays OFF: the #79 pop's mechanism (clipped collector current never reaching
+    // the base) was re-tried this session as an iB += iC_unsat - iC_sat drain term in the kind-4
+    // device -- it broke equivalence badly in BOTH HM-2 (worst band 9.3 dB) and the Big Muff
+    // (2.9 dB), so the one-ports stay saturated-but-undrained and the pedal stays at 2x.
     registry.markQualityDependent ("HM2StyleDistortion");
     // HM-2 at balanced is 2x: its 2x aliasing (-62.7 dB nonharmonic, docs/circuits/Oversampling.md) is already
     // inaudible, and 4x there doubled the pedal's cost for nothing.

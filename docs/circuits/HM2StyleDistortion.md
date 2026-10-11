@@ -118,3 +118,12 @@ Q8/Q9 = 2SC945-P; D1/D3/D5/D8-D12 = 1S2473 (Si switching), D6/D7 = 1S188FM (Ge).
 ## Not modelled
 Output transistors, LED, bypass; op-amp rail clipping (the M5216/M5616 on 9 V);
 the 4.5 V divider's source impedance.
+
+## reducedOrder re-attempt (2026-10-11 -- still off)
+The #79 pop mechanism was re-tested as `iB += iC_unsat - iC_sat` in the kind-4 saturating one-port
+(`NodalCircuit::addBjtSaturating`), i.e. dumping the clipped collector current into the base. It overshot:
+equivalence vs the two-port model went from (worst band 1.07 dB / level 1.14 dB, passing) to 9.31 dB on HM-2
+and 2.86 dB on the Big Muff, so it was reverted and `reducedOrder` stays off. The real saturation base
+current is apparently much smaller than the full clipped difference -- likely scaled by a fraction related
+to betaR, or belonging in the emitter path rather than the base. Next attempt should sweep the drain
+coefficient on the equivalence harness instead of committing to the conservation-maximum.

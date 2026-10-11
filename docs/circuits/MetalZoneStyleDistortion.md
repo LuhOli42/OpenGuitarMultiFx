@@ -54,3 +54,29 @@ The circuit diagram of the **service manual, MT-2, April 1991** (github apachiww
 **~15% of a core at 1x, before any oversampling** (~30% at 2x): far above the 5% target, and each block costs at least one Newton iteration (~2000 cycles), so five blocks is a floor for this
 netlist. Alias (non-harmonic/harmonic, `PEDAL_ALIAS=1`, a hard-driven probe): 1x -21.9 dB, 2x -27.8, 4x -39.9, 8x -75.8: **the worst of the pedals so far, because IC3b, IC3a, the diodes and IC4b all clip in
 turn**. Orders {0, 1, 2} like the HM-2. Unity trim +2.23 dB. A cheaper model (fewer blocks, a reduced clipper) is possible but would have to be checked by ear against this one first; none is built.
+
+## Reduced-order front-end attempt (2026-10-11 -- abandoned, kept for the next try)
+A companion-model substitute for blocks A-C (input buffer through the diode clipper) IS implemented in
+`MetalZoneStyleDistortionProcessor.cpp` behind `reducedOrder` (static, off by default -- the registry comment
+says why). Every capacitor keeps its trapezoidal companion model; the four op-amps become closed-form
+saturating-integrator solves (`ReducedAmp`, exact inside the rails); the JFET follower is a per-sample Newton
+(it sits near pinch-off where a fixed gain lies); the diode clipper is a scalar Newton; and the two
+bootstrap-follower legs fold into the m-node KCL as **affine** admittances (ideal 0.65 V-drop followers).
+Per-component, all of it is exact except those legs -- which is exactly where the fit dies:
+
+| configuration (measured vs own five-block netlist, ReducedOrderEquivalence harness) | worst level | worst band |
+|---|---|---|
+| affine legs + JFET Newton (what is committed, off) | ~5-24 dB | ~8-14 dB |
+
+Bar is level <2.0 / band <1.2. The error concentrates at Dist>=0.5 and mid-boost: the legs' 2SC3378s need a
+real BJT knee (Vbe curve, can't-sink cut-off, iB = iE/(beta+1)). A real Ebers-Moll leg WAS written (3-node
+inner fixed-point per leg) and abandoned: putting a nonlinear device on the m-node destroys the stage's
+closed-form solve, and every iteration scheme tried failed differently -- full Newton on v_m limit-cycled
+across the rail knee, secant/quasi-Newton on the legs did not converge in 6 iters (amp latched its parasitic
+rail state), and evaluating the legs one sample behind kept stability but returned ~-24 dB level errors.
+The honest conclusion: this stage wants the legs and the m-node in ONE simultaneous Newton (a small real
+solver, not a scalar trick) -- at which point it stops being cheaper than the block it replaces.
+
+Kept for reuse: `ReducedFrontEnd`/`ReducedAmp`/`BootstrapLeg`, the MZ_EXPLORE per-stage diff probe in the
+tests (measures reduced-vs-netlist error at ic3b/ic3a/ic4b/ic4a), and the equivalence harness pattern.
+The pedal stays at eco 2x.
