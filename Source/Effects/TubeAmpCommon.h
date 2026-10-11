@@ -181,8 +181,13 @@ inline std::unique_ptr<juce::AudioParameterFloat> makeCabParam (
     names.add (stockName);
     for (const auto* alt : alts)
         names.add (alt->name);
+    // Hoisted out of the return expression: reading names.size() there while a
+    // sibling argument moves `names` into the lambda is unspecified order --
+    // GCC evaluated the move first and built the range as 0 .. -1 (empty
+    // selector on screen).
+    const int optionCount = names.size();
     return std::make_unique<juce::AudioParameterFloat> (
-        paramId, "Cab", juce::NormalisableRange<float> (0.0f, (float) (names.size() - 1), 1.0f),
+        paramId, "Cab", juce::NormalisableRange<float> (0.0f, (float) (optionCount - 1), 1.0f),
         cabVoicingEnabled.load (std::memory_order_relaxed) ? 1.0f : 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (
             [names = std::move (names)] (float v, int)
