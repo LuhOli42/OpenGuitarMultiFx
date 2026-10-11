@@ -162,6 +162,15 @@ private:
         switching the signal path between two samples. */
     void processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples);
 
+    /** Audio thread, once per stream (audioDeviceAboutToStart re-arms
+        it): records whether THIS callback runs on a realtime thread
+        (juce::Thread::isRealtime for JUCE threads, sched_getscheduler
+        for a native backend thread) and stamps the answer onto every
+        graph the callback can reach via setAudioCallerIsRealtime, so
+        SignalGraph's RT-parity dispatch gate knows what it's serving.
+        A one-time-per-stream sched_getscheduler syscall. */
+    void detectCallbackRealtime() noexcept;
+
     juce::AudioDeviceManager deviceManager;
     DeferredReclaimer<SignalGraph> graphSlot;
     Spillover spillover;
@@ -179,6 +188,9 @@ private:
     SignalGraph* fadingOutGraph = nullptr;   // a retired graph still playing its fade-out (kept alive by graphSlot's margin)
     int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0, fadeInSamplesLeft = 0, fadeInSamplesTotal = 0;
     juce::int64 lastCallbackTicks = 0;
+
+    std::atomic<bool> callbackIsRealtime { false };
+    std::atomic<bool> callbackRealtimeDetected { false }; // detectCallbackRealtime ran once
 
     std::atomic<bool> tunerActive { false }; // see setTunerActive()
     std::atomic<float> inputGainDb { 0.0f }, inputGainLinear { 1.0f }; // see setInputGainDb()
