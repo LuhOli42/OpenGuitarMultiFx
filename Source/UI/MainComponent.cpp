@@ -236,8 +236,14 @@ MainComponent::MainComponent()
         masterBusSaveCountdown = 10; // trailing-edge save in timerCallback (~500 ms)
     };
 
-    if (! audioEngine.start())
+    audioDeviceOk = audioEngine.start();
+    if (! audioDeviceOk)
+    {
         titleLabel.setText ("Audio device failed to open", juce::dontSendNotification);
+        // cpuLabel carries the persistent warning (timerCallback rewrites it every tick anyway,
+        // and updatePresetDisplay() overwrites titleLabel on the first preset refresh).
+        cpuLabel.setColour (juce::Label::textColourId, juce::Colours::orange);
+    }
 
     // Remembered across launches -- the interface's gain staging, like the tuning before it, describes the hardware
     // plugged in rather than a sound, so it is not part of any guitar preset. See AudioEngine::setInputGainDb().
@@ -955,7 +961,15 @@ void MainComponent::showSettingsPanel()
     panel->onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     panel->onPopOverlay  = [this] { overlayHost.popOverlay(); };
     panel->onQualityChanged = [this] (EffectRegistry::OversamplingQuality q) { applyRenderQuality (q); };
-    panel->onSampleRateChanged = [this] (double rate) { return audioEngine.setSampleRate (rate); };
+    panel->onSampleRateChanged = [this] (double rate)
+    {
+        const auto error = audioEngine.setSampleRate (rate);
+        // A failed rate switch can also be the only recovery path after a
+        // start() failure, so track device liveness through it too.
+        audioDeviceOk = error.isEmpty();
+        cpuLabel.setColour (juce::Label::textColourId, audioDeviceOk ? juce::Colours::white : juce::Colours::orange);
+        return error;
+    };
     panel->showSampleRates (audioEngine.getAvailableSampleRates(), audioEngine.getCurrentSampleRate());
 
     overlayHost.pushOverlay (std::move (panel));
@@ -1873,9 +1887,12 @@ void MainComponent::timerCallback()
 {
     // Average and worst-block, not one number: see AudioEngine::getPeakCpuUsage().
     // roundToInt, not String(double, 0): JUCE reads 0 decimal places as "shortest representation" and prints every digit.
-    cpuLabel.setText ("CPU " + juce::String (juce::roundToInt (audioEngine.getCurrentCpuUsage() * 100.0)) + "%  peak "
-                          + juce::String (juce::roundToInt (audioEngine.getPeakCpuUsage() * 100.0)) + "%",
-                       juce::dontSendNotification);
+    if (audioDeviceOk)
+        cpuLabel.setText ("CPU " + juce::String (juce::roundToInt (audioEngine.getCurrentCpuUsage() * 100.0)) + "%  peak "
+                              + juce::String (juce::roundToInt (audioEngine.getPeakCpuUsage() * 100.0)) + "%",
+                          juce::dontSendNotification);
+    else
+        cpuLabel.setText ("NO AUDIO DEVICE", juce::dontSendNotification);
 
     footerBar.setLevels (audioEngine.getInputLevel(), audioEngine.getOutputLevel());
 
