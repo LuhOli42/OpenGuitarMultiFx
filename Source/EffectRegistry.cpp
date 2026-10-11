@@ -583,7 +583,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
     DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DumbleSteelStringStyleAmplifier");
-    registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.05f); }, "Clean");
+    registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 10.72f); }, "Clean");
     SunnModelTStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SunnModelTStyleAmplifier");
     registry.registerType ("SunnModelTStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 16.70f); }, "High-Gain");

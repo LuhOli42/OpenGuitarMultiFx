@@ -504,7 +504,7 @@ void ParameterPanel::showPage (int page)
         if (row.syncToggle != nullptr)
             row.syncToggle->setVisible (shown);
     }
-    pageButton.setButtonText (currentPage == 0 ? "Page 2 >" : "< Page 1");
+    pageButton.setButtonText ("Page " + juce::String ((currentPage + 1) % juce::jmax (1, pageCount) + 1) + " >");
     resized();
     if (onPreferredHeightChanged)
         onPreferredHeightChanged();

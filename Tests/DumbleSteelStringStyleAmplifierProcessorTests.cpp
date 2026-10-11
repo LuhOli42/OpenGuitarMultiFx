@@ -121,6 +121,83 @@ public:
             expect (true);
         }
 
+        beginTest ("front-panel switches stay stable and change the signal");
+        {
+            auto pluckRms = [] (DumbleSteelStringStyleAmplifierProcessor& amp, double& peak, bool& finite)
+            {
+                juce::AudioBuffer<float> buf (2, 128);
+                double sumSq = 0.0;
+                long long n = 0;
+                finite = true;
+                peak = 0.0;
+                double f0 = 110.0, level = 0.15, age = 0.0, phase = 0.0;
+                for (int b = 0; b < (int) (2.0 * sr / 128); ++b)
+                {
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        double s = level * std::exp (-age / 0.8) * std::sin (phase);
+                        phase += 2.0 * juce::MathConstants<double>::pi * f0 / sr;
+                        age += 1.0 / sr;
+                        buf.setSample (0, i, (float) s);
+                        buf.setSample (1, i, (float) s);
+                    }
+                    amp.process (buf);
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        const double v = (double) buf.getSample (0, i);
+                        if (! std::isfinite (v))
+                            finite = false;
+                        peak = juce::jmax (peak, std::abs (v));
+                        sumSq += v * v;
+                        ++n;
+                    }
+                }
+                return std::sqrt (sumSq / (double) n);
+            };
+
+            double basePeak = 0.0, swPeak = 0.0;
+            bool baseFinite = true, swFinite = true;
+            double baseRms;
+            {
+                DumbleSteelStringStyleAmplifierProcessor amp;
+                setParam (amp, "sss_volume", 0.6f);
+                amp.prepare (sr, 128, 2);
+                baseRms = pluckRms (amp, basePeak, baseFinite);
+            }
+            expect (baseFinite);
+            expect (baseRms > 1.0e-4);
+
+            const struct { const char* id; float v; const char* label; } switches[] = {
+                { "sss_bright", 1.0f, "bright" },
+                { "sss_mid_boost", 1.0f, "mid boost" },
+                { "sss_deep", 1.0f, "deep" },
+                { "sss_accent", 1.0f, "accent" },
+                { "sss_voicing", 0.0f, "jazz" },
+                { "sss_voicing", 1.0f, "pab" },
+                { "sss_filter_hi", 3.0f, "filter hi pos4" },
+                { "sss_filter_lo", 3.0f, "filter lo pos4" },
+            };
+            double pabRms = -1.0;
+            for (const auto& sw : switches)
+            {
+                DumbleSteelStringStyleAmplifierProcessor amp;
+                setParam (amp, "sss_volume", 0.6f);
+                setParam (amp, sw.id, sw.v);
+                amp.prepare (sr, 128, 2);
+                const double rms = pluckRms (amp, swPeak, swFinite);
+                logMessage (juce::String (sw.label) + " rms " + juce::String (rms, 4)
+                            + " (base " + juce::String (baseRms, 4) + "), peak " + juce::String (swPeak, 3)
+                            + ", failures " + juce::String (amp.getSolveFailureRate(), 6));
+                expect (swFinite, sw.label);
+                expectLessThan (swPeak, 5.0);
+                expect (rms > 1.0e-4);
+                expectLessThan (amp.getSolveFailureRate(), 1.0e-6);
+                if (juce::String (sw.id) == "sss_voicing" && sw.v == 1.0f)
+                    pabRms = rms;
+            }
+            expect (pabRms > baseRms * 1.3); // PAB lifts the stack legs: a big, unambiguous boost
+        }
+
         // ---- reducedOrder tests ----
         DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
 
