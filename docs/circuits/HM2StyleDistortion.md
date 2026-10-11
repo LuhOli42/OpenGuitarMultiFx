@@ -150,5 +150,7 @@ in EffectRegistry.
 Residual: a smaller ~2.4 dB windowed-peak difference remains on the mild gated-0.5-dist control and is
 identical at every coefficient including 0 -- a separate reduced-model difference, not the edge pop.
 CPU (RenderFx --bench, 48k mono 256-block): the wrapped eco path stays ~27% of a core either way -- the
-2x oversampling and wrappers dominate, so enabling reducedOrder never was a <10% route; the remaining
-lever is Orders{0,...} at eco, a measured-aliasing tradeoff documented in cpu-bench-2026-10-11.md.
+2x oversampling and wrappers dominate, so enabling reducedOrder never was a <10% route. The remaining
+lever, Orders{0,...} at eco, was measured and rejected (2026-10-11, PEDAL_ALIAS worst-case row on the
+shipped reduced model): non-harmonic/harmonic is -27.8 dB at 1x vs the -40 dB bar (2x sits at -39.5,
+which is why eco needs it). 1x is audibly aliased -- the pedal keeps Orders{1,1,2}.
