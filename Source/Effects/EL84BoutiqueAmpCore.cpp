@@ -619,6 +619,11 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
         buildChannel (ch);
         auto bmVoicing = tubeamp::voicings::classAChime;
         bmVoicing.asym = 0.06; // half-strength: the knee already shifts with the Bias control
+        if (model == Model::matchlessHC30)
+        {
+            bmVoicing.cabLpHz = 900.0;  // own netlist is much darker than the shared alnico voicing
+            bmVoicing.cabAirHz = 3000.0;
+        }
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
         bool ok = ch.supply.prepare (sampleRate / (double) supplyInterval);
         ok = ch.pre.prepare (sampleRate) && ok;

@@ -62,9 +62,10 @@ public:
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 70.0;   // closed-loop small-signal gain, pMix -> speaker, at the nominal rail (F37_POWERCAL)
     static constexpr double bmYmax = 0.30;    // peak output as a fraction of the (sagged) rail at full saturation -- fitted
+    static constexpr double bmLevelTrim = 0.155;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
     static constexpr double bmKneeN = 6.0;
     static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.7;
+    static constexpr double bmShelfHfGain = 0.55;
     // See TwinReverbStyleAmplifierProcessor's bmAsym/bmDcHz: real output stages clip
     // asymmetrically at centre bias (the odd saturator alone produces zero even harmonics);
     // bmAsym is fitted against this amp's full-order netlist (Tests/PowerStageAsymBench.cpp),

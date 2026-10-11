@@ -57,7 +57,7 @@ public:
     static constexpr double bmYmax = 0.0298;
     static constexpr double bmKneeN = 6.0;
     static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.7;
+    static constexpr double bmShelfHfGain = 0.8;
     // Real push-pull output stages never clip exactly symmetrically at centre bias (uneven
     // tube matching + cathode-bias drift); the saturator is a signed odd function, so without
     // a baseline offset it produces ZERO even harmonics at noon. bmAsym is the static offset

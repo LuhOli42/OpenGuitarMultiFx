@@ -419,7 +419,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // 2026-09-27 user approval as the Super Lead's own switch just above.
     BassmanStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("BassmanStyleAmplifier");
-    registry.registerType ("BassmanStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmed (oversampled<BassmanStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -14.53f); });
+    registry.registerType ("BassmanStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmed (oversampled<BassmanStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -24.29f); });
     // docs/circuits/TwinReverbAB763.md. reducedOrder calibrated (TR_POWERCAL) and verified (level tracks the reference
     // within 0.01-0.06 dB, PedalUnityLevelTests passing) -- shipped as the default, same as the Super Lead/Bassman.
     TwinReverbStyleAmplifierProcessor::reducedOrder = true;
@@ -438,7 +438,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // the doc's "power-stage instability" section) reference model -- shipped as the default, same as the other amps.
     JTM45StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("JTM45StyleAmplifier");
-    registry.registerType ("JTM45StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmed (oversampled<JTM45StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 20.99f); });
+    registry.registerType ("JTM45StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmed (oversampled<JTM45StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 12.01f); });
     // docs/circuits/JCM8002203.md. Reuses the Super Lead's own (already stable) power section unchanged; the preamp is
     // newly built (4 cascaded gain stages). reducedOrder placeholder trim pending its own J8_POWERCAL measurement.
     JCM800StyleAmplifierProcessor::reducedOrder = true;
@@ -539,12 +539,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // 2x6L6GC, zero global feedback, bias-vary tremolo, pentode/triode switch. reducedOrder behavioral power stage.
     CarrRamblerStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarrRamblerStyleAmplifier");
-    registry.registerType ("CarrRamblerStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmed (oversampled<CarrRamblerStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.44f); });
+    registry.registerType ("CarrRamblerStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmed (oversampled<CarrRamblerStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -7.99f); });
     // Divided by 13 FTR 37 (docs/circuits/DividedBy13FTR37.md): 5879 pentode "click" channel + blackface-like clean
     // channel mixed into an LTP PI and a fixed-bias 4x6V6 push-pull (Full/Half power). reducedOrder power stage.
     DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DividedBy13FTR37StyleAmplifier");
-    registry.registerType ("DividedBy13FTR37StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmed (oversampled<DividedBy13FTR37StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.9f); });
+    registry.registerType ("DividedBy13FTR37StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmed (oversampled<DividedBy13FTR37StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -7.51f); });
 
     // Four new big-iron heads (docs/circuits/{DumbleSteelString,SunnModelT,FryetteDeliveranceD120,
     // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
@@ -567,13 +567,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // (2-stage BJT preamp, Variamp EQ, saturating-op-amp 200 W stage). Full netlists; no reducedOrder.
     AmpegB15StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AmpegB15StyleAmplifier");
-    registry.registerType ("AmpegB15StyleAmplifier", EffectRegistry::Category::bassAmps, [] { return trimmed (oversampled<AmpegB15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 8.42f); });
+    registry.registerType ("AmpegB15StyleAmplifier", EffectRegistry::Category::bassAmps, [] { return trimmed (oversampled<AmpegB15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 17.81f); });
     AmpegV4BStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AmpegV4BStyleAmplifier");
     registry.registerType ("AmpegV4BStyleAmplifier", EffectRegistry::Category::bassAmps, [] { return trimmed (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.87f); });
     MesaBass400PlusStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MesaBass400PlusStyleAmplifier");
-    registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::bassAmps, [] { return trimmed (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.63f); });
+    registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::bassAmps, [] { return trimmed (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.61f); });
     Acoustic360StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Acoustic360StyleAmplifier");
     registry.registerType ("Acoustic360StyleAmplifier", EffectRegistry::Category::bassAmps, [] { return trimmed (oversampled<Acoustic360StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.28f); });
