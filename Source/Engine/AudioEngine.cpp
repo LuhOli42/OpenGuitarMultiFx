@@ -260,9 +260,11 @@ void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples
 {
     processCurrentGraph (buffer, numSamples);
 
-    // Spills never run during a swap fade: the recorded tail already carries the outgoing lane's
-    // sound, and a pending spill adding its tail on top would double-count the same tail.
-    if (! swapFadeActive)
+    // Spills never run in a block a swap fade touched: the recorded tail already carries the
+    // outgoing lane's sound in that region, and a pending spill adding its tail on top would
+    // double-count it. The flag survives a fade that ENDED mid-block too -- the spill simply
+    // waits one extra block, which is inaudible and keeps the rule per-block simple.
+    if (! swapFadeRanThisBlock)
         spillover.process (buffer, sampleRate.load (std::memory_order_relaxed));
 }
 
@@ -274,9 +276,12 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
     if (graph != activeGraph)
     {
         // Arm the swap fade: replay the last ~10 ms of output the outgoing graph already produced
-        // (recorded in outputTailRing) faded out under the new graph's live output. The retired
-        // graph itself is never run -- every processor it shares with the new graph would advance
-        // its state twice per block otherwise, which is exactly the rule spills live by.
+        // (recorded in outputTailRing) faded out under the new graph's live output, played BACKWARD
+        // from the most recent sample -- the first faded sample IS the last sample emitted, so the
+        // boundary is continuous even for identical graphs; replaying the window forward would jump
+        // the waveform ~10 ms back in time and click. The retired graph itself is never run --
+        // every processor it shares with the new graph would advance its state twice per block
+        // otherwise, which is exactly the rule spills live by.
         const double rate = sampleRate.load (std::memory_order_relaxed);
         const int window = rate > 0.0 ? juce::jmax (numSamples, (int) (0.010 * rate)) : 0;
         const bool recent = activeGraph != nullptr
@@ -286,12 +291,13 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
         {
             swapFadeActive = true;
             fadeOutSamplesTotal = fadeOutSamplesLeft = window;
-            tailReadIndex = (tailRingWrite - window + outputTailRing.getNumSamples())
+            tailReadIndex = (tailRingWrite - 1 + outputTailRing.getNumSamples())
                             % outputTailRing.getNumSamples();
         }
         activeGraph = graph;
     }
     lastCallbackTicks = now;
+    swapFadeRanThisBlock = false;
 
     if (graph != nullptr)
         graph->process (buffer);
@@ -337,10 +343,11 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
             for (int i = 0; i < n; ++i, t += dt)
             {
                 d[i] = (float) ((double) d[i] * t + (double) tail[p] * (1.0 - t));
-                if (++p >= ringLen) p = 0;
+                if (--p < 0) p = ringLen - 1; // backward through the recorded window
             }
         }
-        tailReadIndex = (tailReadIndex + n) % ringLen;
+        tailReadIndex = (tailReadIndex - n + ringLen) % ringLen;
+        swapFadeRanThisBlock = true;
         fadeOutSamplesLeft -= n;
         if (fadeOutSamplesLeft <= 0)
         {

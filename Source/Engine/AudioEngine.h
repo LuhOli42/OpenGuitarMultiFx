@@ -193,6 +193,7 @@ private:
     // allocates on the audio thread (the ring is sized in audioDeviceAboutToStart).
     SignalGraph* activeGraph = nullptr;      // the graph the previous block ran
     bool swapFadeActive = false;
+    bool swapFadeRanThisBlock = false;       // set whenever the fade mixed any part of the current block
     int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0;
     int tailRingWrite = 0;                   // next write position in outputTailRing (shared by all channels)
     int tailRingSamples = 0;                 // valid samples recorded, capped at the ring length

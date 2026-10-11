@@ -2010,10 +2010,10 @@ private:
         bool ok;
         if (deadlineIterations > 0 || stormMode)
         {
+            if (deadlineIterations > 0)
+                ++deadlineSamples; // explicit deadline work -- counted even while a storm also caps
             if (stormMode)
-                ++stormSamples; // kept separate: getDeadlineSamples() must mean explicit deadline solves
-            else
-                ++deadlineSamples;
+                ++stormSamples;    // independent: both counters can be true for one sample
             ok = newtonPortsFrom (u0, Wm, Km, curOut, 0)
                  || newtonPortsFrom (u0, Wm, Km, curOut, 1)
                  || newtonPortsFrom (u0, Wm, Km, curOut, 2);
