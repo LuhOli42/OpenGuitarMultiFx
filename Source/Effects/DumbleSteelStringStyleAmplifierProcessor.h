@@ -17,14 +17,18 @@ namespace openguitarmultifx
     an unusually high-voltage supply, and his signature direct-coupled cathode-follower drivers feeding the
     output grids. It is famous for clean headroom that does not run out -- Stevie Ray Vaughan's amp.
 
-    Modelled: three 12AX7 gain stages plus a cathode follower into the TMB stack, the 12AX7
-    long-tailed-pair phase inverter with global negative feedback, the dual cathode-follower driver stage
-    (the SSS signature) direct-coupled to the power grids, four 6L6GC as two push-pull pairs in fixed bias,
-    and the output transformer into a resonant speaker load. The FET input, the Hi/Lo filters, the rock/jazz
-    and boost switches, and the reverb send/return are not modelled.
+    Modelled: three 12AX7 gain stages plus a cathode follower into the #002-style distributed tone
+    stack (treble pot straddling the bass wiper, mid rheostat leg), the Hi/Lo 7-position filter bank and
+    the LNFB loop between V1B and V2A, the front-panel switches (Bright, Deep, Accent, Mid Boost,
+    Jazz/PAB/Rock), the 12AX7 long-tailed-pair phase inverter with global negative feedback, four 6L6GC
+    as two push-pull pairs in fixed bias, and the output transformer into a resonant speaker load.
+    The FET input, the direct-coupled driver stage (simplified to capacitive coupling), and the reverb
+    send/return are not modelled.
 
-    Controls, page 1 (mirrors the front panel): Volume, Treble, Middle, Bass, Presence, Master.
-    Page 2 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
+    Controls, page 1 (mirrors the front panel knobs): Volume, Treble, Middle, Bass, Presence, Master.
+    Page 2 (front-panel switches): Filter (Hi), Filter (Lo), Bright, Mid Boost, Deep, Accent,
+    Voicing (Jazz / PAB / Rock).
+    Page 3 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class DumbleSteelStringStyleAmplifierProcessor : public EffectProcessor
 {
@@ -99,11 +103,20 @@ private:
         NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pFollower = 0;
         double followerDc = 0.0;
 
+        // front-panel switch elements (pre circuit): Bright cap across the Volume pot,
+        // Jazz/Rock coupling cap, Hi/Lo 7-position filter links
+        int capBright = 0, capVoice = 0;
+        int rHiLink[7] = { 0, 0, 0, 0, 0, 0, 0 };
+        int rLoLink[7] = { 0, 0, 0, 0, 0, 0, 0 };
+
         // power section
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
-        int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
+        int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBassTop = 0, rBassBottom = 0, rMidVar = 0,
             rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMasterTop = 0, rMasterBottom = 0;
+        // PAB lifts the bass/mid legs (rLegLink feed, rMergeLink output); Jazz ties the treble-bottom
+        // network to the bass wiper (rPadLink); Deep swaps the direct link for the shelf network
+        int rLegLink = 0, rMergeLink = 0, rPadLink = 0, rDeepLink = 0, capAccent = 0, capMidBoost = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wOut = 0, wPlateA = 0, wPlateB = 0, wGridA = 0, wTail = 0,
                            wTone = 0, wPP1 = 0, wPP2 = 0, wPowerGridA = 0, wBias = 0, wFeedback = 0;
@@ -130,8 +143,16 @@ private:
     {
         double volume, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
         int speaker;
+        bool bright = false, midBoost = false, deep = false, accent = false;
+        int voicing = 2;    // 0 Jazz, 1 PAB, 2 Rock
+        int filterHi = 0, filterLo = 0; // 0..6, matching the real 7-position filter rotaries
     };
     void updatePots (const Knobs& k);
+    /** Reads the front-panel switch/filter params directly (stepped -- no smoothing needed) and
+        combines them with the smoothed knob values. */
+    Knobs knobsFromSmoothed (double vo, double tr, double mi, double ba, double pr, double ms,
+                             double pw, double bi, double fe, int speaker) const;
+    Knobs knobsFromParams() const;
     void recover (Channel& ch) const;
     void applySpeaker (Channel& ch, int index) const;
     int appliedSpeaker = -1;
@@ -162,6 +183,13 @@ private:
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
+    juce::AudioParameterFloat* filterHiParam = nullptr;
+    juce::AudioParameterFloat* filterLoParam = nullptr;
+    juce::AudioParameterFloat* brightParam = nullptr;
+    juce::AudioParameterFloat* midBoostParam = nullptr;
+    juce::AudioParameterFloat* deepParam = nullptr;
+    juce::AudioParameterFloat* accentParam = nullptr;
+    juce::AudioParameterFloat* voicingParam = nullptr;
 
     juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
