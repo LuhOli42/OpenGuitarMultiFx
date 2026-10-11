@@ -125,6 +125,6 @@ The -40 dB bar decided which eco orders could drop a step and which needed a red
 | Zendrive | -39.8 | borderline, kept |
 | Big Muff USA / Russian / Sovtek | -21.2 / -26.2 / -23.3 | reducedOrder: 4 saturating 1-port BJTs (~16% -> ~12% eco) |
 | Metal Zone | -21.9 (2x only -27.8) | stays 2x; reduced model is a bigger job (m5218 macros) |
-| HM-2 | -19.1 | stays 2x; reducedOrder still rejected (see its doc -- pop mechanism found, corner remains) |
+| HM-2 | -19.1 (reduced model, knobs 0.7); -27.8 worst case (knobs 1.0) | stays 2x; reducedOrder shipped (PR #85, bc-diode fix) but 1x is audibly aliased either way |
 | ToneBender Ge / Si | -15.3 / -14.5 | stays 2x; 1-port saturating swap misfit the Q2/Q3 feedback pair (level swings +-6 dB) |
 | DS-1 / BD-2 / OCD / CrunchBox / RATs / ODR-1 / DT-1 / Darkglass / TubeDriver / FuzzFaces | -10 .. -35 | stays 2x (all fail the -40 dB bar) |

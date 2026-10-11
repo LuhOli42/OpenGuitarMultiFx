@@ -298,7 +298,8 @@ public:
                 { "Zendrive", [] { return std::make_unique<ZendriveStyleOverdriveProcessor>(); } },
                 { "OCD", [] { return std::make_unique<OCDStyleOverdriveProcessor>(); } },
                 { "DS-1", [] { return std::make_unique<DS1StyleDistortionProcessor>(); } },
-                { "HM-2", [] { return std::make_unique<HM2StyleDistortionProcessor>(); } },
+                { "HM-2", [] { HM2StyleDistortionProcessor::reducedOrder = true; // shipped eco path (PR #85)
+                              return std::make_unique<HM2StyleDistortionProcessor>(); } },
                 { "BD-2", [] { return std::make_unique<BD2StyleOverdriveProcessor>(); } },
                 { "Big Muff Sovtek", [] { return std::make_unique<BigMuffStyleFuzzProcessor> (BigMuffStyleFuzzProcessor::Model::sovtekFirstEdition); } },
                 { "Bass Big Muff", [] { return std::make_unique<BassBigMuffStyleFuzzProcessor>(); } },
@@ -329,6 +330,26 @@ public:
                     logMessage (juce::String (name) + ", " + juce::String (1 << order) + "x: non-harmonic/harmonic = "
                                 + juce::String (aliasDb (render (*chain, 0.5)), 1) + " dB");
                 }
+            }
+
+            // HM-2 eco gate (Orders{0,1,2} candidate): worst case = every knob maxed on the shipped
+            // reduced model. Ship only if 1x stays under the -40 dB bar (docs/circuits/Oversampling.md).
+            if (only.isEmpty() || juce::String ("HM-2").containsIgnoreCase (only))
+            {
+                HM2StyleDistortionProcessor::reducedOrder = true;
+                HM2StyleDistortionProcessor::satBcDiode6 = 0.25;
+                for (int order : { 0, 1, 2 })
+                {
+                    std::unique_ptr<EffectProcessor> chain = std::make_unique<HM2StyleDistortionProcessor>();
+                    setKnobs (*chain, 1.0f);
+                    if (order > 0)
+                        chain = std::make_unique<OversampledEffect> (std::move (chain), order);
+                    chain->prepare (sr, 512, 1);
+                    logMessage ("HM-2 worst (knobs 1.0, reducedOrder), " + juce::String (1 << order)
+                                + "x: non-harmonic/harmonic = " + juce::String (aliasDb (render (*chain, 0.5)), 1) + " dB");
+                }
+                HM2StyleDistortionProcessor::reducedOrder = false;
+                HM2StyleDistortionProcessor::satBcDiode6 = 0.25;
             }
         }
 
