@@ -352,6 +352,10 @@ public:
     void setBjtSaturationCurrent (int bjtIndex, double amps) noexcept
     {
         bjts[(size_t) bjtIndex].iSat = amps;
+        // the limit is not part of the excitation vector: a settled circuit must solve once
+        // more to pick it up (same reason a knob-dragged resistor sets modelsDirty)
+        settleCount = 0;
+        lastSolveOk = false;
     }
 
     /** Opt-in for one-port BJTs whose drive node must feel saturation: returns the collector
@@ -360,6 +364,8 @@ public:
     void setBjtSatExcessToBase (int bjtIndex, bool on) noexcept
     {
         bjts[(size_t) bjtIndex].satExcessToBase = on;
+        settleCount = 0;
+        lastSolveOk = false;
     }
 
     /** N-channel JFET. Gate current is taken as zero. `assumedVds` > 0 marks a JFET that stays in saturation (a
