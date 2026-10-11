@@ -495,18 +495,28 @@ double TwinReverbStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, dou
     ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double shift = 0.6 * (bias - 0.5) * k;
+    // The fitted offset rides the drive envelope: pair imbalance grows with swing (the stage
+    // is ~linear below the knee, where a static shift would crush clean small-signal gain).
+    const double envScale = juce::jlimit (0.0, 1.0, ch.bmEnvelope / juce::jmax (1.0e-9, k));
+    const double shift = (bmAsym * envScale + 0.6 * (bias - 0.5)) * k;
     const auto sat = [k, rail = ch.bmRail] (double xx)
     {
         const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
         const double yx = bmYmax * ux / std::pow (1.0 + std::pow (ux, bmKneeN), 1.0 / bmKneeN);
         return std::copysign (yx * rail, xx);
     };
-    const double raw = sat (driveVoltage + shift) - sat (shift);
+    const double raw = juce::jlimit (-ch.bmRail * bmYmax, ch.bmRail * bmYmax,
+                                     sat (driveVoltage + shift) - sat (shift));
+
+    // OT DC-block: the offset clip rectifies part of the signal into a moving DC
+    // level a real output transformer cannot pass.
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / juce::jmax (1.0, sampleRate));
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double blocked = raw - ch.bmDcState;
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
-    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState));
+    ch.bmToneState += shelfCoeff * (blocked - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState));
     return ch.bmOutput;
 }
 
@@ -593,7 +603,9 @@ void TwinReverbStyleAmplifierProcessor::prepare (double newSampleRate, int maxBl
     {
         ch = Channel {};
         buildChannel (ch);
-        ch.bmTail.prepare (sampleRate, voicings::fenderClean, 1.0 / outputScale);
+        auto bmVoicing = voicings::fenderClean;
+        bmVoicing.asym = 0.0; // the bench fit carries zero static asym (it lives in the preamp drive) — a quadratic tail term would double-count even content
+        ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
     const auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double time)
@@ -670,6 +682,7 @@ void TwinReverbStyleAmplifierProcessor::prepare (double newSampleRate, int maxBl
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.bmDcState = 0.0;
     }
 
     controlCounter = 0;

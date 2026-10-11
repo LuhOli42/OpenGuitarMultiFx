@@ -453,20 +453,32 @@ double CarrRamblerStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     const double biasTrim = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
     ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
     if (lastKnobs.mode == 1)
-        ch.bmRail *= 0.75;
+        ch.bmRail *= 0.5; // strapped triode swings far less than pentode (real amp: a quarter or less of the power)
 
-    const double asym = 0.3 * (biasTrim - 0.5) * bmYmax;
-    const double drive = (lastKnobs.mode == 1 ? 0.8 : 1.0) * driveVoltage + asym;
     const double k = ch.bmRail * bmYmax / bmGain0;
+    // The fitted offset rides the drive envelope: pair imbalance grows with swing (the stage
+    // is ~linear below the knee, where a static shift would park the op point deep in it and
+    // crush clean small-signal gain). The bias knob keeps its literal meaning: a static offset.
+    const double envScale = juce::jlimit (0.0, 1.0, ch.bmEnvelope / juce::jmax (1.0e-9, k));
+    const double asym = (bmAsym * envScale + 0.3 * (biasTrim - 0.5)) * bmYmax;
+    const double drive = (lastKnobs.mode == 1 ? 0.8 : 1.0) * driveVoltage + asym;
     const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
     // signed odd saturator f(x)=copysign(knee(|x|),x) — the form the other amps moved to.
     const auto f = [&] (double x) { const double ux = std::abs (x) / juce::jmax (1.0e-9, k);
                                     return std::copysign (knee (ux), x); };
-    const double raw = (f (drive) - f (asym)) * ch.bmRail;
+    // Clamp to the rail: the stage cannot swing past it (and the offset clip could
+    // otherwise reach 2x the one-sided ceiling).
+    const double raw = juce::jlimit (-bmYmax, bmYmax, f (drive) - f (asym)) * ch.bmRail;
+
+    // OT DC-block: the offset clip rectifies part of the signal into a moving DC
+    // level a real output transformer cannot pass.
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / juce::jmax (1.0, sampleRate));
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double blocked = raw - ch.bmDcState;
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
-    ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState));
+    ch.bmToneState += shelfCoeff * (blocked - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState));
     return ch.bmOutput;
 }
 
@@ -618,6 +630,7 @@ void CarrRamblerStyleAmplifierProcessor::prepare (double newSampleRate, int maxB
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.bmDcState = 0.0;
     }
 
     controlCounter = 0;

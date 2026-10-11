@@ -65,6 +65,12 @@ public:
     static constexpr double bmKneeN = 6.0;
     static constexpr double bmShelfHz = 90.0;
     static constexpr double bmShelfHfGain = 0.7;
+    // See TwinReverbStyleAmplifierProcessor's bmAsym/bmDcHz: real output stages clip
+    // asymmetrically at centre bias (the odd saturator alone produces zero even harmonics);
+    // bmAsym is fitted against this amp's full-order netlist (Tests/PowerStageAsymBench.cpp),
+    // bmDcHz models the OT's inability to pass the rectified DC component.
+    static constexpr double bmAsym = 8.05;
+    static constexpr double bmDcHz = 8.0;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -119,7 +125,7 @@ private:
                            wPP1 = 0, wPP2 = 0, wKA2 = 0, wKB2 = 0, wOut = 0;
 
         // reducedOrder behavioural state
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
 
         // supply: rectifier -> plate rail (sA) -> screen node (sB); PI / preamp taps are RC-filtered from sB

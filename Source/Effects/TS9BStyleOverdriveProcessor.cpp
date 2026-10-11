@@ -36,7 +36,10 @@ TS9BStyleOverdriveProcessor::TS9BStyleOverdriveProcessor()
     parameters = std::move (group);
 
     for (auto& ch : channels)
+    {
         ch.clipper.setParameters (diodeSaturationCurrent, diodeThermalVoltage * diodeIdealityFactor, 1.0, 1.0);
+        ch.clipper.setDynamics (diodeTransitTime, diodeJunctionCap);
+    }
 }
 
 void TS9BStyleOverdriveProcessor::prepare (double newSampleRate, int, int)
@@ -73,6 +76,7 @@ void TS9BStyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         ch.c8.prepare (newSampleRate, c8Value);
         ch.c9.prepare (newSampleRate, c9Value);
         ch.cDry.prepare (newSampleRate, cDryValue);
+        ch.clipper.setSampleRate (newSampleRate);
         ch.clipper.reset (0.0);
     }
 
@@ -112,6 +116,7 @@ void TS9BStyleOverdriveProcessor::reset()
         ch.c8.reset();
         ch.c9.reset();
         ch.cDry.reset();
+        ch.clipper.reset (0.0);
     }
 }
 

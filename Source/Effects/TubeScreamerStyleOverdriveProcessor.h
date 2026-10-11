@@ -167,6 +167,10 @@ private:
     static constexpr double diodeSaturationCurrent = 2.52e-9;
     static constexpr double diodeIdealityFactor = 1.752;
     static constexpr double diodeThermalVoltage = 25.85e-3;
+    // 1N914/1N4148 charge dynamics: ~4 ns forward transit time (the convention
+    // NodalCircuit::addDiode's tauF uses project-wide) + ~4 pF junction capacitance.
+    static constexpr double diodeTransitTime = 4.0e-9;
+    static constexpr double diodeJunctionCap = 4.0e-12;
 };
 
 } // namespace openguitarmultifx
