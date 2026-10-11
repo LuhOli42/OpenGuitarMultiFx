@@ -174,6 +174,37 @@ A new tube amp would reuse `TubeModels.h` (12AX7 and 12AY7 sets, a fitted beam t
 the supply pattern (a small linear NodalCircuit fed by the power block's tube currents), and the test pattern
 (compare stage gains, the open-loop transfer curve and the supply sag against a published analysis).
 
+### Dead-reference repair: the kg1 softening is gone
+
+Twelve amps (jcm800, slo100, markiic, dualrect, evh5150, powerball, rockerverb, dumble, sunn,
+deliverance, uberschall, v4b) shipped with a `p.kg1 *= 40.0` (70x for the JCM800) multiplier on BOTH
+the phase-inverter triode and the output pentode pair -- a stability band-aid copied from one template
+session. Since `ip ~ E1^Ex / kg1`, the multiplier divided plate current and transconductance by ~40,
+which mechanically produced the ~32-57 dB "dead reference" collapse the consistency sweep measured --
+the softening WAS the bug, not a cure for it. The instability it originally suppressed (chaotic
+self-oscillation from silence) no longer reproduces: the damped-integrator power blocks
+(`setIntegrationTheta(powerTheta)`, 0.9) are what actually stabilised those loops. All twelve
+un-softened netlists measure silence-stable (startup ring decays to ~0 V within ~1 s).
+
+The sweep also exposed three real wiring bugs in the same amps, now fixed:
+
+- **PI grid-B leak referenced the ~0 V feedback node instead of the elevated tail midpoint**
+  (evh5150, rockerverb, sunn): the second LTP triode's grid sat ~27 V below its shared cathode --
+  hard cutoff, dead or asymmetric PI. Leaks moved to the tail node, and the tail now returns through
+  the feedback node (same shape as the Super Lead's presence-in-tail wiring) so the summed NFB still
+  reaches the stage.
+- **rockerverb R26** (grid A's 1M leak) returned to ground rather than the tail midpoint -- same
+  cutoff on the input side. Re-referenced.
+- **evh5150 R48** (documented as a 100k plate-B -> grid-A feedback) loaded the driver into a ~14 dB
+  loss as wired; omitted -- neither polarity measures correct.
+- **AmpegV4B pair merge** applied `kg2 *= 0.5` twice and never halved `kg1`; corrected.
+
+Residual documented gaps vs the fitted reduced stages (healthy references, not collapses): v4b sits
+~14 dB below its reduced path because its 15.8:1 half-to-secondary OT ratio onto the 4-ohm tap caps
+speaker volts by design; rockerverb and sunn sit ~9-12 dB below, driven by a weak but faithful
+upstream signal. The consistency test now locks the healed levels with real tracking bounds instead
+of the dead-reference markers.
+
 ## Multi-mic / dynamic cabinet simulation
 
 Not a "circuit" in the SPICE-topology sense (no schematic, no active device) — `DynamicCabProcessor` (see `Source/Effects/AGENTS.md`'s decision log) blends two convolution IRs, optionally level-dependent. Listed here only so it's not confused for a missing family; it doesn't belong in the table above and doesn't need `EbersMollBJT`/`TrapezoidalCapacitor`.

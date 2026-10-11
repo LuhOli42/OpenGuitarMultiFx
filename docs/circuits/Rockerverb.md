@@ -69,10 +69,14 @@ tone stack input source.
 
 **Phase inverter**: V5-A/V5-B 12AX7 long-tailed pair. 82K/100K plate loads, 10K+47K tail,
 100nF coupling from master to grid A, 47nF cross-coupling from PI plate B to grid B, 1M grid leaks.
-PI triode uses kg1×40 for stability (same pattern as all other amps in this project).
+PI triode used kg1×40 for stability -- REMOVED (it was the reference-collapse mechanism; see
+CircuitFamilies.md's dead-reference repair section). Two real wiring bugs were also fixed here: R26
+(grid A's 1M leak) returned to ground instead of the elevated tail midpoint, and grid B's leak
+referenced the ~0 V feedback node -- both left the LTP in cutoff.
 
 **Power tubes**: 4×6V6 modelled as two push-pull pairs (merged parameters: kg1×0.5, kg2×0.5,
-Gg×2.0). Published Koren 6V6GT: kg1=1400, then ×0.5 pair merge ×40 stability = 28,000 (same
+Gg×2.0). Published Koren 6V6GT: kg1=1400, then ×0.5 pair merge = 700 -- the ×40 stability step that
+used to sit here (28,000) was removed with the rest of the codebase's softening (same
 magnitude as the EVH 5150's 6L6GC pair at 29,200). Fixed bias at -40V. 1K0 grid stoppers, 220K
 grid leaks to bias node. Cathodes grounded (same proven pattern as 5150/Powerball — the schematic
 shows individual 1K5 cathode resistors but the model uses the fixed-bias ground pattern for
@@ -112,8 +116,9 @@ Sag table scaled from Deluxe Reverb measurements (same 6V6 tube type, 415V→410
 
 The Deluxe Reverb's `pentode6V6()` uses kg1=9000. That is already a stability-raised value from
 the published Koren 6V6GT kg1=1400. The Rockerverb uses the published value (1400) as the base,
-then applies pair merge (×0.5) and stability (×40), giving kg1=28,000. Using the Deluxe Reverb's
-already-stabilized 9000 as a base would have produced kg1=180,000, making the power tubes
+then applies pair merge (×0.5), giving kg1=700 -- the further ×40 softening was removed (see the
+dead-reference repair note). Using the Deluxe Reverb's
+already-stabilized 9000 as a base would have produced kg1=180,000 under the old scheme, making the power tubes
 completely non-conductive at the -40V bias.
 
 ## Bias and operating point

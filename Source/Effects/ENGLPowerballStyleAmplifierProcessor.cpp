@@ -49,7 +49,7 @@ namespace
     KorenTriode::Parameters triode12AX7Pi()
     {
         auto p = triode12AX7();
-        p.kg1 *= 40.0;
+
         return p;
     }
 
@@ -66,7 +66,7 @@ namespace
     KorenPentode::Parameters pentode6L6PairPower()
     {
         auto p = pentode6L6Pair();
-        p.kg1 *= 40.0;
+
         return p;
     }
 

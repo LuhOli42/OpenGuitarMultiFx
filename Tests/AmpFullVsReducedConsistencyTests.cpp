@@ -353,9 +353,10 @@ public:
 
     /** Per-amp regression bounds measured by the sweep at the calibration operating point
         (power/master = 1.0, volts domain = Probe::speaker, the domain the reduced stages are
-        fitted in). `levelDb`/`bandDb` bound |delta| against the full-netlist reference; a
-        negative levelDb marks a DOCUMENTED-dead reference netlist (dead NFB / gain-collapse,
-        ~32-57 dB below the reduced path -- see each amp header's reduced-order note): for those,
+        fitted in). `levelDb`/`bandDb` bound |delta| against the full-netlist reference (all previously-dead
+        netlists were healed -- see CircuitFamilies.md's dead-reference repair section -- so every
+        amp now carries a real tracking bound). A negative levelDb marks a DOCUMENTED-dead reference
+        netlist (dead NFB / gain-collapse, ~32-57 dB below the reduced path): for those,
         `redAbsDb` locks the reduced path's own absolute level (sine 0.2, dB) so the shipped
         behavioural stage can drift but never silently die, and |level| is only checked to still
         indicate the collapsed regime. Re-measure with AMP_SWEEP=1 after changing a reduced path. */
@@ -365,19 +366,19 @@ public:
         static constexpr Bound b[] = {
             { "superlead",   4.0,  8.0, 0.0 }, { "bassman",      4.0, 16.0, 0.0 },
             { "twin",        3.0,  5.0, 0.0 }, { "deluxe",       7.0, 26.0, 0.0 },
-            { "jtm45",       7.0, 26.0, 0.0 }, { "jcm800",      -1.0,  0.0, 35.0 },
+            { "jtm45",       7.0, 26.0, 0.0 }, { "jcm800",       4.0,  6.0, 0.0 },
             { "ac15",        5.0, 10.0, 0.0 }, { "ac30",         6.0,  6.0, 0.0 },
             { "matchless",   9.5, 17.0, 0.0 }, { "hotcat",       3.0, 11.0, 0.0 },
             { "carmenghia",  4.0,  8.0, 0.0 }, { "astroverb",    4.0,  7.0, 0.0 },
-            { "slo100",     -1.0,  0.0, 35.0 }, { "markiic",    -1.0,  0.0, 35.0 },
-            { "dualrect",   -1.0,  0.0, 35.0 }, { "evh5150",    -1.0,  0.0, 35.0 },
-            { "powerball",  -1.0,  0.0, 35.0 }, { "rockerverb", -1.0,  0.0, 35.0 },
+            { "slo100",       8.0,  5.0, 0.0 }, { "markiic",      5.0,  6.0, 0.0 },
+            { "dualrect",     4.0,  5.0, 0.0 }, { "evh5150",     12.0,  3.0, 0.0 },
+            { "powerball",    7.0,  3.0, 0.0 }, { "rockerverb",  17.0,  8.0, 0.0 },
             { "eh150",       4.0,  7.0, 0.0 }, { "herzog",       4.0,  7.0, 0.0 },
             { "knucklehead", 4.0, 12.0, 0.0 }, { "carr",         1.5,  5.0, 0.0 },
-            { "ftr37",       4.0, 10.0, 0.0 }, { "dumble",      -1.0,  0.0, 35.0 },
-            { "sunn",       -1.0,  0.0, 35.0 }, { "deliverance",-1.0,  0.0, 35.0 },
-            { "uberschall", -1.0,  0.0, 35.0 }, { "b15",         3.0, 13.0, 0.0 },
-            { "v4b",        -1.0,  0.0, 35.0 }, { "mesa400",     2.5, 10.0, 0.0 },
+            { "ftr37",       4.0, 10.0, 0.0 }, { "dumble",       4.0,  9.0, 0.0 },
+            { "sunn",        18.0, 15.0, 0.0 }, { "deliverance",  3.0, 12.0, 0.0 },
+            { "uberschall",   3.0, 14.0, 0.0 }, { "b15",         3.0, 13.0, 0.0 },
+            { "v4b",         18.0, 30.0, 0.0 }, { "mesa400",     2.5, 10.0, 0.0 },
             { "acoustic360", 4.0,  9.0, 0.0 },
         };
         for (const auto& e : b)

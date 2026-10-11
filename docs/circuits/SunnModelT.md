@@ -48,7 +48,10 @@ Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
 
 ## Stability / verification
 
-- kg1×40 on PI triodes and power pentode pairs.
+- kg1×40 on PI triodes and power pentode pairs -- REMOVED (it was the reference-collapse mechanism;
+  see CircuitFamilies.md's dead-reference repair section). The PI's second grid leak was also moved
+  from the ~0 V feedback node to the tail midpoint (it had sat ~27 V below the cathode = cutoff), and
+  the tail now returns through the feedback node, same shape as the Super Lead.
 - DC: plates ~505V; unity trim calibrated for the PedalUnityLevel suite.
 - `Tests/SunnModelTStyleAmplifierProcessorTests.cpp`: DC convergence, silence settle, pluck, both
   channels and the More/Normal volume interaction.

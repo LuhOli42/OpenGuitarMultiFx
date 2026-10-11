@@ -33,6 +33,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ReductionProbe.cpp
   ReducedOrderEquivalenceTests.cpp
   AmpFullVsReducedConsistencyTests.cpp
+  AmpReferenceHealthTests.cpp
   EffectCostBench.cpp
   PowerStageAsymBench.cpp
   SagEmulatorTests.cpp

@@ -91,13 +91,15 @@ Choke-filtered chain: sA (plates, 220µF, 150K bleeder) → CHOKE → sB (screen
 
 ## Open issues
 
-Same kg1 instability pattern as the SLO-100, Mark IIC+, and JCM800: the full reference model's absolute
-gain is collapsed by the 40x kg1 stability fix on both PI triode and power pentode. The reduced-order
+Same kg1 instability pattern as the SLO-100, Mark IIC+, and JCM800. The 40x kg1 stability fix that
+collapsed the full reference's gain has since been REMOVED (the instability it suppressed no longer
+reproduces -- see CircuitFamilies.md's dead-reference repair section). The reduced-order
 power stage keeps the Twin Reverb's own fitted 6L6GC constants (same tube type, same push-pull topology)
 rather than calibrating against this unreliable reference.
 
 ## Performance
 
-- Full model plucked note: 0 failures, 0 recoveries (but near-silent output due to kg1 collapse, peak 0.016)
+- Full model plucked note: 0 failures, 0 recoveries (was near-silent under kg1 collapse, peak 0.016;
+  healed to a healthy level once the softening was removed)
 - Reduced-order: ~10% avg CPU (4 preamp gain stages — slightly lighter than the 5-stage SLO-100/Mark IIC+)
 - Unity trim: -23.06 dB

@@ -51,11 +51,11 @@ namespace
 
     KorenTriode::Parameters triode12AX7Pi()
     {
-        auto p = triode12AX7();
-        // kg1 softened 40x for closed-loop stability (split with the power pentode below).
-        // Same proven pattern as SLO-100 and JCM800 -- start at 40x, adjust only if the silence
-        // test fails or the reference gain is unreasonably collapsed.
-        p.kg1 *= 40.0;
+        auto p = triode12AX7(); // kg1 NOT softened: a p.kg1 *= 40.0 stability band-aid used to live here (it divided plate
+        // current and gm by ~40, collapsing the full-netlist reference ~32-57 dB below the shipped
+        // reduced stage). The instability it suppressed no longer reproduces -- the damped-integrator
+        // power blocks (setIntegrationTheta(powerTheta)) fixed that class of failure -- and the
+        // un-softened netlists measure silence-stable, so the published Koren values now stand.
         return p;
     }
 
@@ -72,7 +72,7 @@ namespace
     KorenPentode::Parameters pentode6L6PairPower()
     {
         auto p = pentode6L6Pair();
-        p.kg1 *= 40.0;
+
         return p;
     }
 
