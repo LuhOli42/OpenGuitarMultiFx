@@ -152,6 +152,7 @@ public:
 
         if (juce::SystemStats::getEnvironmentVariable ("MZ_EXPLORE", {}).isNotEmpty())
         {
+            MetalZoneStyleDistortionProcessor::reducedOrder = juce::SystemStats::getEnvironmentVariable ("MZ_REDUCED", {}).isNotEmpty();
             beginTest ("explore (dev only)");
             const double freqs[] = { 50, 100, 200, 400, 800, 1600, 3200, 6400, 12000 };
             {
@@ -206,6 +207,39 @@ public:
                     line << juce::String (f, 0) << ": " << juce::String (outDb (k, f, 0.0001), 1) << "  ";
                 logMessage ("Middle 1, Mid Freq " + juce::String (mf, 2) + ": " + line);
             }
+            // stage-by-stage error: full netlist vs companion model on the same hot input
+            for (float d : { 0.2f, 0.5f, 0.9f })
+            {
+                K k; k.dist = d;
+                MetalZoneStyleDistortionProcessor full, red;
+                MetalZoneStyleDistortionProcessor::reducedOrder = false;
+                full.prepare (sr, 128, 1); setKnobs (full, k);
+                MetalZoneStyleDistortionProcessor::reducedOrder = true;
+                red.prepare (sr, 128, 1); setKnobs (red, k);
+                const Probe probes[4] = { Probe::ic3b, Probe::ic3a, Probe::ic4b, Probe::ic4a };
+                const char* names[4] = { "ic3b", "ic3a", "ic4b", "ic4a" };
+                double err[4] = {}, peak[4] = {}; int firstBad[4] = { -1, -1, -1, -1 };
+                juce::AudioBuffer<float> buf (1, 1);
+                double phase = 0.0;
+                const int N = (int) sr;
+                for (int n = 0; n < N; ++n)
+                {
+                    phase += 2.0 * juce::MathConstants<double>::pi * 400.0 / sr;
+                    const float x = (float) (0.1 * std::sin (phase));
+                    buf.setSample (0, 0, x); full.process (buf);
+                    buf.setSample (0, 0, x); red.process (buf);
+                    for (int j = 0; j < 4; ++j)
+                    {
+                        const double diff = std::abs (full.debugVoltage (probes[j]) - red.debugVoltage (probes[j]));
+                        err[j] += diff * diff; peak[j] = juce::jmax (peak[j], diff);
+                        if (diff > 0.1 && firstBad[j] < 0) firstBad[j] = n;
+                    }
+                }
+                for (int j = 0; j < 4; ++j)
+                    logMessage ("dist " + juce::String (d, 1) + " " + names[j] + ": err rms " + juce::String (std::sqrt (err[j] / N) * 1000.0, 2)
+                                + " mV, peak " + juce::String (peak[j] * 1000.0, 1) + " mV, first>100mV at sample " + juce::String (firstBad[j]));
+            }
+            MetalZoneStyleDistortionProcessor::reducedOrder = false; // don't leak the flag into the tests below
         }
 
         beginTest ("hot input and random knob moves: finite, and the solver never fails");

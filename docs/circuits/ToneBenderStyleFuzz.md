@@ -119,3 +119,11 @@ Unity trims: **+6.14 dB** (germanium), **+1.29 dB** (silicon).
 Bypass switching and the LED; the 47 uF supply decoupling cap (the supply is ideal, so it would sit across an ideal
 source); pickup inductance (see `FuzzFaceStyleFuzz.md`); temperature and battery impedance; and the parts' real
 spread, which for a Tone Bender is a large part of why two of them sound different.
+
+## reducedOrder status (2026-10-11)
+Not attempted this session (MetalZone consumed it). The #79 analysis stands: a Big-Muff-style one-port
+saturating BJT misses the fit here because the two transistors are DIRECT-COUPLED -- Q3's base sits on Q2's
+collector, so Q2's load line is not resistive and its saturation point is input-dependent, which is exactly
+what the one-port's fixed `saturationCurrent` cannot express. The likely fix is a two-port device on Q2
+(or a one-port whose saturation current tracks the measured Q3 base voltage), gated on the
+ReducedOrderEquivalence harness with both Ge and Si parameter sets.

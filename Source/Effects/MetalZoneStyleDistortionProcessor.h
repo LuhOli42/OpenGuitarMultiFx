@@ -30,6 +30,7 @@ class MetalZoneStyleDistortionProcessor : public EffectProcessor
 {
 public:
     MetalZoneStyleDistortionProcessor();
+    ~MetalZoneStyleDistortionProcessor() override; // out-of-line: Channel holds a unique_ptr<ReducedFrontEnd>
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
@@ -37,6 +38,14 @@ public:
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Metal Zone-Style Distortion"; }
+
+    /** Eco-tier CPU: buildChannel() swaps blocks 0-2 (input buffer, the two gain stages and the diode
+        clipper) for a per-component behavioural solve that keeps the same trapezoidal capacitor models
+        but no Newton iterations. Blocks 3-4 (the High/Low and Middle/MidFreq EQ + output stage) stay
+        netlist -- they are linear in practice, so the equivalence numbers live or die on the clip chain.
+        Off by default: it misses the equivalence bar (see EffectRegistry + the circuit doc); the
+        MZ_EXPLORE stage-diff probe in the tests measures reduced-vs-netlist for the next attempt. */
+    static inline bool reducedOrder = false;
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8a8f99); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
@@ -53,9 +62,16 @@ public:
 private:
     static constexpr int numBlocks = 5;
 
+    /** The blocks 0-2 substitute used when reducedOrder is set (defined in the .cpp). */
+    struct ReducedFrontEnd;
+
     struct Channel
     {
+        Channel() = default;
+        Channel& operator= (const Channel&); // DualMono state sync; clones `reduced` in place (no alloc once built)
+
         std::array<NodalCircuit, numBlocks> blk;
+        std::unique_ptr<ReducedFrontEnd> reduced; // non-null <=> this channel runs the behavioural front-end
         int srcIn = 0;
         std::array<int, numBlocks> srcPrev {}; // blocks 1..5: the previous block's output
         std::array<NodalCircuit::Node, numBlocks> out {};
