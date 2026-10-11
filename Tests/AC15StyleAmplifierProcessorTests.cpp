@@ -42,9 +42,9 @@ public:
                         + ", power plateB " + juce::String (amp.debugVoltage (P::powerPlateB), 1)
                         + ", cathode bias " + juce::String (amp.debugVoltage (P::cathodeBias), 1)
                         + ", plate current total " + juce::String (amp.plateCurrentTotal() * 1000.0, 2) + " mA");
-            expect (amp.railPlates() > 380.0 && amp.railPlates() < 460.0);
-            // Cathodyne PI: equal 47k plate/cathode loads should sit reasonably close to each other in DC (both start
-            // from the same rail/ground pair through equal resistors and equal current).
+            expect (amp.railPlates() > 300.0 && amp.railPlates() < 370.0); // OS/005's real ~340-350 V HT
+            // LTP PI (OS/005, not the cathodyne the doc described): the driven half's plate sits far above the
+            // shared tail node at idle.
             const double piPlate = amp.debugVoltage (P::piPlate), piCathode = amp.debugVoltage (P::piCathode);
             logMessage ("PI plate/cathode split: " + juce::String (piPlate, 1) + " / " + juce::String (piCathode, 1));
             expect (piPlate > piCathode, "the plate side sits well above the cathode side (idle, no signal)");

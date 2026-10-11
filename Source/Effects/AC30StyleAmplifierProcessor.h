@@ -15,14 +15,16 @@ namespace openguitarmultifx
     docs/circuits/AC30TopBoost.md -- read that file to understand this processor). Shares the AC15's own family
     traits (cathode-biased EL84 output tubes, no global negative feedback -- confirmed absent on this circuit's own
     factory power-amp drawing) but scales up: FOUR EL84s as two parallel pairs (not two single tubes), a genuine
-    long-tailed-pair phase inverter (not a cathodyne -- a single triode couldn't drive four grids symmetrically), and
+    self-balancing phase inverter -- the real AC30 network (cathode-driven second half, floating tail, 47k
+    bootstrap to the driven grid), not a textbook LTP, fixed 2026-10-11 -- and
     a newly-built two-gain-stage-plus-cathode-follower preamp feeding the famous "Top Boost" Treble/Bass tone stack
     (a bridged RC network, not a simple TMB ladder). The Normal channel (no Top Boost tone stack, mixed in on the
     real amp) is not modelled, matching this project's single-channel scoping for the JTM45/JCM800/AC15.
 
     Controls, page 1: Input (High / Low sensitivity jack), Volume, Treble, Bass (the real amp's own Top Boost
-    controls), Cut (treble roll-off, the real amp's own "Cut" control in the NFB loop, modelled as a one-pole LPF on
-    the output), Page 2 (synthetic, plus Output -- a plug-in level control; the real amp has no master volume): Power Drive (a synthetic
+    controls), Cut (the real amp's own Top Cut: a 4.7 nF + 250k pot wired BETWEEN the two power-tube grids so
+    opposite-phase treble cancels -- it is not a post-power LPF, and the real amp has no NFB loop for it to live
+    in; the reduced-order path keeps a one-pole LPF approximation), Page 2 (synthetic, plus Output -- a plug-in level control; the real amp has no master volume): Power Drive (a synthetic
     master ahead of the phase inverter, matching this project's convention), Bias (a synthetic shift of the shared
     cathode-bias resistor -- the real amp has no adjustable bias trim, being self-biased), Tube Feel, Speaker
     (4 / 8 / 16 ohm, matching the real amp's own transformer taps exactly).
@@ -41,15 +43,18 @@ public:
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2a2a2a); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
-    static constexpr double outputScale = 1.0 / 45.0;
+    // Re-derived 2026-10-11 after the topology audit (real ~330 V rail, self-balancing PI, un-softened
+    // EL84 pair, real Top Cut network): the corrected power stage is +3.35 dB louder at noon, so the
+    // volts->audio normalization widens 1/45 -> 1/66 to keep the PedalUnityLevel contract.
+    static constexpr double outputScale = 1.0 / 66.0;
 
     // ---- reduced-order power stage, built in from the start ----
     static inline bool reducedOrder = false;
     // Fitted (2026-10-05) to the full reference after its plate resistors were rewired in series with the OT (they
     // were a shunt across each half-primary that killed ~35 dB of output; the old constants were fitted to that).
-    static constexpr double bmGain0 = 17.3;
-    static constexpr double bmYmax = 0.0583;
-    static constexpr double bmKneeN = 3.0;
+    static constexpr double bmGain0 = 7.0;
+    static constexpr double bmYmax = 0.128;
+    static constexpr double bmKneeN = 2.0;
     static constexpr double bmShelfHz = 120.0;
     static constexpr double bmShelfHfGain = 0.7;
 
@@ -91,7 +96,7 @@ private:
         // power section: Top Boost tone stack -> LTP -> 2x2 EL84 pairs, cathode-biased, no NFB
         int wSrcCf = 0, wSrcRail = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
-        int rCathodeBias = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rBassBottom = 0;
+        int rCathodeBias = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rBassBottom = 0, rCut = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wTone = 0, wOut = 0, wPiGridA = 0, wPiPlateA = 0, wPiPlateB = 0,
                            wGridA = 0, wGridB = 0, wPP1 = 0, wPP2 = 0, wCathodeBias = 0;

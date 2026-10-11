@@ -42,7 +42,7 @@ public:
                         + ", power plate A/B " + juce::String (amp.debugVoltage (P::powerPlateA), 1) + " / " + juce::String (amp.debugVoltage (P::powerPlateB), 1)
                         + ", cathode bias " + juce::String (amp.debugVoltage (P::cathodeBias), 1)
                         + ", plate current total " + juce::String (amp.plateCurrentTotal() * 1000.0, 1) + " mA");
-            expect (amp.railPlates() > 340.0 && amp.railPlates() < 410.0);
+            expect (amp.railPlates() > 290.0 && amp.railPlates() < 360.0); // the real amp's ~315-340 V plate rail
             expect (amp.debugVoltage (P::cathodeBias) > 3.0 && amp.debugVoltage (P::cathodeBias) < 30.0,
                     "a plausible class A cathode-bias voltage for the shared 4xEL84 resistor");
             expect (std::abs (amp.debugVoltage (P::piPlateA) - amp.debugVoltage (P::piPlateB)) < 30.0,

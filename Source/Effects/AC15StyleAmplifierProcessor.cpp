@@ -13,9 +13,11 @@ namespace
 {
     using namespace tubeamp;
 
-    // ---- supply (docs/circuits/AC15Twin.md, "Power supply"). EZ81 rectifier, 8H/120mA choke, 450V post-choke B+ --
-    // all printed on the drawing. ----
-    constexpr double railPlatesNominal = 450.0;
+    // ---- supply (docs/circuits/AC15Twin.md, "Power supply"). EZ81 rectifier, 8H/120mA choke (printed on
+    // OS/005); the mains secondary is 300-0-300 V on the sheet, so HT lands "in the region of 350 V" before the
+    // choke (voxac30.org.uk's OS/005 notes) and ~340 V at the EL84 plates -- NOT the 450 V the doc claimed, which
+    // belongs to a different AC15 variant and gave the model far too much clean headroom. ----
+    constexpr double railPlatesNominal = 340.0;
     constexpr double rectifierResistance = 200.0; // bridge + transformer (assumed, a small EZ81 supply): full drive sags noticeably
     constexpr double chokeResistance = 150.0;     // assumed (not printed)
     constexpr double chokeInductance = 8.0;       // H, printed on the drawing
@@ -23,7 +25,7 @@ namespace
     // ---- reduced-order power stage: calibration data, A15_POWERCAL in the test file ----
     constexpr int bmSagPoints = 14;
     constexpr double bmSagDrive[bmSagPoints] = { 0.02, 0.05, 0.1, 0.2, 0.4, 0.7, 1.1, 1.6, 2.2, 3.0, 4.0, 5.2, 6.6, 8.2 };
-    constexpr double bmSagRail[bmSagPoints]  = { 450.0, 450.0, 450.0, 449.8, 449.4, 448.5, 447.0, 444.5, 440.8, 435.5, 428.0, 418.0, 405.0, 390.0 };
+    constexpr double bmSagRail[bmSagPoints]  = { 340.0, 340.0, 340.0, 339.9, 339.5, 338.9, 337.7, 335.8, 333.0, 329.0, 323.4, 315.8, 306.0, 294.7 };
 
     double sagRailLookup (double drivePeak) noexcept
     {
@@ -197,11 +199,17 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.pPlate, 220.0);
         c.setInitialGuess (k, 1.4);
 
-        // Plate coupling into the Volume pot's top. The real amp runs the anode through a coupling
-        // cap straight into Volume -- the tone control is NOT in this path (see the grid note above).
+        // Plate coupling into the Volume pot's top. On OS/005 this is NOT a plain coupling cap: the EF86 anode
+        // feeds a three-section high-pass (three .005 uF series caps with 220k/1M/1M shunts to ground -- the
+        // "rumble filter" that keeps the pentode's enormous low-frequency gain out of the power stage) ahead of
+        // the 1M Volume. The tone control is NOT in this path (see the grid note above).
+        const auto hp1 = c.addNode(), hp2 = c.addNode();
+        c.addCapacitor (ch.pPlate, hp1, 0.005e-6);
+        c.addResistor (hp1, gnd, 220.0e3);
+        c.addCapacitor (hp1, hp2, 0.005e-6);
+        c.addResistor (hp2, gnd, 1.0e6);
         const auto toneIn = c.addNode();
-        c.addCapacitor (ch.pPlate, toneIn, 0.02e-6);
-        c.addResistor (toneIn, gnd, 1.0e6); // grid-leak-style DC reference for the coupling cap
+        c.addCapacitor (hp2, toneIn, 0.005e-6);
         ch.pToneOut = toneIn;
 
         // Volume: 1M log pot.
@@ -210,10 +218,11 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rVolBot = c.addResistor (ch.pVolOut, gnd, 1.0e6);
     }
 
-    // ================================================================ power: cathodyne PI + 2x EL84, cathode-biased, no NFB
+    // ================================================================ power: LTP PI + 2x EL84, cathode-biased, no NFB
     // reducedOrder: none of this exists -- behavioralPowerStage() is driven directly from the preamp's own Volume
     // pot output instead (see the header's "reduced-order power stage" note), so this expensive netlist (a Newton
-    // solve per sample: PI triode + 2 EL84 pentodes + a coupled-inductor OT) is skipped entirely, not just ignored.
+    // solve per sample: two PI triodes + 2 EL84 pentodes + a coupled-inductor OT) is skipped entirely, not just
+    // ignored.
     if (! reducedOrder)
     {
         auto& c = ch.power;
@@ -222,28 +231,40 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto cf = c.addNode();
         ch.wSrcCf = c.addSource (cf, 0.0);
 
-        // Cathodyne (split-load) phase inverter: a SINGLE 12AX7 half, equal 47k plate/cathode loads (confirmed on the
-        // drawing) -- two anti-phase outputs, not a long-tailed pair.
+        // Phase inverter: a 12AX7 long-tailed pair on OS/005 (the doc's "cathodyne" was wrong): 100k plate
+        // loads, each cathode through 1k to a common tail node held by 47k to ground; the second grid is
+        // AC-grounded by its own .01 uF with a 1M DC leak to ground, so the second half is driven at its
+        // CATHODE through the shared tail impedance, not at its grid. Driven grid takes the channel's
+        // .01 uF input cap + 1M leak.
         ch.wPiGrid = c.addNode();
-        const auto piK = c.addNode();
+        const auto g2 = c.addNode(), k1 = c.addNode(), k2 = c.addNode(), tail = c.addNode();
         ch.wPiPlate = c.addNode();
-        ch.wPiCathode = piK;
-        c.addCapacitor (cf, ch.wPiGrid, 0.02e-6);
+        const auto piPlateB = c.addNode();
+        ch.wPiCathode = tail;
+        c.addCapacitor (cf, ch.wPiGrid, 0.01e-6);
         c.addResistor (ch.wPiGrid, gnd, 1.0e6);
-        c.addTriode (ch.wPiPlate, ch.wPiGrid, piK, triode12AX7());
+        c.addTriode (ch.wPiPlate, ch.wPiGrid, k1, triode12AX7());
+        c.addTriode (piPlateB, g2, k2, triode12AX7());
         c.addCapacitor (ch.wPiGrid, ch.wPiPlate, cgp);
-        c.addResistor (rail, ch.wPiPlate, 47.0e3);
-        c.addResistor (piK, gnd, 47.0e3);
-        c.setInitialGuess (ch.wPiPlate, 300.0);
-        c.setInitialGuess (piK, 130.0);
+        c.addCapacitor (g2, piPlateB, cgp);
+        c.addResistor (rail, ch.wPiPlate, 100.0e3);
+        c.addResistor (rail, piPlateB, 100.0e3);
+        c.addResistor (k1, tail, 1.0e3);
+        c.addResistor (k2, tail, 1.0e3);
+        c.addResistor (tail, gnd, 47.0e3);
+        c.addResistor (g2, gnd, 1.0e6);
+        c.addCapacitor (g2, gnd, 0.01e-6);
+        c.setInitialGuess (ch.wPiPlate, 220.0);
+        c.setInitialGuess (piPlateB, 220.0);
+        c.setInitialGuess (tail, 2.0);
 
-        // Each output couples through a 100k-decoupled 0.05 uF cap into its own EL84's 10k grid stopper (confirmed on
+        // Each output couples through a 0.05 uF cap into its own EL84's 10k grid stopper (confirmed on
         // the drawing, symmetric both sides).
         ch.wGridA = c.addNode();
         ch.wGridB = c.addNode();
         c.addCapacitor (ch.wPiPlate, ch.wGridA, 0.05e-6);
         c.addResistor (ch.wGridA, gnd, 220.0e3);
-        c.addCapacitor (piK, ch.wGridB, 0.05e-6);
+        c.addCapacitor (piPlateB, ch.wGridB, 0.05e-6);
         c.addResistor (ch.wGridB, gnd, 220.0e3);
         const auto g3s = c.addNode(), g4s = c.addNode();
         c.addResistor (ch.wGridA, g3s, 10.0e3);
@@ -258,13 +279,12 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
 
         ch.wPP1 = c.addNode();
         ch.wPP2 = c.addNode();
-        // EL84's own screen rating tops out around 300 V; the real amp's screens sit well under the raw plate rail
-        // (a dedicated screen supply/dropping network, not fully legible on the scan -- see the doc). Modelled as a
-        // fixed, plausible screen voltage rather than a literal resistor network.
-        ch.penA = c.addPentode (ch.wPP1, g3s, ch.wCathodeBias, pentodeEL84(), 290.0);
-        ch.penB = c.addPentode (ch.wPP2, g4s, ch.wCathodeBias, pentodeEL84(), 290.0);
-        c.setInitialGuess (ch.wPP1, 380.0);
-        c.setInitialGuess (ch.wPP2, 375.0);
+        // Each EL84's screen reaches the rail through its own 100 ohm dropper (on the drawing), so screens run
+        // only slightly under the plate rail -- modelled as a fixed screen voltage just under the rail.
+        ch.penA = c.addPentode (ch.wPP1, g3s, ch.wCathodeBias, pentodeEL84(), railPlatesNominal * 0.93);
+        ch.penB = c.addPentode (ch.wPP2, g4s, ch.wCathodeBias, pentodeEL84(), railPlatesNominal * 0.93);
+        c.setInitialGuess (ch.wPP1, 300.0);
+        c.setInitialGuess (ch.wPP2, 295.0);
         c.setInitialGuess (ch.wCathodeBias, 11.0);
 
         // Output transformer, no negative feedback (the real amp has none): plate-to-plate, 16 ohm tap.
@@ -579,7 +599,9 @@ void AC15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
     const int inputChoice = juce::roundToInt (inputParam->get());
-    const double inputGain = inputChoice == 0 ? 1.0 : 0.25;
+    // OS/005 wires both jacks of a channel to the SAME gain; the Low position here is kept at -6 dB (the
+    // Vox family's usual low-input convention) so the switch stays useful -- it used to be -12 dB.
+    const double inputGain = inputChoice == 0 ? 1.0 : 0.5;
 
     for (int i = 0; i < numSamples; ++i)
     {
