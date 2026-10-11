@@ -32,6 +32,9 @@ ambiguous thing (the DIST pot, below). The redraw omits the output transistors
    for the bass, IC2B 4.7 nF/100K and IC2A 6.8 nF/82K with 0.1/0.15 uF for the
    mids/highs. Then C 10 uF, 10K, Level.
 
+   Pot tapers: VR4 DIST 250K "D" (audio/log) and VR1 Level 10K audio use the shared 15% law
+   (`Source/Effects/PotTaper.h`); LOW/HIGH are 10K linear.
+
 ### The DIST pot (decoded literally)
 Boss draws VR4 250KD with its **wiper grounded** and its two ends in the signal
 line (150 ohm on one side, 47K on the other). Electrically that makes it two

@@ -1,6 +1,7 @@
 #include "HM2StyleDistortionProcessor.h"
 #include "DualMono.h"
 #include "IconKit.h"
+#include "PotTaper.h"
 
 #include <IconData.h>
 
@@ -30,11 +31,12 @@ namespace
     // Collector-current limits of the two gain transistors (NodalCircuit::addBjtSaturating). Starting point: the load
     // line, (rail - Vce(sat)) / (collector + emitter resistance) -- Q6: 8 V rail, 10K, 22 ohm; Q7: emitter 7.9 V through
     // 120 ohm, collector into 10K || 68K to 4.5 V (0.58 V behind 8.7K). FITTED against the two-port transistors (level
-    // and octave-band shape of a chord, 3 Dist x 2 High x 3 input levels): Q6's x1.9 (the stage also feeds the DIST
-    // branch and Q7's bias network, so it can carry more than the load line of its own 10K alone), Q7's x0.9 --
-    // re-fitted 2026-10-11 (was x2.0/x0.8; see docs/circuits/HM2StyleDistortion.md for the base-current detour).
-    constexpr double q6SaturationCurrent = 1.9 * (8.0 - 0.2) / (10.0e3 + 22.0);
-    constexpr double q7SaturationCurrent = 0.9 * (7.9 - 0.2 - 0.58) / (8.72e3 + 120.0);
+    // and octave-band shape of a chord, 3 Dist x 2 High x 3 input levels): Q6's x2.3 (the stage also feeds the DIST
+    // branch and Q7's bias network, so it can carry more than the load line of its own 10K alone), Q7's x1.0 --
+    // re-fitted 2026-10-11 for the audio-tapered DIST pot (see docs/circuits/HM2StyleDistortion.md for the
+    // base-current detour).
+    constexpr double q6SaturationCurrent = 2.3 * (8.0 - 0.2) / (10.0e3 + 22.0);
+    constexpr double q7SaturationCurrent = 1.0 * (7.9 - 0.2 - 0.58) / (8.72e3 + 120.0);
 
     constexpr double distPotMax = 250.0e3;
     constexpr double tonePotMax = 10.0e3;
@@ -243,9 +245,9 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
 
 void HM2StyleDistortionProcessor::updatePots (double dist, double low, double high, double level)
 {
-    // DIST: 250K "log", wiper grounded, knob CW = wiper toward pin 3. A = pin 1 -> wiper, B = wiper -> pin 3.
-    // Audio taper approximated as knob^2 (same documented stand-in as the other log pots).
-    const double distFrac = dist * dist;
+    // DIST: 250K marked "D" (audio/log), wiper grounded, knob CW = wiper toward pin 3. A = pin 1 -> wiper,
+    // B = wiper -> pin 3.
+    const double distFrac = pots::audio (dist);
     const double rA = juce::jmax (1.0, distPotMax * distFrac);
     const double rB = juce::jmax (1.0, distPotMax * (1.0 - distFrac));
 
@@ -253,7 +255,8 @@ void HM2StyleDistortionProcessor::updatePots (double dist, double low, double hi
     const double lowF = juce::jmax (1.0, tonePotMax * low), lowN = juce::jmax (1.0, tonePotMax * (1.0 - low));
     const double highF = juce::jmax (1.0, tonePotMax * high), highN = juce::jmax (1.0, tonePotMax * (1.0 - high));
 
-    const double lBottom = juce::jmax (1.0, levelPotMax * level * level);
+    // LEVEL: 10K audio taper (VR1, the output volume -- same log law as the DIST pot).
+    const double lBottom = juce::jmax (1.0, levelPotMax * pots::audio (level));
     const double lTop = juce::jmax (1.0, levelPotMax - lBottom);
 
     for (auto& ch : channels)

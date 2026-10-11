@@ -60,3 +60,29 @@ parts vary by manufacturer. No datasheet gives the breakpoints, so inventing the
 
 **Every unity trim was re-measured** after this (`UnityLevel.md`): the pedals lost 2.8-6.1 dB at noon, which is the size of
 the error that was there before.
+
+## The second pass (2026-10-11): the stragglers
+
+A sweep of the remaining processors found three units still on a linear or ad-hoc curve:
+
+- **HM-2** kept the old `knob^2` stand-in on DIST (250K "D" = audio) and used it again on Level (10K audio). Both are now
+  `pots::audio`. LOW/HIGH are 10K linear gyrator controls and were already linear.
+- **SLO-100** read its 500K preamp pots as "500KL" linear; the schematic marking is the audio-taper part (this doc's own
+  SLO100.md says so) and external Soldano references list the 500K Gain as audio taper. OD Volume and Normal Volume are
+  now `pots::audio`.
+- **The EL84 boutique family** (`EL84BoutiqueAmpCore`: Astroverb 16, Matchless HC-30, Hot Cat 30, Carmen Ghia) had every
+  pot linear. Their circuits are estimated topologies, so there is no factory taper marking to cite; the convention used
+  everywhere else applies: channel Volume / Gain / Preamp / Master are the amp's level controls and are now
+  `pots::audio`, while the tone-network controls (Bass/Middle/Treble/Presence/Cut) stay linear.
+
+Controls that stay linear **by design**: everything the schematics mark "B" (DS-1's DIST/TONE/LEVEL, the Big Muff
+family's Sustain/Tone/Volume, the DynaComp Level, the OCD Level "100kB", the Bassman's Mid, the SLO's Middle/Presence,
+the SVT/V4B/Mesa-400+ 50K "L" masters), behavioural blocks that are not tracked pot laws (compressor dB ranges, OC-2
+mixer levels, Mu-Tron input gain -- already exponential per its doc), and the synthetic master trims added to amps whose
+real circuits have none (B15, V4B).
+
+Retunes that came with the taper pass: the HM-2 reduced-order one-port saturation multipliers were re-fitted
+(Q6 x2.3, Q7 x1.0) and the Hot Cat 30 / Carmen Ghia behavioural power-stage constants were re-measured
+(`behavioralPowerStage`: Hot Cat gain 0.9 / level 14.0, Carmen Ghia level 18.5) — the surrogate fits were calibrated
+against the old linear-knob operating points and had to be re-centred. PedalUnityLevel trims moved: HM-2 6.67 -> 11.09,
+SLO-100 -18.92 -> -17.42 (noon is a different resistance now, so unity at noon shifts).
