@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "DelayLine.h"
 
 namespace openguitarmultifx
 {
@@ -36,8 +37,7 @@ private:
     juce::AudioParameterFloat* rateHz = nullptr;
     juce::AudioParameterFloat* depth = nullptr;
 
-    juce::AudioBuffer<float> delayBuffer;
-    int writePos = 0;
+    FractionalDelayLine line;
     double currentSampleRate = 0.0;
     double lfoPhase = 0.0;
 

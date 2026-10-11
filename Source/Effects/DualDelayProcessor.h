@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "DelayLine.h"
 
 #include <array>
 
@@ -34,27 +35,13 @@ public:
 private:
     static constexpr float maxDelayMs = 2000.0f;
 
-    struct Tap
-    {
-        juce::AudioBuffer<float> buffer;
-        int writePos = 0;
-
-        void prepare (int numChannels, int bufferLength)
-        {
-            buffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
-            writePos = 0;
-        }
-
-        void clear() { buffer.clear(); writePos = 0; }
-    };
-
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* timeA = nullptr;
     juce::AudioParameterFloat* timeB = nullptr;
     juce::AudioParameterFloat* feedback = nullptr;
     juce::AudioParameterFloat* mix = nullptr;
 
-    std::array<Tap, 2> taps;
+    std::array<FractionalDelayLine, 2> taps;
     double currentSampleRate = 0.0;
 
     juce::SmoothedValue<float> smoothedTimeA;

@@ -37,7 +37,7 @@ void TapeDelayProcessor::prepare (double sampleRate, int, int numChannels)
     // +wowDepthMs of extra headroom so the wobbling read position never
     // reads past the write position even at the shortest configured delay.
     const int bufferLength = (int) std::ceil ((maxDelayMs + wowDepthMs) * 0.001 * sampleRate) + 4;
-    delayBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
+    line.prepare (numChannels, bufferLength);
 
     smoothedDelaySamples.reset (sampleRate, 0.03);
     smoothedFeedback.reset (sampleRate, 0.03);
@@ -52,23 +52,21 @@ void TapeDelayProcessor::prepare (double sampleRate, int, int numChannels)
 
 void TapeDelayProcessor::reset()
 {
-    delayBuffer.clear();
-    writePos = 0;
+    line.clear();
     wowPhase = 0.0f;
 }
 
 void TapeDelayProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    if (currentSampleRate <= 0.0 || delayBuffer.getNumSamples() == 0)
+    if (currentSampleRate <= 0.0 || line.getLength() == 0)
         return;
 
     smoothedDelaySamples.setTargetValue ((float) (timeMs->get() * 0.001 * currentSampleRate));
     smoothedFeedback.setTargetValue (feedback->get());
     smoothedMix.setTargetValue (mix->get());
 
-    const int numChannels = juce::jmin (buffer.getNumChannels(), delayBuffer.getNumChannels());
+    const int numChannels = juce::jmin (buffer.getNumChannels(), line.buffer.getNumChannels());
     const int numSamples = buffer.getNumSamples();
-    const int bufferLength = delayBuffer.getNumSamples();
     const float wowDepthSamples = wowDepthMs * 0.001f * (float) currentSampleRate;
     const float wowPhaseInc = juce::MathConstants<float>::twoPi * wowRateHz / (float) currentSampleRate;
 
@@ -83,20 +81,16 @@ void TapeDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         if (wowPhase > juce::MathConstants<float>::twoPi)
             wowPhase -= juce::MathConstants<float>::twoPi;
 
-        float readPos = (float) writePos - (baseDelaySamples + wobble);
-        while (readPos < 0.0f)
-            readPos += (float) bufferLength;
-
-        const int readIndex0 = (int) readPos;
-        const int readIndex1 = (readIndex0 + 1 >= bufferLength) ? 0 : readIndex0 + 1;
-        const float frac = readPos - (float) readIndex0;
+        int readIndex0, readIndex1;
+        float frac;
+        line.getReadIndices (baseDelaySamples + wobble, readIndex0, readIndex1, frac);
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* data = buffer.getWritePointer (ch);
-            auto* delayData = delayBuffer.getWritePointer (ch);
+            auto* delayData = line.getChannelData (ch);
 
-            const float delayed = delayData[readIndex0] + frac * (delayData[readIndex1] - delayData[readIndex0]);
+            const float delayed = FractionalDelayLine::interpolate (delayData, readIndex0, readIndex1, frac);
             const float input = data[i];
 
             // Soft-saturate what feeds back, not the dry input or the wet
@@ -108,13 +102,12 @@ void TapeDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             // sample x channel via a full libm call.
             static const float invTanhDrive = 1.0f / std::tanh (saturationDrive);
             const float saturatedFeedback = std::tanh (delayed * saturationDrive) * invTanhDrive;
-            delayData[writePos] = input + fb * saturatedFeedback;
+            delayData[line.writePos] = input + fb * saturatedFeedback;
 
             data[i] = input * (1.0f - wet) + delayed * wet;
         }
 
-        if (++writePos >= bufferLength)
-            writePos = 0;
+        line.advance();
     }
 }
 

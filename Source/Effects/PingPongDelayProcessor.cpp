@@ -36,7 +36,7 @@ void PingPongDelayProcessor::prepare (double sampleRate, int, int numChannels)
     preparedNumChannels = numChannels;
 
     const int bufferLength = (int) std::ceil (maxDelayMs * 0.001 * sampleRate) + 4;
-    delayBuffer.setSize (2, bufferLength, false, true, true); // always stereo -- see class doc
+    line.prepare (2, bufferLength); // always stereo -- see class doc
 
     smoothedDelaySamples.reset (sampleRate, 0.03);
     smoothedFeedback.reset (sampleRate, 0.03);
@@ -51,8 +51,7 @@ void PingPongDelayProcessor::prepare (double sampleRate, int, int numChannels)
 
 void PingPongDelayProcessor::reset()
 {
-    delayBuffer.clear();
-    writePos = 0;
+    line.clear();
 }
 
 void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -65,12 +64,11 @@ void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedMix.setTargetValue (mix->get());
 
     const int numSamples = buffer.getNumSamples();
-    const int bufferLength = delayBuffer.getNumSamples();
 
     auto* left = buffer.getWritePointer (0);
     auto* right = buffer.getWritePointer (1);
-    auto* lineL = delayBuffer.getWritePointer (0);
-    auto* lineR = delayBuffer.getWritePointer (1);
+    auto* lineL = line.getChannelData (0);
+    auto* lineR = line.getChannelData (1);
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -78,16 +76,12 @@ void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
 
-        float readPos = (float) writePos - delaySamples;
-        while (readPos < 0.0f)
-            readPos += (float) bufferLength;
+        int readIndex0, readIndex1;
+        float frac;
+        line.getReadIndices (delaySamples, readIndex0, readIndex1, frac);
 
-        const int readIndex0 = (int) readPos;
-        const int readIndex1 = (readIndex0 + 1 >= bufferLength) ? 0 : readIndex0 + 1;
-        const float frac = readPos - (float) readIndex0;
-
-        const float delayedL = lineL[readIndex0] + frac * (lineL[readIndex1] - lineL[readIndex0]);
-        const float delayedR = lineR[readIndex0] + frac * (lineR[readIndex1] - lineR[readIndex0]);
+        const float delayedL = FractionalDelayLine::interpolate (lineL, readIndex0, readIndex1, frac);
+        const float delayedR = FractionalDelayLine::interpolate (lineR, readIndex0, readIndex1, frac);
 
         const float inputL = left[i];
         const float inputR = right[i];
@@ -100,14 +94,13 @@ void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         // would be in the opposite line yet to bounce off of. Crossing the
         // dry feed too means a left-only input's first repeat lands on the
         // right, exactly as a real ping-pong pedal bounces it.
-        lineL[writePos] = inputR + fb * delayedR;
-        lineR[writePos] = inputL + fb * delayedL;
+        lineL[line.writePos] = inputR + fb * delayedR;
+        lineR[line.writePos] = inputL + fb * delayedL;
 
         left[i] = inputL * (1.0f - wet) + delayedL * wet;
         right[i] = inputR * (1.0f - wet) + delayedR * wet;
 
-        if (++writePos >= bufferLength)
-            writePos = 0;
+        line.advance();
     }
 }
 

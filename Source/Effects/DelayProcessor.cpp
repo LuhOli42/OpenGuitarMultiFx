@@ -35,7 +35,7 @@ void DelayProcessor::prepare (double sampleRate, int, int numChannels)
     currentSampleRate = sampleRate;
 
     const int bufferLength = (int) std::ceil (maxDelayMs * 0.001 * sampleRate) + 4;
-    delayBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
+    line.prepare (numChannels, bufferLength);
 
     smoothedDelaySamples.reset (sampleRate, 0.03);
     smoothedFeedback.reset (sampleRate, 0.03);
@@ -50,22 +50,20 @@ void DelayProcessor::prepare (double sampleRate, int, int numChannels)
 
 void DelayProcessor::reset()
 {
-    delayBuffer.clear();
-    writePos = 0;
+    line.clear();
 }
 
 void DelayProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    if (currentSampleRate <= 0.0 || delayBuffer.getNumSamples() == 0)
+    if (currentSampleRate <= 0.0 || line.getLength() == 0)
         return;
 
     smoothedDelaySamples.setTargetValue ((float) (timeMs->get() * 0.001 * currentSampleRate));
     smoothedFeedback.setTargetValue (feedback->get());
     smoothedMix.setTargetValue (mix->get());
 
-    const int numChannels = juce::jmin (buffer.getNumChannels(), delayBuffer.getNumChannels());
+    const int numChannels = juce::jmin (buffer.getNumChannels(), line.buffer.getNumChannels());
     const int numSamples = buffer.getNumSamples();
-    const int bufferLength = delayBuffer.getNumSamples();
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -73,28 +71,23 @@ void DelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
 
-        float readPos = (float) writePos - delaySamples;
-        while (readPos < 0.0f)
-            readPos += (float) bufferLength;
-
-        const int readIndex0 = (int) readPos;
-        const int readIndex1 = (readIndex0 + 1 >= bufferLength) ? 0 : readIndex0 + 1;
-        const float frac = readPos - (float) readIndex0;
+        int readIndex0, readIndex1;
+        float frac;
+        line.getReadIndices (delaySamples, readIndex0, readIndex1, frac);
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* data = buffer.getWritePointer (ch);
-            auto* delayData = delayBuffer.getWritePointer (ch);
+            auto* delayData = line.getChannelData (ch);
 
-            const float delayed = delayData[readIndex0] + frac * (delayData[readIndex1] - delayData[readIndex0]);
+            const float delayed = FractionalDelayLine::interpolate (delayData, readIndex0, readIndex1, frac);
             const float input = data[i];
 
-            delayData[writePos] = input + fb * delayed;
+            delayData[line.writePos] = input + fb * delayed;
             data[i] = input * (1.0f - wet) + delayed * wet;
         }
 
-        if (++writePos >= bufferLength)
-            writePos = 0;
+        line.advance();
     }
 }
 

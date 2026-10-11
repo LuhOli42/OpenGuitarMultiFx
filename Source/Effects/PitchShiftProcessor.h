@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "DelayLine.h"
 
 #include <array>
 #include <cmath>
@@ -51,98 +52,6 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
 private:
-    struct GrainShifter
-    {
-        static constexpr float defaultGrainSeconds = 0.05f;
-        static constexpr float maxGrainSeconds = 0.10f; // covers two 20 Hz periods
-
-        std::vector<float> buffer;
-        int bufferSize = 0;
-        int writePos = 0;
-        float grainSamples = 1.0f;
-        float delayA = 0.0f;
-        float delayB = 0.0f;
-
-        void prepare (double sampleRate)
-        {
-            grainSamples = (float) (defaultGrainSeconds * sampleRate);
-            bufferSize = (int) (maxGrainSeconds * sampleRate) * 2 + 8;
-            buffer.assign ((size_t) bufferSize, 0.0f);
-            clear();
-        }
-
-        void clear()
-        {
-            std::fill (buffer.begin(), buffer.end(), 0.0f);
-            writePos = 0;
-            delayA = grainSamples * 0.5f;
-            delayB = 0.0f;
-        }
-
-        static float windowGain (float delay, float grain) noexcept
-        {
-            const float t = delay / grain;
-            return 1.0f - std::abs (2.0f * t - 1.0f);
-        }
-
-        // Moves the grain length toward target while preserving both
-        // windows' phases: scaling the read delays by the same factor
-        // keeps the half-grain offset, so the only artefact is a slow
-        // glide toward the new window length rather than a splice.
-        void slewGrain (float target) noexcept
-        {
-            const float diff = target - grainSamples;
-            if (diff > 0.01f || diff < -0.01f)
-            {
-                const float next = grainSamples + diff * 0.0007f;
-                const float scale = next / grainSamples;
-                grainSamples = next;
-                delayA *= scale;
-                delayB *= scale;
-                while (delayA >= grainSamples) delayA -= grainSamples;
-                while (delayA < 0.0f) delayA += grainSamples;
-                while (delayB >= grainSamples) delayB -= grainSamples;
-                while (delayB < 0.0f) delayB += grainSamples;
-            }
-        }
-
-        float readAt (float delaySamples) const noexcept
-        {
-            float readPos = (float) writePos - delaySamples;
-            while (readPos < 0.0f)
-                readPos += (float) bufferSize;
-            const int i0 = (int) readPos;
-            const int i1 = (i0 + 1 >= bufferSize) ? 0 : i0 + 1;
-            const float frac = readPos - (float) i0;
-            return buffer[(size_t) i0] + frac * (buffer[(size_t) i1] - buffer[(size_t) i0]);
-        }
-
-        float process (float input, float ratio) noexcept
-        {
-            buffer[(size_t) writePos] = input;
-
-            const float outA = readAt (delayA) * windowGain (delayA, grainSamples);
-            const float outB = readAt (delayB) * windowGain (delayB, grainSamples);
-
-            const float step = ratio - 1.0f;
-            delayA -= step;
-            if (delayA <= 0.0f)
-                delayA += grainSamples;
-            else if (delayA >= grainSamples)
-                delayA -= grainSamples;
-
-            delayB -= step;
-            if (delayB <= 0.0f)
-                delayB += grainSamples;
-            else if (delayB >= grainSamples)
-                delayB -= grainSamples;
-
-            if (++writePos >= bufferSize)
-                writePos = 0;
-            return outA + outB;
-        }
-    };
-
     // Audio-thread period estimate behind the adaptive grain. A full YIN
     // pass is too heavy per-sample, so the input is low-passed and 4x
     // decimated, and the difference function is evaluated only every
@@ -200,7 +109,7 @@ private:
             lpCoeff = 1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi * 1200.0f / (float) sampleRate);
             tauMin = juce::jmax (1, (int) (fsd / maxFreqHz));
             tauMax = juce::jmin (maxTau, (int) (fsd / minFreqHz));
-            defaultGrain = (float) (GrainShifter::defaultGrainSeconds * sampleRate);
+            defaultGrain = (float) (defaultGrainSeconds * sampleRate);
             grainTarget = defaultGrain;
             periodSamples = 0.0f;
             stableCount = 0;
@@ -415,7 +324,10 @@ private:
     juce::AudioParameterFloat* semitones = nullptr;
     juce::AudioParameterFloat* mix = nullptr;
 
-    std::array<GrainShifter, 2> shifters;
+    static constexpr float defaultGrainSeconds = 0.05f;
+    static constexpr float maxGrainSeconds = 0.10f; // covers two 20 Hz periods
+
+    std::array<TwoGrainShifter, 2> shifters;
     PeriodTracker tracker;
     double currentSampleRate = 0.0;
 

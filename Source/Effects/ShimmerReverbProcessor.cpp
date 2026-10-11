@@ -51,7 +51,7 @@ void ShimmerReverbProcessor::prepare (double sampleRate, int, int)
             allpass[(size_t) ch][(size_t) i].feedback = 0.5f;
         }
 
-        shifters[(size_t) ch].prepare (sampleRate);
+        shifters[(size_t) ch].prepare (sampleRate, 0.04, 0.0, 1.0f, 0.5f); // 40ms grain, delayed a full/half grain
     }
 
     smoothedDecay.reset (sampleRate, paramRampSeconds);
@@ -127,7 +127,7 @@ void ShimmerReverbProcessor::process (juce::AudioBuffer<float>& buffer)
             // need every comb's output before any comb can be written,
             // which isn't possible in a single pass. One sample of extra
             // latency in the shimmer path is inaudible.
-            const float shifted = shifter.process (lastSum);
+            const float shifted = shifter.process (lastSum, 2.0f); // fixed octave-up: read pointer sweeps down 1 sample/sample
 
             float combSum = 0.0f;
             for (auto& c : combBank)

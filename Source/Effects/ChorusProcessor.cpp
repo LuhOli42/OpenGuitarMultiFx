@@ -36,7 +36,7 @@ void ChorusProcessor::prepare (double sampleRate, int, int numChannels)
     currentSampleRate = sampleRate;
 
     const int bufferLength = (int) std::ceil (bufferHeadroomMs * 0.001 * sampleRate) + 4;
-    delayBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
+    line.prepare (numChannels, bufferLength);
 
     smoothedRateHz.reset (sampleRate, paramRampSeconds);
     smoothedRateHz.setCurrentAndTargetValue (rateHz->get());
@@ -50,19 +50,17 @@ void ChorusProcessor::prepare (double sampleRate, int, int numChannels)
 
 void ChorusProcessor::reset()
 {
-    delayBuffer.clear();
-    writePos = 0;
+    line.clear();
     lfoPhase = 0.0;
 }
 
 void ChorusProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    if (currentSampleRate <= 0.0 || delayBuffer.getNumSamples() == 0)
+    if (currentSampleRate <= 0.0 || line.getLength() == 0)
         return;
 
-    const int numChannels = juce::jmin (buffer.getNumChannels(), delayBuffer.getNumChannels());
+    const int numChannels = juce::jmin (buffer.getNumChannels(), line.buffer.getNumChannels());
     const int numSamples = buffer.getNumSamples();
-    const int bufferLength = delayBuffer.getNumSamples();
 
     smoothedRateHz.setTargetValue (rateHz->get());
     smoothedDepth.setTargetValue (depth->get());
@@ -75,28 +73,23 @@ void ChorusProcessor::process (juce::AudioBuffer<float>& buffer)
         const float wet = smoothedMix.getNextValue();
         const float delaySamples = delayMs * 0.001f * (float) currentSampleRate;
 
-        float readPos = (float) writePos - delaySamples;
-        while (readPos < 0.0f)
-            readPos += (float) bufferLength;
-
-        const int readIndex0 = (int) readPos;
-        const int readIndex1 = (readIndex0 + 1 >= bufferLength) ? 0 : readIndex0 + 1;
-        const float frac = readPos - (float) readIndex0;
+        int readIndex0, readIndex1;
+        float frac;
+        line.getReadIndices (delaySamples, readIndex0, readIndex1, frac);
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* data = buffer.getWritePointer (ch);
-            auto* delayData = delayBuffer.getWritePointer (ch);
+            auto* delayData = line.getChannelData (ch);
             const float input = data[i];
 
-            const float delayed = delayData[readIndex0] + frac * (delayData[readIndex1] - delayData[readIndex0]);
-            delayData[writePos] = input; // no feedback -- chorus, not flanger
+            const float delayed = FractionalDelayLine::interpolate (delayData, readIndex0, readIndex1, frac);
+            delayData[line.writePos] = input; // no feedback -- chorus, not flanger
 
             data[i] = input * (1.0f - wet) + delayed * wet;
         }
 
-        if (++writePos >= bufferLength)
-            writePos = 0;
+        line.advance();
         lfoPhase += phaseIncrement;
         if (lfoPhase >= twoPi)
             lfoPhase -= twoPi;

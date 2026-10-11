@@ -38,7 +38,7 @@ void AnalogDelayProcessor::prepare (double sampleRate, int, int numChannels)
     currentSampleRate = sampleRate;
 
     const int bufferLength = (int) std::ceil (maxDelayMs * 0.001 * sampleRate) + 4;
-    delayBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
+    line.prepare (numChannels, bufferLength);
 
     smoothedDelaySamples.reset (sampleRate, 0.03);
     smoothedFeedback.reset (sampleRate, 0.03);
@@ -53,14 +53,13 @@ void AnalogDelayProcessor::prepare (double sampleRate, int, int numChannels)
 
 void AnalogDelayProcessor::reset()
 {
-    delayBuffer.clear();
-    writePos = 0;
+    line.clear();
     filterState.fill (0.0f);
 }
 
 void AnalogDelayProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    if (currentSampleRate <= 0.0 || delayBuffer.getNumSamples() == 0)
+    if (currentSampleRate <= 0.0 || line.getLength() == 0)
         return;
 
     smoothedDelaySamples.setTargetValue ((float) (timeMs->get() * 0.001 * currentSampleRate));
@@ -73,9 +72,8 @@ void AnalogDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     // signal -> each repeat loses more top end, the classic BBD darkening.
     const float filterCoeff = 0.05f + tone->get() * 0.95f;
 
-    const int numChannels = juce::jmin (buffer.getNumChannels(), delayBuffer.getNumChannels(), 2);
+    const int numChannels = juce::jmin (buffer.getNumChannels(), line.buffer.getNumChannels(), 2);
     const int numSamples = buffer.getNumSamples();
-    const int bufferLength = delayBuffer.getNumSamples();
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -83,20 +81,16 @@ void AnalogDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
 
-        float readPos = (float) writePos - delaySamples;
-        while (readPos < 0.0f)
-            readPos += (float) bufferLength;
-
-        const int readIndex0 = (int) readPos;
-        const int readIndex1 = (readIndex0 + 1 >= bufferLength) ? 0 : readIndex0 + 1;
-        const float frac = readPos - (float) readIndex0;
+        int readIndex0, readIndex1;
+        float frac;
+        line.getReadIndices (delaySamples, readIndex0, readIndex1, frac);
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* data = buffer.getWritePointer (ch);
-            auto* delayData = delayBuffer.getWritePointer (ch);
+            auto* delayData = line.getChannelData (ch);
 
-            const float delayed = delayData[readIndex0] + frac * (delayData[readIndex1] - delayData[readIndex0]);
+            const float delayed = FractionalDelayLine::interpolate (delayData, readIndex0, readIndex1, frac);
             const float input = data[i];
 
             auto& lp = filterState[(size_t) ch];
@@ -107,12 +101,11 @@ void AnalogDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             static const float invTanhDrive = 1.0f / std::tanh (saturationDrive);
             const float saturated = std::tanh (lp * saturationDrive) * invTanhDrive;
 
-            delayData[writePos] = input + fb * saturated;
+            delayData[line.writePos] = input + fb * saturated;
             data[i] = input * (1.0f - wet) + delayed * wet;
         }
 
-        if (++writePos >= bufferLength)
-            writePos = 0;
+        line.advance();
     }
 }
 
