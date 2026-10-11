@@ -334,10 +334,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("SiliconToneBenderStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<ToneBenderStyleFuzzProcessor> (Orders { 1, 2, 3 }, TBModel::silicon), 8000.0), 1.14f); });
     registry.markQualityDependent ("OverdriverStyleOverdrive");
     registry.registerType ("OverdriverStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<OverdriverStyleOverdriveProcessor> (Orders { 0, 1, 2 }), 1000000.0), -12.73f); });
-    // reducedOrder stays OFF: the companion model now matches the netlist to 0.01 dB level /
-    // 0.04 dB worst band (far under the 2.0/1.2 dB bar), but its nested leg/stage Newtons cost
-    // ~3x the full path on the same render (~67% vs ~21% of a core at 44.1k stereo eco) --
-    // slower AND identical-sounding buys nothing. Residual + next steps in
+    // reducedOrder ON: the nested leg/stage Newtons that cost ~3x the full path are replaced
+    // by fitted curves -- per-leg (u,q)->{v1,vb,ve} LUTs + a closed-form affine stage root --
+    // so the reduced render is ~2x cheaper than the netlist while staying inside the
+    // 2.0/1.2 dB equivalence bar (0.25/0.69). Details + pitfalls in
     // docs/circuits/MetalZoneStyleDistortion.md.
     registry.markQualityDependent ("MetalZoneStyleDistortion");
     registry.registerType ("MetalZoneStyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<MetalZoneStyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 2.23f); });
