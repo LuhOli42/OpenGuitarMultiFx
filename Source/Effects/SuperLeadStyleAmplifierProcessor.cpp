@@ -95,6 +95,13 @@ namespace
     constexpr double powerTheta = 0.9; // see BassmanStyleAmplifierProcessor
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::v30_412, &tubeamp::cabs::alnico212, &tubeamp::cabs::jensen212 };
+}
+
 SuperLeadStyleAmplifierProcessor::SuperLeadStyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
@@ -150,6 +157,9 @@ SuperLeadStyleAmplifierProcessor::SuperLeadStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("superlead_cab", "4x12 GB", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -731,6 +741,7 @@ void SuperLeadStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         buildChannel (ch);
         auto bmVoicing = voicings::britishNfb;
         bmVoicing.resDb = 0.0; // the fitted base biquad already carries the speaker-resonance bump
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

@@ -114,7 +114,7 @@ public:
                 if (f->paramID == "tr_speaker")
                     foundSpeaker = true;
             }
-            expect (page2Count == 5, "Power Drive, Bias, Tube Feel, Speaker, Output"); // getParameterPages() includes the group's own trunk param
+            expect (page2Count == 6, "Power Drive, Bias, Tube Feel, Speaker, Output, Cab"); // getParameterPages() includes the group's own trunk param
             expect (foundSpeaker);
         }
 

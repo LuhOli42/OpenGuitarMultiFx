@@ -114,6 +114,13 @@ namespace
     constexpr double piInputSensitivity = 3.2;
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::bass115, &tubeamp::cabs::tweed410, &tubeamp::cabs::greenback412 };
+}
+
 SVTStyleAmplifierProcessor::SVTStyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
@@ -196,6 +203,9 @@ SVTStyleAmplifierProcessor::SVTStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("svt_cab", "8x10 Fridge", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -933,6 +943,7 @@ void SVTStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         voicing.presenceQ = 0.7;
         voicing.cabLpHz = 14000.0;
         voicing.cabAirHz = 18000.0;
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (newSampleRate, voicing, 1.0 / outputScale);
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);

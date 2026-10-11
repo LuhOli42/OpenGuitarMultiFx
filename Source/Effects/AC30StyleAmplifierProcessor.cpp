@@ -96,6 +96,13 @@ namespace
     constexpr double powerTheta = 0.9;
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412, &tubeamp::cabs::jensen212 };
+}
+
 AC30StyleAmplifierProcessor::AC30StyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
@@ -143,6 +150,9 @@ AC30StyleAmplifierProcessor::AC30StyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("ac30_cab", "2x12 Alnico", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -550,6 +560,7 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, voicings::classAChime, 1.0 / outputScale);
     }
 

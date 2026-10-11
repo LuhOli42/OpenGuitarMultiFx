@@ -94,6 +94,13 @@ TrainwreckExpressStyleAmplifierProcessor::TrainwreckExpressStyleAmplifierProcess
 {
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::v30_412, &tubeamp::cabs::alnico212, &tubeamp::cabs::jensen212 };
+}
+
 TrainwreckExpressStyleAmplifierProcessor::TrainwreckExpressStyleAmplifierProcessor (Model m)
     : model (m)
 {
@@ -152,6 +159,9 @@ TrainwreckExpressStyleAmplifierProcessor::TrainwreckExpressStyleAmplifierProcess
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("cab", "4x12 GB", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -719,6 +729,7 @@ void TrainwreckExpressStyleAmplifierProcessor::prepare (double newSampleRate, in
         voicing.presenceQ = 1.1;
         voicing.cabLpHz = 5200.0;          // open-back 4x12 on the 16 ohm tap
         voicing.cabAirHz = 9000.0;
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (newSampleRate, voicing, 1.0 / outputScale);
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);

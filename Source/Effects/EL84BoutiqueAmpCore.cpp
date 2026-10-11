@@ -28,6 +28,14 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp family's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412,
+                                              &tubeamp::cabs::jensen212 };
+}
+
 EL84BoutiqueAmpCore::EL84BoutiqueAmpCore (Model ampModel, TubeFits fits, bool& reduced, const char* name)
     : model (ampModel), tubes (fits), reducedOrder (reduced), displayName (name)
 {
@@ -112,6 +120,16 @@ EL84BoutiqueAmpCore::EL84BoutiqueAmpCore (Model ampModel, TubeFits fits, bool& r
                                     model == Model::hotCat30 ? "hotcat30_output" :
                                     model == Model::carmenGhia ? "cghia_output" : "astro16_output",
                            "Output", 0.5f);
+    auto cab = tubeamp::makeCabParam (
+        model == Model::matchlessHC30 ? "hc30_cab" :
+        model == Model::hotCat30 ? "hotcat30_cab" :
+        model == Model::carmenGhia ? "cghia_cab" : "astro16_cab",
+        model == Model::matchlessHC30 ? "2x12 Alnico" :
+        model == Model::hotCat30 ? "2x12 Bad Cat" :
+        model == Model::carmenGhia ? "1x12 Z" : "1x12 Soldano",
+        cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -639,6 +657,7 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
             bmVoicing.cabLpHz = 900.0;  // own netlist is much darker than the shared alnico voicing
             bmVoicing.cabAirHz = 3000.0;
         }
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
         bool ok = ch.supply.prepare (sampleRate / (double) supplyInterval);
         ok = ch.pre.prepare (sampleRate) && ok;

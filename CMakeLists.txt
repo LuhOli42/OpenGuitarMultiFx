@@ -113,6 +113,7 @@ juce_add_binary_data(OpenGuitarMultiFx_Icons
     Assets/Icons/harmonizer.svg
     Assets/Icons/looper.svg
     Assets/Icons/amp.svg
+    Assets/Icons/amp_head.svg
     Assets/Icons/fuzz.svg
 )
 

@@ -108,6 +108,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::alnico212, &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412 };
+}
+
 DividedBy13FTR37StyleAmplifierProcessor::DividedBy13FTR37StyleAmplifierProcessor()
 {
     auto make = [] (const char* id, const char* name, float def)
@@ -175,6 +182,9 @@ DividedBy13FTR37StyleAmplifierProcessor::DividedBy13FTR37StyleAmplifierProcessor
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("ftr37_cab", "2x12 Open", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -684,6 +694,7 @@ void DividedBy13FTR37StyleAmplifierProcessor::prepare (double newSampleRate, int
         bmVoicing.cabLpHz = 3200.0;  // own netlist is darker than the shared alnico voicing past ~4 kHz
         bmVoicing.cabAirHz = 6000.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

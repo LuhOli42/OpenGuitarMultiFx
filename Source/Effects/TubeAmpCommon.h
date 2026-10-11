@@ -4,6 +4,8 @@
 #include "TubeModels.h"
 #include "../Engine/SoftCeiling.h"
 
+#include <juce_audio_processors/juce_audio_processors.h>
+
 #include <atomic>
 #include <cmath>
 
@@ -50,10 +52,10 @@ inline double outputCeiling (double x) noexcept
     return modelSoftCeiling (x);
 }
 
-/** Kill switch for the CabSim inside PowerStageTail (settings: "..." -> Settings -> Built-in cab voicing; the
-    OGMFX_CAB env var overrides it in renders/tests). Atomic because the UI toggles it while the audio thread
-    reads it per sample -- unlike the per-class `reducedOrder` flags, which are fixed before audio starts. When
-    off, the tail returns the raw power-stage signal so a real Cab/IR block downstream does not double-filter. */
+/** The resolved DEFAULT for a newly created amp's Cab selector (from ~/.config cab_voicing.txt and the
+    OGMFX_CAB env var, which overrides it in renders/tests). The #65 global kill switch this replaced is gone:
+    cab on/off is now a per-amp page-2 parameter the tail polls per sample, so this flag is only read at
+    parameter construction time (control thread) -- it no longer needs to gate already-live amps. */
 inline std::atomic<bool> cabVoicingEnabled { true };
 
 /**
@@ -132,6 +134,59 @@ namespace voicings
     // Cab: the 1x18 folded-horn-style bass bin -- deepest resonance, earliest top cutoff.
     inline constexpr PowerTailVoicing solidState { 40000.0, 75.0, 1.5, 1.0, 140.0, 0.0, 0.0, 0.5,
                                                    55.0, 2.5, 40.0, 3600.0, 5400.0 };
+}
+
+/** One speaker/cabinet voicing, decoupled from the amp voicings below: exactly the CabSim coefficient
+    inputs. Selection 1 on a tail's Cab selector is always the amp's own (stock) profile, captured out of
+    its PowerTailVoicing at prepare() -- the alternates a selector offers come from the `cabs::` table. */
+struct CabProfile
+{
+    double resHz = 0.0, resDb = 0.0, loHz = 0.0, lpHz = 0.0, airHz = 0.0, notchHz = 0.0, notchDb = 0.0;
+};
+
+struct CabOption
+{
+    const char* name;   // shown on the page-2 Cab selector's option stack
+    CabProfile profile;
+};
+
+namespace cabs
+{
+    // Shared alternates for the page-2 Cab selectors. Each amp wires in the few that make sense
+    // alongside its own voiced (stock) cab; the numbers are the same (resonance bump, low cutoff,
+    // top rolloff, air pole) the voicings table above encodes.
+    inline constexpr CabOption greenback412 { "4x12 GB",     { 100.0, 1.5, 60.0, 5400.0, 7800.0 } };
+    inline constexpr CabOption v30_412      { "4x12 V30",   { 100.0, 2.5, 60.0, 5300.0, 7600.0 } };
+    inline constexpr CabOption alnico212    { "2x12 Alnico", { 90.0, 2.0, 70.0, 5700.0, 8000.0 } };
+    inline constexpr CabOption jensen212    { "2x12 Jensen", { 80.0, 1.0, 70.0, 5800.0, 8200.0 } };
+    inline constexpr CabOption open112      { "1x12 Open",   { 105.0, 2.0, 70.0, 5500.0, 7800.0 } };
+    inline constexpr CabOption ev112        { "1x12 EV",     { 95.0, 1.5, 65.0, 6200.0, 8600.0 } };
+    inline constexpr CabOption tweed410     { "4x10 Tweed",  { 90.0, 2.0, 55.0, 4800.0, 7000.0 } };
+    inline constexpr CabOption bass810      { "8x10 Fridge", { 58.0, 2.5, 45.0, 3800.0, 5600.0 } };
+    inline constexpr CabOption bass115      { "1x15 Bass",   { 60.0, 2.0, 42.0, 3600.0, 5200.0 } };
+}
+
+/** Builds the page-2 "Cab" selector every voiced amp shares: index 0 = Off, 1 = the amp's own voiced cab
+    (`stockName`, its historic pairing, already encoded in its PowerTailVoicing), then the alternates
+    (index order must match the `setCabChoices` list the amp's prepare() wires in). Stepped + <= 8
+    options, so ParameterPanel renders it as an option stack, not a knob. The default follows
+    `cabVoicingEnabled` (the persisted/env default): Off when the user has cabs defaulted off, otherwise
+    the stock cab -- and a preset's own `*_cab` attribute overrides either at setState() time. */
+template <size_t N>
+inline std::unique_ptr<juce::AudioParameterFloat> makeCabParam (
+    const juce::String& paramId, const char* stockName, const CabOption* const (&alts)[N])
+{
+    juce::StringArray names;
+    names.add ("Off");
+    names.add (stockName);
+    for (const auto* alt : alts)
+        names.add (alt->name);
+    return std::make_unique<juce::AudioParameterFloat> (
+        paramId, "Cab", juce::NormalisableRange<float> (0.0f, (float) (names.size() - 1), 1.0f),
+        cabVoicingEnabled.load (std::memory_order_relaxed) ? 1.0f : 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [names = std::move (names)] (float v, int)
+            { return names[juce::jlimit (0, names.size() - 1, juce::roundToInt (v))]; }));
 }
 
 /** The static acoustic signature of the cabinet itself, applied at the very end of PowerStageTail: a
@@ -271,11 +326,34 @@ struct PowerStageTail
         lp1 = lp2 = lfState = env = dc = 0.0;
         resX1 = resX2 = resY1 = resY2 = 0.0;
         presX1 = presX2 = presY1 = presY2 = 0.0;
-        // Prepared unconditionally and run every sample (see process()) so the Settings toggle can flip
-        // cabVoicingEnabled mid-session without a re-prepare and without the filters settling from scratch.
-        cab.prepare (fs, v.cabResHz, v.cabResDb, v.cabLoHz, v.cabLpHz, v.cabAirHz, v.cabNotchHz, v.cabNotchDb);
-        cabMixC = 1.0 - std::exp (-1.0 / (0.004 * fs)); // ~4 ms crossfade on toggle -- no click
-        cabMix = cabVoicingEnabled.load (std::memory_order_relaxed) ? 1.0 : 0.0;
+        // Selection 1 = the amp's own voiced cab, captured out of the voicing here so process() can
+        // rebuild the sim on an index change without remembering the whole voicing. The starting index
+        // snaps straight to the selector's current value (or the resolved default when no selector is
+        // wired) -- prepare() runs before the block is live, so a fade is neither needed nor wanted
+        // (a preset restored with the cab off must not fade it in first).
+        stockCab = { v.cabResHz, v.cabResDb, v.cabLoHz, v.cabLpHz, v.cabAirHz, v.cabNotchHz, v.cabNotchDb };
+        cabFs = fs;
+        pendingSel = activeSel = juce::jlimit (0, 1 + numAlts,
+                                               cabParam != nullptr ? juce::roundToInt (cabParam->get())
+                                                                   : defaultCabSelection());
+        const CabProfile& initial = profileFor (activeSel);
+        cab.prepare (fs, initial.resHz, initial.resDb, initial.loHz, initial.lpHz, initial.airHz,
+                     initial.notchHz, initial.notchDb);
+        cabMixC = 1.0 - std::exp (-1.0 / (0.004 * fs)); // ~4 ms crossfade on a selection change -- no click
+        cabMix = cabTarget = activeSel > 0 ? 1.0 : 0.0;
+    }
+
+    /** The amp wires its page-2 Cab selector in here along with the alternates it offers -- call at
+        prepare() time (control thread), before prepare() itself. `p` is only ever READ on the audio
+        thread (one float load per sample, which is atomic inside AudioParameterFloat); the param group
+        owns it and outlives the prepared channel state. */
+    template <size_t N>
+    void setCabChoices (const juce::AudioParameterFloat* p, const CabOption* const (&alts)[N]) noexcept
+    {
+        cabParam = p;
+        numAlts = juce::jmin ((int) N, maxCabAlts);
+        for (int i = 0; i < numAlts; ++i)
+            altProfiles[(size_t) i] = alts[i]->profile;
     }
 
     double process (double x) noexcept
@@ -309,13 +387,35 @@ struct PowerStageTail
             lp2 += lpC * (lp1 - lp2);
             base = lp2;
         }
-        // The cab keeps running while bypassed so its filter state stays current; cabMix slews toward the
-        // setting so toggling crossfades instead of clicking or replaying a stale response. Snapped to
-        // exactly 0 when it underflows -- a settled bypass returns `base` bit-for-bit.
+        // The page-2 Cab selector is polled per sample -- one float load, nothing else. An index change
+        // first fades the current voice out; exactly at the fade's zero crossing the sim is rebuilt for
+        // the new index (bounded coefficient math, no allocation, and no stale-state thump), then it
+        // fades back in. Off simply fades out and stays there. The cab keeps running while bypassed so
+        // its filter state stays current; a settled Off returns `base` bit-for-bit.
+        const int wantSel = juce::jlimit (0, 1 + numAlts,
+                                          cabParam != nullptr ? juce::roundToInt (cabParam->get()) : activeSel);
+        if (wantSel != pendingSel)
+        {
+            pendingSel = wantSel;
+            if (wantSel != activeSel)
+                cabTarget = 0.0;
+        }
         const double cabOut = cab.process (base);
-        cabMix += cabMixC * ((cabVoicingEnabled.load (std::memory_order_relaxed) ? 1.0 : 0.0) - cabMix);
+        cabMix += cabMixC * (cabTarget - cabMix);
         if (cabMix < 1.0e-9)
+        {
             cabMix = 0.0;
+            if (pendingSel != activeSel)
+            {
+                activeSel = pendingSel;
+                if (activeSel > 0)
+                {
+                    const CabProfile& p = profileFor (activeSel);
+                    cab.prepare (cabFs, p.resHz, p.resDb, p.loHz, p.lpHz, p.airHz, p.notchHz, p.notchDb);
+                }
+                cabTarget = activeSel > 0 ? 1.0 : 0.0;
+            }
+        }
         return base + cabMix * (cabOut - base);
     }
 
@@ -329,7 +429,24 @@ private:
     double resB0 = 0.0, resB2 = 0.0, resA1 = 0.0, resA2 = 0.0, resAdd = 0.0;
     double presB0 = 0.0, presB2 = 0.0, presA1 = 0.0, presA2 = 0.0, presAdd = 0.0;
     double coreAmt = 0.0, asymAmt = 0.0, dynAmt = 0.0, invRef = 1.0;
-    double cabMix = 0.0, cabMixC = 0.0;
+    double cabMix = 0.0, cabMixC = 0.0, cabTarget = 0.0, cabFs = 0.0;
+    const juce::AudioParameterFloat* cabParam = nullptr; // watched at audio rate; written once at prepare
+    CabProfile stockCab;
+    static constexpr int maxCabAlts = 6;
+    CabProfile altProfiles[maxCabAlts] {};
+    int numAlts = 0;
+    int activeSel = 0, pendingSel = 0;
+
+    static int defaultCabSelection() noexcept
+    {
+        return cabVoicingEnabled.load (std::memory_order_relaxed) ? 1 : 0;
+    }
+
+    const CabProfile& profileFor (int sel) const noexcept
+    {
+        return sel <= 1 ? stockCab : altProfiles[(size_t) juce::jmin (sel - 2, numAlts - 1)];
+    }
+
     CabSim cab; // acoustic cab voicing: always last (TubeAmpCommon.h)
 };
 

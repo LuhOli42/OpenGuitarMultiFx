@@ -110,6 +110,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412, &tubeamp::cabs::alnico212 };
+}
+
 TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
@@ -190,6 +197,9 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("twinreverb_cab", "2x12 Jensen", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -606,6 +616,7 @@ void TwinReverbStyleAmplifierProcessor::prepare (double newSampleRate, int maxBl
         buildChannel (ch);
         auto bmVoicing = voicings::fenderClean;
         bmVoicing.asym = 0.0; // the bench fit carries zero static asym (it lives in the preamp drive) — a quadratic tail term would double-count even content
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
