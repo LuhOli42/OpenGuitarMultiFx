@@ -1038,7 +1038,7 @@ void BassmanStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
 
 void BassmanStyleAmplifierProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::overdrive_svg, IconData::overdrive_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::amp_svg, IconData::amp_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 
