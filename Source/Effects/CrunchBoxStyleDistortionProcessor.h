@@ -31,7 +31,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Crunch Box-Style Distortion"; }
+    const char* getName() const override { return "Crunch Box"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffd9482b); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

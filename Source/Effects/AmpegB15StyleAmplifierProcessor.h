@@ -38,7 +38,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "B-15-Style Amplifier"; }
+    const char* getName() const override { return "B-15"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff3a8a5a); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

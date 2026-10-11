@@ -34,12 +34,12 @@ const ToneBenderStyleFuzzProcessor::ModelSpec& ToneBenderStyleFuzzProcessor::spe
     // Q1 (see the header): 1 Mohm puts ~350 uA through Q1 and its collector near mid-supply, the operating point
     // the circuit is built around; a leakier part pulls it toward the rail and a tighter one cuts Q1 off, which is
     // why these were sorted by hand.
-    static const ModelSpec ge { "Tone Bender-Style Fuzz", "tb", true, -supplyVolts, 2.0e-7, 100.0, 100.0, 100.0,
+    static const ModelSpec ge { "Tone Bender", "tb", true, -supplyVolts, 2.0e-7, 100.0, 100.0, 100.0,
                                 0.0, 0.0, 0.0, 0.0, 8.2e3, 0.01e-6, 1.0e6,
                                 1.0 / (2.0 * 3.14159265 * 0.7e6), 100.0e-12, 35.0e-12 };   // OC75-class: fT ~0.7 MHz, Cob ~35 pF
     // Silicon: 2N4401 (Q1, Q2) and 2N5089 (Q3). Q3's 20k trimmer is set the way the builder would, to centre Q3's
     // collector; the value here was found by measuring that (see the doc).
-    static const ModelSpec si { "Silicon Tone Bender-Style Fuzz", "tbsi", false, supplyVolts, 1.0e-14, 200.0, 200.0, 600.0,
+    static const ModelSpec si { "Silicon Tone Bender", "tbsi", false, supplyVolts, 1.0e-14, 200.0, 200.0, 600.0,
                                 470.0e3, 2.7e3, 100.0, 220.0, 5.4e3, 0.1e-6, 0.0,
                                 1.0 / (2.0 * 3.14159265 * 250.0e6), 25.0e-12, 6.5e-12 };   // 2N4401 / 2N5089: fT 100-250 MHz, Cob 4-6.5 pF
     return m == Model::germanium ? ge : si;

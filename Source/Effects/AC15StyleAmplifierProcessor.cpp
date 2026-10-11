@@ -125,7 +125,7 @@ AC15StyleAmplifierProcessor::AC15StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "ac15", "AC15-Style Amplifier", "|", std::move (input));
+        "ac15", "AC15", "|", std::move (input));
     group->addChild (std::move (volume));
     group->addChild (std::move (tone));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("ac15_page2", "Page 2", "|", std::move (power));

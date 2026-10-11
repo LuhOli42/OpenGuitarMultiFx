@@ -40,7 +40,7 @@ CrunchBoxStyleDistortionProcessor::CrunchBoxStyleDistortionProcessor()
     level = levelParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "crunchbox", "Crunch Box-Style Distortion", "|", std::move (driveParam));
+        "crunchbox", "Crunch Box", "|", std::move (driveParam));
     group->addChild (std::move (toneParam));
     group->addChild (std::move (levelParam));
     parameters = std::move (group);

@@ -19,7 +19,7 @@ Dbx160StyleCompressorProcessor::Dbx160StyleCompressorProcessor()
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return juce::String (v < 0.5f ? "Hard knee" : "Over Easy"); }));
 
     threshold = thr.get(); ratio = rat.get(); output = out.get(); overEasy = oe.get();
-    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("dbx160", "dbx 160-Style Compressor", "|", std::move (thr), std::move (rat),
+    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("dbx160", "dbx 160", "|", std::move (thr), std::move (rat),
                                                                         std::move (out), std::move (oe));
 }
 

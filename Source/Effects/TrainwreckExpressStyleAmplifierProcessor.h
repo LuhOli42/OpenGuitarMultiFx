@@ -40,7 +40,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Trainwreck Express-Style Amplifier"; }
+    const char* getName() const override { return "Trainwreck Express"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff6b1d1d); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

@@ -29,10 +29,10 @@ const FuzzFaceStyleFuzzProcessor::ModelSpec& FuzzFaceStyleFuzzProcessor::specFor
 {
     // Germanium: Is is set from a forward drop of ~0.22 V at 1 mA (AC128-class), beta 100 (the pedal is built from
     // hand-picked parts with a gain around 80-120), and a collector-base leakage of ~2 uA at the ~4.5 V Q2 sees.
-    static const ModelSpec ge { "Fuzz Face-Style Fuzz", "ff", true, -supplyVolts, 2.0e-7, 100.0, 470.0, 2.2e6,
+    static const ModelSpec ge { "Fuzz Face", "ff", true, -supplyVolts, 2.0e-7, 100.0, 470.0, 2.2e6,
                               1.0 / (2.0 * 3.14159265 * 1.0e6), 100.0e-12, 30.0e-12 };   // AC128-class: fT ~1 MHz (beta corner ~10 kHz), Cob ~30 pF
     // Silicon: BC108C-class, Is 1e-14 (0.645 V at 0.7 mA), beta 500 (the C grade is 420-800), no leakage.
-    static const ModelSpec si { "Silicon Fuzz Face-Style Fuzz", "ffsi", false, supplyVolts, 1.0e-14, 500.0, 330.0, 0.0,
+    static const ModelSpec si { "Silicon Fuzz Face", "ffsi", false, supplyVolts, 1.0e-14, 500.0, 330.0, 0.0,
                               1.0 / (2.0 * 3.14159265 * 250.0e6), 10.0e-12, 4.5e-12 };   // BC108C: fT ~250 MHz, Cob 4.5 pF
     return m == Model::germanium ? ge : si;
 }

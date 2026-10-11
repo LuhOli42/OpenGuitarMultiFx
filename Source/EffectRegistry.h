@@ -47,12 +47,24 @@ public:
         utility
     };
 
-    void registerType (const juce::String& key, Category category, Creator creator);
+    void registerType (const juce::String& key, Category category, Creator creator,
+                       const juce::String& subcategory = {});
 
     /** The tab this key's tile belongs in. An unregistered key reports
         utility (and jasserts) rather than crashing a UI that enumerated
         keys from somewhere else. */
     Category categoryForKey (const juce::String& key) const;
+
+    /** The second-level grouping shown as chips inside a category (e.g.
+        Guitar Amps -> Clean / Crunch / High-Gain). Same registration-metadata
+        mechanism as category: passed to registerType(), never derived from
+        display names. Empty = the key has no subcategory. */
+    juce::String subcategoryForKey (const juce::String& key) const;
+
+    /** The distinct subcategories registered inside a category, in the
+        browser's chip order (canonical order first, any extras appended).
+        The dialog only renders chips when this returns more than one entry. */
+    juce::StringArray subcategoriesForCategory (Category category) const;
 
     /** User-facing tab label ("Guitar Amps", "Pitch/Filter", ...). */
     static juce::String categoryDisplayName (Category category);
@@ -109,6 +121,7 @@ pedal's orders): eco = none (cheapest, DEFAULT -- the user's choice; audible ali
 private:
     std::map<juce::String, Creator> creators;
     std::map<juce::String, Category> categoriesByKey;
+    std::map<juce::String, juce::String> subcategoriesByKey;
     std::map<juce::String, juce::String> displayNamesByKey;
     std::map<juce::String, juce::String> keysByDisplayName;
     std::set<juce::String> qualityDependentKeys;

@@ -33,7 +33,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Tube Driver-Style Overdrive"; }
+    const char* getName() const override { return "Tube Driver"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb5793b); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

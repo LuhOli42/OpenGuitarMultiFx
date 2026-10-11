@@ -138,7 +138,7 @@ SuperLeadStyleAmplifierProcessor::SuperLeadStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "superlead", "Super Lead-Style Amplifier", "|", std::move (input));
+        "superlead", "Super Lead", "|", std::move (input));
     group->addChild (std::move (normal));
     group->addChild (std::move (bright));
     group->addChild (std::move (treble));

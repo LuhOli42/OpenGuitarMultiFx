@@ -26,7 +26,7 @@ public:
     void reset() override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "dbx 160-Style Compressor"; }
+    const char* getName() const override { return "dbx 160"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffc44b4b); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

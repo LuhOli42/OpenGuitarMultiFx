@@ -332,8 +332,8 @@ public:
     void runTest() override
     {
         const Version versions[] = {
-            { Model::rat2, "RAT 2", "RAT 2-Style Distortion", 3.0e5, 1.0e6, 0.5, 0.85 },
-            { Model::turbo, "Turbo RAT", "Turbo RAT-Style Distortion", 4.0e5, 0.6e6, 1.4, 2.0 },
+            { Model::rat2, "RAT 2", "RAT 2", 3.0e5, 1.0e6, 0.5, 0.85 },
+            { Model::turbo, "Turbo RAT", "Turbo RAT", 4.0e5, 0.6e6, 1.4, 2.0 },
         };
 
         for (const auto& v : versions)

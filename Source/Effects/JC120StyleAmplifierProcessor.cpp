@@ -103,7 +103,7 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "jc120", "JC-120-Style Amplifier", "|", std::move (input));
+        "jc120", "JC-120", "|", std::move (input));
     group->addChild (std::move (bright));
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));

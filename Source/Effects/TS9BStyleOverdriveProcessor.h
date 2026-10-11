@@ -33,7 +33,7 @@ public:
     void reset() override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "TS9B-Style Overdrive"; }
+    const char* getName() const override { return "TS9B"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff4f9a3c); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

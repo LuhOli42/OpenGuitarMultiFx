@@ -295,7 +295,7 @@ RockerverbStyleAmplifierProcessor::RockerverbStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "rockerverb", "Rockerverb-Style Amplifier", "|", std::move (channel), std::move (cVolume));
+        "rockerverb", "Rockerverb", "|", std::move (channel), std::move (cVolume));
     group->addChild (std::move (cTreble));
     group->addChild (std::move (cBass));
     group->addChild (std::move (gain));

@@ -35,10 +35,10 @@ const OpAmpClipperDistortionProcessor::ModelSpec& OpAmpClipperDistortionProcesso
     // MXR Distortion+: the schematic from the GitHub schematic collection, cross-checked with ElectroSmash/Wampler.
     // DOD 250: General Guitar Gadgets' schematic (original 741 version): 22K/22K + 10 uF bias, 470K to the (+) pin,
     // 25 pF across the feedback, 500K reverse-log Gain, 4.7 uF coupling, 1N4148 pair, 100K Level.
-    static const ModelSpec distortionPlus { "Distortion+-Style Distortion", "dp", "Distortion", "Output", 0xffe8c020,
+    static const ModelSpec distortionPlus { "Distortion+", "dp", "Distortion", "Output", 0xffe8c020,
                                             1.0e6, 1.0e-6, 10.0e-9, 10.0e3, 1.0e6, 1.0e6, 0.0, 47.0e-9, 4.7e3, 1.0e6,
                                             1.0e-6, 10.0e3, 1.0e-9, geIs, geNVt, 10.0e3, true };
-    static const ModelSpec dod250 { "DOD 250-Style Overdrive", "dod250", "Gain", "Level", 0xfff0d830,
+    static const ModelSpec dod250 { "DOD 250", "dod250", "Gain", "Level", 0xfff0d830,
                                     22.0e3, 10.0e-6, 10.0e-9, 10.0e3, 470.0e3, 1.0e6, 25.0e-12, 47.0e-9, 4.7e3, 500.0e3,
                                     4.7e-6, 10.0e3, 1.0e-9, siIs, siNVt, 100.0e3, false };
     return model == Model::dod250 ? dod250 : distortionPlus;

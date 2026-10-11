@@ -17,14 +17,17 @@ namespace openguitarmultifx
     effects, and amps/effects all mixed together). An OverlayHost card like
     every other dialog here -- a scrollable category rail on the left
     (categories come from EffectRegistry's registration metadata, so a new
-    effect lands in the right tab on its own), a scrollable tile grid on
-    the right, and a search field that filters tiles across ALL categories
-    live. Tap a tile = pick that effect; the owner then calls addEffect()
-    and pops the card.
+    effect lands in the right tab on its own), a scrollable list of effect
+    rows on the right, and a search field that filters rows across ALL
+    categories live. Tap a row = pick that effect; the owner then calls
+    addEffect() and pops the card.
 
-    Tiles reuse the same visual language as EffectBlockComponent (accent
-    outline + drawIcon() glyph + name along the bottom) so what you pick
-    looks exactly like what lands on the grid.
+    Rows are name-first list rows at the 48px touch floor, not icon tiles:
+    the glyph survives only as a small ornament next to the name. Inside a
+    category with more than one subcategory (Guitar Amps -> Clean / Crunch /
+    High-Gain, Fuzz -> Big Muff / Fuzz Face / Tone Bender, ...) a second
+    row of chips filters the list further -- same registration-metadata
+    mechanism as the category itself, no name-string matching.
 */
 class AddEffectBrowserDialog : public juce::Component
 {
@@ -36,20 +39,20 @@ public:
 
     // ---- callbacks wired by MainComponent ----
 
-    /** Fires when an effect tile is tapped (add this registry key). */
+    /** Fires when an effect row is tapped (add this registry key). */
     std::function<void (juce::String registryKey)> onEffectChosen;
     std::function<void()> onPopOverlay;
 
 private:
-    /** One grid cell: accent-outlined rounded tile with the effect's own
-        drawIcon() glyph and its display name (same two-zone layout as the
-        chain's EffectBlockComponent). Tap = onTap. */
-    class EffectTile : public juce::Component
+    /** One list row: a small accent-tinted icon ornament, then the effect's
+        display name, then an optional context line (its category while
+        searching, else its subcategory). Tap = onTap. */
+    class EffectRow : public juce::Component
     {
     public:
         juce::String key;
         juce::String name;
-        juce::String subline;   // shown while searching: which category this hit belongs to
+        juce::String subline;
         const EffectProcessor* probe = nullptr; // icon + accent; owned by the dialog's probe cache
 
         std::function<void()> onTap;
@@ -58,28 +61,30 @@ private:
         void mouseUp (const juce::MouseEvent& event) override;
     };
 
-    /** Free-flowing rows of EffectTiles inside a Viewport. */
-    class TileGrid : public juce::Component
+    /** Stacked rows of EffectRow inside a Viewport. */
+    class RowList : public juce::Component
     {
     public:
-        juce::OwnedArray<EffectTile> tiles;
-        std::function<void (EffectTile&)> onTileTap;
+        juce::OwnedArray<EffectRow> rows;
+        std::function<void (EffectRow&)> onRowTap;
 
-        void clearTiles();
-        EffectTile& addTile();
-        /** Lays the tiles out across `width` and returns the height they
+        void clearRows();
+        EffectRow& addRow();
+        /** Lays the rows out down `width` and returns the height they
             occupy -- the caller then sizes this component to it. */
         int layoutForWidth (int width);
     };
 
-    /** The tile's icon/accent source: a lazily created (and cached)
+    /** The row's icon/accent source: a lazily created (and cached)
         instance from registry.create(). */
     const EffectProcessor* probeForKey (const juce::String& key);
     void selectCategory (EffectRegistry::Category category);
-    void rebuildTiles();
+    void rebuildChips();
+    void rebuildRows();
 
     EffectRegistry& registry;
     EffectRegistry::Category selectedCategory = EffectRegistry::Category::guitarAmps;
+    juce::String selectedSubcategory; // empty = All
     std::map<juce::String, std::unique_ptr<EffectProcessor>> probes;
     std::map<EffectRegistry::Category, int> counts;
 
@@ -90,8 +95,11 @@ private:
     juce::Component rail;
     juce::OwnedArray<juce::TextButton> categoryButtons;
 
+    juce::Component chipsBar;
+    juce::OwnedArray<juce::TextButton> chipButtons;
+
     juce::Viewport gridViewport;
-    TileGrid tileGrid;
+    RowList rowList;
     juce::Label emptyStateLabel;
     juce::TextButton closeButton { "Close" };
 };

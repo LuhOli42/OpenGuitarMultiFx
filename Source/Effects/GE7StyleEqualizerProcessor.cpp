@@ -49,7 +49,7 @@ GE7StyleEqualizerProcessor::GE7StyleEqualizerProcessor()
     const char* ids[numBands] = { "ge7_100", "ge7_200", "ge7_400", "ge7_800", "ge7_1600", "ge7_3200", "ge7_6400" };
     const char* names[numBands] = { "100 Hz", "200 Hz", "400 Hz", "800 Hz", "1.6 kHz", "3.2 kHz", "6.4 kHz" };
 
-    auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("ge7", "GE-7-Style Equalizer", "|");
+    auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("ge7", "GE-7", "|");
     for (int i = 0; i < numBands; ++i)
     {
         auto p = makeBand (ids[i], names[i]);

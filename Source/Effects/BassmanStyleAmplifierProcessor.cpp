@@ -166,7 +166,7 @@ BassmanStyleAmplifierProcessor::BassmanStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "bassman", "Bassman-Style Amplifier", "|", std::move (input));
+        "bassman", "Bassman", "|", std::move (input));
     group->addChild (std::move (normal));
     group->addChild (std::move (bright));
     group->addChild (std::move (treble));

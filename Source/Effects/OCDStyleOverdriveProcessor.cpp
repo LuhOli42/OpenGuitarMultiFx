@@ -63,7 +63,7 @@ OCDStyleOverdriveProcessor::OCDStyleOverdriveProcessor()
     peak = peakParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "ocd", "OCD-Style Overdrive", "|", std::move (driveParam));
+        "ocd", "OCD", "|", std::move (driveParam));
     group->addChild (std::move (toneParam));
     group->addChild (std::move (levelParam));
     group->addChild (std::move (clipParam));

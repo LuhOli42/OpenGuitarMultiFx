@@ -102,7 +102,7 @@ MesaBass400PlusStyleAmplifierProcessor::MesaBass400PlusStyleAmplifierProcessor()
     masterParam = master.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "mesa400p", "Bass 400+-Style Amplifier", "|", std::move (volume));
+        "mesa400p", "Bass 400+", "|", std::move (volume));
     group->addChild (std::move (bright));
     group->addChild (std::move (bass));
     group->addChild (std::move (middle));

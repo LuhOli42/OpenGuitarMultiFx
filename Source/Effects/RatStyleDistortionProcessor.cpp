@@ -42,9 +42,9 @@ const RatStyleDistortionProcessor::Spec& RatStyleDistortionProcessor::specFor (M
     // Distortion the Turbo is clean where the RAT 2 clips hard (THD 0.99 % vs 25.3 % at knob 0.10 on the audit probe)
     // and it runs ~9 dB hotter internally (unity trims -7.85 vs +1.25 dB); at high Distortion both clip deep into the
     // same filter and post-trim THD/FR converge -- that convergence is the real pedals, not an unwired flag.
-    static const Spec original { "RAT-Style Distortion", 1.0e6, 360.0, 150.0e3, 1.6e3, 1.0e-6, false, lm308 };
-    static const Spec rat2 { "RAT 2-Style Distortion", 2.2e6, 560.0, 100.0e3, 1.5e3, 10.0e-6, false, lm308 };
-    static const Spec turbo { "Turbo RAT-Style Distortion", 2.2e6, 560.0, 100.0e3, 1.5e3, 10.0e-6, true, op07 };
+    static const Spec original { "RAT", 1.0e6, 360.0, 150.0e3, 1.6e3, 1.0e-6, false, lm308 };
+    static const Spec rat2 { "RAT 2", 2.2e6, 560.0, 100.0e3, 1.5e3, 10.0e-6, false, lm308 };
+    static const Spec turbo { "Turbo RAT", 2.2e6, 560.0, 100.0e3, 1.5e3, 10.0e-6, true, op07 };
 
     switch (model)
     {

@@ -179,7 +179,7 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "deluxereverb", "Deluxe Reverb-Style Amplifier", "|", std::move (input));
+        "deluxereverb", "Deluxe Reverb", "|", std::move (input));
     group->addChild (std::move (nVolume));
     group->addChild (std::move (nTreble));
     group->addChild (std::move (nBass));

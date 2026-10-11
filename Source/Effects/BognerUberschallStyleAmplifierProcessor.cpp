@@ -243,7 +243,7 @@ BognerUberschallStyleAmplifierProcessor::BognerUberschallStyleAmplifierProcessor
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "bogner_uber", "Bogner Uberschall-Style Amplifier", "|", std::move (volume));
+        "bogner_uber", "Bogner Uberschall", "|", std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));

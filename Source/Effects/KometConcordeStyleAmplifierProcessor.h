@@ -21,7 +21,7 @@ class KometConcordeStyleAmplifierProcessor : public TrainwreckExpressStyleAmplif
 public:
     KometConcordeStyleAmplifierProcessor();
 
-    const char* getName() const override { return "Komet Concorde-Style Amplifier"; }
+    const char* getName() const override { return "Komet Concorde"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb8862b); }
 };
 

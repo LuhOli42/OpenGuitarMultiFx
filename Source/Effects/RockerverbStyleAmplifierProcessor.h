@@ -34,7 +34,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Rockerverb-Style Amplifier"; }
+    const char* getName() const override { return "Rockerverb"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffcc5500); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

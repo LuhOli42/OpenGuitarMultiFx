@@ -35,7 +35,7 @@ const BigMuffStyleFuzzProcessor::ModelSpec& BigMuffStyleFuzzProcessor::specFor (
 {
     // USA Version 3, from Kit Rae's trace of a 1976 V3 ("76#3"), the most common V3 circuit. BC239 transistors.
     static const ModelSpec us {
-        "Big Muff-Style Fuzz", "bmp",
+        "Big Muff", "bmp",
         39.0e3,    // R2
         10.0e-6,   // C1
         47.0e3,    // R14
@@ -55,7 +55,7 @@ const BigMuffStyleFuzzProcessor::ModelSpec& BigMuffStyleFuzzProcessor::specFor (
     // Version 7B/7C, from Kit Rae's trace of the all-green Civil War / Tall Font Russian. Unmarked Russian NPN;
     // Kit Rae gives 2N5089 as the modern equivalent, so the beta is higher than the BC239's.
     static const ModelSpec ru {
-        "Russian Big Muff-Style Fuzz", "bmpru",
+        "Russian Big Muff", "bmpru",
         39.0e3,    // R2
         0.1e-6,    // C1
         100.0e3,   // R14
@@ -80,7 +80,7 @@ const BigMuffStyleFuzzProcessor::ModelSpec& BigMuffStyleFuzzProcessor::specFor (
     // because their whole midband shelf sits ~6 dB lower (the lower-gain 12k/390R stages, see the doc) -- relative
     // to its own shelf the Russian notch is shallower (R8 20k vs 39k), which is the real pedal's direction.
     static const ModelSpec sovtek {
-        "Sovtek Big Muff-Style Fuzz", "bmpsv",
+        "Sovtek Big Muff", "bmpsv",
         39.0e3, 0.1e-6, 100.0e3, 430.0e-12, 12.0e3, 390.0, 390.0, 0.1e-6, 0.047e-6, 0.0039e-6, 20.0e3, 470.0e3, 10.0e3, 2.7e3, 500.0
     };
     switch (m)

@@ -58,6 +58,42 @@ public:
                     juce::String (key) + " should be a Bass Amp");
         }
 
+        beginTest ("subcategories are consistent with the categories they group");
+        for (auto& key : keys)
+        {
+            const auto sub = registry.subcategoryForKey (key);
+            if (sub.isNotEmpty())
+                expect (registry.subcategoriesForCategory (registry.categoryForKey (key)).contains (sub),
+                        key + " -> subcategory '" + sub + "' missing from its own category's chip list");
+        }
+
+        // The amp split into voicing classes: every guitar amp has to land
+        // in exactly one of Clean / Crunch / High-Gain, or the browser's
+        // chip row silently leaves it under All only.
+        for (const char* key : { "TwinReverbStyleAmplifier", "DeluxeReverbStyleAmplifier", "JC120StyleAmplifier" })
+            expect (registry.subcategoryForKey (key) == "Clean",
+                    juce::String (key) + " should be a Clean amp");
+        for (const char* key : { "AC15StyleAmplifier", "AC30StyleAmplifier", "JTM45StyleAmplifier",
+                                 "BassmanStyleAmplifier", "MatchlessHC30StyleAmplifier" })
+            expect (registry.subcategoryForKey (key) == "Crunch",
+                    juce::String (key) + " should be a Crunch amp");
+        for (const char* key : { "JCM800StyleAmplifier", "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier",
+                                 "DualRectifierStyleAmplifier", "EVH5150StyleAmplifier" })
+            expect (registry.subcategoryForKey (key) == "High-Gain",
+                    juce::String (key) + " should be a High-Gain amp");
+
+        for (const char* key : { "TS9BStyleOverdrive", "ODB3StyleOverdrive", "DarkglassB7KStyleOverdrive",
+                                 "SansAmpBDDIStyleOverdrive" })
+            expect (registry.subcategoryForKey (key) == "Bass",
+                    juce::String (key) + " should be a Bass drive");
+
+        beginTest ("a category only earns a chip row when more than one subcategory is populated");
+        expect (registry.subcategoriesForCategory (EffectRegistry::Category::guitarAmps).size() == 3);
+        expect (registry.subcategoriesForCategory (EffectRegistry::Category::bassAmps).isEmpty(),
+                "bass amps are one group -- no chip row");
+        expect (registry.subcategoriesForCategory (EffectRegistry::Category::distortion).size() <= 1);
+        expect (registry.subcategoriesForCategory (EffectRegistry::Category::neural).size() <= 1);
+
         // Every tab except Utility (empty today, kept for future helpers)
         // must have at least one member -- an empty tab in the browser is a
         // broken category, not a UI choice.
@@ -81,8 +117,13 @@ public:
         {
             juce::StringArray members;
             for (auto& key : keys)
-                if (registry.categoryForKey (key) == category)
-                    members.add (registry.displayNameForKey (key));
+            {
+                if (registry.categoryForKey (key) != category)
+                    continue;
+                const auto sub = registry.subcategoryForKey (key);
+                members.add (registry.displayNameForKey (key)
+                             + (sub.isNotEmpty() ? " [" + sub + "]" : juce::String()));
+            }
             lines.add (EffectRegistry::categoryDisplayName (category) + " ("
                        + juce::String (members.size()) + "): " + members.joinIntoString (", "));
         }

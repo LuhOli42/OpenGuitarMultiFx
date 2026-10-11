@@ -53,7 +53,7 @@ ZendriveStyleOverdriveProcessor::ZendriveStyleOverdriveProcessor()
     level = levelParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "zendrive", "Zendrive-Style Overdrive", "|", std::move (driveParam));
+        "zendrive", "Zendrive", "|", std::move (driveParam));
     group->addChild (std::move (toneParam));
     group->addChild (std::move (voiceParam));
     group->addChild (std::move (levelParam));

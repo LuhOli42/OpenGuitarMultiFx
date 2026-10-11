@@ -30,7 +30,7 @@ namespace
 
 MatchlessHC30StyleAmplifierProcessor::MatchlessHC30StyleAmplifierProcessor()
     : EL84BoutiqueAmpCore (Model::matchlessHC30,
-        { triode12AX7(), pentodeEF86(), pentodeEL84(), pentodeEL84Pair() }, reducedOrder, "HC-30-Style Amplifier")
+        { triode12AX7(), pentodeEF86(), pentodeEL84(), pentodeEL84Pair() }, reducedOrder, "HC-30")
 {
 }
 }

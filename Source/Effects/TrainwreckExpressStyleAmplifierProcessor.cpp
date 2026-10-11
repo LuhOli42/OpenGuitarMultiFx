@@ -78,12 +78,12 @@ const TrainwreckExpressStyleAmplifierProcessor::Spec& TrainwreckExpressStyleAmpl
     // ~369-389 V); ~5k primary. Bias: Fischer sets a real Express to -30 V; the fitted EL34 set below (the Super Lead's, whose
     // cutoff sits lower than a real tube's -- a plexi is -55 V there) reaches a comparable ~40 mA idle at about -41 V, so noon
     // is -41 V (estimated operating-point match, not a voltage match).
-    static const Spec express { "trainwreck_express", "Trainwreck Express-Style Amplifier", "twx_", false,
+    static const Spec express { "trainwreck_express", "Trainwreck Express", "twx_", false,
                                 395.0, 60.0, 80.0e-6, 295.0 / 380.0, 275.0 / 380.0, 5000.0, 6.0, -41.0, 6.0, 0.040,
                                 94.0, 0.108, 0.0, 1.35, 3.0, 0.0075, 0.975 };
     // Concorde: 4k8 primary and diode rectification reported by an Amp Garage builder; rails ESTIMATED (diode rectifier ->
     // higher than the Express); bias ESTIMATED for the same ~40 mA idle at those rails.
-    static const Spec concorde { "komet_concorde", "Komet Concorde-Style Amplifier", "kcd_", true,
+    static const Spec concorde { "komet_concorde", "Komet Concorde", "kcd_", true,
                                  460.0, 60.0, 100.0e-6, 335.0 / 445.0, 300.0 / 445.0, 4800.0, 6.0, -51.0, 7.0, 0.040,
                                  29.0, 0.112, 0.0, 1.30, 2.0, 0.0005, 0.96 };
     return model == Model::concorde ? concorde : express;

@@ -36,7 +36,7 @@ ODR1StyleOverdriveProcessor::ODR1StyleOverdriveProcessor()
     levelParam = level.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "odr1", "ODR-1-Style Overdrive", "|", std::move (drive));
+        "odr1", "ODR-1", "|", std::move (drive));
     group->addChild (std::move (spectrum));
     group->addChild (std::move (level));
     parameters = std::move (group);

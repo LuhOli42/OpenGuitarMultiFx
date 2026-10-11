@@ -107,7 +107,7 @@ GibsonEH150StyleAmplifierProcessor::GibsonEH150StyleAmplifierProcessor()
     speakerParam = speaker.get();
     outputParam = output.get();
 
-    auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("gibson_eh150", "Gibson EH-150-Style Amplifier", "|", std::move (volume));
+    auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("gibson_eh150", "Gibson EH-150", "|", std::move (volume));
     group->addChild (std::move (tone));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("gibson_eh150_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));

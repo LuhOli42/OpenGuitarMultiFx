@@ -32,7 +32,7 @@ OverdriverStyleOverdriveProcessor::OverdriverStyleOverdriveProcessor()
     trebleParam = treble.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "overdriver", "Overdriver-Style Overdrive", "|", std::move (gain));
+        "overdriver", "Overdriver", "|", std::move (gain));
     group->addChild (std::move (bass));
     group->addChild (std::move (treble));
     parameters = std::move (group);

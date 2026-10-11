@@ -32,7 +32,7 @@ DT1StyleDistortionProcessor::DT1StyleDistortionProcessor()
     levelParam = level.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "dt1", "DT-1-Style Distortion", "|", std::move (distortion));
+        "dt1", "DT-1", "|", std::move (distortion));
     group->addChild (std::move (tone));
     group->addChild (std::move (level));
     parameters = std::move (group);

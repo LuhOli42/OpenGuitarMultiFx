@@ -109,11 +109,11 @@ public:
             }
         }
 
-        beginTest ("display names carry the -Style suffix, never a bare trademark");
+        beginTest ("display names are the bare model names (the -Style suffix was dropped project-wide on request)");
         {
-            expectEquals (juce::String (TubeScreamerStyleOverdriveProcessor (Model::ts808).getName()), juce::String ("TS808-Style Overdrive"));
-            expectEquals (juce::String (TubeScreamerStyleOverdriveProcessor (Model::ts9).getName()), juce::String ("TS9-Style Overdrive"));
-            expectEquals (juce::String (TubeScreamerStyleOverdriveProcessor (Model::ts10).getName()), juce::String ("TS10-Style Overdrive"));
+            expectEquals (juce::String (TubeScreamerStyleOverdriveProcessor (Model::ts808).getName()), juce::String ("TS808"));
+            expectEquals (juce::String (TubeScreamerStyleOverdriveProcessor (Model::ts9).getName()), juce::String ("TS9"));
+            expectEquals (juce::String (TubeScreamerStyleOverdriveProcessor (Model::ts10).getName()), juce::String ("TS10"));
         }
 
         beginTest ("stays finite/bounded and the clipper converges under a loud sine, every Drive setting");

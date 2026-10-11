@@ -90,7 +90,7 @@ GarnetHerzogStyleAmplifierProcessor::GarnetHerzogStyleAmplifierProcessor()
     tubeFeelParam = feel.get();
     outputParam = output.get();
 
-    auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("garnet_herzog", "Garnet Herzog-Style Amplifier", "|", std::move (volume));
+    auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("garnet_herzog", "Garnet Herzog", "|", std::move (volume));
     group->addChild (std::move (deep));
     group->addChild (std::move (level));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("garnet_herzog_page2", "Page 2", "|", std::move (power));

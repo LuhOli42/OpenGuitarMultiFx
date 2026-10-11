@@ -213,7 +213,7 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "dumble_sss", "Dumble Steel String-Style Amplifier", "|", std::move (volume));
+        "dumble_sss", "Dumble Steel String", "|", std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));

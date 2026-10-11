@@ -32,7 +32,7 @@ public:
     void reset() override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "G-Series-Style Bus Compressor"; }
+    const char* getName() const override { return "G-Series Bus Compressor"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff4a6fa5); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
