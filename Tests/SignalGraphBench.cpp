@@ -117,6 +117,11 @@ public:
             graph.setLaneWritesDeviceOutput (i, true);
         }
 
+        // Remember the caller's kill-switch state: the serial A-B needs
+        // it set and the parallel run needs it clear, but a caller who
+        // exported it expects it still set after the bench.
+        const bool callerDisabled = std::getenv ("OGMFX_DISABLE_ROW_PARALLEL") != nullptr;
+
         setenv ("OGMFX_DISABLE_ROW_PARALLEL", "1", 1);
         graph.prepare (sr, blockSize, 2);
         const auto serial = timeGraph (graph, 500, 2000);
@@ -124,6 +129,9 @@ public:
         unsetenv ("OGMFX_DISABLE_ROW_PARALLEL");
         graph.prepare (sr, blockSize, 2);
         const auto parallel = timeGraph (graph, 500, 2000);
+
+        if (callerDisabled)
+            setenv ("OGMFX_DISABLE_ROW_PARALLEL", "1", 1);
 
         // --- Serial-chain control: all the same processors on ONE lane ---
         SignalGraph chain;

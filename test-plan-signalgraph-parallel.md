@@ -18,7 +18,7 @@ JUCE opens "default", the audio callback actually runs, and the whole dispatch p
 (runStage/collectJobs/LaneWorker::run) executes for real.
 
 Worker presence is shell-verifiable while the app runs:
-`for t in /proc/<PID>/task/*/comm; do cat $t; done | grep -c SignalGraphLane`
+`for t in /proc/<PID>/task/*/comm; do cat $t; done | grep -c SigGraphLane`
 (expected: 0 for serial/empty topologies, N-1 workers for an N-lane dispatchable stage).
 
 A crafted preset `~/.config/OpenGuitarMultiFx/presets/ParallelRows.xml` creates 3 level-0 lanes
@@ -41,12 +41,12 @@ Launch `build/OpenGuitarMultiFx_artefacts/Release/OpenGuitarMultiFx` on :0.
 PASS: window appears, title does NOT read "Audio device failed to open"
 (MainComponent.cpp:239-240 sets that title iff device open failed); log file
 openguitarmultifx.log contains "AudioEngine: using" line; `pgrep -af OpenGuitarMultiFx` alive;
-0 SignalGraphLane threads (empty graph: only row 0 participates, 1 lane → not dispatchable).
-FAIL: crash, "failed to open" title, or any SignalGraphLane threads already.
+0 SigGraphLane threads (empty graph: only row 0 participates, 1 lane → not dispatchable).
+FAIL: crash, "failed to open" title, or any SigGraphLane threads already.
 
 ### T2 — One effect on row 0 only (serial must spawn ZERO workers)
 Hover a row-0 cell, click "+", pick a light effect (e.g. GE-7 equalizer or a noise gate).
-PASS: block tile appears in row 0; still 0 SignalGraphLane threads (single lane = serial,
+PASS: block tile appears in row 0; still 0 SigGraphLane threads (single lane = serial,
 matches commit claim "serial topologies spawn zero workers"); UI responsive.
 
 ### T3 — Second row as parallel lane → workers spawn
@@ -54,7 +54,7 @@ a) Add an effect to a row-1 cell (e.g. Parametric EQ).
 b) Row-1 input "+" (left gutter) → pick the physical-input item ("Default"/first input name).
 c) Row-1 output "+" (right gutter) → pick "Output <first pair name>".
 PASS: row 1 input tile shows "IN", output tile shows "TO <name>" (refreshRowEndpoints);
-exactly 1 SignalGraphLane thread in /proc; UI responsive. Rows 0+1 both at level 0 →
+exactly 1 SigGraphLane thread in /proc; UI responsive. Rows 0+1 both at level 0 →
 dispatchable stage of 2 → 1 worker expected.
 FAIL: app freezes, crashes, wrong thread count, or endpoint tiles don't update.
 
@@ -68,14 +68,14 @@ d) Select the new block → parameter drawer → Remove it (onRemoveRequested �
 e) Repeat a/b once more quickly.
 PASS after each: UI accepts the next click without visible stall (screenshots show updated
 endpoint text/block grid); process alive; thread count matches topology (1 while parallel,
-0 after serialize); no zombie SignalGraphLane accumulation (old workers must die).
-FAIL: UI frozen >2s, crash, spin, or stale SignalGraphLane threads persisting >2s after
+0 after serialize); no zombie SigGraphLane accumulation (old workers must die).
+FAIL: UI frozen >2s, crash, spin, or stale SigGraphLane threads persisting >2s after
 topology change.
 
 ### T5 — Multi-row preset load
 PresetBadge (top-left) → PresetBrowserDialog → tap "ParallelRows" (crafted: 3 parallel lanes).
 If a "save current?" ChoiceCard appears (chain is dirty), choose the discard option.
-PASS: 3 block tiles appear on rows 0–2; rows show IN/TO endpoints; exactly 2 SignalGraphLane
+PASS: 3 block tiles appear on rows 0–2; rows show IN/TO endpoints; exactly 2 SigGraphLane
 threads; UI responsive. The load tears down the whole old chain (removeEffect loop → many
 rebuilds) then rebuilds — heavy worker churn in one operation.
 FAIL: crash/freeze, wrong thread count, preset content not reflected.
@@ -83,7 +83,7 @@ FAIL: crash/freeze, wrong thread count, preset content not reflected.
 ### T6 — More churn + clean exit
 One last round of rapid routing toggles, then close the app via its JUCE-drawn close (X) button.
 PASS: `closeButtonPressed`/`systemRequestedQuit` in log; process exits within ~5s
-(`pgrep -af OpenGuitarMultiFx` empty, no zombie); no SignalGraphLane threads remain
+(`pgrep -af OpenGuitarMultiFx` empty, no zombie); no SigGraphLane threads remain
 (`~SignalGraph → stopWorkers` must join workers, not detach/orphan).
 FAIL: hang on exit (needs SIGKILL), crash/abort message in log.
 
