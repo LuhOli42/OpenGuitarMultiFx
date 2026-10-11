@@ -75,9 +75,11 @@ void SansAmpBDDIStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addCapacitor (t1, nb, 20.0e-9);
         c.addResistor (t2, nb, 10.6e3);
 
-        // First-order HPF @ ~72 Hz (the cab's low-end roll-off): 2.2 uF into 1k
-        c.addCapacitor (nt, hpf, 2.2e-6);
-        c.addResistor (hpf, nb, 1.0e3);
+        // First-order HPF @ ~72 Hz (the cab's low-end roll-off): 2.2 nF into 1M. The impedance level must
+        // stay high: the twin-T above it has a ~10k output impedance, so a kOhm-scale HPF load collapses
+        // the low band the notch is meant to pass (the 1k/2.2uF version ate ~30 dB at 110 Hz).
+        c.addCapacitor (nt, hpf, 2.2e-9);
+        c.addResistor (hpf, nb, 1.0e6);
         ch.nNotch = hpf;
         ch.nBuf = buf;
 
@@ -346,6 +348,21 @@ void SansAmpBDDIStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buff
     }
 
     shortcut.end (buffer);
+}
+
+double SansAmpBDDIStyleOverdriveProcessor::debugVoltage (Probe p) const noexcept
+{
+    const auto& ch = channels[0];
+    switch (p)
+    {
+        case Probe::buf:      return ch.a.voltage (ch.nBuf);
+        case Probe::notch:    return ch.a.voltage (ch.nNotch);
+        case Probe::presence: return ch.b.voltage (ch.nPres);
+        case Probe::drive:    return ch.c.voltage (ch.nDrive);
+        case Probe::cab:      return ch.d.voltage (ch.nCab);
+        case Probe::out:      return ch.e.voltage (ch.nOut);
+    }
+    return 0.0;
 }
 
 void SansAmpBDDIStyleOverdriveProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const

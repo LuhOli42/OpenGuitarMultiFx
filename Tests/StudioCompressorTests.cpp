@@ -43,11 +43,18 @@ public:
         return 10.0 * std::log10 (out2 / in2);
     }
 
-    /** Time (ms) for the gain reduction to go from 0 to `fraction` of its final value after a step of `amp`. */
+    /** Time (ms) for the gain reduction to go from 0 to `fraction` of its final value after a step of `amp`.
+        Params set just before are still on their ~10 ms smoothing ramp (EffectProcessor::paramRampSeconds):
+        run silence first so the controls land and the detector rests at 0 before the step is timed. */
     template <typename P>
     static double stepTimeMs (P& p, double amp, double targetGrDb)
     {
         juce::AudioBuffer<float> b (1, 1);
+        for (int i = 0; i < (int) (0.1 * sr); ++i)
+        {
+            b.setSample (0, 0, 0.0f);
+            p.process (b);
+        }
         for (int i = 0; i < (int) (20.0 * sr); ++i)
         {
             b.setSample (0, 0, (float) (amp * std::sin (2.0 * juce::MathConstants<double>::pi * 1000.0 * i / sr)));
@@ -58,11 +65,17 @@ public:
         return -1.0;
     }
 
-    /** Peak of the output (dBFS) over the first `ms` of a loud 3 kHz burst: a feedback compressor with a slow attack lets the front of the burst through. */
+    /** Peak of the output (dBFS) over the first `ms` of a loud 3 kHz burst: a feedback compressor with a slow attack lets the front of the burst through.
+        Same param-ramp caveat as stepTimeMs: settle on silence first, otherwise the window measures the input/output gain ramp, not the attack. */
     template <typename P>
     static double burstFrontPeakDb (P& p, double amp, double ms)
     {
         juce::AudioBuffer<float> b (1, 1);
+        for (int i = 0; i < (int) (0.1 * sr); ++i)
+        {
+            b.setSample (0, 0, 0.0f);
+            p.process (b);
+        }
         double peak = 0.0;
         for (int i = 0; i < (int) (ms * 0.001 * sr); ++i)
         {

@@ -54,6 +54,43 @@ public:
             expect (p.getSolveFailureRate() < 0.01);
         }
 
+        beginTest ("the 72 Hz HPF doesn't load the notch's low band");
+        {
+            // The twin-T's output impedance is ~10k, so the HPF after it must sit at a much higher impedance:
+            // a kOhm-scale load pulls the whole low band down with it (a ~30 dB loss at 110 Hz once did).
+            using Pr = SansAmpBDDIStyleOverdriveProcessor::Probe;
+            auto stagePp = [&] (Pr probe)
+            {
+                SansAmpBDDIStyleOverdriveProcessor p;
+                p.prepare (sr, 128, 1);
+                double phase = 0.0, lo = 1.0e9, hi = -1.0e9;
+                juce::AudioBuffer<float> warm (1, 128);
+                for (int b = 0; b < 300; ++b)
+                {
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        phase += 2.0 * juce::MathConstants<double>::pi * 110.0 / sr;
+                        warm.setSample (0, i, (float) (0.1 * std::sin (phase)));
+                    }
+                    p.process (warm);
+                }
+                juce::AudioBuffer<float> buf (1, 1);
+                for (int i = 0; i < 4400; ++i) // ~10 cycles of 110 Hz
+                {
+                    phase += 2.0 * juce::MathConstants<double>::pi * 110.0 / sr;
+                    buf.setSample (0, 0, (float) (0.1 * std::sin (phase)));
+                    p.process (buf);
+                    const double v = p.debugVoltage (probe);
+                    lo = juce::jmin (lo, v);
+                    hi = juce::jmax (hi, v);
+                }
+                return hi - lo;
+            };
+            const double buf = stagePp (Pr::buf), notch = stagePp (Pr::notch);
+            logMessage ("110 Hz p-p at the buffer " + juce::String (buf, 3) + " V, after notch+HPF " + juce::String (notch, 3) + " V");
+            expectGreaterThan (notch, buf * 0.5);
+        }
+
         beginTest ("audible output");
         {
             SansAmpBDDIStyleOverdriveProcessor p;
