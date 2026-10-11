@@ -128,6 +128,13 @@ public:
                 for (int i = 0; i < 512; ++i)
                     expect (std::isfinite (buf.getSample (0, i)) && std::abs (buf.getSample (0, i)) < 1.0e5f);
             }
+            // Undamped-pole check (a zero alpha would ring forever): silence must decay to nothing.
+            for (int b = 0; b < 400; ++b)
+            {
+                buf.clear();
+                eq.process (buf);
+            }
+            expectLessThan ((double) buf.getMagnitude (0, 0, 512), 1.0e-3);
         }
 
         beginTest ("the maxBands cap holds");
