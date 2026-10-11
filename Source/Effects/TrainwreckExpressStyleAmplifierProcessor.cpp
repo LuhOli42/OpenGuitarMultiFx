@@ -159,7 +159,7 @@ TrainwreckExpressStyleAmplifierProcessor::TrainwreckExpressStyleAmplifierProcess
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
-    auto cab = tubeamp::makeCabParam ("cab", "4x12 GB", cabAlts);
+    auto cab = tubeamp::makeCabParam (px + "cab", "4x12 GB", cabAlts);
     cabParam = cab.get();
     page2->addChild (std::move (cab));
     group->addChild (std::move (page2));

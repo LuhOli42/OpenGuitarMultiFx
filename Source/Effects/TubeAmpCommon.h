@@ -402,8 +402,9 @@ struct PowerStageTail
         if (wantSel != pendingSel)
         {
             pendingSel = wantSel;
-            if (wantSel != activeSel)
-                cabTarget = 0.0;
+            // Reversing back to the still-active selection mid-fade must
+            // cancel the fade-out, not let the cab die at zero.
+            cabTarget = (wantSel == activeSel && activeSel > 0) ? 1.0 : 0.0;
         }
         const double cabOut = cab.process (base);
         cabMix += cabMixC * (cabTarget - cabMix);

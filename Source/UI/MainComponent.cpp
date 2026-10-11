@@ -1327,6 +1327,10 @@ void MainComponent::newPreset()
     rowRouting[0].toDevice = true;
     rowRouting[0].deviceOutputPair = audioEngine.getOutputChannelPair();
     refreshRowEndpoints();
+    // applyPresetXml already rebuilt the graph on the empty routing -- rebuild
+    // again or the fresh board's row-0 device in->out link stays UI-only and
+    // the board passes silence until some other action rebuilds it.
+    rebuildSignalGraph();
     currentPresetName.clear();
     currentPresetNumber = 0;
     // Empty name -> capturePresetBaseline() stores nullptr, so an unnamed
