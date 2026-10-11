@@ -196,9 +196,11 @@ struct PowerStageTail
         invRef = 1.0 / juce::jmax (1.0e-9, refVolts);
         lp1 = lp2 = lfState = env = dc = 0.0;
         resX1 = resX2 = resY1 = resY2 = 0.0;
-        // Prepared unconditionally so the Settings toggle can flip cabVoicingEnabled mid-session without a
-        // re-prepare -- uninitialised coefficients would output silence if the cab were switched on late.
+        // Prepared unconditionally and run every sample (see process()) so the Settings toggle can flip
+        // cabVoicingEnabled mid-session without a re-prepare and without the filters settling from scratch.
         cab.prepare (fs, v.cabResHz, v.cabResDb, v.cabLoHz, v.cabLpHz, v.cabAirHz);
+        cabMixC = 1.0 - std::exp (-1.0 / (0.004 * fs)); // ~4 ms crossfade on toggle -- no click
+        cabMix = cabVoicingEnabled.load (std::memory_order_relaxed) ? 1.0 : 0.0;
     }
 
     double process (double x) noexcept
@@ -218,13 +220,22 @@ struct PowerStageTail
         lfState += lfC * (vdc - lfState);
         const double lfn = lfState * invRef;
         const double vc = (vdc - lfState) + lfState / (1.0 + coreAmt * lfn * lfn);
-        const bool cabOn = cabVoicingEnabled.load (std::memory_order_relaxed);
-        if (lpC < 0.0)
-            return cabOn ? cab.process (vc) : vc; // no output transformer (solid-state voicing)
-        // OT leakage inductance.
-        lp1 += lpC * (vc - lp1);
-        lp2 += lpC * (lp1 - lp2);
-        return cabOn ? cab.process (lp2) : lp2;
+        // OT leakage inductance (the solid-state voicing has none -- lpC < 0 there).
+        double base = vc;
+        if (lpC >= 0.0)
+        {
+            lp1 += lpC * (vc - lp1);
+            lp2 += lpC * (lp1 - lp2);
+            base = lp2;
+        }
+        // The cab keeps running while bypassed so its filter state stays current; cabMix slews toward the
+        // setting so toggling crossfades instead of clicking or replaying a stale response. Snapped to
+        // exactly 0 when it underflows -- a settled bypass returns `base` bit-for-bit.
+        const double cabOut = cab.process (base);
+        cabMix += cabMixC * ((cabVoicingEnabled.load (std::memory_order_relaxed) ? 1.0 : 0.0) - cabMix);
+        if (cabMix < 1.0e-9)
+            cabMix = 0.0;
+        return base + cabMix * (cabOut - base);
     }
 
 private:
@@ -235,6 +246,7 @@ private:
     double lpC = 0.0, lfC = 0.0, envC = 0.0, dcC = 0.0;
     double resB0 = 0.0, resB2 = 0.0, resA1 = 0.0, resA2 = 0.0, resAdd = 0.0;
     double coreAmt = 0.0, asymAmt = 0.0, dynAmt = 0.0, invRef = 1.0;
+    double cabMix = 0.0, cabMixC = 0.0;
     CabSim cab; // acoustic cab voicing: always last (TubeAmpCommon.h)
 };
 

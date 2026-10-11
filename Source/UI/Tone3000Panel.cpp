@@ -98,7 +98,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
     refreshLoginState();
-    setSize (720, 640); // clamped by OverlayHost to fit the app window -- this is the "whole screen" settings surface
+    setSize (720, 700); // clamped by OverlayHost to fit the app window -- this is the "whole screen" settings surface
 }
 
 void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double current)
