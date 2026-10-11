@@ -489,6 +489,73 @@ public:
             logMessage ("4-unknown op-amp+diode block: " + juce::String (std::chrono::duration<double, std::micro> (t1 - t0).count() / (double) n, 2)
                         + " us/sample");
         }
+        beginTest ("op-amp macro clamps at the rails while the feedback resistance sweeps");
+        {
+            NodalCircuit c;
+            const NodalCircuit::OpAmpMacro tlc2264 { 2.0e5, 0.7e6, 150.0, 1.5, 7.5, 0.0, 0.0 };
+            const auto nb = c.addNode(), src = c.addNode(), plus = c.addNode(), minus = c.addNode(), out = c.addNode();
+            c.addSource (nb, 4.5);
+            const int srcH = c.addSource (src, 4.5);
+            c.addResistor (src, plus, 10.0e3);
+            c.addResistor (plus, nb, 100.0e3);
+            c.addOpAmpMacro (plus, minus, out, tlc2264);
+            c.addResistor (minus, nb, 1.0e3);
+            const int rFb = c.addResistor (minus, out, 85.7e3);
+            c.addCapacitor (minus, out, 680.0e-12);
+            for (auto n : { plus, minus, out })
+                c.setInitialGuess (n, 4.5);
+            expect (c.prepare (sr));
+            double top = -1.0e9, bottom = 1.0e9;
+            bool solved = true;
+            for (int n = 0; n < (int) (0.2 * sr); ++n)
+            {
+                if (n % 16 == 0)
+                    c.setResistance (rFb, 4.7e3 + 85.0e3 * (0.5 + 0.5 * std::sin (n * 0.001)));
+                c.setSource (srcH, 4.5 + 0.15 * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * (double) n / sr));
+                solved = c.solveSample() && solved;
+                top = juce::jmax (top, c.voltage (out));
+                bottom = juce::jmin (bottom, c.voltage (out));
+            }
+            logMessage ("macro output range [" + juce::String (bottom, 2) + ", " + juce::String (top, 2) + "] V");
+            expect (solved);
+            expectLessThan (top, 7.6);
+            expectGreaterThan (bottom, 1.4);
+        }
+
+        beginTest ("presence-style stage (wiper T-network in the feedback leg) keeps amplifying");
+        {
+            NodalCircuit c;
+            const NodalCircuit::OpAmpMacro tlc2264 { 2.0e5, 0.7e6, 150.0, 1.5, 7.5, 0.0, 0.0 };
+            const auto nb = c.addNode(), src = c.addNode(), plus = c.addNode(), minus = c.addNode(), out = c.addNode();
+            const auto wiper = c.addNode(), wr = c.addNode();
+            c.addSource (nb, 4.5);
+            const int srcH = c.addSource (src, 4.5);
+            c.addResistor (src, plus, 10.0e3);
+            c.addOpAmpMacro (plus, minus, out, tlc2264);
+            c.addResistor (minus, out, 10.0e3);
+            c.addCapacitor (minus, out, 6.8e-9);
+            c.addResistor (plus, wiper, 5.0e3);
+            c.addResistor (wiper, minus, 5.0e3);
+            c.addResistor (wiper, wr, 1.0e3);
+            c.addCapacitor (wr, nb, 100.0e-9);
+            for (auto n : { plus, minus, out, wiper, wr })
+                c.setInitialGuess (n, 4.5);
+            expect (c.prepare (sr));
+            double top = -1.0e9, bottom = 1.0e9;
+            bool solved = true;
+            for (int n = 0; n < (int) (0.2 * sr); ++n)
+            {
+                c.setSource (srcH, 4.5 + 0.3 * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * (double) n / sr));
+                solved = c.solveSample() && solved;
+                if (n > 0.1 * sr)
+                {
+                    top = juce::jmax (top, c.voltage (out));
+                    bottom = juce::jmin (bottom, c.voltage (out));
+                }
+            }
+            logMessage ("presence out range [" + juce::String (bottom, 2) + ", " + juce::String (top, 2) + "] V (want ~3.7..5.3)");
+            expect (solved);
+        }
     }
 };
 

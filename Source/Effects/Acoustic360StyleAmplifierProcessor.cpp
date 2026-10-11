@@ -471,7 +471,7 @@ void Acoustic360StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
+                out = outputCeiling (speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain);
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;
@@ -479,6 +479,7 @@ void Acoustic360StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
                 }
                 out += ch.declick;
                 ch.declick *= declickDecay;
+                out = outputCeiling (out); // the restore offset can push a ceiling-level emit back over full scale
             }
             ch.lastEmitted = out;
             data[i] = (float) out;

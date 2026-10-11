@@ -1,5 +1,6 @@
 #include "TraceElliotGP12StyleAmplifierProcessor.h"
 #include "PotTaper.h"
+#include "TubeAmpCommon.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -335,7 +336,7 @@ void TraceElliotGP12StyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
                 wet = ch.eq2.voltage (ch.nEq2Out) - vBias;
             wet *= gLevel;
 
-            data[i] = (float) (wet * gOut);
+            data[i] = (float) tubeamp::outputCeiling (wet * gOut);
         }
     }
 

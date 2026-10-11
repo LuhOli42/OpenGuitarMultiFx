@@ -755,7 +755,7 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
                 speakerVolts = 0.0;
                 ok = false;
             }
-            const double out = speakerVolts * outputScale * output * std::pow (speakerNominal[2] / speakerNominal[speakerIndex], -0.8);
+            const double out = tubeamp::outputCeiling (speakerVolts * outputScale * output * std::pow (speakerNominal[2] / speakerNominal[speakerIndex], -0.8));
             samples[i] = (float) out;
             if (chIdx == 0)
             {

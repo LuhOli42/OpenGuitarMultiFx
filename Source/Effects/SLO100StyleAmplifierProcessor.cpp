@@ -780,7 +780,7 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
-        ch.bmTail.prepare (sampleRate, voicings::highGain, 1.0 / outputScale);
+        ch.bmTail.prepare (sampleRate, voicings::highGainSLO, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)

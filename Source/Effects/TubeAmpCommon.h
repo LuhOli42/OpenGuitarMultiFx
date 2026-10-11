@@ -39,6 +39,18 @@ inline double inputLimit (double x) noexcept
 
 constexpr double declickDecay = 0.996; // per sample: the offset left by a restore dies away with a ~5 ms time constant
 
+/** The emitted float's full scale: an amp's output stage cannot swing past its rails, so a hot Output/Level
+    knob pushing the model toward the host's 0 dBFS clip should saturate, not emit an unbounded float that
+    hard-clips downstream. Linear under outKnee, soft-limited to outCeil (the audit's clip meter counts
+    |x| > 0.98, so the ceiling sits under it -- 0.88, not 0.93, because the oversampling wrapper's
+    decimation filter rings a few percent past the emit bound on clipped edges). */
+constexpr double outKnee = 0.6, outCeil = 0.88;
+inline double outputCeiling (double x) noexcept
+{
+    const double a = std::abs (x);
+    return a <= outKnee ? x : std::copysign (outKnee + (outCeil - outKnee) * std::tanh ((a - outKnee) / (outCeil - outKnee)), x);
+}
+
 /** Kill switch for the CabSim inside PowerStageTail (settings: "..." -> Settings -> Built-in cab voicing; the
     OGMFX_CAB env var overrides it in renders/tests). Atomic because the UI toggles it while the audio thread
     reads it per sample -- unlike the per-class `reducedOrder` flags, which are fixed before audio starts. When
@@ -67,6 +79,9 @@ struct PowerTailVoicing
     // around ~9-10 kHz). Trailing defaults keep every existing voicing aggregate-init valid and
     // leave it silent: presenceDb = 0 adds nothing.
     double presenceHz = 0.0, presenceDb = 0.0, presenceQ = 1.5;
+    // Optional top-octave dip: real cabs and these amps' own netlists put a broad notch around
+    // 8-10 kHz rather than a monotone rolloff. 0 dB = off (keeps every other voicing untouched).
+    double cabNotchHz = 0.0, cabNotchDb = 0.0;
 };
 
 namespace voicings
@@ -94,6 +109,16 @@ namespace voicings
     // Cab: closed-back 4x12, V30-style -- marginally darker/sharper top than the vintage voicing.
     inline constexpr PowerTailVoicing highGain { 11000.0, 95.0, 0.0, 1.0, 160.0, 0.3, 0.04, 0.4,
                                                  100.0, 2.5, 60.0, 5300.0, 7600.0 };
+    // Per-amp top-band rebalances vs the shared highGain voicing: the October audit measured each reduced
+    // path 20-40 dB darker than its own full netlist at 9-12 kHz while the nonlinear band flooded -- the
+    // cab LP corner had folded the top octave into one narrow harsh band. These keep the high-gain LF/res
+    // character but let the speaker's top through the way the full models do.
+    inline constexpr PowerTailVoicing highGainEVH { 11000.0, 95.0, 0.0, 1.0, 160.0, 0.3, 0.04, 0.4,
+                                                    100.0, 2.5, 60.0, 5600.0, 11000.0, 0.0, 0.0, 1.5, 8500.0, -15.0 };
+    inline constexpr PowerTailVoicing highGainENGL { 11000.0, 95.0, 0.0, 1.0, 160.0, 0.3, 0.04, 0.4,
+                                                     100.0, 2.5, 60.0, 5800.0, 11000.0, 0.0, 0.0, 1.5, 8500.0, -23.0 };
+    inline constexpr PowerTailVoicing highGainSLO { 11000.0, 95.0, 0.0, 1.0, 160.0, 0.3, 0.04, 0.4,
+                                                    100.0, 2.5, 60.0, 4500.0, 14000.0, 0.0, 0.0, 1.5, 9000.0, -23.0 };
     // Big bass iron: resonance down in the 60-80 Hz band, earlier top rolloff, deeper core saturation.
     // Cab: 4x10/8x10/1x15 bass box -- resonance in the 50s and the top is gone by ~4 kHz.
     inline constexpr PowerTailVoicing bassAmp { 7500.0, 70.0, 1.5, 1.0, 140.0, 0.8, 0.06, 0.5,
@@ -118,7 +143,8 @@ namespace voicings
     not a shelf). Two biquads' worth of state plus two poles -- effectively free per sample. */
 struct CabSim
 {
-    void prepare (double fs, double resHz, double resDb, double loHz, double lpHz, double airHz) noexcept
+    void prepare (double fs, double resHz, double resDb, double loHz, double lpHz, double airHz,
+                  double notchHz = 0.0, double notchDb = 0.0) noexcept
     {
         const double pi = juce::MathConstants<double>::pi;
         // Biquad designs go unstable when their frequency is at/above ~Nyquist (a 32 kHz WAV through
@@ -134,6 +160,14 @@ struct CabSim
         const double a0p = 1.0 + alpha / A;
         pkB0 = (1.0 + alpha * A) / a0p; pkB1 = -2.0 * std::cos (w0) / a0p; pkB2 = (1.0 - alpha * A) / a0p;
         pkA1 = pkB1; pkA2 = (1.0 - alpha / A) / a0p;
+        // Top-octave dip: the same peaking biquad with negative gain. Bypassed when cabNotchDb == 0.
+        notchOn = std::abs (notchDb) > 1.0e-9;
+        const double wN = 2.0 * pi * juce::jmax (1.0, notchHz) / fs;
+        const double AN = std::pow (10.0, notchDb / 40.0);
+        const double aN = std::sin (wN) / 1.4; // Q ~= 0.7: a wide shallow trough, not a surgical notch
+        const double a0n = 1.0 + aN / AN;
+        nkB0 = (1.0 + aN * AN) / a0n; nkB1 = -2.0 * std::cos (wN) / a0n; nkB2 = (1.0 - aN * AN) / a0n;
+        nkA1 = nkB1; nkA2 = (1.0 - aN / AN) / a0n;
         // Steep top: Butterworth biquad LP at cabLpHz; above the cap it stays at identity (flat).
         if (lpHz < cap)
         {
@@ -150,6 +184,7 @@ struct CabSim
         // Gentle continuation into the top octave; airC = 1.0 tracks the input exactly = flat.
         airC = airHz < cap ? 1.0 - std::exp (-2.0 * pi * airHz / fs) : 1.0;
         lo = pkX1 = pkX2 = pkY1 = pkY2 = lpX1 = lpX2 = lpY1 = lpY2 = air = 0.0;
+        nkX1 = nkX2 = nkY1 = nkY2 = 0.0;
     }
 
     double process (double x) noexcept
@@ -158,8 +193,10 @@ struct CabSim
         const double h = x - lo;
         const double p = pkB0 * h + pkB1 * pkX1 + pkB2 * pkX2 - pkA1 * pkY1 - pkA2 * pkY2;
         pkX2 = pkX1; pkX1 = h; pkY2 = pkY1; pkY1 = p;
-        const double l = lpB0 * p + lpB1 * lpX1 + lpB2 * lpX2 - lpA1 * lpY1 - lpA2 * lpY2;
-        lpX2 = lpX1; lpX1 = p; lpY2 = lpY1; lpY1 = l;
+        const double d = notchOn ? nkB0 * p + nkB1 * nkX1 + nkB2 * nkX2 - nkA1 * nkY1 - nkA2 * nkY2 : p;
+        nkX2 = nkX1; nkX1 = p; nkY2 = nkY1; nkY1 = d;
+        const double l = lpB0 * d + lpB1 * lpX1 + lpB2 * lpX2 - lpA1 * lpY1 - lpA2 * lpY2;
+        lpX2 = lpX1; lpX1 = d; lpY2 = lpY1; lpY1 = l;
         air += airC * (l - air);
         return air;
     }
@@ -169,6 +206,9 @@ private:
     double lpX1 = 0.0, lpX2 = 0.0, lpY1 = 0.0, lpY2 = 0.0;
     double air = 0.0;
     double pkB0 = 0.0, pkB1 = 0.0, pkB2 = 0.0, pkA1 = 0.0, pkA2 = 0.0;
+    double nkX1 = 0.0, nkX2 = 0.0, nkY1 = 0.0, nkY2 = 0.0;
+    double nkB0 = 0.0, nkB1 = 0.0, nkB2 = 0.0, nkA1 = 0.0, nkA2 = 0.0;
+    bool notchOn = false;
     double lpB0 = 0.0, lpB1 = 0.0, lpB2 = 0.0, lpA1 = 0.0, lpA2 = 0.0;
     double airC = 0.0, loC = 0.0;
     double lo = 0.0;
@@ -234,7 +274,7 @@ struct PowerStageTail
         presX1 = presX2 = presY1 = presY2 = 0.0;
         // Prepared unconditionally and run every sample (see process()) so the Settings toggle can flip
         // cabVoicingEnabled mid-session without a re-prepare and without the filters settling from scratch.
-        cab.prepare (fs, v.cabResHz, v.cabResDb, v.cabLoHz, v.cabLpHz, v.cabAirHz);
+        cab.prepare (fs, v.cabResHz, v.cabResDb, v.cabLoHz, v.cabLpHz, v.cabAirHz, v.cabNotchHz, v.cabNotchDb);
         cabMixC = 1.0 - std::exp (-1.0 / (0.004 * fs)); // ~4 ms crossfade on toggle -- no click
         cabMix = cabVoicingEnabled.load (std::memory_order_relaxed) ? 1.0 : 0.0;
     }

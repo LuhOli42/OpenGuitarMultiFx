@@ -30,9 +30,9 @@ namespace
 
 SqueezerStyleCompressorProcessor::SqueezerStyleCompressorProcessor()
 {
-    // Volume default 0.4: measured -0.4 dB vs a guitar DI (the 0.7 default ran ~+10 dB hot through the audio taper
-    // and pushed the float output over full scale). Noon keeps the level the registry unity trim was calibrated for.
-    auto vol = std::make_unique<juce::AudioParameterFloat> ("squeezer_volume", "Volume", juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
+    // Volume default 0.5 == the unity-test operating point (-0.07 dB at noon): the c848508 bias fix
+    // restored real compression, and the former 0.4 default sat ~10 dB under on the audit probes.
+    auto vol = std::make_unique<juce::AudioParameterFloat> ("squeezer_volume", "Volume", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
     auto bia = std::make_unique<juce::AudioParameterFloat> ("squeezer_bias", "Bias", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
     volume = vol.get();
     bias = bia.get();

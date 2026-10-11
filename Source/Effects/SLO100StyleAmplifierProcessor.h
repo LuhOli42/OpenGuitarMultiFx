@@ -57,9 +57,11 @@ public:
     static inline bool reducedOrder = false;
     // Placeholders -- calibrated during prepare() from a POWERCAL sweep if the full model is stable enough.
     // If not, fall back to the Twin Reverb's own fitted constants (same 6L6GC power section topology).
-    static constexpr double bmGain0 = 9.5;      // placeholder, to be calibrated
+    static constexpr double bmGain0 = 15.0;      // placeholder, to be calibrated
     static constexpr double bmYmax = 0.198;      // placeholder, to be calibrated
-    static constexpr double bmKneeN = 6.0;
+    // Softer than the shared fitted 6.0: at hot gain the knee's high-order harmonics flooded the
+    // 8-20 kHz band past this amp's own full-netlist level (Oct-11 audit fizz regression).
+    static constexpr double bmKneeN = 4.0;
     // The removed phase inverter / power tubes / output transformer / speaker / feedback loop have their OWN
     // frequency response beyond the tone stack. The earlier one-pole shelf (bmShelfHz/bmShelfHfGain) was
     // calibrated only up to 1.65 kHz and wrongly kept falling: this amp's own full reference netlist measures
@@ -76,7 +78,7 @@ public:
     static constexpr double bmPresMixK = 0.727, bmPresMixR = 0.909;
     // Level re-trim: the refit is ~5 dB hotter at noon than the shelf it replaced, and PedalUnityLevel needs
     // noon at unity while the registry's -18.92 dB trim stays put.
-    static constexpr double bmLevelTrim = 0.62;
+    static constexpr double bmLevelTrim = 0.60;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }

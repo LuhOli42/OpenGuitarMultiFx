@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "TubeAmpCommon.h"
 
 #include <memory>
 
@@ -30,6 +31,15 @@ public:
     {
         inner->process (buffer);
         buffer.applyGain (gain);
+        // The trim can push a hot emit over full scale -- a model must not hand the host an unbounded
+        // float that hard-clips downstream, so the post-trim level saturates at the shared ceiling.
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        {
+            auto* s = buffer.getWritePointer (ch);
+            const int n = buffer.getNumSamples();
+            for (int i = 0; i < n; ++i)
+                s[i] = (float) tubeamp::outputCeiling (s[i]);
+        }
     }
 
     void reset() override { inner->reset(); }
