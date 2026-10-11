@@ -369,12 +369,11 @@ void AudioEngine::detectCallbackRealtime() noexcept
     callbackRealtimeDetected.store (true, std::memory_order_relaxed);
 
     // Stamp every graph this callback can reach BEFORE any of them
-    // process this block: the published graph, the retired one still
-    // fading out, and every spill (active + the pending hand-off).
+    // process this block: the published graph and every spill (active +
+    // the pending hand-off). The swap fade's retired graph never runs --
+    // its recorded tail is replayed instead -- so it needs no stamp.
     if (auto* g = graphSlot.currentRaw())
         g->setAudioCallerIsRealtime (realtime);
-    if (fadingOutGraph != nullptr)
-        fadingOutGraph->setAudioCallerIsRealtime (realtime);
     spillover.setAudioCallerIsRealtime (realtime);
 }
 
