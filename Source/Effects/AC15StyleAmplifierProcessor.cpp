@@ -240,7 +240,7 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto g2 = c.addNode(), k1 = c.addNode(), k2 = c.addNode(), tail = c.addNode();
         ch.wPiPlate = c.addNode();
         const auto piPlateB = c.addNode();
-        ch.wPiCathode = tail;
+        ch.wPiCathode = k1; // the driven half's cathode; the tail node sits 1k below it
         c.addCapacitor (cf, ch.wPiGrid, 0.01e-6);
         c.addResistor (ch.wPiGrid, gnd, 1.0e6);
         c.addTriode (ch.wPiPlate, ch.wPiGrid, k1, triode12AX7());

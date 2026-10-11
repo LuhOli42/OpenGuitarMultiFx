@@ -102,6 +102,9 @@ private:
                            wGridA = 0, wGridB = 0, wPP1 = 0, wPP2 = 0, wCathodeBias = 0;
 
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        // reducedOrder's Cut LPF approximation: per-channel state -- a single processor member leaked
+        // the left channel's filter history into the right (Devin Review, PR #99).
+        double cutFilterState = 0.0;
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
         tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
@@ -150,7 +153,6 @@ private:
     juce::AudioParameterFloat* speakerParam = nullptr;
 
     juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedBass, smoothedCut, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
-    double cutFilterState = 0.0;
 
         /** JUCE's reset() must return the circuit to its DC operating point -- an
         empty reset() (the bug this fixes) left stale capacitor state forever.

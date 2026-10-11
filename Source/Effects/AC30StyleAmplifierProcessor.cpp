@@ -639,6 +639,7 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.cutFilterState = 0.0;
         ch.piCoupling.prepare (newSampleRate, 0.01e-6, 1.0e6, ch.power.voltage (ch.wTone)); // the real 0.01uF into the PI grid
     }
     updatePots (lastKnobs);
@@ -647,7 +648,6 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     sampleCount = 0;
     failureCount = 0;
     shortcut.reset();
-    cutFilterState = 0.0;
 }
 
 void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -733,8 +733,8 @@ void AC30StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 // so it keeps this first-order output LPF approximation of the same control.
                 const double cutHz = 800.0 + 19200.0 * (1.0 - pots::audio ((double) cu));
                 const double cutCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cutHz / juce::jmax (1.0, sampleRate));
-                cutFilterState += cutCoeff * (speakerVolts - cutFilterState);
-                speakerVolts = cutFilterState;
+                ch.cutFilterState += cutCoeff * (speakerVolts - ch.cutFilterState);
+                speakerVolts = ch.cutFilterState;
             }
             constexpr double saneLimit = 120.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
