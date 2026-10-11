@@ -150,132 +150,19 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   HoldProcessorTests.cpp
 )
 
-# Every production source the processors need -- shared by the unit-test runner and the
-# offline RenderFx tool below.
-set(OGMFX_SOURCES
-  ../Source/EffectRegistry.cpp
-  ../Source/Engine/MasterEq.cpp
-  ../Source/Engine/SignalGraph.cpp
-  ../Source/Engine/Spillover.cpp
-  ../Source/Engine/PitchDetector.cpp
-  ../Source/Engine/ParameterManager.cpp
-  ../Source/Presets/PresetManager.cpp
-  ../Source/Presets/PresetLibrary.cpp
-  ../Source/UI/SnapshotPresetXml.cpp
-  ../Source/Effects/GateProcessor.cpp
-  ../Source/Effects/CompressorProcessor.cpp
-  ../Source/Effects/PositiveGroundBoosterProcessor.cpp
-  ../Source/Effects/DS1StyleDistortionProcessor.cpp
-  ../Source/Effects/OD1StyleOverdriveProcessor.cpp
-  ../Source/Effects/TubeScreamerStyleOverdriveProcessor.cpp
-  ../Source/Effects/TS9BStyleOverdriveProcessor.cpp
-  ../Source/Effects/ODB3StyleOverdriveProcessor.cpp
-  ../Source/Effects/MuTronIIIStyleFilterProcessor.cpp
-  ../Source/Effects/CentaurStyleOverdriveProcessor.cpp
-  ../Source/Effects/BD2StyleOverdriveProcessor.cpp
-  ../Source/Effects/BigMuffStyleFuzzProcessor.cpp
-  ../Source/Effects/BassBigMuffStyleFuzzProcessor.cpp
-  ../Source/Effects/DarkglassB7KStyleOverdriveProcessor.cpp
-  ../Source/Effects/SansAmpBDDIStyleOverdriveProcessor.cpp
-  ../Source/Effects/BossOC2StyleOctaverProcessor.cpp
-  ../Source/Effects/DT1StyleDistortionProcessor.cpp
-  ../Source/Effects/ODR1StyleOverdriveProcessor.cpp
-  ../Source/Effects/OverdriverStyleOverdriveProcessor.cpp
-  ../Source/Effects/EPStyleBoosterProcessor.cpp
-  ../Source/Effects/TubeDriverStyleOverdriveProcessor.cpp
-  ../Source/Effects/MetalZoneStyleDistortionProcessor.cpp
-  ../Source/Effects/FuzzFaceStyleFuzzProcessor.cpp
-  ../Source/Effects/ToneBenderStyleFuzzProcessor.cpp
-  ../Source/Effects/HM2StyleDistortionProcessor.cpp
-  ../Source/Effects/OpAmpClipperDistortionProcessor.cpp
-  ../Source/Effects/GuvnorStyleDistortionProcessor.cpp
-  ../Source/Effects/BluesBreakerStyleOverdriveProcessor.cpp
-  ../Source/Effects/RatStyleDistortionProcessor.cpp
-  ../Source/Effects/GE7StyleEqualizerProcessor.cpp
-  ../Source/Effects/GEB7StyleEqualizerProcessor.cpp
-  ../Source/Effects/ParametricEQProcessor.cpp
-  ../Source/Effects/RingModProcessor.cpp
-  ../Source/Effects/DS201StyleNoiseGateProcessor.cpp
-  ../Source/Effects/NS2StyleNoiseSuppressorProcessor.cpp
-  ../Source/Effects/DynaCompStyleCompressorProcessor.cpp
-  ../Source/Effects/SqueezerStyleCompressorProcessor.cpp
-  ../Source/Effects/Dbx160StyleCompressorProcessor.cpp
-  ../Source/Effects/GSeriesStyleBusCompressorProcessor.cpp
-  ../Source/Effects/Urei1176StyleCompressorProcessor.cpp
-  ../Source/Effects/La2aStyleCompressorProcessor.cpp
-  ../Source/Effects/CrunchBoxStyleDistortionProcessor.cpp
-  ../Source/Effects/ZendriveStyleOverdriveProcessor.cpp
-  ../Source/Effects/OCDStyleOverdriveProcessor.cpp
-  ../Source/Effects/BassmanStyleAmplifierProcessor.cpp
-  ../Source/Effects/SuperLeadStyleAmplifierProcessor.cpp
-  ../Source/Effects/TwinReverbStyleAmplifierProcessor.cpp
-  ../Source/Effects/DeluxeReverbStyleAmplifierProcessor.cpp
-  ../Source/Effects/JC120StyleAmplifierProcessor.cpp
-  ../Source/Effects/JTM45StyleAmplifierProcessor.cpp
-  ../Source/Effects/JCM800StyleAmplifierProcessor.cpp
-  ../Source/Effects/AC15StyleAmplifierProcessor.cpp
-  ../Source/Effects/AC30StyleAmplifierProcessor.cpp
-  ../Source/Effects/EL84BoutiqueAmpCore.cpp
-  ../Source/Effects/MatchlessHC30StyleAmplifierProcessor.cpp
-  ../Source/Effects/HotCat30StyleAmplifierProcessor.cpp
-  ../Source/Effects/CarmenGhiaStyleAmplifierProcessor.cpp
-  ../Source/Effects/Astroverb16StyleAmplifierProcessor.cpp
-  ../Source/Effects/SLO100StyleAmplifierProcessor.cpp
-  ../Source/Effects/MarkIICPlusStyleAmplifierProcessor.cpp
-  ../Source/Effects/DualRectifierStyleAmplifierProcessor.cpp
-  ../Source/Effects/EVH5150StyleAmplifierProcessor.cpp
-  ../Source/Effects/ENGLPowerballStyleAmplifierProcessor.cpp
-  ../Source/Effects/RockerverbStyleAmplifierProcessor.cpp
-  ../Source/Effects/SVTStyleAmplifierProcessor.cpp
-  ../Source/Effects/TraceElliotGP12StyleAmplifierProcessor.cpp
-  ../Source/Effects/TrainwreckExpressStyleAmplifierProcessor.cpp
-  ../Source/Effects/KometConcordeStyleAmplifierProcessor.cpp
-  ../Source/Effects/GibsonEH150StyleAmplifierProcessor.cpp
-  ../Source/Effects/GarnetHerzogStyleAmplifierProcessor.cpp
-  ../Source/Effects/RiveraKnuckleheadStyleAmplifierProcessor.cpp
-  ../Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
-  ../Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
-  ../Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp
-  ../Source/Effects/SunnModelTStyleAmplifierProcessor.cpp
-  ../Source/Effects/FryetteDeliveranceD120StyleAmplifierProcessor.cpp
-  ../Source/Effects/BognerUberschallStyleAmplifierProcessor.cpp
-  ../Source/Effects/AmpegB15StyleAmplifierProcessor.cpp
-  ../Source/Effects/AmpegV4BStyleAmplifierProcessor.cpp
-  ../Source/Effects/MesaBass400PlusStyleAmplifierProcessor.cpp
-  ../Source/Effects/Acoustic360StyleAmplifierProcessor.cpp
-  ../Source/Effects/NAMProcessor.cpp
-  ../Source/Effects/IRLoaderProcessor.cpp
-  ../Source/Effects/DynamicCabProcessor.cpp
-  ../Source/Effects/DelayProcessor.cpp
-  ../Source/Effects/TapeDelayProcessor.cpp
-  ../Source/Effects/ReverbProcessor.cpp
-  ../Source/Effects/SpringReverbProcessor.cpp
-  ../Source/Effects/HallReverbProcessor.cpp
-  ../Source/Effects/PlateReverbProcessor.cpp
-  ../Source/Effects/RoomReverbProcessor.cpp
-  ../Source/Effects/ShimmerReverbProcessor.cpp
-  ../Source/Effects/GatedReverbProcessor.cpp
-  ../Source/Effects/AnalogDelayProcessor.cpp
-  ../Source/Effects/DualDelayProcessor.cpp
-  ../Source/Effects/MultiTapDelayProcessor.cpp
-  ../Source/Effects/TremoloProcessor.cpp
-  ../Source/Effects/ChorusProcessor.cpp
-  ../Source/Effects/VibratoProcessor.cpp
-  ../Source/Effects/FlangerProcessor.cpp
-  ../Source/Effects/PhaserProcessor.cpp
-  ../Source/Effects/RotaryProcessor.cpp
-  ../Source/Effects/UniVibeProcessor.cpp
-  ../Source/Effects/PitchModProcessor.cpp
-  ../Source/Effects/PitchShiftProcessor.cpp
-  ../Source/Effects/OctaverProcessor.cpp
-  ../Source/Effects/HarmonizerProcessor.cpp
-  ../Source/Effects/LooperProcessor.cpp
-  ../Source/Effects/PingPongDelayProcessor.cpp
-  ../Source/Effects/ReverseDelayProcessor.cpp
-  ../Source/Effects/HoldProcessor.cpp
+# The production sources (effects, engine, presets) come compiled once via
+# the OpenGuitarMultiFx_Core static library from the root CMakeLists -- this
+# target only builds the test TUs themselves.
+# (OGMFX_JUCE_IMPL_SOURCES is set in the root CMakeLists; source properties
+# are per-directory, so the PCH exemption must be re-applied here.)
+set_source_files_properties(${OGMFX_JUCE_IMPL_SOURCES}
+  PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+target_precompile_headers(OpenGuitarMultiFx_Tests PRIVATE
+  <juce_audio_processors/juce_audio_processors.h>
+  <juce_dsp/juce_dsp.h>
+  <juce_gui_basics/juce_gui_basics.h>
+  "${CMAKE_CURRENT_SOURCE_DIR}/../Source/Effects/NodalCircuit.h"
 )
-
-target_sources(OpenGuitarMultiFx_Tests PRIVATE ${OGMFX_SOURCES})
 
 target_include_directories(OpenGuitarMultiFx_Tests PRIVATE ../Source)
 
@@ -286,6 +173,7 @@ target_compile_definitions(OpenGuitarMultiFx_Tests PRIVATE
 )
 
 target_link_libraries(OpenGuitarMultiFx_Tests PRIVATE
+  OpenGuitarMultiFx_Core
   juce::juce_audio_basics
   juce::juce_audio_formats
   juce::juce_audio_processors
@@ -331,7 +219,6 @@ juce_add_console_app(OpenGuitarMultiFx_RenderFx
 
 target_sources(OpenGuitarMultiFx_RenderFx PRIVATE
   RenderFx.cpp
-  ${OGMFX_SOURCES}
 )
 
 target_include_directories(OpenGuitarMultiFx_RenderFx PRIVATE ../Source)
@@ -342,6 +229,7 @@ target_compile_definitions(OpenGuitarMultiFx_RenderFx PRIVATE
 )
 
 target_link_libraries(OpenGuitarMultiFx_RenderFx PRIVATE
+  OpenGuitarMultiFx_Core
   juce::juce_audio_basics
   juce::juce_audio_formats
   juce::juce_audio_processors
