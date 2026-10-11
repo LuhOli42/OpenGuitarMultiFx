@@ -513,14 +513,15 @@ void SLO100StyleAmplifierProcessor::updatePots (const Knobs& k)
 
     for (auto& ch : channels)
     {
-        // Both preamp pots are 500KL (linear) on the schematic.
-        const double gainBottom = juce::jmax (1.0, 500.0e3 * k.gain);
+        // OD Volume is a 500K audio-taper pot (docs/circuits/SLO100.md); the Normal channel's preamp
+        // volume is the same part family. (An earlier comment here read the marking as linear "500KL".)
+        const double gainBottom = juce::jmax (1.0, 500.0e3 * pots::audio (k.gain));
         for (auto& p : ch.pre)
         {
             p.net.setResistance (p.rGainBot, gainBottom);
             p.net.setResistance (p.rGainTop, juce::jmax (1.0, 500.0e3 - gainBottom));
         }
-        const double nGainBottom = juce::jmax (1.0, 500.0e3 * k.nGain);
+        const double nGainBottom = juce::jmax (1.0, 500.0e3 * pots::audio (k.nGain));
         for (auto& p : ch.pre)
         {
             p.net.setResistance (p.rNGainBot, nGainBottom);
