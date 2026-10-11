@@ -300,6 +300,7 @@ void SignalGraph::reconcileWorkers (int wanted, double sampleRate, int maxBlockS
 
     stopWorkers();
     workers.reserve ((size_t) wanted);
+    workersAreRealtime = true; // re-evaluated per worker below -- a rebuilt pool starts clean
 
     for (int i = 0; i < wanted; ++i)
     {
@@ -350,12 +351,16 @@ void SignalGraph::process (juce::AudioBuffer<float>& buffer)
     {
         // Parity rule: an RT audio callback only waits on workers that
         // are themselves realtime -- a non-RT worker could be preempted
-        // arbitrarily long past a block deadline. Non-RT callers (test
-        // runner, RenderFx, desktops without rtprio) always dispatch.
+        // arbitrarily long past a block deadline. A juce::Thread caller
+        // reports its own scheduling; a native (non-JUCE) callback thread
+        // reports none, so AudioEngine declares it via
+        // setAudioCallerIsRealtime instead. Non-RT callers (test runner,
+        // RenderFx, desktops without rtprio) always dispatch.
         const auto* callingThread = juce::Thread::getCurrentThread();
-        const bool mayDispatch = callingThread == nullptr
-                                 || ! callingThread->isRealtime()
-                                 || workersAreRealtime;
+        const bool callerIsRealtime = callingThread != nullptr
+                                          ? callingThread->isRealtime()
+                                          : audioCallerIsRealtime.load (std::memory_order_relaxed);
+        const bool mayDispatch = workersAreRealtime || ! callerIsRealtime;
 
         // Stages run in level order; lanes inside a stage are independent by
         // construction (see the class doc) and go to the worker pool when the

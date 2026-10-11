@@ -112,6 +112,15 @@ public:
         prove the parallel path engaged. */
     int getJobsRunByWorkers() const { return jobsRunByWorkers.load (std::memory_order_relaxed); }
 
+    /** Called by whoever owns the audio callback (AudioEngine) once it
+        knows the callback's scheduling. process() can identify a
+        juce::Thread caller itself, but a native backend thread reports
+        no juce::Thread at all -- this flag is how an RT callback on a
+        native thread still gets the RT-worker-only gate. Defaults
+        false: non-RT callers (tests, RenderFx, desktops without
+        rtprio) always parallelize. */
+    void setAudioCallerIsRealtime (bool isRealtime) { audioCallerIsRealtime.store (isRealtime, std::memory_order_relaxed); }
+
 private:
     struct Lane
     {
@@ -187,6 +196,7 @@ private:
     bool anyLaneWritesOutput = false;
     bool legacySerialOrder = false;   // shared processor instance across lanes -> old index-order pass
     bool workersAreRealtime = true;   // every LaneWorker got RT scheduling in prepare()
+    std::atomic<bool> audioCallerIsRealtime { false }; // set via setAudioCallerIsRealtime
 
     // Dispatch state touched by the audio thread + workers every block.
     // The epoch counter doubles as the futex workers sleep on.
