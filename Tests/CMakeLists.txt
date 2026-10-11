@@ -141,6 +141,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   OctaverProcessorTests.cpp
   HarmonizerProcessorTests.cpp
   LooperProcessorTests.cpp
+  LowSampleRateStabilityTests.cpp
   PingPongDelayProcessorTests.cpp
   ReverseDelayProcessorTests.cpp
   HoldProcessorTests.cpp

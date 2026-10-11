@@ -704,6 +704,13 @@ void BassmanStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         bmVoicing.cabLpHz = 9000.0;  // own netlist keeps more top than the shared open-back voicing
         bmVoicing.cabAirHz = 13000.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
+        // The shared cab LPs (5.8k/8.2k) stacked on the 10k OT pole roll this amp ~17 dB darker than its own
+        // full-netlist speaker path, which stays within ~3 dB of flat at 12 kHz. Relax both to match.
+        bmVoicing.cabLpHz = 22000.0;
+        bmVoicing.cabAirHz = 24000.0;
+        bmVoicing.otHz = 20000.0;
+        bmVoicing.presenceHz = 9500.0;
+        bmVoicing.presenceDb = 4.5;
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 
