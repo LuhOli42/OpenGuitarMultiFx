@@ -569,8 +569,8 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
             const double c = m5218.outputOhms * (vOutExtraSum - fbIeq);
             auto affineRoot = [&] (double obConst, bool linearOb) -> double
             {
-                const double a = (obConst + c) / oDenom; // vo = a + bVo*vm
-                const double bVo = (linearOb ? -k1 : 0.0) + m5218.outputOhms * kFb / oDenom;
+                const double a = (obConst + (linearOb ? k0 : 0.0) + c) / oDenom;
+                const double bVo = ((linearOb ? -k1 : 0.0) + m5218.outputOhms * kFb) / oDenom;
                 return (kFb * a + hm) / (gSum - kFb * bVo);
             };
             double vmA = affineRoot (0.0, true);
