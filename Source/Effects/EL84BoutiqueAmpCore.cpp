@@ -47,38 +47,40 @@ EL84BoutiqueAmpCore::EL84BoutiqueAmpCore (Model ampModel, TubeFits fits, bool& r
             { return juce::roundToInt (v) == 0 ? juce::String ("Ch1 12AX7") : juce::String ("Ch2 EF86"); }));
         channelParam = channel.get();
         group->addChild (std::move (channel));
-        volume1Param = add ("hc30_volume1", "Volume 1", 0.4f);
+        // audio-tapered level knobs: audioInverse() keeps each default's wiper fraction
+        // where it sat before the pots became audio taper (rotation, not fraction, is stored).
+        volume1Param = add ("hc30_volume1", "Volume 1", (float) pots::audioInverse (0.4));
         bass1Param = add ("hc30_bass1", "Bass 1", 0.5f);
         treble1Param = add ("hc30_treble1", "Treble 1", 0.5f);
-        volume2Param = add ("hc30_volume2", "Volume 2", 0.4f);
+        volume2Param = add ("hc30_volume2", "Volume 2", (float) pots::audioInverse (0.4));
         auto tone = std::make_unique<juce::AudioParameterFloat> (
             "hc30_tone2", "Tone 2", juce::NormalisableRange<float> (0.0f, 5.0f, 1.0f), 0.0f);
         tone2Param = tone.get();
         group->addChild (std::move (tone));
         cutParam = add ("hc30_cut", "Cut", 0.5f);
-        masterParam = add ("hc30_master", "Master", 0.7f);
+        masterParam = add ("hc30_master", "Master", (float) pots::audioInverse (0.7));
     }
     else if (model == Model::hotCat30)
     {
-        gainParam = add ("hotcat30_gain", "Gain", 0.5f);
+        gainParam = add ("hotcat30_gain", "Gain", (float) pots::audioInverse (0.5));
         bassParam = add ("hotcat30_bass", "Bass", 0.5f);
         midParam = add ("hotcat30_mid", "Middle", 0.5f);
         trebleParam = add ("hotcat30_treble", "Treble", 0.5f);
-        masterParam = add ("hotcat30_master", "Master", 0.7f);
+        masterParam = add ("hotcat30_master", "Master", (float) pots::audioInverse (0.7));
     }
     else if (model == Model::carmenGhia)
     {
-        volume1Param = add ("cghia_volume", "Volume", 0.4f);
+        volume1Param = add ("cghia_volume", "Volume", (float) pots::audioInverse (0.4));
         toneParam = add ("cghia_tone", "Tone", 0.5f);
         masterParam = add ("cghia_master", "Master", 1.0f);
     }
     else
     {
-        preampParam = add ("astro16_preamp", "Preamp", 0.5f);
+        preampParam = add ("astro16_preamp", "Preamp", (float) pots::audioInverse (0.5));
         bassParam = add ("astro16_bass", "Bass", 0.5f);
         midParam = add ("astro16_mid", "Middle", 0.5f);
         trebleParam = add ("astro16_treble", "Treble", 0.5f);
-        volume1Param = add ("astro16_volume", "Volume", 0.5f);
+        volume1Param = add ("astro16_volume", "Volume", (float) pots::audioInverse (0.5));
         presenceParam = add ("astro16_presence", "Presence", 0.5f);
     }
 
@@ -601,9 +603,16 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     const double release = 1.0 - std::exp (-1.0 / (0.045 * juce::jmax (1.0, sampleRate)));
     const double magnitude = std::abs (drive);
     ch.envelope += (magnitude > ch.envelope ? attack : release) * (magnitude - ch.envelope);
-    const double gain = model == Model::carmenGhia ? 10.0 : model == Model::astroverb16 ? 18.0 : model == Model::hotCat30 ? 0.9 : 14.0;
-    const double level = model == Model::matchlessHC30 ? 1.17 :
-                         model == Model::hotCat30 ? 14.0 :
+    // matchless re-fit 2026-10-11 (was 14.0): a softer knee keeps the same small-signal gain
+    // (level*gain) as the low-drive calibration while raising the saturated plateau the real
+    // stage reaches at hot drive -- the old steep knee compressed too early and undershot there.
+    const double gain = model == Model::carmenGhia ? 10.0 : model == Model::astroverb16 ? 18.0 : model == Model::hotCat30 ? 0.9 :
+                        model == Model::matchlessHC30 ? 2.0 : 14.0;
+    // level re-fit 2026-10-11: matchless/hotCat defaults now restore the pre-audio-taper wiper
+    // fractions, which moved the stage's calibration point; scaled so the reduced path re-tracks
+    // the reference at the new defaults (was 1.17 / 14.0).
+    const double level = model == Model::matchlessHC30 ? 2.47 :
+                         model == Model::hotCat30 ? 9.6 :
                          model == Model::carmenGhia ? 18.5 : 21.4;
     const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
     const double sag = reducedOrder ? 0.03 * ch.bmFeel : 0.025;

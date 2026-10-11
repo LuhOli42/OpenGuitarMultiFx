@@ -488,11 +488,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/MatchlessHC30.md.
     MatchlessHC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MatchlessHC30StyleAmplifier");
-    registry.registerType ("MatchlessHC30StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<MatchlessHC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 31.54f); });
+    registry.registerType ("MatchlessHC30StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<MatchlessHC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 42.44f); });
     // docs/circuits/BadCatHotCat30.md.
     HotCat30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("HotCat30StyleAmplifier");
-    registry.registerType ("HotCat30StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<HotCat30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.83f); });
+    registry.registerType ("HotCat30StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<HotCat30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.35f); });
     // docs/circuits/DrZCarmenGhia.md.
     CarmenGhiaStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarmenGhiaStyleAmplifier");
