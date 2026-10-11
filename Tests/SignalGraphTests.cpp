@@ -52,6 +52,29 @@ namespace
 
         double ms;
     };
+
+    /** Records the first sample of every block it sees, so a test can tell
+        in which order the same instance ran on different lanes. */
+    class EntrySamplerProcessor : public EffectProcessor
+    {
+    public:
+        void prepare (double, int, int) override {}
+
+        void process (juce::AudioBuffer<float>& buffer) override
+        {
+            if (buffer.getNumSamples() > 0)
+                seen.push_back (buffer.getSample (0, 0));
+        }
+
+        void reset() override {}
+
+        juce::AudioProcessorParameterGroup* getParameters() override { return nullptr; }
+        std::unique_ptr<juce::XmlElement> getState() const override { return nullptr; }
+        void setState (const juce::XmlElement&) override {}
+        const char* getName() const override { return "EntrySampler"; }
+
+        std::vector<float> seen;
+    };
 }
 
 class SignalGraphTests : public juce::UnitTest
@@ -278,6 +301,40 @@ public:
 
             expectEquals (shared.processCalls, 2); // both lanes ran it, serially
             expectEquals (graph.getJobsRunByWorkers(), 0); // never dispatched to a worker
+        }
+
+        beginTest ("a processor shared across lanes at different levels keeps the legacy call order");
+        {
+            // rec sits on lane 1 (level 1, fed by lane 0's gain-1 output)
+            // and lane 2 (level 0, after a gain-2). Stage scheduling alone
+            // would run lane 2's call first; the shared-instance guard must
+            // keep the old index order so rec sees [1.0, 2.0], not [2.0, 1.0].
+            TestGainProcessor one (1.0f), two (2.0f);
+            EntrySamplerProcessor rec;
+            SignalGraph graph;
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneProcessors (0, { &one });
+            graph.addLaneConnection (0, 1);
+            graph.setLaneProcessors (1, { &rec });
+            graph.setLaneReadsDeviceInput (2, true);
+            graph.setLaneProcessors (2, { &two, &rec });
+            graph.setLaneWritesDeviceOutput (1, true);
+            graph.setLaneWritesDeviceOutput (2, true);
+            graph.prepare (48000.0, 128, 1);
+
+            juce::AudioBuffer<float> buffer (1, 4);
+            buffer.clear();
+            buffer.setSample (0, 0, 1.0f);
+
+            graph.process (buffer);
+
+            expectEquals ((int) rec.seen.size(), 2);
+            if (rec.seen.size() == 2)
+            {
+                expectWithinAbsoluteError (rec.seen[0], 1.0f, 1.0e-6f); // lane 1's call still first
+                expectWithinAbsoluteError (rec.seen[1], 2.0f, 1.0e-6f); // then lane 2's
+            }
+            expectEquals (graph.getJobsRunByWorkers(), 0); // whole graph forced legacy serial
         }
     }
 };

@@ -50,6 +50,19 @@ namespace openguitarmultifx
     pure-serial path. Stages that stay serial (every single-processor
     stage, and every stage when no workers exist) cost only the old
     per-lane loop plus a couple of branches.
+
+    Two ordering/parity guarantees on top of that: (1) if the calling
+    thread is realtime (juce::Thread::isRealtime), dispatch only engages
+    when every worker got realtime scheduling too -- an RT audio
+    callback never futex-waits on a non-RT worker, which is the one
+    configuration where a preempted worker could out-wait a block
+    deadline; non-RT callers (tests, RenderFx, a desktop without
+    rtprio) still parallelize, since waiting on a non-RT worker is no
+    worse than doing the work inline. (2) A processor instance shared
+    between lanes in DIFFERENT stages would see its calls reordered
+    vs. the old index-order pass, so any cross-lane sharing forces the
+    whole graph back to the legacy serial order -- output stays
+    bit-identical to the pre-parallel schedule.
 */
 class SignalGraph
 {
@@ -129,8 +142,9 @@ private:
     /** Lanes that can run concurrently: every lane in a stage has all of
         its sources in earlier stages (levels, see the class doc).
         `dispatchable` is computed in prepare(): the stage is worth
-        splitting across cores (2+ processor-bearing lanes, and no
-        processor instance shared between its lanes). */
+        splitting across cores (2+ processor-bearing lanes). A processor
+        instance shared between lanes anywhere in the graph forces the
+        legacy serial order instead (see legacySerialOrder). */
     struct Stage
     {
         std::array<int, numLanes> laneIndices {};
@@ -171,6 +185,8 @@ private:
     std::array<std::array<int, numLanes - 1>, numLanes> laneSources {};
     std::array<int, numLanes> laneSourceCounts {};
     bool anyLaneWritesOutput = false;
+    bool legacySerialOrder = false;   // shared processor instance across lanes -> old index-order pass
+    bool workersAreRealtime = true;   // every LaneWorker got RT scheduling in prepare()
 
     // Dispatch state touched by the audio thread + workers every block.
     // The epoch counter doubles as the futex workers sleep on.

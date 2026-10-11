@@ -132,33 +132,40 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
             continue;
 
         // Dispatchable = the stage can actually split work across cores:
-        // at least two lanes carrying processors, and no processor
-        // instance shared between lanes in the stage (two threads can
-        // never run the same instance -- processor state isn't reentrant).
+        // at least two lanes carrying processors. Shared instances are a
+        // whole-graph concern handled by legacySerialOrder below, not a
+        // per-stage one -- cross-LEVEL sharing would also reorder calls.
         int processorLanes = 0;
-        bool sharedProcessor = false;
-        for (int a = 0; a < stage.count && ! sharedProcessor; ++a)
-        {
-            const auto& procsA = lanes[(size_t) stage.laneIndices[(size_t) a]].processors;
-            processorLanes += (procsA.empty() ? 0 : 1);
-            for (int b = a + 1; b < stage.count && ! sharedProcessor; ++b)
-                for (auto* pa : procsA)
-                    for (auto* pb : lanes[(size_t) stage.laneIndices[(size_t) b]].processors)
-                        sharedProcessor = sharedProcessor || (pa == pb);
-        }
+        for (int a = 0; a < stage.count; ++a)
+            processorLanes += (lanes[(size_t) stage.laneIndices[(size_t) a]].processors.empty() ? 0 : 1);
 
-        stage.dispatchable = stage.count >= 2 && processorLanes >= 2 && ! sharedProcessor;
+        stage.dispatchable = stage.count >= 2 && processorLanes >= 2;
         if (stage.dispatchable)
             widestDispatchableStage = juce::jmax (widestDispatchableStage, stage.count);
 
         ++numStages;
     }
 
+    // A processor instance shared between lanes must keep the OLD call
+    // order: same-stage it would run on two threads at once (processor
+    // state isn't reentrant), and cross-stage the level-order schedule
+    // can reorder it vs. the old index-order pass. Either way the flat
+    // 0->3 pass is the only provably identical schedule, so any
+    // cross-lane sharing forces it for the whole graph.
+    legacySerialOrder = false;
+    for (int i = 0; i < numLanes && ! legacySerialOrder; ++i)
+        for (int j = i + 1; j < numLanes && ! legacySerialOrder; ++j)
+            for (auto* pa : lanes[(size_t) i].processors)
+                for (auto* pb : lanes[(size_t) j].processors)
+                    legacySerialOrder = legacySerialOrder || (pa == pb);
+
     // One worker per extra lane in the widest dispatchable stage -- the
-    // audio thread always runs one lane itself. Zero on serial topologies
-    // and when OGMFX_DISABLE_ROW_PARALLEL is set (kill switch / bench A-B).
+    // audio thread always runs one lane itself. Zero on serial topologies,
+    // on legacy-order graphs, and when OGMFX_DISABLE_ROW_PARALLEL is set
+    // (kill switch / bench A-B).
     const bool parallelAllowed = std::getenv ("OGMFX_DISABLE_ROW_PARALLEL") == nullptr;
-    reconcileWorkers (parallelAllowed ? juce::jmax (0, widestDispatchableStage - 1) : 0,
+    reconcileWorkers (parallelAllowed && ! legacySerialOrder
+                          ? juce::jmax (0, widestDispatchableStage - 1) : 0,
                       sampleRate, maxBlockSize);
 }
 
@@ -250,6 +257,11 @@ void SignalGraph::runStage (const Stage& stage, int numSamples)
 
 void SignalGraph::LaneWorker::run()
 {
+    // Same FTZ/DAZ environment the audio callback sets for itself --
+    // denormal-heavy tails (reverb, filters) are 10-100x slower without
+    // it, and this thread runs the same DSP.
+    const juce::ScopedNoDenormals noDenormals;
+
     auto seen = graph.jobEpoch.load (std::memory_order_acquire);
 
     while (! threadShouldExit() && ! graph.workersShouldStop.load (std::memory_order_relaxed))
@@ -295,11 +307,14 @@ void SignalGraph::reconcileWorkers (int wanted, double sampleRate, int maxBlockS
 
         // Realtime scheduling first (same DSP work as the audio thread);
         // a plain high-priority thread when the process lacks rtprio/rtkit
-        // -- the pool still parallelizes correctly either way.
+        // -- dispatch then only engages for non-RT callers (see process()).
         if (! worker->startRealtimeThread (juce::Thread::RealtimeOptions()
                                                .withPriority (5)
                                                .withApproximateAudioProcessingTime (maxBlockSize, sampleRate)))
+        {
             worker->startThread (juce::Thread::Priority::high);
+            workersAreRealtime = false;
+        }
 
         workers.push_back (std::move (worker));
     }
@@ -328,21 +343,36 @@ void SignalGraph::process (juce::AudioBuffer<float>& buffer)
     deviceInputSnapshot.clear();
     addClamped (deviceInputSnapshot, buffer, numSamples);
 
-    // Stages run in level order; lanes inside a stage are independent by
-    // construction (see the class doc) and go to the worker pool when the
-    // stage is dispatchable -- serial otherwise, the same fixed lane
-    // order the pre-parallel version used.
-    for (int s = 0; s < numStages; ++s)
+    if (legacySerialOrder)
+        for (int i = 0; i < numLanes; ++i)
+            runLane (i, numSamples); // the pre-parallel flat pass, verbatim
+    else
     {
-        const auto& stage = stages[(size_t) s];
-        if (stage.dispatchable)
-        {
-            runStage (stage, numSamples);
-            continue;
-        }
+        // Parity rule: an RT audio callback only waits on workers that
+        // are themselves realtime -- a non-RT worker could be preempted
+        // arbitrarily long past a block deadline. Non-RT callers (test
+        // runner, RenderFx, desktops without rtprio) always dispatch.
+        const auto* callingThread = juce::Thread::getCurrentThread();
+        const bool mayDispatch = callingThread == nullptr
+                                 || ! callingThread->isRealtime()
+                                 || workersAreRealtime;
 
-        for (int i = 0; i < stage.count; ++i)
-            runLane (stage.laneIndices[(size_t) i], numSamples);
+        // Stages run in level order; lanes inside a stage are independent by
+        // construction (see the class doc) and go to the worker pool when the
+        // stage is dispatchable -- serial otherwise, the same fixed lane
+        // order the pre-parallel version used.
+        for (int s = 0; s < numStages; ++s)
+        {
+            const auto& stage = stages[(size_t) s];
+            if (stage.dispatchable && mayDispatch)
+            {
+                runStage (stage, numSamples);
+                continue;
+            }
+
+            for (int i = 0; i < stage.count; ++i)
+                runLane (stage.laneIndices[(size_t) i], numSamples);
+        }
     }
 
     if (! anyLaneWritesOutput)
