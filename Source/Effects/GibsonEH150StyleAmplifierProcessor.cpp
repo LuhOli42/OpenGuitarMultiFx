@@ -79,6 +79,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412, &tubeamp::cabs::jensen212 };
+}
+
 GibsonEH150StyleAmplifierProcessor::GibsonEH150StyleAmplifierProcessor()
 {
     const juce::String px ("eh150_");
@@ -114,6 +121,9 @@ GibsonEH150StyleAmplifierProcessor::GibsonEH150StyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("gibson_eh150_cab", "1x12 Field", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -478,6 +488,7 @@ void GibsonEH150StyleAmplifierProcessor::prepare (double newSampleRate, int, int
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, voicings::classAChime, 1.0 / outputScale);
     }
 

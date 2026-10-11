@@ -116,7 +116,7 @@ public:
                 if (f->paramID == "mk2c_speaker")
                     foundSpeaker = true;
             }
-            expect (page2Count == 5, "Power Drive, Bias, Tube Feel, Speaker, Output");
+            expect (page2Count == 6, "Power Drive, Bias, Tube Feel, Speaker, Output, Cab");
             expect (foundSpeaker);
         }
 

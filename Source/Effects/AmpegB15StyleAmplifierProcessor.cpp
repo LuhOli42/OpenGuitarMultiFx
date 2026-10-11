@@ -53,6 +53,13 @@ namespace
     constexpr double powerTheta = 0.9;
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::bass810, &tubeamp::cabs::tweed410, &tubeamp::cabs::greenback412 };
+}
+
 AmpegB15StyleAmplifierProcessor::AmpegB15StyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
@@ -122,6 +129,9 @@ AmpegB15StyleAmplifierProcessor::AmpegB15StyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("ampegb15_cab", "1x15 B15", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -527,6 +537,7 @@ void AmpegB15StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         bmVoicing.cabLpHz = 1500.0;  // own netlist is much darker than the shared bass cab past ~3 kHz
         bmVoicing.cabAirHz = 2500.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

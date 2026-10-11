@@ -96,6 +96,13 @@ namespace
     constexpr double powerTheta = 0.9; // same reasoning as the other amps: damped integrator for the stiff power block
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::bass810, &tubeamp::cabs::bass115, &tubeamp::cabs::greenback412 };
+}
+
 AmpegV4BStyleAmplifierProcessor::AmpegV4BStyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
@@ -178,6 +185,9 @@ AmpegV4BStyleAmplifierProcessor::AmpegV4BStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("ampegv4b_cab", "2x15 V4B", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -778,6 +788,7 @@ void AmpegV4BStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         buildChannel (ch);
         auto bmVoicing = voicings::bassAmp;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

@@ -69,6 +69,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::alnico212, &tubeamp::cabs::greenback412, &tubeamp::cabs::jensen212 };
+}
+
 GarnetHerzogStyleAmplifierProcessor::GarnetHerzogStyleAmplifierProcessor()
 {
     const juce::String px ("hzg_");
@@ -96,6 +103,9 @@ GarnetHerzogStyleAmplifierProcessor::GarnetHerzogStyleAmplifierProcessor()
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("garnet_herzog_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("garnet_herzog_cab", "1x12 Open", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -352,6 +362,7 @@ void GarnetHerzogStyleAmplifierProcessor::prepare (double newSampleRate, int, in
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, voicings::singleEnded, 1.0 / outputScale);
     }
 

@@ -90,6 +90,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412, &tubeamp::cabs::jensen212 };
+}
+
 CarrRamblerStyleAmplifierProcessor::CarrRamblerStyleAmplifierProcessor()
 {
     auto make = [] (const char* id, const char* name, float def)
@@ -143,6 +150,9 @@ CarrRamblerStyleAmplifierProcessor::CarrRamblerStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("carrrambler_cab", "1x12 Classic", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -553,6 +563,7 @@ void CarrRamblerStyleAmplifierProcessor::prepare (double newSampleRate, int maxB
         buildChannel (ch);
         auto bmVoicing = voicings::classAChime;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

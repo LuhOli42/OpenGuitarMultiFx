@@ -216,10 +216,12 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 const auto range = floatParam->getNormalisableRange();
                 row.slider->setRange (range.start, range.end, range.interval > 0.0f ? range.interval : 0.01);
                 row.slider->setValue (floatParam->get(), juce::dontSendNotification);
-                // Double-tap restores the param's default, matching the master knob's double-click-to-zero in FooterBar.
-                row.slider->setDoubleClickReturnValue (true, range.convertFrom0to1 (
-                    static_cast<juce::AudioProcessorParameter*> (floatParam)->getDefaultValue()));
                 const bool isSelector = range.interval >= 1.0f && (range.end - range.start) / range.interval <= 8.0f; // 4/8/16 ohm, Normal/Jumped/Bright...
+                if (! isSelector)
+                    // Double-tap centres the knob at noon (0.5), not its factory
+                    // default -- a player zeroing a knob expects dead centre.
+                    // Selectors are exempt: their option stack eats the taps.
+                    row.slider->setDoubleClickReturnValue (true, range.convertFrom0to1 (0.5f));
                 if (isSelector)
                 {
                     row.slider->setNumDecimalPlacesToDisplay (0);

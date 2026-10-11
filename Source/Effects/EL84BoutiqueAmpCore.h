@@ -101,6 +101,7 @@ private:
     TubeFits tubes;
     bool& reducedOrder;
     const char* displayName;
+    juce::AudioParameterFloat* cabParam = nullptr;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;

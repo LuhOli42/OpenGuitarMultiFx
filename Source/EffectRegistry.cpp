@@ -209,9 +209,13 @@ namespace
                    .getChildFile ("OpenGuitarMultiFx").getChildFile ("cab_voicing.txt");
     }
 
-    /** Loads the cab-voicing preference into tubeamp::cabVoicingEnabled once per process: the saved file first,
-        then the OGMFX_CAB development override on top (same precedence as OGMFX_QUALITY). Called from
-        registerBuiltInEffects -- the one entry point the app, RenderFx and every test harness share. */
+    /** Loads the persisted cab preference into tubeamp::cabVoicingEnabled once per process: the saved file
+        first, then the OGMFX_CAB development override on top (same precedence as OGMFX_QUALITY). It is now
+        only the DEFAULT a newly built amp's page-2 Cab selector starts at -- the #65 global kill switch is
+        gone (per-amp parameter instead), and a preset's own `*_cab` attribute overrides it. The file is
+        still read (never written: there is no UI for it any more) so installs that saved the old Settings
+        toggle keep the default they chose. Called from registerBuiltInEffects -- the one entry point the
+        app, RenderFx and every test harness share. */
     void loadCabVoicingPreference()
     {
         static const bool once = []
@@ -255,22 +259,6 @@ void EffectRegistry::saveOversamplingQuality()
 }
 
 bool EffectRegistry::dependsOnOversamplingQuality (const juce::String& key) const { return qualityDependentKeys.count (key) > 0; }
-
-void EffectRegistry::setCabVoicingEnabled (bool enabled) noexcept
-{
-    tubeamp::cabVoicingEnabled.store (enabled, std::memory_order_relaxed);
-}
-
-bool EffectRegistry::getCabVoicingEnabled() noexcept
-{
-    return tubeamp::cabVoicingEnabled.load (std::memory_order_relaxed);
-}
-
-void EffectRegistry::saveCabVoicingEnabled()
-{
-    cabVoicingFile().getParentDirectory().createDirectory();
-    cabVoicingFile().replaceWithText (getCabVoicingEnabled() ? "on" : "off");
-}
 
 void registerBuiltInEffects (EffectRegistry& registry)
 {

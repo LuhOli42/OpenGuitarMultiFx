@@ -193,6 +193,7 @@ private:
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
 
+    juce::AudioParameterFloat* cabParam = nullptr;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* channelParam = nullptr;
     juce::AudioParameterFloat* inputParam = nullptr;   // the Normal channel's Bright switch (id kept for presets)

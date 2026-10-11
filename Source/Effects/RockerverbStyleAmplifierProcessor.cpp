@@ -247,6 +247,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::alnico212, &tubeamp::cabs::jensen212 };
+}
+
 RockerverbStyleAmplifierProcessor::RockerverbStyleAmplifierProcessor()
 {
     auto make = [] (const char* id, const char* name, float def)
@@ -308,6 +315,9 @@ RockerverbStyleAmplifierProcessor::RockerverbStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("rv_cab", "4x12 V30", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -955,6 +965,7 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, voicings::highGain, 1.0 / outputScale);
     }
 

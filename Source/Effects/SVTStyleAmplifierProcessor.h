@@ -172,6 +172,7 @@ private:
 
     std::array<Channel, 2> channels;
 
+    juce::AudioParameterFloat* cabParam = nullptr;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* inputParam = nullptr;
     juce::AudioParameterFloat* gainParam = nullptr;

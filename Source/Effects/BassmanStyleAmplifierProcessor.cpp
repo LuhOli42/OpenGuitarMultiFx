@@ -114,6 +114,13 @@ namespace
 
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::jensen212, &tubeamp::cabs::greenback412, &tubeamp::cabs::alnico212 };
+}
+
 BassmanStyleAmplifierProcessor::BassmanStyleAmplifierProcessor()
 {
     // Input: which of the amp's two front-panel jacks the guitar is actually patched into -- Normal, Bright, or both at
@@ -179,6 +186,9 @@ BassmanStyleAmplifierProcessor::BassmanStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("bassman_cab", "4x10 Tweed", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -711,6 +721,7 @@ void BassmanStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         bmVoicing.otHz = 20000.0;
         bmVoicing.presenceHz = 9500.0;
         bmVoicing.presenceDb = 4.5;
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

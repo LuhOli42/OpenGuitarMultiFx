@@ -27,6 +27,13 @@ namespace
     constexpr double speakerNominal[2] = { 4.0, 8.0 };
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::bass810, &tubeamp::cabs::bass115, &tubeamp::cabs::tweed410 };
+}
+
 Acoustic360StyleAmplifierProcessor::Acoustic360StyleAmplifierProcessor()
 {
     auto volume = std::make_unique<juce::AudioParameterFloat> (
@@ -76,6 +83,9 @@ Acoustic360StyleAmplifierProcessor::Acoustic360StyleAmplifierProcessor()
     group->addChild (std::move (variamp));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("acoustic360_page2", "Page 2", "|", std::move (output));
     page2->addChild (std::move (speaker));
+    auto cab = tubeamp::makeCabParam ("acoustic360_cab", "1x18 W-bin", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -329,6 +339,7 @@ void Acoustic360StyleAmplifierProcessor::prepare (double newSampleRate, int, int
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, voicings::solidState, 1.0 / outputScale); // direct-coupled: speaker reaction only
     }
 

@@ -93,6 +93,13 @@ namespace
     constexpr double powerTheta = 0.9;
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::alnico212, &tubeamp::cabs::jensen212, &tubeamp::cabs::greenback412 };
+}
+
 AC15StyleAmplifierProcessor::AC15StyleAmplifierProcessor()
 {
     // Input: the real amp's own two Channel I jacks (High / Low sensitivity, sharing one EF86 grid).
@@ -135,6 +142,9 @@ AC15StyleAmplifierProcessor::AC15StyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("ac15_cab", "1x12 Blue", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -512,6 +522,7 @@ void AC15StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         a15Voicing.otHz = 20000.0;
         a15Voicing.presenceHz = 9500.0;
         a15Voicing.presenceDb = 5.0;
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, a15Voicing, 1.0 / outputScale);
     }
 
