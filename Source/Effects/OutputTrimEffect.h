@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "TubeAmpCommon.h"
 
 #include <memory>
 
@@ -21,8 +22,12 @@ namespace openguitarmultifx
 class OutputTrimEffect : public EffectProcessor
 {
 public:
-    OutputTrimEffect (std::unique_ptr<EffectProcessor> innerProcessor, float trimDecibels)
-        : inner (std::move (innerProcessor)), gain (juce::Decibels::decibelsToGain (trimDecibels)) {}
+    // `limit` is opt-in and reserved for amp models: a pedal's Level knob is allowed to drive the
+    // next effect several volts hot (that's what boosters are for), but an amp emitting over full
+    // scale just hard-clips in the host -- real amps cannot swing past their rails anyway.
+    OutputTrimEffect (std::unique_ptr<EffectProcessor> innerProcessor, float trimDecibels, bool limit = false)
+        : inner (std::move (innerProcessor)), gain (juce::Decibels::decibelsToGain (trimDecibels)),
+          limitOutput (limit) {}
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override { inner->prepare (sampleRate, maxBlockSize, numChannels); }
 
@@ -30,6 +35,19 @@ public:
     {
         inner->process (buffer);
         buffer.applyGain (gain);
+        if (limitOutput)
+        {
+            // The trim can push a hot emit over full scale -- a model must not hand the host an
+            // unbounded float that hard-clips downstream, so the post-trim level saturates once,
+            // at the shared ceiling (emits stay unceiled so nothing gets limited twice).
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            {
+                auto* s = buffer.getWritePointer (ch);
+                const int n = buffer.getNumSamples();
+                for (int i = 0; i < n; ++i)
+                    s[i] = (float) tubeamp::outputCeiling (s[i]);
+            }
+        }
     }
 
     void reset() override { inner->reset(); }
@@ -47,6 +65,7 @@ public:
 private:
     std::unique_ptr<EffectProcessor> inner;
     float gain;
+    bool limitOutput = false;
 };
 
 } // namespace openguitarmultifx

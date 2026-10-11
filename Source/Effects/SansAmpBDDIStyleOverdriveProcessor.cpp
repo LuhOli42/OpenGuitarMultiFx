@@ -14,6 +14,9 @@ namespace
     // TLC2264-class op-amp on 9 V (RRIO: ~1.5 V short of each rail); see the doc.
     const NodalCircuit::OpAmpMacro tlc2264 { 2.0e5, 0.7e6, 150.0, 1.5, 7.5, 0.0, 0.0 };
 
+    constexpr double siIs = 2.52e-9;
+    constexpr double siNVt = 1.752 * 25.85e-3;
+
     constexpr double inputLoad = 1.0e6;
 }
 
@@ -124,6 +127,17 @@ void SansAmpBDDIStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (minus, nb, 1.0e3);
         ch.rFb = c.addResistor (minus, out, 4.7e3 + 47.5e3);
         c.addCapacitor (minus, out, 680.0e-12); // ~2.2 kHz LP across max feedback R, opens up at low drive
+        // The BDDI's growl is a DS-1-style soft clipper across the feedback leg, not the op-amp's
+        // rails: one Si against two in series clips the polarities unevenly (~0.6 V vs ~1.2 V),
+        // which is what keeps the even harmonics the pedal's character needs. The diodes ride a
+        // 22k/100k divider tap so they clip ~5.5x above the knee -- this stage swings several
+        // volts at noon, and a raw 0.6 V knee squashed it ~10 dB.
+        const auto clip = c.addNode(), clipTap = c.addNode();
+        c.addResistor (minus, clipTap, 100.0e3);
+        c.addResistor (clipTap, out, 22.0e3);
+        c.addDiode (clipTap, clip, siIs, siNVt, 4.0e-9);
+        c.addDiode (clip, out, siIs, siNVt, 4.0e-9);
+        c.addDiode (out, clipTap, siIs, siNVt, 4.0e-9);
         ch.nDrive = out;
 
         for (auto n : { plus, minus, out })

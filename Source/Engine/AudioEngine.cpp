@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "SoftCeiling.h"
 
 #include <cmath>
 
@@ -436,6 +437,18 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         const float g = masterGainLinear.load (std::memory_order_relaxed);
         if (! juce::approximatelyEqual (g, 1.0f))
             buffer.applyGain (g);
+    }
+
+    // Final device boundary: the DAC hard-clips past full scale, so whatever the chain or master
+    // section emits saturates into deviceSoftCeiling instead. Its knee sits at the model ceiling,
+    // so an amp's already-limited emit passes through untouched -- only genuinely over-scale signal
+    // (boosted last-in-chain pedal, summed lanes, hot master gain) gets caught. Post master EQ +
+    // gain, so the OUT meter below still reads the level actually about to reach the device.
+    for (int ch = 0; ch < numOutputChannels; ++ch)
+    {
+        auto* out = outputChannelData[ch];
+        for (int i = 0; i < numSamples; ++i)
+            out[i] = (float) deviceSoftCeiling (out[i]);
     }
 
     // Peak across every channel the graph actually produced -- what's

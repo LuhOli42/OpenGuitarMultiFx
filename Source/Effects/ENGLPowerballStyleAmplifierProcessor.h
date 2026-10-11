@@ -30,9 +30,11 @@ public:
     static constexpr double outputScale = 1.0 / 56.0;
 
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 10.5;
+    static constexpr double bmGain0 = 17.0;
     static constexpr double bmYmax = 0.195;
-    static constexpr double bmKneeN = 6.0;
+    // Softer than the shared fitted 6.0: at hot gain the knee's high-order harmonics flooded the
+    // 8-20 kHz band past this amp's own full-netlist level (Oct-11 audit fizz regression).
+    static constexpr double bmKneeN = 4.0;
     // Fitted to THIS amp's own full-order lock-in sweep (toneStackOut -> speaker, ch3 @ gain .85): a resonant
     // LF bump ~+9 dB at ~80-90 Hz whose level stays flat below it (bell, not a high-pass -- ENGL's depth/resonance
     // voicing), flat-ish mids, +1.5 dB ridge at ~4-5 kHz, rolloff ~-9 dB @ 10.8 kHz. reducedOrder also removes
@@ -44,7 +46,7 @@ public:
     static constexpr double bmTopZHz = 5000.0, bmTopPHz = 5000.0, bmTopQp = 1.4;
     // physical ceiling: the stages this replaces clip at the rail; caps resonant overshoot inside the sanity bound.
     static constexpr double bmOutMax = 64.0;
-    static constexpr double bmLevelTrim = 0.65;
+    static constexpr double bmLevelTrim = 0.60;
     static constexpr double bmTapGain[4] = { 1.0, 40.0, 1200.0, 36000.0 };
 
     bool dcConverged() const noexcept { return dcOk; }

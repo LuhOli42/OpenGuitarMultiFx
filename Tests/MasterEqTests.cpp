@@ -1,5 +1,6 @@
 #include "Engine/MasterEq.h"
 #include "Engine/MasterBusSettings.h"
+#include "Engine/SoftCeiling.h"
 
 #include "SineProbe.h"
 
@@ -135,6 +136,35 @@ public:
                 eq.process (buf);
             }
             expectLessThan ((double) buf.getMagnitude (0, 0, 512), 1.0e-3);
+        }
+
+        beginTest ("the two-stage ceilings: model limit passes the boundary, hot pedals saturate");
+        {
+            // Model stage: identity under its knee, bounded, monotonic, odd-symmetric.
+            for (double x : { -0.6, -0.3, 0.0, 0.3, 0.6 })
+                expectWithinAbsoluteError (modelSoftCeiling (x), x, 1.0e-12);
+            double prev = 0.0;
+            for (double x = 0.6; x <= 8.0; x += 0.05)
+            {
+                const double y = modelSoftCeiling (x);
+                expect (y >= prev && y <= modelCeiling + 1.0e-9);
+                expectWithinAbsoluteError (modelSoftCeiling (-x), -y, 1.0e-12);
+                prev = y;
+            }
+            // An amp's already-limited emit reaches the device unchanged: the boundary's knee
+            // is the model ceiling, so everything the model stage can emit is identity there.
+            for (double x = -1.5; x <= 1.5; x += 0.01)
+                expectWithinAbsoluteError (deviceSoftCeiling (modelSoftCeiling (x)), modelSoftCeiling (x), 1.0e-12);
+            // A boosted last-in-chain pedal past the model ceiling still saturates at the
+            // boundary instead of hard-clipping the DAC.
+            for (double x : { 0.9, 1.1, 1.4, 2.0, 8.0 })
+            {
+                const double y = deviceSoftCeiling (x);
+                expect (y <= deviceCeiling + 1.0e-9);
+                expectWithinAbsoluteError (deviceSoftCeiling (-x), -y, 1.0e-12);
+            }
+            expectWithinAbsoluteError (deviceSoftCeiling (1.0), 0.952, 0.01);
+            expectWithinAbsoluteError (deviceSoftCeiling (100.0), deviceCeiling, 1.0e-9);
         }
 
         beginTest ("the maxBands cap holds");

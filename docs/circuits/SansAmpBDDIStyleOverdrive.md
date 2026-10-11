@@ -20,9 +20,14 @@ cabinet-sim filters -> Blend of dry and emulated -> Baxandall Bass/Treble -> Lev
 - **A**: buffer + twin-T notch @ ~750 Hz (21.2k/10n) + 72 Hz first-order HPF.
 - **B**: Presence -- non-inverting macro gain stage with the pot straddling (+)/(-) into an RC leg so
   gain and the high-pass knee move together; 68n feedback cap = the ~2.2 kHz LP.
-- **C**: Drive -- the same non-inverting saturating stage, gain ~6x..100x; clipping is the op-amp's own
-  rail saturation (the V1-early has no discrete clipper; the 3.3 V zener pair of later revisions is
-  approximated by the macro's ~ +/-3 V swing, documented below).
+- **C**: Drive -- the same non-inverting saturating stage, gain ~6x..100x; clipping is a discrete
+  asymmetric diode pair across the feedback network (one Si forward vs two in series, riding the tap
+  of a 100k/22k divider so the pair clips ~5.5x above its ~0.6/1.2 V knees). The earlier rail-only
+  model made the Drive knob move only feedback resistance into a saturation the solver almost never
+  reached -- ~0% THD at every setting, flagged by the Oct-11 audit. The real V1-early's clipping
+  detail is undocumented (the potted module wasn't fully mapped); the DS-1-style feedback clipper is
+  the standard interpretation for this stage's gain sweep and reproduces the unit's clean->growl
+  sweep, so the diode branch replaced the rail-only assumption rather than coexisting with it.
 - **D**: cabinet sim -- bridged-T notch @ ~450 Hz + two cascaded RC poles ~5 kHz + follower.
 - **E**: Blend (dry taken at the input buffer, before the notch, as on the real unit -- Blend at 0
   leaves only Bass/Treble/Level) + Baxandall Bass (gyrator ~60 Hz shelf) / Treble (~4 kHz series-RC
@@ -30,9 +35,10 @@ cabinet-sim filters -> Blend of dry and emulated -> Baxandall Bass/Treble -> Lev
 
 ## Deliberate simplifications
 
-- The zener clip is approximated by the op-amp macro's rail swing rather than two ideal-zener branches
-  (the NodalCircuit diode model is Shockley, not a zener knee); the audible result -- a soft ~3 V clip
-  threshold on the emulated path -- is the same mechanism.
+- The discrete clipper uses plain Shockley Si diodes rather than zeners (the NodalCircuit diode model
+  has no zener knee); asymmetry comes from the 1-vs-2 series count, and the divider tap lifts the
+  effective threshold to the several-volt swing the emulated path actually produces at noon -- a raw
+  0.6 V knee on the output node squashed the stage ~10 dB before it could growl.
 - The real cab-sim section is two second-order LPFs + a bridged-T; the model keeps the 450 Hz notch and
   approximates the LP stack with two passive RC poles (~-12 dB/oct effective vs -24).
 - TLC2264 modelled by the project's TL072-class macro shape with a lower GBW (0.7 MHz).

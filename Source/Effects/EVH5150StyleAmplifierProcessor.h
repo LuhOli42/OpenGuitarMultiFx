@@ -50,9 +50,11 @@ public:
 
     // ---- reduced-order power stage ----
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 9.5;
+    static constexpr double bmGain0 = 15.0;
     static constexpr double bmYmax = 0.198;
-    static constexpr double bmKneeN = 6.0;
+    // Softer than the shared fitted 6.0: at hot gain the knee's high-order harmonics flooded the
+    // 8-20 kHz band past this amp's own full-netlist level (Oct-11 audit fizz regression).
+    static constexpr double bmKneeN = 4.0;
     // Fitted to THIS amp's own full-order lock-in sweep (toneStackOut -> speaker): LF bump ~+5 dB at ~80-90 Hz
     // falling ~15 dB/oct below (resonant high-pass + one-pole low cut at bmCutHz), flat mids, +2.5 dB ridge at
     // ~4-5 kHz into the top rolloff (-13 dB @ 10.8 kHz). The V3B recovery triode the reduced path removes is
@@ -61,12 +63,15 @@ public:
     static constexpr double bmBumpHz = 80.0, bmBumpQp = 2.0;
     static constexpr double bmCutHz = 15.0;
     static constexpr double bmTopZHz = 4000.0, bmTopPHz = 6500.0, bmTopQp = 1.4;
-    // the OT/NFB path has a real notch at ~12 kHz in this amp's own sweep -- a third (notch) biquad reproduces it.
+    // the OT/NFB path has a real notch in this amp's own sweep -- a third (notch) biquad reproduces it.
+    // Hot-rendered, this amp's own full netlist sits ~-24 dB at 12 kHz, so the 12 kHz fit stands; the
+    // earlier -46 dB reading was the cold cab folding the band under the notch's skirt, and the top-band
+    // rebalance now comes from the cab voicing (cabNotchHz/cabNotchDb + lifted corners), not this biquad.
     static constexpr double bmNotchHz = 12000.0, bmNotchQ = 1.0;
     // physical ceiling: same rail-clip rationale as the other fitted amps -- keeps the resonant overshoot
     // of a saturated LF signal inside the sanity bound (also the unity-at-noon trim point).
     static constexpr double bmOutMax = 115.0;
-    static constexpr double bmLevelTrim = 0.91;
+    static constexpr double bmLevelTrim = 0.59;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
