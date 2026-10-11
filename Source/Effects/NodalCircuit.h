@@ -351,11 +351,17 @@ public:
         a knob -- e.g. an emitter degeneration pot ahead of the collector resistor. */
     void setBjtSaturationCurrent (int bjtIndex, double amps) noexcept
     {
-        bjts[(size_t) bjtIndex].iSat = amps;
+        auto& q = bjts[(size_t) bjtIndex];
         // the limit is not part of the excitation vector: a settled circuit must solve once
-        // more to pick it up (same reason a knob-dragged resistor sets modelsDirty)
-        settleCount = 0;
-        lastSolveOk = false;
+        // more to pick it up (same reason a knob-dragged resistor sets modelsDirty). Re-stamping
+        // the SAME value must not invalidate, or a caller that re-stamps every block (updatePots)
+        // would starve the 32-sample idle skip.
+        if (q.iSat != amps)
+        {
+            q.iSat = amps;
+            settleCount = 0;
+            lastSolveOk = false;
+        }
     }
 
     /** Opt-in for one-port BJTs whose drive node must feel saturation: returns the collector
@@ -363,9 +369,13 @@ public:
         loading the real two-port puts on the stage feeding a saturating transistor. */
     void setBjtSatExcessToBase (int bjtIndex, bool on) noexcept
     {
-        bjts[(size_t) bjtIndex].satExcessToBase = on;
-        settleCount = 0;
-        lastSolveOk = false;
+        auto& q = bjts[(size_t) bjtIndex];
+        if (q.satExcessToBase != on)
+        {
+            q.satExcessToBase = on;
+            settleCount = 0;
+            lastSolveOk = false;
+        }
     }
 
     /** N-channel JFET. Gate current is taken as zero. `assumedVds` > 0 marks a JFET that stays in saturation (a

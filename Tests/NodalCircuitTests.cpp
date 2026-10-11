@@ -279,6 +279,17 @@ public:
                 expect (c.solveSample());
             expectWithinAbsoluteError (c.voltage (col), 9.0 - 1.0e-3 * 2.2e3, 0.2);
 
+            // Re-stamping the SAME limit (what a per-block updatePots does) must not starve
+            // the fixed-point skip: the settled circuit should keep returning early.
+            const auto skippedBefore = c.getSkippedSamples();
+            for (int i = 0; i < 64; ++i)
+            {
+                c.setBjtSaturationCurrent (dev, 1.0e-3);
+                expect (c.solveSample());
+            }
+            expect (c.getSkippedSamples() > skippedBefore);
+            expectWithinAbsoluteError (c.voltage (col), 9.0 - 1.0e-3 * 2.2e3, 0.2);
+
             c.setBjtSaturationCurrent (dev, 0.5e-3); // halves the limit: must not stay settled
             expect (c.solveSample());
             expectWithinAbsoluteError (c.voltage (col), 9.0 - 0.5e-3 * 2.2e3, 0.2);
