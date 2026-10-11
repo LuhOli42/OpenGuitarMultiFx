@@ -64,7 +64,8 @@ void SansAmpBDDIStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (nIn, a1, 10.0e3);
         c.addCapacitor (a1, plus, 1.0e-6);
         c.addResistor (plus, nb, 470.0e3);
-        c.addOpAmp (plus, buf, buf);           // follower
+        // follower -- the TLC2264 input buffer; a hot pickup pushes it into its rails, so rail-limited.
+        c.addRailLimitedOpAmp (plus, buf, buf, { tlc2264.lowRail, tlc2264.highRail });
 
         // Bridged-T (twin-T) notch @ ~750 Hz: R 21.2k / C 10 nF pair
         c.addResistor (buf, t1, 21.2e3);
@@ -150,10 +151,10 @@ void SansAmpBDDIStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (c1, c2, 10.0e3);
         c.addCapacitor (c2, nb, 6.8e-9);
 
-        // follower buffer (the TLC2264's last section)
+        // follower buffer (the TLC2264's last section), rail-limited like the rest of that quad
         c.addResistor (c2, plus, 10.0e3);
         c.addResistor (plus, nb, 100.0e3);
-        c.addOpAmp (plus, buf, buf);
+        c.addRailLimitedOpAmp (plus, buf, buf, { tlc2264.lowRail, tlc2264.highRail });
         c.addResistor (buf, nb, 10.0e3);
         ch.nCab = buf;
 

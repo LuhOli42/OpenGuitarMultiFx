@@ -78,7 +78,9 @@ void DarkglassB7KStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addResistor (nIn, a1, 10.0e3);
         c.addCapacitor (a1, plus, 22.0e-9);
         c.addResistor (plus, nb, 470.0e3);
-        c.addOpAmp (plus, buf, buf);           // follower
+        // follower -- a TL072 buffer a hot pickup can push into its rails, so rail-limited rather than ideal
+        // (a flat top here feeds both the dry path and the drive stage, exactly like the real input buffer).
+        c.addRailLimitedOpAmp (plus, buf, buf, { tl072.lowRail, tl072.highRail });
         ch.nBuf = buf;
 
         // Grunt: series-RC shunt (1 uF then the switched resistor) bleeds highs pre-clip = more low end.
