@@ -51,15 +51,16 @@ namespace
     // ---- tubes ----
     KorenTriode::Parameters triode12AX7() { return {}; } // Koren's ECC83 set
 
-    /** Phase inverter 12AX7, kg1 softened for potential loop stability -- same pattern as JCM800/AC30. Start at 1x
-        (the default), raise only if the full reference model self-oscillates in the 10s silence test. */
+    /** Phase inverter 12AX7. // kg1 NOT softened: a p.kg1 *= 40.0 stability band-aid used to live here (it divided plate
+        // current and gm by ~40, collapsing the full-netlist reference ~32-57 dB below the shipped
+        // reduced stage). The instability it suppressed no longer reproduces -- the damped-integrator
+        // power blocks (setIntegrationTheta(powerTheta)) fixed that class of failure -- and the
+        // un-softened netlists measure silence-stable, so the published Koren values now stand.
+        History: un-softened netlists at that time self-oscillated from silence (10 s peak ~1.0 V); measured
+        today they decay to ~0 V -- see the dead-reference fix notes in docs/circuits/CircuitFamilies.md. */
     KorenTriode::Parameters triode12AX7Pi()
     {
         auto p = triode12AX7();
-        // kg1 softened 40x for closed-loop stability (split with the power pentode below).
-        // Without softening the full reference model self-oscillates from silence (10s peak ~1.0).
-        // 10x: oscillates (peak 0.18). 30x: marginally stable (peak 0.018). 70x: stable but gain collapsed.
-        p.kg1 *= 40.0;
         return p;
     }
 
@@ -76,12 +77,10 @@ namespace
         return p;
     }
 
-    /** Same 6L6GC pair as pentode6L6Pair(), with kg1 softened for stability if needed. */
+    /** Same 6L6GC pair as pentode6L6Pair() for the power stage -- see triode12AX7Pi()'s note. */
     KorenPentode::Parameters pentode6L6PairPower()
     {
         auto p = pentode6L6Pair();
-        // kg1 softened 40x for closed-loop stability (split with the PI triode above).
-        p.kg1 *= 40.0;
         return p;
     }
 

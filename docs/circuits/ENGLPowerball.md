@@ -92,7 +92,9 @@ with a shelf filter.
 
 **Speaker**: standard Re + Le + parallel-RLC cone resonance. 4/8/16 Ω selectable.
 
-Power block uses theta=0.9 (slightly damped trapezoidal). PI triodes use kg1×40 for stability
+Power block uses theta=0.9 (slightly damped trapezoidal). PI triodes used kg1×40 for stability --
+REMOVED (the damped-integrator power block is what actually stabilized the loop; see
+CircuitFamilies.md's dead-reference repair section)
 (same pattern as all other amps in this project).
 
 ## Supply model

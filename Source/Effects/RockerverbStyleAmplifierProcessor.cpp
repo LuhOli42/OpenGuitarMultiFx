@@ -50,13 +50,14 @@ namespace
     KorenTriode::Parameters triode12AX7Pi()
     {
         auto p = triode12AX7();
-        p.kg1 *= 40.0;
+
         return p;
     }
 
-    /** 6V6 pair: merge two tubes (kg1*0.5, kg2*0.5, Gg*2.0, arcResistance*0.5) with kg1*40 stability.
-        Published Koren 6V6GT: kg1=1400 — same pattern as EVH5150's 6L6GC pair.
-        Full-model output is low (same as all kg1*40 amps); the behavioral model handles real output. */
+    /** 6V6 pair: merge two tubes (kg1*0.5, kg2*0.5, Gg*2.0, arcResistance*0.5). Published Koren 6V6GT.
+        No kg1 stability softening -- the multiplier that used to sit here collapsed the full-netlist
+        reference ~40 dB and the instability it band-aided no longer reproduces (see triode12AX7Pi
+        notes in JCM800StyleAmplifierProcessor). */
     KorenPentode::Parameters pentode6V6Pair()
     {
         KorenPentode::Parameters p;
@@ -72,7 +73,7 @@ namespace
         p.grid.Gg *= 2.0;
         p.arcResistance *= 0.5;
         // stability
-        p.kg1 *= 40.0;
+
         return p;
     }
 
@@ -428,7 +429,9 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (ch.wMix, gnd, 1.0e6);                    // R63
         ch.wTone = c.addNode();                                 // the PI's grid A
         c.addCapacitor (ch.wMix, ch.wTone, 47.0e-9);            // C3
-        c.addResistor (ch.wTone, gnd, 1.0e6);                   // R26
+        c.addResistor (ch.wTone, gnd, 1.0e6);                   // R26 -- wTone's own DC return; the
+                                                              // reduced path reads this node, so it
+                                                              // must keep its ground reference
     }
 
     // ================================================================ phase inverter + power amp (full reference only)
@@ -444,15 +447,21 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
         // 82K/100K plate loads, 10K tail + 47K to ground, 100nF coupling from master to grid A.
         // Cross-coupling: 47nF from PI plate B to grid B.
         // NFB: from OT secondary through 150K + 4K7 to grid B.
-        const auto g1 = ch.wTone, g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
+        // g1 is its own node, AC-coupled from wTone through C16 -- wTone itself stays at the
+        // ground-referenced DC the reduced path expects (the previous alias g1 = wTone put the
+        // PI's tail-referenced bias straight onto the behavioural stage's input node, and
+        // grounded at all it put both PI grids ~27 V below the cathode = cutoff).
+        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
         ch.wGridA = g1;
+        c.addCapacitor (ch.wTone, g1, 47.0e-9);               // C16
         ch.wPlateA = pa;
         ch.wPlateB = pb;
         ch.wTail = nm;
         ch.wFeedback = fp;
-        c.addResistor (g2, fp, 1.0e6);                       // grid leak for grid B
-        // Cross-coupling: 47nF from plate B to grid B
-        c.addCapacitor (pb, g2, 47.0e-9);
+        c.addResistor (g1, nm, 1.0e6);                       // R26 -- grid A leak to the tail midpoint
+        c.addResistor (g2, nm, 1.0e6);                       // grid leak for grid B -- to the tail midpoint
+                                                              // (referencing the ~0 V feedback node left it below cutoff)
+        // EXP: cross-coupling removed entirely -- pure LTP
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
@@ -460,7 +469,8 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (vpi, pa, 82.0e3);                     // plate load A
         c.addResistor (vpi, pb, 100.0e3);                    // plate load B
         c.addResistor (k, nm, 10.0e3);                       // cathode to tail
-        c.addResistor (nm, gnd, 47.0e3);                     // tail to ground
+        c.addResistor (nm, fp, 47.0e3);                      // tail returns through the feedback node (elevates
+                                                              // it and lets the summed NFB drive the shared cathode)
         c.setInitialGuess (pa, 250.0);
         c.setInitialGuess (pb, 245.0);
         c.setInitialGuess (k, 30.0);
@@ -526,8 +536,11 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: from the speaker terminal through feedbackResistor to PI grid 2 (no Presence control on this amp).
+        // NFB: from the speaker terminal through feedbackResistor into fp, which sits in the PI tail
+        // return (nm -> 47k -> fp -> 4.7k -> gnd, same shape as SuperLead's presence-in-tail wiring).
+        // The 4.7k is the fixed shunt leg; rFeedback carries the switched 150k-series leg (see feedbackR).
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
+        c.addResistor (fp, gnd, 4.7e3);
         c.addCapacitor (fp, gnd, 1.5e-9);                    // stray for HF stability
 
         c.setInitialGuess (pp1, railPlatesNominal);

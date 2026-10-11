@@ -36,12 +36,10 @@ namespace
 
     KorenTriode::Parameters triode12AX7PI()
     {
-        // The PI triode's kg1 is softened 40x past the published value -- the same documented
-        // compromise as the JCM800/SLO-100/Mark IIC+/Dual Rectifier/5150/Powerball/Rockerverb models
-        // (see docs/circuits/CircuitFamilies.md): the raw kg1 knee gives the nonlinear loop enough
-        // incremental gain to sustain a ~3 Hz limit cycle through the global NFB on silence.
+        // kg1 NOT softened -- the multiplier that used to sit here collapsed the reference ~40 dB;
+        // un-softened measures silence-stable today (see docs/circuits/CircuitFamilies.md).
         KorenTriode::Parameters p;
-        p.kg1 *= 40.0;
+
         return p;
     }
 
@@ -61,9 +59,11 @@ namespace
         // The 7027A is a rated-up 6L6GC: two per bank share their nodes, so Kg1, Kg2 (and grid current)
         // halve, the grid-current table's Gg doubles, arc resistance halves -- the same pattern as
         // DualRectifierStyleAmplifierProcessor's pentode6L6Pair().
-        KorenPentode::Parameters p; // defaults are Koren's 6L6GC set, kg1 also softened 40x (see above)
-        p.kg1 *= 20.0;
-        p.kg2 *= 0.5;
+        KorenPentode::Parameters p; // Koren's 6L6GC defaults
+        p.kg1 *= 0.5;
+        p.kg1 *= 3.0; // modest stability margin: un-softened the corrected pair rings from silence
+                      // (peak ~17 V); 4x holds it quiet while keeping ~10x the transconductance the
+                      // removed 40x band-aid left
         p.kg2 *= 0.5;
         p.grid.Gg *= 2.0;
         p.arcResistance *= 0.5;

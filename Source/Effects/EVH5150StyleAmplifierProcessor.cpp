@@ -52,7 +52,7 @@ namespace
     KorenTriode::Parameters triode12AX7Pi()
     {
         auto p = triode12AX7();
-        p.kg1 *= 40.0;
+
         return p;
     }
 
@@ -69,7 +69,7 @@ namespace
     KorenPentode::Parameters pentode6L6PairPower()
     {
         auto p = pentode6L6Pair();
-        p.kg1 *= 40.0;
+
         return p;
     }
 
@@ -440,9 +440,11 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wFeedback = fp;
         c.addCapacitor (ch.wRecoveryPlate, g1, 0.022e-6); // C49: coupling from V3B to PI
         c.addResistor (g1, nm, 1.0e6);                    // R50 grid leak
-        c.addResistor (g2, fp, 1.0e6);                    // R53 grid leak
+        c.addResistor (g2, nm, 1.0e6);                    // R53 grid leak -- to the tail midpoint so grid 2 sits
+                                                          // at the same elevated DC as grid 1 (referencing the ~0 V
+                                                          // feedback node instead left V4B ~27 V below cutoff)
         // R48=100K feedback from V4B plate to V4A grid
-        c.addResistor (pb, g1, 100.0e3);                   // R48
+        // R48 omitted: wired pb->g1 it loads the driver into a ~14 dB loss; measured wrong either way
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
@@ -451,7 +453,9 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (vpi, pb, 100.0e3);                   // R58
         c.addCapacitor (pa, pb, 75.0e-12);                   // compensation
         c.addResistor (k, nm, 1.0e3);                       // cathode to tail midpoint
-        c.addResistor (nm, gnd, 10.0e3);                    // tail to ground
+        c.addResistor (nm, fp, 10.0e3);                   // tail returns through the feedback node (same shape as
+                                                          // SuperLead: elevates fp, and the NFB summed there drives
+                                                          // the shared cathode through the tail)
         c.setInitialGuess (pa, 250.0);
         c.setInitialGuess (pb, 245.0);
         c.setInitialGuess (k, 30.0);

@@ -47,6 +47,8 @@ Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
 
 ## Stability / verification
 
-- kg1×40 on PI triodes and power pentodes (the codebase-wide LTP stabilization).
+- kg1×40 on PI triodes and power pentodes (the codebase-wide LTP stabilization) -- REMOVED; the
+  instability it suppressed no longer reproduces (see CircuitFamilies.md's dead-reference repair
+  section).
 - DC: plates ~470V, screens ~464V. Unity trim is calibrated so the PedalUnityLevel suite passes.
 - `Tests/DumbleSteelStringStyleAmplifierProcessorTests.cpp`: DC convergence, silence settle, pluck.

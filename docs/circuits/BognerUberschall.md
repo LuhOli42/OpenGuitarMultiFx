@@ -43,5 +43,6 @@ Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
 
 ## Stability / verification
 
-- kg1×40 on PI triodes and EL34 pairs; DC plates ~460V; unity trim for PedalUnityLevel.
+- kg1×40 on PI triodes and EL34 pairs -- REMOVED (see CircuitFamilies.md's dead-reference repair
+  section); DC plates ~460V; unity trim for PedalUnityLevel.
 - `Tests/BognerUberschallStyleAmplifierProcessorTests.cpp`: DC, silence settle, pluck.

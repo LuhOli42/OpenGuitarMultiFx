@@ -37,8 +37,11 @@ Ultra-Hi rocker switches. Factory spec: 100 W into 2 / 4 / 8 ohm, input sensitiv
 
 The raw Koren 6L6GC knee on the 7027A pair plus the unmodified LTP triode gave the global-NFB loop
 enough incremental gain to sustain a ~3 Hz motorboating limit cycle on silence. As documented for the
-JCM800/SLO-100/etc. in CircuitFamilies.md, the remedy is the same documented compromise: `kg1` is
-softened ~40x on BOTH the phase-inverter triode AND the output pentode pair. The side effect is also
+JCM800/SLO-100/etc. in CircuitFamilies.md, the remedy WAS the same documented compromise: `kg1`
+softened ~40x on BOTH the phase-inverter triode AND the output pentode pair. That softening has since
+been REMOVED (it was the mechanism of the ~32-57 dB reference collapse, and the instability it
+suppressed no longer reproduces -- see CircuitFamilies.md's dead-reference repair section). The side
+effect while it was in place is also
 the documented one -- the reference model's idle current and closed-loop gain collapse far below the
 real amp's ~160 mA quiescent (the unit test's idle-current bound reflects this), which is part of why
 the behavioural power stage below is the shipped model.

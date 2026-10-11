@@ -55,7 +55,7 @@ namespace
     KorenTriode::Parameters triode12AX7Pi()
     {
         auto p = triode12AX7();
-        p.kg1 *= 40.0;
+
         return p;
     }
 
@@ -87,7 +87,7 @@ namespace
     KorenPentode::Parameters pentode6550PairPower()
     {
         auto p = pentode6550Pair();
-        p.kg1 *= 40.0;
+
         return p;
     }
 
@@ -367,7 +367,8 @@ void SunnModelTStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wFeedback = fp;
         c.addCapacitor (ch.wTone, g1, 0.022e-6);
         c.addResistor (g1, nm, 1.0e6);
-        c.addResistor (g2, fp, 1.0e6);                   // R24
+        c.addResistor (g2, nm, 1.0e6);                   // R24 -- to the tail midpoint (same elevated DC as grid 1);
+                                                          // the ~0 V feedback node left the second triode below cutoff
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
@@ -376,7 +377,7 @@ void SunnModelTStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (vpi, pb, 120.0e3);                   // R28
         c.addCapacitor (pa, pb, 47.0e-12);
         c.addResistor (k, nm, 4.7e3);                       // R22
-        c.addResistor (nm, gnd, 470.0);                     // R23
+        c.addResistor (nm, fp, 470.0);                      // R23 -- tail returns through the feedback node
         c.setInitialGuess (pa, 250.0);
         c.setInitialGuess (pb, 245.0);
         c.setInitialGuess (k, 30.0);

@@ -52,13 +52,14 @@ namespace
     // ---- tubes ----
     KorenTriode::Parameters triode12AX7() { return {}; } // Koren's ECC83 set
 
-    /** The phase inverter's own 12AX7, `kg1` softened -- combined with pentodeEL34PairPower()'s own softening below, a
-        more modest multiplier on EACH tube reaches genuine stability with less damage to either one's own transfer
-        curve than pushing the whole correction onto a single tube (see that function's comment for the full story). */
+    /** The phase inverter's own 12AX7. // kg1 NOT softened: a p.kg1 *= 40.0 stability band-aid used to live here (it divided plate
+        // current and gm by ~40, collapsing the full-netlist reference ~32-57 dB below the shipped
+        // reduced stage). The instability it suppressed no longer reproduces -- the damped-integrator
+        // power blocks (setIntegrationTheta(powerTheta)) fixed that class of failure -- and the
+        // un-softened netlists measure silence-stable, so the published Koren values now stand. */
     KorenTriode::Parameters triode12AX7Pi()
     {
         auto p = triode12AX7();
-        p.kg1 *= 70.0;
         return p;
     }
 
@@ -81,23 +82,18 @@ namespace
         return p;
     }
 
-    /** Same EL34 pair as pentodeEL34Pair(), `kg1` softened for this amp's own power-stage instability -- see
-        docs/circuits/JCM8002203.md's "A power-stage instability" section. This amp's 4-cascaded-gain preamp drives
-        the SAME Super Lead power section at a different idle follower DC than the Super Lead's own preamp ever
-        reaches, and at that bias point the published fit sits in this circuit's unstable region: silence at the
-        input grew into a full-scale, chaotic self-oscillation of the PI/output stage within under a second, and it
-        did NOT go away with the global feedback loop opened, ruling out the loop as the sole cause -- same failure
-        class as [[circuit-tube-model-loop-instability]]. Softening EITHER tube alone needed an extreme multiple
-        (~3800x on the PI triode, or ~3000x on this pentode alone) to fully quench it, and at that extreme it also
-        crushed ordinary-signal gain to near-silence (a plucked note at default Power Drive/Gain barely registered)
-        -- not a usable fix. Splitting a smaller multiple across BOTH tubes (see triode12AX7Pi()) reaches the same
-        genuine 10 s stability with much less damage to either one's own transfer curve. Still a real, disclosed
-        compromise, not a clean resolution -- see docs/circuits/JCM8002203.md; the likely true root cause is
-        something structural this session didn't isolate (matches JTM45's own unresolved case). */
+    /** Same EL34 pair as pentodeEL34Pair() for the power stage. // kg1 NOT softened: a p.kg1 *= 40.0 stability band-aid used to live here (it divided plate
+        // current and gm by ~40, collapsing the full-netlist reference ~32-57 dB below the shipped
+        // reduced stage). The instability it suppressed no longer reproduces -- the damped-integrator
+        // power blocks (setIntegrationTheta(powerTheta)) fixed that class of failure -- and the
+        // un-softened netlists measure silence-stable, so the published Koren values now stand.
+        History: the instability it suppressed showed as chaotic self-oscillation from silence in this amp's own
+        bias region (documented in docs/circuits/JCM8002203.md "A power-stage instability") -- today's netlist does
+        not reproduce it (measured silence-decay to ~0 V), consistent with the damped-integrator fix, not the
+        softening, being what actually stabilized the loop. */
     KorenPentode::Parameters pentodeEL34PairPower()
     {
         auto p = pentodeEL34Pair();
-        p.kg1 *= 70.0;
         return p;
     }
 
