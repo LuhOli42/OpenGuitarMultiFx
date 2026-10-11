@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Probe renders: sine THD, swept-sine frequency response, impulse tails."""
-import subprocess, os, csv, concurrent.futures
+import subprocess, os, sys, csv, concurrent.futures
 
 BIN = os.environ.get('RENDERFX_BIN', 'build/Tests/OpenGuitarMultiFx_RenderFx_artefacts/Release/OpenGuitarMultiFx_RenderFx')
 A = os.environ.get('FX_AUDIT_DIR', '/tmp/fx-audit')
@@ -20,6 +20,7 @@ DividedBy13FTR37StyleAmplifier DualRectifierStyleAmplifier DumbleSteelStringStyl
 ENGLPowerballStyleAmplifier EPStyleBooster EVH5150StyleAmplifier FryetteDeliveranceD120StyleAmplifier
 FuzzFaceStyleFuzz GE7StyleEqualizer GEB7StyleEqualizer GarnetHerzogStyleAmplifier
 GibsonEH150StyleAmplifier GuvnorStyleDistortion HM2StyleDistortion HotCat30StyleAmplifier
+BossOC2StyleOctaver
 JC120StyleAmplifier JCM800StyleAmplifier JTM45StyleAmplifier KometConcordeStyleAmplifier
 MarkIICPlusStyleAmplifier MatchlessHC30StyleAmplifier MesaBass400PlusStyleAmplifier
 MetalZoneStyleDistortion MuTronIIIStyleFilter NeuralAmp NeuralAmpCab NeuralPedal
@@ -39,7 +40,7 @@ DYN = [d for d in DYN if d != 'GateProcessor']
 
 TIME = """DigitalDelay TapeDelay AnalogDelay DualDelay MultiTapDelay PingPong ReverseDelay
 Ambient Spring Hall Plate Room Shimmer GatedReverb Reverb Tremolo Chorus Vibrato
-Flanger Phaser Rotary UniVibe PitchMod PitchShift Octaver BossOC2StyleOctaver Harmonizer
+Flanger Phaser Rotary UniVibe PitchMod PitchShift Octaver Harmonizer
 RingMod Hold""".split()
 
 HOT = {
@@ -92,7 +93,7 @@ def model_args(key):
 jobs = []
 for k in LINEAR + DYN:
     for probe in ('probe-sine220.wav', 'probe-sine110.wav', 'probe-sweep.wav'):
-        jobs.append((f'{k}__{probe[:-4]}', A + '/' + probe, k, model_args(k)))
+        jobs.append((f'{k}__{probe[:-4]}', PROBES_DIR + '/' + probe, k, model_args(k)))
     if k in HOT:
         jobs.append((f'{k}-hot__probe-sine220', PROBES_DIR + '/probe-sine220.wav', k, [HOT[k]] + model_args(k)))
         jobs.append((f'{k}-hot__probe-sweep', PROBES_DIR + '/probe-sweep.wav', k, [HOT[k]] + model_args(k)))
@@ -101,7 +102,7 @@ for k in LINEAR + DYN:
         jobs.append((f'{k}-crunch__probe-sweep', PROBES_DIR + '/probe-sweep.wav', k, AMPS[k].split()))
 for k in TIME:
     for probe in ('probe-clicks.wav', 'probe-sweep.wav'):
-        jobs.append((f'{k}__{probe[:-4]}', A + '/' + probe, k, ['--model=' + CABIR] if k == 'Reverb' else []))
+        jobs.append((f'{k}__{probe[:-4]}', PROBES_DIR + '/' + probe, k, ['--model=' + CABIR] if k == 'Reverb' else []))
 
 def run(job):
     outname, inf, key, extra = job
@@ -110,11 +111,16 @@ def run(job):
     return outname, r.stdout.strip(), r.stderr.strip()[-200:], r.returncode
 
 results = []
+fails = []
 with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
     for i, res in enumerate(ex.map(run, jobs)):
         results.append(res)
         if res[3] != 0 or res[2]:
+            fails.append(res)
             print(res[0], '| rc', res[3], '|', res[2][:150], flush=True)
+
+if fails:
+    sys.exit(f'{len(fails)} probe renders failed')
 
 with open(A + '/probes.csv', 'w', newline='') as f:
     w = csv.writer(f); w.writerow(['variant', 'stdout', 'stderr', 'rc']); w.writerows(results)
