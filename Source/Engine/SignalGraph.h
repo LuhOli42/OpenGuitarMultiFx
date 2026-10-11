@@ -142,7 +142,10 @@ private:
     {
     public:
         LaneWorker (SignalGraph& owningGraph, int index)
-            : juce::Thread ("SignalGraphLane" + juce::String (index)), graph (owningGraph) {}
+            // Fits Linux's 15-char comm limit -- a longer name makes
+            // pthread_setname_np fail silently and the workers show up
+            // as the process name in ps/top instead.
+            : juce::Thread ("SigGraphLane" + juce::String (index)), graph (owningGraph) {}
 
         void run() override;
 
