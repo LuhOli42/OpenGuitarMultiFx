@@ -194,6 +194,8 @@ private:
     SignalGraph* activeGraph = nullptr;      // the graph the previous block ran
     bool swapFadeActive = false;
     bool swapFadeRanThisBlock = false;       // set whenever the fade mixed any part of the current block
+    int swapFadeSamplesThisBlock = 0;        // how many leading samples of this block the fade covered
+    float* spillSlicePtrs[32] = {};          // scratch for the post-fade spillover view (no alloc)
     int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0;
     int tailRingWrite = 0;                   // next write position in outputTailRing (shared by all channels)
     int tailRingSamples = 0;                 // valid samples recorded, capped at the ring length

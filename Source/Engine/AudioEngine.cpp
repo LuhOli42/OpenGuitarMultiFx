@@ -260,12 +260,23 @@ void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples
 {
     processCurrentGraph (buffer, numSamples);
 
-    // Spills never run in a block a swap fade touched: the recorded tail already carries the
+    // Spills never run over samples a swap fade covered: the recorded tail already carries the
     // outgoing lane's sound in that region, and a pending spill adding its tail on top would
-    // double-count it. The flag survives a fade that ENDED mid-block too -- the spill simply
-    // waits one extra block, which is inaudible and keeps the rule per-block simple.
+    // double-count it. When the fade ended MID-block the spill still belongs in the remainder
+    // the fade didn't touch -- run it there through a non-owning buffer view (fixed pointer
+    // array, no allocation on the audio thread).
     if (! swapFadeRanThisBlock)
+    {
         spillover.process (buffer, sampleRate.load (std::memory_order_relaxed));
+    }
+    else if (swapFadeSamplesThisBlock < numSamples)
+    {
+        const int chs = juce::jmin ((int) std::size (spillSlicePtrs), buffer.getNumChannels());
+        for (int ch = 0; ch < chs; ++ch)
+            spillSlicePtrs[ch] = buffer.getWritePointer (ch) + swapFadeSamplesThisBlock;
+        juce::AudioBuffer<float> remainder (spillSlicePtrs, chs, numSamples - swapFadeSamplesThisBlock);
+        spillover.process (remainder, sampleRate.load (std::memory_order_relaxed));
+    }
 }
 
 void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples)
@@ -298,6 +309,7 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
     }
     lastCallbackTicks = now;
     swapFadeRanThisBlock = false;
+    swapFadeSamplesThisBlock = 0;
 
     if (graph != nullptr)
         graph->process (buffer);
@@ -348,6 +360,7 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
         }
         tailReadIndex = (tailReadIndex - n + ringLen) % ringLen;
         swapFadeRanThisBlock = true;
+        swapFadeSamplesThisBlock += n;
         fadeOutSamplesLeft -= n;
         if (fadeOutSamplesLeft <= 0)
         {
