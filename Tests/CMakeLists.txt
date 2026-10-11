@@ -32,6 +32,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   TubeCircuitTests.cpp
   ReductionProbe.cpp
   ReducedOrderEquivalenceTests.cpp
+  AmpFullVsReducedConsistencyTests.cpp
   EffectCostBench.cpp
   PowerStageAsymBench.cpp
   SagEmulatorTests.cpp
@@ -282,6 +283,7 @@ target_compile_definitions(OpenGuitarMultiFx_Tests PRIVATE
 
 target_link_libraries(OpenGuitarMultiFx_Tests PRIVATE
   juce::juce_audio_basics
+  juce::juce_audio_formats
   juce::juce_audio_processors
   juce::juce_core
   juce::juce_dsp
