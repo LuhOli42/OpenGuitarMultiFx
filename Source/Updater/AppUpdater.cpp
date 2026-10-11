@@ -150,6 +150,9 @@ void AppUpdater::checkForUpdate (std::function<void (const CheckResult&)> onDone
     {
         s.checkInFlight = true;
         s.statusText = "checking for updates...";
+        // A previously offered release is only confirmed by a fresh
+        // check succeeding -- don't keep offering it while rechecking.
+        s.candidate.reset();
     });
 
     const auto fetch = makeFetcher();
@@ -223,15 +226,22 @@ void AppUpdater::downloadAndInstall (
         s.restartRequired = false;
         s.candidate = candidate;
         s.statusText = "starting update to " + candidate.version + "...";
+        s.downloadProgress = 0.0;
     });
 
     // Every status line also lands in the snapshot so a rebuilt Settings
-    // card shows the same text; the caller's callback still runs.
-    std::function<void (const juce::String&)> onStatusRecorded = [this, onStatus] (const juce::String& line)
+    // card shows the same text; the caller's callback still runs. The
+    // snapshot write happens at emit time on the worker -- posting it
+    // would let a queued progress line overwrite the terminal result.
+    std::function<void (const juce::String&)> onStatusRecorded = [this, onStatus, alive] (const juce::String& line)
     {
         updateSnapshot ([&] (UiSnapshot& s) { s.statusText = line; });
         if (onStatus)
-            onStatus (line);
+            juce::MessageManager::callAsync ([alive, onStatus, line]
+            {
+                if (alive->load())
+                    onStatus (line);
+            });
     };
 
     if (packaged)
@@ -258,11 +268,16 @@ void AppUpdater::downloadAndInstall (
             });
         };
 
-        post (onStatusRecorded, juce::String ("downloading " + candidate.version + "..."));
+        onStatusRecorded ("downloading " + candidate.version + "...");
 
         juce::String error;
         auto binary = updatecore::stageFromUrls (fetch, candidate, staging,
-                                                 [&] (double p) { if (onProgress) post (onProgress, p); },
+                                                 [&] (double p)
+                                                 {
+                                                     updateSnapshot ([&] (UiSnapshot& s) { s.downloadProgress = p; });
+                                                     if (onProgress)
+                                                         post (onProgress, p);
+                                                 },
                                                  error);
 
         if (binary == juce::File())
@@ -278,7 +293,7 @@ void AppUpdater::downloadAndInstall (
             return;
         }
 
-        post (onStatusRecorded, juce::String ("installing..."));
+        onStatusRecorded ("installing...");
 
         const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
         const bool ok = updatecore::stageBinarySwap (binary, exe, error);
@@ -337,11 +352,10 @@ void AppUpdater::runPackagedApply (std::function<void (const juce::String&)> onS
     else
         cmd = { "systemctl", "start", "ogmfx-updater.service" };
 
-    // cb is a std::function copied into the async lambda, so passing the
-    // callbacks themselves (not [&] wrappers, which would dangle after
-    // this frame returns) is what keeps the message-thread call safe.
+    // onStatus is the emit-time recording emitter above -- call it
+    // synchronously so snapshot ordering is preserved (see its comment).
     if (onStatus)
-        post (onStatus, juce::String ("installing via the system updater..."));
+        onStatus (juce::String ("installing via the system updater..."));
 
     juce::ChildProcess proc;
     if (! proc.start (cmd))
@@ -360,7 +374,8 @@ void AppUpdater::runPackagedApply (std::function<void (const juce::String&)> onS
         if (onStatus && output.isNotEmpty())
         {
             const auto lines = juce::StringArray::fromLines (output.trimEnd());
-            post (onStatus, lines.isEmpty() ? juce::String() : lines[lines.size() - 1]);
+            if (! lines.isEmpty())
+                onStatus (lines[lines.size() - 1]);
         }
         juce::Thread::sleep (200);
     }
@@ -393,11 +408,22 @@ void AppUpdater::runPackagedApply (std::function<void (const juce::String&)> onS
 
 void AppUpdater::restartNow()
 {
-    updateSnapshot ([] (UiSnapshot& s) { s.restartRequired = false; });
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     if (exe.startAsProcess())
+    {
+        updateSnapshot ([] (UiSnapshot& s) { s.restartRequired = false; });
         if (auto* app = juce::JUCEApplicationBase::getInstance())
             app->systemRequestedQuit();
+    }
+    else
+    {
+        // Keep restartRequired so the prompt survives -- the staged
+        // binary still waits at the executable path.
+        updateSnapshot ([] (UiSnapshot& s)
+        {
+            s.statusText = "could not relaunch the app -- restart it manually to finish the update";
+        });
+    }
 }
 
 } // namespace openguitarmultifx

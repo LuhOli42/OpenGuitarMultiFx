@@ -101,6 +101,9 @@ public:
         bool restartRequired = false;
         std::optional<updatecore::UpdateCandidate> candidate;
         juce::String statusText;
+        // 0..1 while a dev-binary download runs (packaged installs have
+        // no measurable progress -- the card shows indeterminate there).
+        double downloadProgress = 0.0;
     };
     UiSnapshot getUiSnapshot() const;
 

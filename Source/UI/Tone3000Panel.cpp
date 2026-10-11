@@ -440,10 +440,12 @@ void Tone3000Panel::applyUpdateUiState()
 
     const bool busyNow = snap.checkInFlight || snap.installInFlight;
     // Checks have no measurable progress; packaged installs delegate to
-    // the root script (ditto). Only dev-binary downloads report 0..1 via
-    // onProgress, and it owns the value while it runs.
+    // the root script (ditto). Dev-binary downloads report 0..1 through
+    // the snapshot so a reopened card resumes at the real value.
     if (snap.checkInFlight || (snap.installInFlight && updater.isPackagedInstall()))
         updateProgressValue = -1.0;
+    else if (snap.installInFlight)
+        updateProgressValue = snap.downloadProgress;
     updateProgressBar.setVisible (busyNow);
 
     if (busyNow)
@@ -480,13 +482,10 @@ void Tone3000Panel::doInstallUpdate()
             if (safeThis != nullptr)
                 safeThis->applyUpdateUiState();
         },
-        [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)] (double p)
+        [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)] (double)
         {
             if (safeThis != nullptr)
-            {
-                safeThis->updateProgressValue = p;
-                safeThis->updateProgressBar.setVisible (true);
-            }
+                safeThis->applyUpdateUiState();
         },
         [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)]
             (bool, juce::String, bool)
@@ -494,8 +493,6 @@ void Tone3000Panel::doInstallUpdate()
             if (safeThis != nullptr)
                 safeThis->applyUpdateUiState();
         });
-    if (! updater.isPackagedInstall())
-        updateProgressValue = 0.0;
     applyUpdateUiState();
 }
 
