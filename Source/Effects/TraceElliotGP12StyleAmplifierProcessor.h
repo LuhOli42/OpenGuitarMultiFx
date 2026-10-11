@@ -38,7 +38,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Trace Elliot GP12-Style Amplifier"; }
+    const char* getName() const override { return "Trace Elliot GP12"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2f8f6f); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

@@ -31,7 +31,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Boss OC-2-Style Octaver"; }
+    const char* getName() const override { return "Boss OC-2"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff7a5fb4); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

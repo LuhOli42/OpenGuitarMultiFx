@@ -37,7 +37,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Mark IIC+-Style Amplifier"; }
+    const char* getName() const override { return "Mark IIC+"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2f4f4f); } // dark slate grey
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

@@ -71,7 +71,7 @@ MuTronIIIStyleFilterProcessor::MuTronIIIStyleFilterProcessor()
     drive = driveParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "mutron", "Mu-Tron III-Style Filter", "|", std::move (gainParam));
+        "mutron", "Mu-Tron III", "|", std::move (gainParam));
     group->addChild (std::move (peakParam));
     group->addChild (std::move (modeParam));
     group->addChild (std::move (rangeParam));

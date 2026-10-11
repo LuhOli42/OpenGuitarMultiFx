@@ -36,7 +36,7 @@ CentaurStyleOverdriveProcessor::CentaurStyleOverdriveProcessor()
     level = levelParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "centaur", "Centaur-Style Overdrive", "|", std::move (gainParam));
+        "centaur", "Centaur", "|", std::move (gainParam));
     group->addChild (std::move (trebleParam));
     group->addChild (std::move (levelParam));
     parameters = std::move (group);

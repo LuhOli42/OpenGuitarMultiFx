@@ -46,7 +46,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "SLO-100-Style Amplifier"; }
+    const char* getName() const override { return "SLO-100"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8b0000); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

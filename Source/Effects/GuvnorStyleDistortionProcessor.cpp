@@ -46,7 +46,7 @@ GuvnorStyleDistortionProcessor::GuvnorStyleDistortionProcessor()
     level = levelParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "guvnor", "Guv'nor-Style Distortion", "|", std::move (gainParam));
+        "guvnor", "Guv'nor", "|", std::move (gainParam));
     group->addChild (std::move (bassParam));
     group->addChild (std::move (midParam));
     group->addChild (std::move (trebleParam));

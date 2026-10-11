@@ -25,8 +25,8 @@ const DynaCompStyleCompressorProcessor::Spec& DynaCompStyleCompressorProcessor::
 {
     // Dyna Comp: ElectroSmash's schematic (R2 1M, R5 470K, C9 50 nF, 2N3904, VR = 9 V * 22K / 78K). Ross: Aion FX's table for the
     // Ross (R19 56K / R20 27K -> 2.93 V; R2 || R3 470K / 470K; the OTA feed R8 + R7 = 220K + 220K; C13 100 nF; C1 150 pF; 2N5088).
-    static const Spec dyna { "Dyna Comp-Style Compressor", 2.54, 1.0e6, 0.0, 470.0e3, 50.0e-9, 200.0, false };
-    static const Spec ross { "Ross-Style Compressor", 2.93, 235.0e3, 150.0e-12, 440.0e3, 100.0e-9, 500.0, true };
+    static const Spec dyna { "Dyna Comp", 2.54, 1.0e6, 0.0, 470.0e3, 50.0e-9, 200.0, false };
+    static const Spec ross { "Ross", 2.93, 235.0e3, 150.0e-12, 440.0e3, 100.0e-9, 500.0, true };
     return model == Model::ross ? ross : dyna;
 }
 

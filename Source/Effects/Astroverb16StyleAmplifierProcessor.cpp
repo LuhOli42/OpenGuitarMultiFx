@@ -26,7 +26,7 @@ namespace
 }
 Astroverb16StyleAmplifierProcessor::Astroverb16StyleAmplifierProcessor()
     : EL84BoutiqueAmpCore (Model::astroverb16,
-        { triode12AX7(), pentodeEF86(), pentodeEL84(), pentodeEL84Pair() }, reducedOrder, "Astroverb 16-Style Amplifier")
+        { triode12AX7(), pentodeEF86(), pentodeEL84(), pentodeEL84Pair() }, reducedOrder, "Astroverb 16")
 {
 }
 }

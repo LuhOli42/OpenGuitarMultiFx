@@ -71,7 +71,7 @@ BassBigMuffStyleFuzzProcessor::BassBigMuffStyleFuzzProcessor()
     dryParam = dry.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "bbmp", "Bass Big Muff-Style Fuzz", "|", std::move (sustain));
+        "bbmp", "Bass Big Muff", "|", std::move (sustain));
     group->addChild (std::move (tone));
     group->addChild (std::move (volume));
     group->addChild (std::move (bassBoost));

@@ -131,7 +131,7 @@ CarrRamblerStyleAmplifierProcessor::CarrRamblerStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "carrrambler", "Carr Rambler-Style Amplifier", "|", std::move (volume));
+        "carrrambler", "Carr Rambler", "|", std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (middle));
     group->addChild (std::move (bass));

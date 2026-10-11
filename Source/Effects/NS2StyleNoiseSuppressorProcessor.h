@@ -26,7 +26,7 @@ public:
     void reset() override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "NS-2-Style Noise Suppressor"; }
+    const char* getName() const override { return "NS-2"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff4b7f52); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

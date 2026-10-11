@@ -179,7 +179,7 @@ JTM45StyleAmplifierProcessor::JTM45StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "jtm45", "JTM45-Style Amplifier", "|", std::move (input));
+        "jtm45", "JTM45", "|", std::move (input));
     group->addChild (std::move (normal));
     group->addChild (std::move (bright));
     group->addChild (std::move (treble));

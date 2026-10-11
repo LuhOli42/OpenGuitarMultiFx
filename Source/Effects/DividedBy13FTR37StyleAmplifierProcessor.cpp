@@ -162,7 +162,7 @@ DividedBy13FTR37StyleAmplifierProcessor::DividedBy13FTR37StyleAmplifierProcessor
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "ftr37", "Divided by 13 FTR 37-Style Amplifier", "|", std::move (input));
+        "ftr37", "Divided by 13 FTR 37", "|", std::move (input));
     group->addChild (std::move (ch1Vol));
     group->addChild (std::move (click));
     group->addChild (std::move (ch2Vol));

@@ -40,7 +40,7 @@ public:
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     std::unique_ptr<juce::XmlElement> getState() const override { return EffectProcessor::getState(); }
     void setState (const juce::XmlElement& state) override { EffectProcessor::setState (state); }
-    const char* getName() const override { return "Sunn Model T-Style Amplifier"; }
+    const char* getName() const override { return "Sunn Model T"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff5a4a00); } // Sunn ochre
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

@@ -64,7 +64,7 @@ ODB3StyleOverdriveProcessor::ODB3StyleOverdriveProcessor()
     gain = gainParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "odb3", "ODB-3-Style Overdrive", "|", std::move (levelParam));
+        "odb3", "ODB-3", "|", std::move (levelParam));
     group->addChild (std::move (highParam));
     group->addChild (std::move (lowParam));
     group->addChild (std::move (balanceParam));

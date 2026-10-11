@@ -41,7 +41,7 @@ BluesBreakerStyleOverdriveProcessor::BluesBreakerStyleOverdriveProcessor()
     level = levelParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "bluesbreaker", "Blues Breaker-Style Overdrive", "|", std::move (driveParam));
+        "bluesbreaker", "Blues Breaker", "|", std::move (driveParam));
     group->addChild (std::move (toneParam));
     group->addChild (std::move (levelParam));
     parameters = std::move (group);

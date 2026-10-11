@@ -52,7 +52,7 @@ TubeDriverStyleOverdriveProcessor::TubeDriverStyleOverdriveProcessor()
     levelParam = level.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "tubedriver", "Tube Driver-Style Overdrive", "|", std::move (drive));
+        "tubedriver", "Tube Driver", "|", std::move (drive));
     group->addChild (std::move (hi));
     group->addChild (std::move (lo));
     group->addChild (std::move (level));

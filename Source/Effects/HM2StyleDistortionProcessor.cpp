@@ -60,7 +60,7 @@ HM2StyleDistortionProcessor::HM2StyleDistortionProcessor()
     levelParam = level.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "hm2", "HM-2-Style Distortion", "|", std::move (dist));
+        "hm2", "HM-2", "|", std::move (dist));
     group->addChild (std::move (low));
     group->addChild (std::move (high));
     group->addChild (std::move (level));

@@ -68,7 +68,7 @@ Acoustic360StyleAmplifierProcessor::Acoustic360StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "acoustic360", "360-Style Amplifier", "|", std::move (volume));
+        "acoustic360", "Acoustic 360", "|", std::move (volume));
     group->addChild (std::move (bright));
     group->addChild (std::move (bass));
     group->addChild (std::move (treble));

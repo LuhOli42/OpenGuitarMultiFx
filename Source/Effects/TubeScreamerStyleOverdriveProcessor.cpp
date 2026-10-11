@@ -26,9 +26,9 @@ TubeScreamerStyleOverdriveProcessor::specFor (Model model) noexcept
     // bottom end, hasWiperCoupling -> cWiper + the two JFET-bias resistors, outputSeries/ShuntResistance -> the
     // output network. The TS10 measuring almost identical to the TS9 on a sine probe is the schematic talking --
     // the real differences are mostly DC and that small divider -- not an unwired spec field.
-    static const ModelSpec ts808 { "TS808-Style Overdrive", "ts808", "ts808", 100.0f, 10.0e3f, 4.5f, 0.0f,   4.5f, 0.0f, false };
-    static const ModelSpec ts9   { "TS9-Style Overdrive",   "ts9",   "ts9",   470.0f, 100.0e3f, 4.5f, 0.0f,   4.5f, 0.0f, false };
-    static const ModelSpec ts10  { "TS10-Style Overdrive",  "ts10",  "ts10",  470.0f, 100.0e3f, 6.346f, 220.0f, 9.0f, 4.5f, true };
+    static const ModelSpec ts808 { "TS808", "ts808", "ts808", 100.0f, 10.0e3f, 4.5f, 0.0f,   4.5f, 0.0f, false };
+    static const ModelSpec ts9   { "TS9",   "ts9",   "ts9",   470.0f, 100.0e3f, 4.5f, 0.0f,   4.5f, 0.0f, false };
+    static const ModelSpec ts10  { "TS10",  "ts10",  "ts10",  470.0f, 100.0e3f, 6.346f, 220.0f, 9.0f, 4.5f, true };
 
     switch (model)
     {

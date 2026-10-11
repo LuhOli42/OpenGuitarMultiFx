@@ -159,7 +159,7 @@ JCM800StyleAmplifierProcessor::JCM800StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "jcm800", "JCM800-Style Amplifier", "|", std::move (input));
+        "jcm800", "JCM800", "|", std::move (input));
     group->addChild (std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (middle));

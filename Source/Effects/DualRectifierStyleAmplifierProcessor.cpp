@@ -249,7 +249,7 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "dualrec", "Dual Rectifier-Style Amplifier", "|", std::move (channel));
+        "dualrec", "Dual Rectifier", "|", std::move (channel));
     group->addChild (std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));

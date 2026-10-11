@@ -43,7 +43,7 @@ public:
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     std::unique_ptr<juce::XmlElement> getState() const override;
     void setState (const juce::XmlElement& state) override;
-    const char* getName() const override { return "Dual Rectifier-Style Amplifier"; }
+    const char* getName() const override { return "Dual Rectifier"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff1a1a2e); } // deep navy (Mesa chrome/dark)
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

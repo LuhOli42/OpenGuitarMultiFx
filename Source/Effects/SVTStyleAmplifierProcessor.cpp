@@ -181,7 +181,7 @@ SVTStyleAmplifierProcessor::SVTStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "svt", "SVT-Style Amplifier", "|", std::move (input));
+        "svt", "SVT", "|", std::move (input));
     group->addChild (std::move (gain));
     group->addChild (std::move (ultraLo));
     group->addChild (std::move (ultraHi));

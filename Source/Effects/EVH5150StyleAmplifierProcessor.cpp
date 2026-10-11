@@ -349,7 +349,7 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "evh5150", "5150-Style Amplifier", "|", std::move (channel));
+        "evh5150", "5150", "|", std::move (channel));
     group->addChild (std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));

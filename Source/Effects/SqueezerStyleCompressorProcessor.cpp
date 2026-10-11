@@ -36,7 +36,7 @@ SqueezerStyleCompressorProcessor::SqueezerStyleCompressorProcessor()
     auto bia = std::make_unique<juce::AudioParameterFloat> ("squeezer_bias", "Bias", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
     volume = vol.get();
     bias = bia.get();
-    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("squeezer", "Orange Squeezer-Style Compressor", "|", std::move (vol), std::move (bia));
+    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("squeezer", "Orange Squeezer", "|", std::move (vol), std::move (bia));
 }
 
 void SqueezerStyleCompressorProcessor::buildChannel (Channel& ch)

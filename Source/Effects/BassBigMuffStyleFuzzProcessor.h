@@ -31,7 +31,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Bass Big Muff-Style Fuzz"; }
+    const char* getName() const override { return "Bass Big Muff"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff5f6fb4); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 

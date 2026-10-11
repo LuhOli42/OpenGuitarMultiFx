@@ -211,7 +211,7 @@ ENGLPowerballStyleAmplifierProcessor::ENGLPowerballStyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "engl_powerball", "Powerball-Style Amplifier", "|", std::move (channel), std::move (gain));
+        "engl_powerball", "Powerball", "|", std::move (channel), std::move (gain));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));

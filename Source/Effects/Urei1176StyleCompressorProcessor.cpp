@@ -61,7 +61,7 @@ Urei1176StyleCompressorProcessor::Urei1176StyleCompressorProcessor()
         selectorText ([] (int i) { const char* n[] = { "4:1", "8:1", "12:1", "20:1", "All" }; return juce::String (n[juce::jlimit (0, 4, i)]); }));
 
     input = in.get(); output = out.get(); attack = atk.get(); release = rel.get(); ratio = rat.get();
-    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("u1176", "1176-Style Compressor", "|", std::move (in), std::move (out), std::move (atk),
+    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("u1176", "1176", "|", std::move (in), std::move (out), std::move (atk),
                                                                          std::move (rel), std::move (rat));
 }
 

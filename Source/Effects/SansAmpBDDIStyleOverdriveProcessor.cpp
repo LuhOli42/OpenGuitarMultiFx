@@ -43,7 +43,7 @@ SansAmpBDDIStyleOverdriveProcessor::SansAmpBDDIStyleOverdriveProcessor()
     levelParam = level.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "bddi", "SansAmp BDDI-Style Overdrive", "|", std::move (presence));
+        "bddi", "SansAmp BDDI", "|", std::move (presence));
     group->addChild (std::move (drive));
     group->addChild (std::move (blend));
     group->addChild (std::move (bass));

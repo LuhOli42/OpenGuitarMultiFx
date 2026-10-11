@@ -28,7 +28,7 @@ TS9BStyleOverdriveProcessor::TS9BStyleOverdriveProcessor()
     level = levelParam.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "ts9b", "TS9B-Style Overdrive", "|", std::move (driveParam));
+        "ts9b", "TS9B", "|", std::move (driveParam));
     group->addChild (std::move (mixParam));
     group->addChild (std::move (bassParam));
     group->addChild (std::move (trebleParam));

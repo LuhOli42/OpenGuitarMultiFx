@@ -35,7 +35,7 @@ GSeriesStyleBusCompressorProcessor::GSeriesStyleBusCompressorProcessor()
         selectorText ([] (int i) { const char* n[] = { "Off", "60 Hz", "90 Hz" }; return juce::String (n[juce::jlimit (0, 2, i)]); }));
 
     threshold = thr.get(); ratio = rat.get(); attack = atk.get(); release = rel.get(); makeup = mk.get(); highPass = hp.get();
-    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("gbus", "G-Series-Style Bus Compressor", "|", std::move (thr), std::move (rat),
+    parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("gbus", "G-Series Bus Compressor", "|", std::move (thr), std::move (rat),
         std::move (atk), std::move (rel), std::move (mk), std::move (hp));
 }
 

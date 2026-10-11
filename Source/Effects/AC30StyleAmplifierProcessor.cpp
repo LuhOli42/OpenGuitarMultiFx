@@ -133,7 +133,7 @@ AC30StyleAmplifierProcessor::AC30StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "ac30", "AC30-Style Amplifier", "|", std::move (input));
+        "ac30", "AC30", "|", std::move (input));
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (bass));

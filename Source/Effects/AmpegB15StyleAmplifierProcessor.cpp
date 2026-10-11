@@ -110,7 +110,7 @@ AmpegB15StyleAmplifierProcessor::AmpegB15StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "ampegb15", "B-15-Style Amplifier", "|", std::move (input));
+        "ampegb15", "B-15", "|", std::move (input));
     group->addChild (std::move (volume));
     group->addChild (std::move (ultraLo));
     group->addChild (std::move (ultraHi));

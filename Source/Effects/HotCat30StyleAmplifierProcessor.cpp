@@ -26,7 +26,7 @@ namespace
 }
 HotCat30StyleAmplifierProcessor::HotCat30StyleAmplifierProcessor()
     : EL84BoutiqueAmpCore (Model::hotCat30,
-        { triode12AX7(), pentodeEF86(), pentodeEL84(), pentodeEL84Pair() }, reducedOrder, "Hot Cat 30-Style Amplifier")
+        { triode12AX7(), pentodeEF86(), pentodeEL84(), pentodeEL84Pair() }, reducedOrder, "Hot Cat 30")
 {
 }
 }

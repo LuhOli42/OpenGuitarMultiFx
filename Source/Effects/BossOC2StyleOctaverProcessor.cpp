@@ -34,7 +34,7 @@ BossOC2StyleOctaverProcessor::BossOC2StyleOctaverProcessor()
     oct2Param = oct2.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "oc2", "Boss OC-2-Style Octaver", "|", std::move (direct));
+        "oc2", "Boss OC-2", "|", std::move (direct));
     group->addChild (std::move (oct1));
     group->addChild (std::move (oct2));
     parameters = std::move (group);
