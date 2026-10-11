@@ -3,9 +3,12 @@
 #include "PromptCards.h"
 #include "SnapshotPresetXml.h"
 
+#include "AddEffectBrowserDialog.h"
+#include "MasterEqDialog.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "TunerOverlay.h"
 #include "../Engine/InputGainSettings.h"
+#include "../Engine/MasterBusSettings.h"
 #include "PresetBrowserDialog.h"
 #include "Tone3000Panel.h"
 #include "TouchSizing.h"
@@ -43,18 +46,6 @@ namespace
     // Bumped alongside topBarHeight per user request 2026-09-10 ("a parte
     // em vermelho maior e a parte em roxo tbm" -- top bar and footer).
     constexpr int footerHeight = 92;
-
-    // Same categories as the icon reference sheet (see
-    // docs/icons/AGENT-icon-notes.md, whose category names come from the
-    // original PT-language reference sheet) -- the "Add effect" menu
-    // groups into these submenus once there are enough effect types that a
-    // flat list stops being manageable. Order here is the order submenus
-    // appear in. Translated to English 2026-09-11 per user request (all
-    // app-visible text in English) -- the icon doc keeps the original PT
-    // labels since that's what the actual reference sheet uses, but
-    // nothing user-facing in the running app should be in Portuguese.
-    const juce::StringArray categoryOrder { "Modeled Amps", "Neural", "Cabs", "Dynamics", "Overdrive", "Distortion", "Fuzz", "Modulation",
-                                             "Delay", "Reverb", "Filter/FX", "Utility" };
 
     /** <paramID>_ch<N>: ChannelKnobMemory's serialized per-channel slots.
         Derived mirror state -- the snapshot format deliberately stores
@@ -127,63 +118,6 @@ namespace
         return copy;
     }
 
-    juce::String categoryForDisplayName (const juce::String& displayName)
-    {
-        // "<Original>-Style Compressor / Noise Gate / Noise Suppressor" (pedals and studio units) sit with the plain ones.
-        if (displayName == "Noise Gate" || displayName == "Compressor" || displayName.endsWith (" Compressor")
-            || displayName.endsWith (" Noise Gate") || displayName.endsWith (" Noise Suppressor"))
-            return "Dynamics";
-        // Named after what the pedal is sold as: "...-Style Distortion" (DS-1, HM-2, Distortion+, Guv'nor, RAT) against
-        // "...-Style Overdrive" (Tube Screamers, OD-1, Centaur, BD-2, DOD 250, Blues Breaker) and the booster -- so a new
-        // pedal lands in the right submenu by its display name alone.
-        if (displayName.endsWith (" Distortion"))
-            return "Distortion";
-        // Fuzz is its own category, not a louder Distortion: a Big Muff clips in the feedback of its gain stages
-        // rather than shunting a gained signal to ground, and players look for it under that name.
-        if (displayName.endsWith (" Fuzz"))
-            return "Fuzz";
-        if (displayName.endsWith (" Overdrive") || displayName == "Rangemaster-Style Booster" || displayName == "EP-Style Booster")
-            return "Overdrive";
-        // Circuit-modelled amplifiers (component-level, from a schematic) are kept apart from the neural captures.
-        if (displayName == "Bassman-Style Amplifier" || displayName == "Super Lead-Style Amplifier" || displayName == "Twin Reverb-Style Amplifier"
-            || displayName == "Deluxe Reverb-Style Amplifier" || displayName == "JC-120-Style Amplifier" || displayName == "JTM45-Style Amplifier"
-            || displayName == "JCM800-Style Amplifier" || displayName == "AC15-Style Amplifier" || displayName == "AC30-Style Amplifier"
-            || displayName == "SLO-100-Style Amplifier" || displayName == "Mark IIC+-Style Amplifier" || displayName == "Dual Rectifier-Style Amplifier" || displayName == "5150-Style Amplifier" || displayName == "Powerball-Style Amplifier" || displayName == "Rockerverb-Style Amplifier" || displayName == "SVT-Style Amplifier"
-            || displayName == "Trainwreck Express-Style Amplifier" || displayName == "Komet Concorde-Style Amplifier"
-            || displayName == "Divided by 13 FTR 37-Style Amplifier" || displayName == "Carr Rambler-Style Amplifier"
-            || displayName == "HC-30-Style Amplifier" || displayName == "Hot Cat 30-Style Amplifier"
-            || displayName == "Carmen Ghia-Style Amplifier" || displayName == "Astroverb 16-Style Amplifier"
-            || displayName == "Gibson EH-150-Style Amplifier" || displayName == "Garnet Herzog-Style Amplifier"
-            || displayName == "Rivera Knucklehead-Style Amplifier"
-            || displayName == "Dumble Steel String-Style Amplifier" || displayName == "Sunn Model T-Style Amplifier"
-            || displayName == "Fryette Deliverance D120-Style Amplifier" || displayName == "Bogner Uberschall-Style Amplifier"
-            || displayName == "B-15-Style Amplifier" || displayName == "V4B-Style Amplifier"
-            || displayName == "Bass 400+-Style Amplifier" || displayName == "360-Style Amplifier"
-            || displayName == "Trace Elliot GP12-Style Amplifier")
-            return "Modeled Amps";
-        if (displayName == "Neural Amp" || displayName == "Neural Amp + Cab" || displayName == "Neural Pedal")
-            return "Neural";
-        if (displayName == "Cab" || displayName == "Dynamic Cab")
-            return "Cabs";
-        if (displayName == "Reverb" || displayName == "Ambient" || displayName == "Spring" || displayName == "Hall"
-            || displayName == "Plate" || displayName == "Room" || displayName == "Shimmer" || displayName == "Gated")
-            return "Reverb";
-        if (displayName == "Digital Delay" || displayName == "Tape Delay" || displayName == "Analog Delay"
-            || displayName == "Dual Delay" || displayName == "Multi Tap" || displayName == "Ping Pong"
-            || displayName == "Reverse Delay" || displayName == "Hold" || displayName == "Looper")
-            return "Delay";
-        if (displayName == "Tremolo" || displayName == "Chorus" || displayName == "Vibrato"
-            || displayName == "Flanger" || displayName == "Phaser" || displayName == "Rotary"
-            || displayName == "Uni-Vibe" || displayName == "Pitch Mod")
-            return "Modulation";
-        if (displayName == "Pitch Shift" || displayName == "Octaver" || displayName == "Boss OC-2-Style Octaver"
-            || displayName == "Harmonizer" || displayName == "Parametric EQ" || displayName == "Ring Mod"
-            || displayName.endsWith (" Equalizer")
-            || displayName == "Mu-Tron III-Style Filter")
-            return "Filter/FX";
-        return "Other"; // shouldn't normally happen -- a new effect type that hasn't been categorised yet
-    }
-
 }
 
 MainComponent::MainComponent()
@@ -251,20 +185,11 @@ MainComponent::MainComponent()
     // sitting there all the time any more -- see ChainContainer.h.
     chainContainer.onSlotClicked = [this] (int index)
     {
-        // Already picking an effect? This click just closes that list --
-        // opening a second one at the newly clicked cell reads as the menu
-        // refusing to go away (per user request 2026-09-11).
-        if (addEffectMenuOpen)
-        {
-            juce::PopupMenu::dismissAllActiveMenus();
-            addEffectMenuOpen = false;
-            return;
-        }
-
-        // Just dismissed by this very click -- see addEffectMenuClosedAtMs.
-        if (juce::Time::getMillisecondCounter() - addEffectMenuClosedAtMs < 200)
-            return;
-
+        // No "was a picker just dismissed by this very click?" guard is
+        // needed here: the Add-Effect browser is an OverlayHost card that
+        // covers the whole window, so its dismissal click is eaten by the
+        // overlay and never reaches this grid (unlike the old PopupMenu,
+        // whose dismiss click fell through -- see git history).
         showAddEffectMenu (index);
     };
 
@@ -304,6 +229,12 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (footerBar);
     footerBar.onTunerTapped = [this] { showTuner(); };
+    footerBar.onMasterEqTapped = [this] { showMasterEq(); };
+    footerBar.onMasterGainChanged = [this] (float db)
+    {
+        audioEngine.setMasterGainDb (db);
+        masterBusSaveCountdown = 10; // trailing-edge save in timerCallback (~500 ms)
+    };
 
     if (! audioEngine.start())
         titleLabel.setText ("Audio device failed to open", juce::dontSendNotification);
@@ -311,6 +242,15 @@ MainComponent::MainComponent()
     // Remembered across launches -- the interface's gain staging, like the tuning before it, describes the hardware
     // plugged in rather than a sound, so it is not part of any guitar preset. See AudioEngine::setInputGainDb().
     audioEngine.setInputGainDb (inputgain::loadSavedGainDb());
+
+    // The master section (output gain + free-form EQ bands) is app-level for the same reason: it trims the
+    // monitoring chain the whole rig plays through, not a per-preset sound. See MasterBusSettings.h.
+    {
+        const auto master = masterbus::loadState();
+        audioEngine.setMasterGainDb (master.gainDb);
+        footerBar.setMasterGainDb (master.gainDb);
+        audioEngine.setMasterEqBands (master.bands);
+    }
 
     // Row 0 starts wired device-in -> device-out so the app still makes
     // sound out of the box; rows 1-3 start unrouted, showing a "+" at both
@@ -942,58 +882,52 @@ void MainComponent::handleBlockDragEnded (EffectBlockComponent& blockComp)
 
 void MainComponent::showAddEffectMenu (int targetGridSlot)
 {
-    auto keys = registry.getRegisteredNames();
+    // The real picker is an OverlayHost card now (category rail + tile grid
+    // + live search) -- the nested juce::PopupMenu it replaced couldn't fit
+    // ~120 effects on a touchscreen. Categories are registry metadata
+    // (EffectRegistry::categoryForKey), so this dialog needs no name table.
+    auto dialog = std::make_unique<AddEffectBrowserDialog> (registry);
 
-    std::map<juce::String, std::vector<juce::String>> keysByCategory;
-    for (auto& key : keys)
-        keysByCategory[categoryForDisplayName (registry.displayNameForKey (key))].push_back (key);
+    juce::Component::SafePointer<AddEffectBrowserDialog> browser (dialog.get());
+    auto choiceMade = std::make_shared<std::atomic<bool>> (false);
 
-    // Item IDs are assigned sequentially across every submenu, and idToKey
-    // is that same sequence -- juce::PopupMenu only gives an item's ID
-    // back, never which submenu it came from, so this flat lookup is what
-    // turns that ID back into a registry key.
-    juce::PopupMenu menu;
-    std::vector<juce::String> idToKey;
-
-    auto addCategory = [&] (const juce::String& category)
+    // The pop is deferred one message-loop tick: popOverlay() destroys the
+    // card, and freeing a std::function's storage while it is still running
+    // (tile -> grid -> dialog -> this callback) is UB. The deferred side
+    // guards on three things: aliveFlag (window may close before the tick
+    // runs -- same pattern as the MIDI callbacks below), `browser` (null
+    // once the card is dismissed by an outside tap, which invalidates the
+    // pending choice), and topLayer() (popOverlay() removes the TOP layer,
+    // so it only runs while this browser is still the top card).
+    dialog->onEffectChosen = [this, targetGridSlot, browser, choiceMade] (juce::String key)
     {
-        const auto it = keysByCategory.find (category);
-        if (it == keysByCategory.end())
+        // The card stays on screen until the deferred pop -- a second tile
+        // tap in the same tick must not schedule a second addEffect.
+        if (choiceMade->exchange (true))
             return;
 
-        juce::PopupMenu submenu;
-        for (auto& key : it->second)
+        juce::MessageManager::callAsync ([this, key = std::move (key), targetGridSlot,
+                                        browser, alive = aliveFlag]
         {
-            idToKey.push_back (key);
-            submenu.addItem ((int) idToKey.size(), registry.displayNameForKey (key));
-        }
-        menu.addSubMenu (category, submenu);
-        keysByCategory.erase (it);
-    };
+            if (! alive->load() || browser == nullptr)
+                return;
 
-    for (auto& category : categoryOrder)
-        addCategory (category);
+            if (overlayHost.topLayer() == browser.getComponent())
+                overlayHost.popOverlay();
 
-    // Anything left over (e.g. "Other") -- still shown, just last. Collected
-    // into a separate list first: addCategory() erases from keysByCategory,
-    // which can't happen safely while range-for is iterating that same map.
-    juce::StringArray remainingCategories;
-    for (auto& [category, categoryKeys] : keysByCategory)
-        remainingCategories.add (category);
-    for (auto& category : remainingCategories)
-        addCategory (category);
-
-    // Big is fine -- comfortable to tap on a 10" touchscreen matters more
-    // than compactness (see AGENT.md's UI/UX Design Philosophy).
-    addEffectMenuOpen = true;
-    menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
-        [this, idToKey, targetGridSlot] (int result)
-        {
-            addEffectMenuOpen = false;
-            addEffectMenuClosedAtMs = juce::Time::getMillisecondCounter();
-            if (result > 0 && result - 1 < (int) idToKey.size())
-                addEffect (idToKey[(size_t) result - 1], targetGridSlot);
+            addEffect (key, targetGridSlot);
         });
+    };
+    dialog->onPopOverlay = [this, browser]
+    {
+        juce::MessageManager::callAsync ([this, browser, alive = aliveFlag]
+        {
+            if (alive->load() && browser != nullptr
+                && overlayHost.topLayer() == browser.getComponent())
+                overlayHost.popOverlay();
+        });
+    };
+    overlayHost.pushOverlay (std::move (dialog));
 }
 
 juce::File MainComponent::getModelsDirectory()
@@ -1094,6 +1028,21 @@ void MainComponent::showTuner()
     overlay->onDestroyed = [this] { audioEngine.setTunerActive (false); };
 
     overlayHost.pushOverlay (std::move (overlay));
+}
+
+void MainComponent::showMasterEq()
+{
+    auto dialog = std::make_unique<MasterEqDialog>();
+    dialog->setBands (audioEngine.getMasterEqBands());
+    dialog->getSampleRate = [this] { return audioEngine.getCurrentSampleRate(); };
+    dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
+    dialog->onBandsChanged = [this] (const std::vector<MasterEqBand>& bands)
+    {
+        audioEngine.setMasterEqBands (bands);
+        masterBusSaveCountdown = 10; // debounced save in timerCallback
+    };
+
+    overlayHost.pushOverlay (std::move (dialog));
 }
 
 void MainComponent::showPresetsPanel()
@@ -1945,6 +1894,11 @@ void MainComponent::timerCallback()
                       graveyard.end());
 
     parameterPanel.refresh();
+
+    // Debounced master-bus save: knob drags and node drags fire dozens of edits a second -- one write, ~500 ms
+    // after the last change, is plenty for a file read once per launch.
+    if (masterBusSaveCountdown > 0 && --masterBusSaveCountdown == 0)
+        masterbus::saveState ({ audioEngine.getMasterGainDb(), audioEngine.getMasterEqBands() });
 
     if (--ticksUntilDirtyCheck <= 0)
     {

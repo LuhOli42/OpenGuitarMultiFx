@@ -53,9 +53,23 @@ public:
         readout would be permanently dead. User request 2026-09-22, "coloca um botao pra ativar o afinador em baixo". */
     std::function<void()> onTunerTapped;
 
+    /** The EQ button opens the master-EQ editor card (MasterEqDialog via OverlayHost), and the MASTER knob
+        sets the post-graph output gain in dB -- both user request 2026-10-11 ("um master volume ali na
+        barra debaixo, e um botao q entra num master eq"). This class still knows nothing about audio:
+        it reports knob drags through onMasterGainChanged and displays whatever setMasterGainDb() shows. */
+    std::function<void()> onMasterEqTapped;
+    std::function<void (float)> onMasterGainChanged;
+
+    /** Reflects a restored master level into the knob without re-firing onMasterGainChanged. */
+    void setMasterGainDb (float db);
+
 private:
     void tapTempo();
+    void updateMasterReadout();
     juce::TextButton tunerButton { "TUNER" };
+    juce::TextButton eqButton { "EQ" };
+    juce::Slider masterSlider;
+    juce::Label masterValueLabel;
     juce::Label bpmValueLabel { {}, "120" };
     juce::Label bpmUnitLabel { {}, "BPM" };
     juce::TextButton tapButton { "TAP" };
@@ -65,6 +79,8 @@ private:
     double bpm = 120.0;
     double lastTapMs = 0.0;
     std::vector<double> recentTapIntervalsMs;
+
+    float masterDb = 0.0f;
 
     juce::Rectangle<float> inMeterBounds, outMeterBounds;
 

@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <memory>
+#include <vector>
 
 namespace openguitarmultifx
 {
@@ -23,7 +24,41 @@ class EffectRegistry
 public:
     using Creator = std::function<std::unique_ptr<EffectProcessor>()>;
 
-    void registerType (const juce::String& key, Creator creator);
+    /** The Add-Effect browser's tabs. Category is registration metadata
+        (passed to registerType()), NOT derived from display names --
+        an earlier name-suffix classifier lived in MainComponent and kept
+        falling behind (new effects silently landed in "Other"; bass and
+        guitar amps can't be told apart by name alone). Every registered
+        key maps to exactly one of these; there is no "other" bucket. */
+    enum class Category
+    {
+        guitarAmps,
+        bassAmps,
+        overdriveBoost,
+        distortion,
+        fuzz,
+        dynamics,
+        modulation,
+        delay,
+        reverb,
+        pitchFilter,
+        neural,
+        cabs,
+        utility
+    };
+
+    void registerType (const juce::String& key, Category category, Creator creator);
+
+    /** The tab this key's tile belongs in. An unregistered key reports
+        utility (and jasserts) rather than crashing a UI that enumerated
+        keys from somewhere else. */
+    Category categoryForKey (const juce::String& key) const;
+
+    /** User-facing tab label ("Guitar Amps", "Pitch/Filter", ...). */
+    static juce::String categoryDisplayName (Category category);
+
+    /** Every category, in the order the browser's rail shows them. */
+    static const std::vector<Category>& categoriesInDisplayOrder();
     std::unique_ptr<EffectProcessor> create (const juce::String& key) const;
     juce::StringArray getRegisteredNames() const; // registry keys, e.g. "NeuralAmpCab" -- see displayNameForKey()
 
@@ -73,6 +108,7 @@ pedal's orders): eco = none (cheapest, DEFAULT -- the user's choice; audible ali
 
 private:
     std::map<juce::String, Creator> creators;
+    std::map<juce::String, Category> categoriesByKey;
     std::map<juce::String, juce::String> displayNamesByKey;
     std::map<juce::String, juce::String> keysByDisplayName;
     std::set<juce::String> qualityDependentKeys;

@@ -21,7 +21,8 @@ This is explicitly a **dev-facing chain builder pulled forward from Phase 7**, n
 | App font (Sora, embedded) | `OpenGuitarMultiFxLookAndFeel.{h,cpp}`, `Assets/Fonts/` |
 | Settings screen (despite the filename) | `Tone3000Panel.{h,cpp}` — general Settings, TONE3000 account is just its first section |
 | Effect icon reference (categories/colours/glyphs) | `../../docs/icons/AGENT-icon-notes.md` — read before adding any icon |
-| Bottom bar (tuner/BPM-tap/IN-OUT meters) | `FooterBar.{h,cpp}` — all three are real (Phase 5): tuner + IN/OUT meters fed from `AudioEngine` via `MainComponent::timerCallback()`; tap-tempo is self-contained wall-clock timing inside `FooterBar` itself, no audio thread involved |
+| Bottom bar (tuner/BPM-tap/master volume+EQ/IN-OUT meters) | `FooterBar.{h,cpp}` — all real: tuner + IN/OUT meters fed from `AudioEngine` via `MainComponent::timerCallback()`; tap-tempo is self-contained wall-clock timing inside `FooterBar` itself, no audio thread involved; master knob + EQ button are plain callbacks into `AudioEngine` — see "Master section" below |
+| Master EQ editor (free-form band nodes) | `MasterEqDialog.{h,cpp}` — an `OverlayHost` card like every other popup |
 | MIDI Program Change -> preset switching | `MainComponent::handleIncomingMidiMessage()`/`loadPresetByName()` — see Decisions below for the MIDI-thread-to-message-thread handoff |
 | Preset browser (grid, banks, setlists, search/tags) | `PresetBrowserDialog.{h,cpp}` — opened by tapping `PresetBadge`; all preset file logic goes through `Source/Presets/PresetLibrary`, never `PresetManager` directly |
 
@@ -159,9 +160,19 @@ The Settings screen ("..." button, `Tone3000Panel`) has a **Rendering quality** 
   Used by the amplifiers: Bassman Amplifier (Power Drive, Bias, Tube Feel, Speaker) and the neural amps / amp+cab (Sag).
 * **Menu.** "Amplifiers" was split into **Modeled Amps** (circuit-modelled: Bassman Amplifier), **Neural** (Neural Amp,
   Neural Amp + Cab, Neural Pedal) and **Cabs** (Cab, Dynamic Cab). New modelled amps go in "Modeled Amps".
-  "Drive" was split (2026-09-21) into **Overdrive** and **Distortion**, by display-name suffix in `categoryForDisplayName()`:
-  "...-Style Distortion" -> Distortion (DS-1, HM-2, Distortion+, Guv'nor, RAT), "...-Style Overdrive" and the Rangemaster booster ->
-  Overdrive. A future Fuzz gets its own submenu. The generic tanh "Overdrive" (no reference pedal) was removed.
+  "Drive" was split (2026-09-21) into **Overdrive** and **Distortion**, originally by display-name suffix in `categoryForDisplayName()`.
+  **SUPERSEDED 2026-10-10**: the picker is now `AddEffectBrowserDialog` (OverlayHost card: category rail + tile grid + live
+  search), and categories are `EffectRegistry::Category` metadata passed at `registerType()` time — `categoryForDisplayName()`
+  and the nested PopupMenu are gone. Amps are split **Guitar Amps** vs **Bass Amps** (SVT, B-15, V4B, Bass 400+, Acoustic 360,
+  Trace Elliot GP12) at registration, not by name.
+
+## Master section (2026-10-11)
+
+`FooterBar`'s right side grew two controls between the meters and the tuner: the **EQ button** (`onMasterEqTapped` -> `MainComponent::showMasterEq()`, which pushes a `MasterEqDialog` onto `overlayHost`) and the **master rotary** (a `RotaryVerticalDrag` slider with its own dB readout label; `onMasterGainChanged` -> `AudioEngine::setMasterGainDb`). Both are app-level state (`master_bus.xml` via `masterbus::loadState/saveState` in `Source/Engine/MasterBusSettings.h`), restored in the constructor and written by a ~500 ms debounced `masterBusSaveCountdown` in `timerCallback()` — a node drag fires `onBandsChanged` per mouse move, so saving on every callback would be dozens of disk writes a second.
+
+`MasterEqDialog` is the free-form EQ editor (user asked for "tipo um fabfilter eq, ou reaeq do reaper"): a log-frequency response graph you add **numbered band nodes** to via the six "+ Low Cut … + High Cut" buttons (one 48px-tall row, six equal cells). Interactions: drag a node (freq by x, gain by y against the other bands' contribution — the node rides the summed curve); mouse wheel trims Q on bell/notch/shelf/cut (or the cut's slope in dB/oct); double-tap a node to toggle it off (it stays, dimmed, for re-enable); tapping a node selects it into the bottom strip with Freq/Gain/Q-or-Slope sliders, an On toggle and Delete. The graph measures the response through the same `Biquad`/`MasterEq::magnitudeAt` math the engine runs, so the drawn curve is the real filter, not an approximation. Q-slider repurposes as the Slope slider for cut/shelf bands — no dead control on screen.
+
+Decisions: nodes are band objects, not a fixed-band UI (FabFilter-style, because "qualquer comportamento de eq" means the user composes the curve); curve is magnitude-only with per-band ghost curves and a summed accent curve (phase/spectrum display is out of scope for a monitor-tuning tool); the meter order is EQ-then-gain (see `Source/Engine/AGENTS.md`).
 
 ## Sample rate (2026-09-24)
 The Settings screen has a **Sample rate** row (44.1 / 48 / 88.2 / 96 kHz, only those the open device offers). Choosing one calls `AudioEngine::setSampleRate()`: it takes the audio callback off, reopens the device at that rate (restoring the previous rate if the device refuses), puts the callback back and remembers the choice in `sample_rate.txt` next to `render_quality.txt`. The panel is told the rates by the host (`Tone3000Panel::showSampleRates`), not by reaching into the engine. Not yet checked on screen: a screenshot of the Settings card was attempted but the app window was behind other windows on the user's desktop, so this row is verified by build and by the engine's code path only.

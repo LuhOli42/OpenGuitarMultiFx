@@ -130,11 +130,15 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addResistor (r2n, r3n, 47.0e3);
         c.addCapacitor (r3n, n6, 47.0e-9);
 
-        // Clipping op-amp IC1B (ideal): (+) is Q7's collector; feedback = 1 diode one way, 2 in series the other,
+        // Clipping op-amp IC1B: (+) is Q7's collector; feedback = 1 diode one way, 2 in series the other,
         // 220K and 10 pF. It shares a block with the stages that drive it: the 47 nF into (-) has ~3.8 mS of
         // conductance and the op-amp multiplies its current by the 220K feedback, so ANY mismatch between the
         // two sides (an earlier version predicted the (-) node one sample ahead) is amplified ~840x into a glitch.
-        c.addOpAmp (c7, n6, o1);
+        // The M5218's output clips against its own rails: past them the feedback diodes can no longer hold the
+        // output (a real output stage stays at the rail whatever the diodes want), so this is rail-limited, not
+        // ideal -- the flat tops the DIST knob pushes it into are part of the pedal's sound.
+        const NodalCircuit::OpAmpSpec m5218clip { 1.5, v45 * 2.0 - 1.5 };
+        c.addRailLimitedOpAmp (c7, n6, o1, m5218clip);
         c.addResistor (n6, o1, 220.0e3);
         c.addCapacitor (n6, o1, 10.0e-12);
         c.addDiode (n6, o1, siIs, siNVt, 4.0e-9); // 1 diode: conducts when (-) is above the output

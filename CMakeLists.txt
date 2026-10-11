@@ -113,6 +113,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Main.cpp
   Source/EffectRegistry.cpp
   Source/Engine/AudioEngine.cpp
+  Source/Engine/MasterEq.cpp
   Source/Engine/PitchDetector.cpp
   Source/Engine/SignalGraph.cpp
   Source/Engine/Spillover.cpp
@@ -228,7 +229,9 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/OctaverProcessor.cpp
   Source/Effects/HarmonizerProcessor.cpp
   Source/Effects/LooperProcessor.cpp
+  Source/UI/AddEffectBrowserDialog.cpp
   Source/UI/ChainContainer.cpp
+  Source/UI/MasterEqDialog.cpp
   Source/UI/EffectBlockComponent.cpp
   Source/UI/FooterBar.cpp
   Source/UI/TunerOverlay.cpp

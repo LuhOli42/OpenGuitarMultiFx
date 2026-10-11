@@ -6,6 +6,7 @@ juce_add_console_app(OpenGuitarMultiFx_Tests
 target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RunTests.cpp
   SignalGraphTests.cpp
+  EffectRegistryCategoryTests.cpp
   BypassCrossfadeTests.cpp
   ParamSmoothingTests.cpp
   DeferredReclaimerTests.cpp
@@ -15,6 +16,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PresetLibraryTests.cpp
   PresetSpilloverTests.cpp
   MidiLearnPresetXmlTests.cpp
+  MasterEqTests.cpp
   SnapshotPresetXmlTests.cpp
   GateProcessorTests.cpp
   CompressorProcessorTests.cpp
@@ -146,6 +148,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
 # offline RenderFx tool below.
 set(OGMFX_SOURCES
   ../Source/EffectRegistry.cpp
+  ../Source/Engine/MasterEq.cpp
   ../Source/Engine/SignalGraph.cpp
   ../Source/Engine/Spillover.cpp
   ../Source/Engine/PitchDetector.cpp

@@ -41,6 +41,9 @@ public:
 
     bool isEmpty() const { return layers.empty(); }
 
+    /** The card currently on top of the stack, or nullptr when empty. */
+    juce::Component* topLayer() const { return layers.empty() ? nullptr : layers.back().get(); }
+
     void resized() override;
     void paint (juce::Graphics& g) override;
     void mouseUp (const juce::MouseEvent& event) override;

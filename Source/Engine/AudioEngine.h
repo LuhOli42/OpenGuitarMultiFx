@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DeferredReclaimer.h"
+#include "MasterEq.h"
 #include "PitchDetector.h"
 #include "SignalGraph.h"
 #include "Spillover.h"
@@ -85,6 +86,24 @@ public:
     void setTunerActive (bool shouldBeActive) noexcept { tunerActive.store (shouldBeActive, std::memory_order_relaxed); }
     bool isTunerActive() const noexcept { return tunerActive.load (std::memory_order_relaxed); }
 
+    /** Master output gain, dB (-60 .. +12, below -60 = mute), applied AFTER the whole graph and the master EQ,
+        before the OUT meter and the device -- the FooterBar's master volume knob. The audio thread ramps to the
+        target over ~20 ms (SmoothedValue), so dragging the knob can't zipper. Control thread. */
+    void setMasterGainDb (float db) noexcept
+    {
+        masterGainDb.store (juce::jlimit (-70.0f, 12.0f, db), std::memory_order_relaxed);
+        masterGainLinear.store (juce::Decibels::decibelsToGain (masterGainDb.load (std::memory_order_relaxed)),
+                                std::memory_order_relaxed);
+    }
+    float getMasterGainDb() const noexcept { return masterGainDb.load (std::memory_order_relaxed); }
+
+    /** Control thread. Replaces the master-bus EQ band list (see MasterEq.h -- free-form parametric bands
+        edited from the footer's EQ card). Coefficients are rebuilt here and published to the audio thread
+        through the same DeferredReclaimer primitive the graph uses; persisted app-level by the caller
+        (MasterBusSettings.h), never inside a preset. */
+    void setMasterEqBands (const std::vector<MasterEqBand>& bands) { masterEq.setBands (bands); }
+    const std::vector<MasterEqBand>& getMasterEqBands() const noexcept { return masterEq.getBands(); }
+
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
 
     /** Sample rates the OPEN device supports (empty when no device is open) and the one it is running at (0 when stopped). Control thread. */
@@ -146,6 +165,7 @@ private:
     juce::AudioDeviceManager deviceManager;
     DeferredReclaimer<SignalGraph> graphSlot;
     Spillover spillover;
+    MasterEq masterEq;
 
     std::atomic<double> sampleRate { 0.0 };
     std::atomic<int> blockSize { 0 };
@@ -162,6 +182,9 @@ private:
 
     std::atomic<bool> tunerActive { false }; // see setTunerActive()
     std::atomic<float> inputGainDb { 0.0f }, inputGainLinear { 1.0f }; // see setInputGainDb()
+    std::atomic<float> masterGainDb { 0.0f }, masterGainLinear { 1.0f }; // see setMasterGainDb()
+    // Audio thread only: ramps masterGainLinear's target over ~20 ms so a footer-knob drag can't zipper.
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> masterGainSmooth;
     std::atomic<int> selectedInputChannel { 0 };
     std::atomic<int> selectedOutputPairStart { 0 };
 };
