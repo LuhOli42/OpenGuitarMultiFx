@@ -455,9 +455,13 @@ double CarrRamblerStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     if (lastKnobs.mode == 1)
         ch.bmRail *= 0.5; // strapped triode swings far less than pentode (real amp: a quarter or less of the power)
 
-    const double asym = (bmAsym + 0.3 * (biasTrim - 0.5)) * bmYmax;
-    const double drive = (lastKnobs.mode == 1 ? 0.8 : 1.0) * driveVoltage + asym;
     const double k = ch.bmRail * bmYmax / bmGain0;
+    // The fitted offset rides the drive envelope: pair imbalance grows with swing (the stage
+    // is ~linear below the knee, where a static shift would park the op point deep in it and
+    // crush clean small-signal gain). The bias knob keeps its literal meaning: a static offset.
+    const double envScale = juce::jlimit (0.0, 1.0, ch.bmEnvelope / juce::jmax (1.0e-9, k));
+    const double asym = (bmAsym * envScale + 0.3 * (biasTrim - 0.5)) * bmYmax;
+    const double drive = (lastKnobs.mode == 1 ? 0.8 : 1.0) * driveVoltage + asym;
     const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
     // signed odd saturator f(x)=copysign(knee(|x|),x) — the form the other amps moved to.
     const auto f = [&] (double x) { const double ux = std::abs (x) / juce::jmax (1.0e-9, k);

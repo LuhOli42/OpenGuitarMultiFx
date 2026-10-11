@@ -44,7 +44,10 @@ public:
         const int n = (int) y.size();
         double bestF = 0.0, bestMag = -1.0;
         std::vector<double> mag (n / 2);
-        for (int bin = 1; bin < n / 2; ++bin)
+        // only the first ~10 harmonics of a ~110 Hz tone matter -- the naive DFT is O(n)
+        // per bin, so searching the top of the spectrum is the dominant cost for nothing.
+        const int nBins = juce::jmin (n / 2, 512);
+        for (int bin = 1; bin < nBins; ++bin)
         {
             double re = 0.0, im = 0.0;
             for (int i = 0; i < n; ++i)
@@ -57,11 +60,11 @@ public:
             if (mag[(size_t) bin] > bestMag) { bestMag = mag[(size_t) bin]; bestF = (double) bin; }
         }
         const int f0 = (int) bestF;
-        const auto h = [&] (int k) { return k * f0 < n / 2 ? mag[(size_t) (k * f0)] : 0.0; };
+        const auto h = [&] (int k) { return k * f0 < nBins ? mag[(size_t) (k * f0)] : 0.0; };
         const double even = std::sqrt (h (2) * h (2) + h (4) * h (4) + h (6) * h (6) + h (8) * h (8));
         const double odd = std::sqrt (h (3) * h (3) + h (5) * h (5) + h (7) * h (7));
         double ss = 0.0;
-        for (int k = 2; k * f0 < n / 2 && k <= 10; ++k) ss += h (k) * h (k);
+        for (int k = 2; k * f0 < nBins && k <= 10; ++k) ss += h (k) * h (k);
         return { odd > 1.0e-12 ? even / odd : 0.0, bestMag > 1.0e-12 ? h (2) / bestMag : 0.0,
                  bestMag > 1.0e-12 ? std::sqrt (ss) / bestMag : 0.0 };
     }
@@ -107,6 +110,30 @@ public:
         mean /= (double) x.size();
         for (auto& v : x) v -= mean;
 
+        // Same capture at a clean level: an offset big enough to match a large crunch
+        // even/odd parks the small-signal operating point deep in the knee (FTR37: -21 dB
+        // clean gain at s = 1.37k), which the crunch-level objective alone cannot see.
+        std::vector<double> xl, yl;
+        xl.reserve ((size_t) keep);
+        yl.reserve ((size_t) keep);
+        for (long long n = 0; n < total; ++n)
+        {
+            const float v = (float) (0.02 * level * std::sin (twoPi * toneHz * (double) n / sr));
+            one.setSample (0, 0, v);
+            one.setSample (1, 0, v);
+            amp.process (one);
+            if (n >= total - keep)
+            {
+                xl.push_back (amp.debugVoltage (driveProbe));
+                yl.push_back (amp.debugVoltage (spkProbe));
+            }
+        }
+        const H refLow = measure (yl);
+        double meanL = 0.0;
+        for (double v : xl) meanL += v;
+        meanL /= (double) xl.size();
+        for (auto& v : xl) v -= meanL;
+
         double refRms = 0.0;
         for (double v : y) refRms += v * v;
         refRms = std::sqrt (refRms / (double) y.size());
@@ -136,12 +163,44 @@ public:
             if (s == 0.0) baseRms = rms;
             const double lvlDb = std::abs (20.0 * std::log10 (juce::jmax (1.0e-9, rms) / juce::jmax (1.0e-9, baseRms)));
             const H hmod = measure (m);
-            const double err = std::abs (hmod.evenOdd - ref.evenOdd) + 0.5 * lvlDb;
+            // clean-level terms: the same s must not flatten the small-signal gain
+            // (level) nor invent even content the reference does not have (even/odd).
+            dcState = 0.0;
+            double ssl = 0.0;
+            std::vector<double> ml;
+            ml.resize (xl.size());
+            for (size_t i = 0; i < xl.size(); ++i)
+            {
+                const double raw = juce::jlimit (-railNom * ymax, railNom * ymax,
+                                                 sat (xl[i] + s, k, railNom, ymax, kneeN) - sat (s, k, railNom, ymax, kneeN));
+                dcState += dcCoeff * (raw - dcState);
+                ml[i] = raw - dcState;
+                ssl += ml[i] * ml[i];
+            }
+            double baseRmsL = 1.0;
+            {
+                double ss0 = 0.0, dc0 = 0.0;
+                for (size_t i = 0; i < xl.size(); ++i)
+                {
+                    const double raw = juce::jlimit (-railNom * ymax, railNom * ymax,
+                                                     sat (xl[i], k, railNom, ymax, kneeN) - sat (0.0, k, railNom, ymax, kneeN));
+                    dc0 += dcCoeff * (raw - dc0);
+                    const double b = raw - dc0;
+                    ss0 += b * b;
+                }
+                baseRmsL = std::sqrt (ss0 / (double) xl.size());
+            }
+            const double rmsL = std::sqrt (ssl / (double) ml.size());
+            const double lvlDbL = std::abs (20.0 * std::log10 (juce::jmax (1.0e-9, rmsL) / juce::jmax (1.0e-9, baseRmsL)));
+            const H hmodL = measure (ml);
+            const double err = std::abs (hmod.evenOdd - ref.evenOdd) + 0.5 * lvlDb
+                             + 0.5 * std::abs (hmodL.evenOdd - refLow.evenOdd) + 1.0 * lvlDbL;
             if (err < bestErr) { bestErr = err; bestS = s; }
         }
         const double bmAsym = asymInKUnits ? bestS / k : bestS / ymax;
         logMessage (juce::String (name) + " level " + juce::String (level, 3)
-                    + ": ref even/odd " + juce::String (ref.evenOdd, 4) + " h2 " + juce::String (ref.h2rel * 100.0, 2)
+                    + ": ref even/odd " + juce::String (ref.evenOdd, 4) + " (clean " + juce::String (refLow.evenOdd, 4) + ")"
+                    + " h2 " + juce::String (ref.h2rel * 100.0, 2)
                     + "% thd " + juce::String (ref.thd * 100.0, 2) + "%  -> s " + juce::String (bestS, 5)
                     + " V, bmAsym " + juce::String (bmAsym, 4) + (asymInKUnits ? " (k units)" : " (bmYmax units)"));
         *reducedFlag = false;

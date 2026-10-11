@@ -490,7 +490,10 @@ double DeluxeReverbStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, d
     ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
-    const double shift = (bmAsym + 0.6 * (bias - 0.5)) * k;
+    // The fitted offset rides the drive envelope: pair imbalance grows with swing (the stage
+    // is ~linear below the knee, where a static shift would crush clean small-signal gain).
+    const double envScale = juce::jlimit (0.0, 1.0, ch.bmEnvelope / juce::jmax (1.0e-9, k));
+    const double shift = (bmAsym * envScale + 0.6 * (bias - 0.5)) * k;
     const auto sat = [k, rail = ch.bmRail] (double xx)
     {
         const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
