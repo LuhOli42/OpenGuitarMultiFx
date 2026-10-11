@@ -348,14 +348,16 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("ODR1StyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampledSlew<ODR1StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), -1.77f); });
     registry.markQualityDependent ("DT1StyleDistortion");
     registry.registerType ("DT1StyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<DT1StyleDistortionProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), 10.17f); });
-    // reducedOrder stays OFF: the #79 pop's mechanism (clipped collector current never reaching
-    // the base) was re-tried this session as an iB += iC_unsat - iC_sat drain term in the kind-4
-    // device -- it broke equivalence badly in BOTH HM-2 (worst band 9.3 dB) and the Big Muff
-    // (2.9 dB), so the one-ports stay saturated-but-undrained and the pedal stays at 2x.
+    // reducedOrder ON: the #79 pop's mechanism was the one-port transistors lacking the bc junction
+    // entirely, so the self-biased stages recovered differently on hard edges. Restoring each junction
+    // as a diode (Is = Is/betaR x0.25, swept on the HM2_SWEEP harness) crushes the windowed-peak edge
+    // error from ~6 dB to ~0.3 dB while keeping the equivalence bounds (worst band 1.04 dB).
+    // See docs/circuits/HM2StyleDistortion.md.
+    HM2StyleDistortionProcessor::reducedOrder = true;
     registry.markQualityDependent ("HM2StyleDistortion");
     // HM-2 at balanced is 2x: its 2x aliasing (-62.7 dB nonharmonic, docs/circuits/Oversampling.md) is already
     // inaudible, and 4x there doubled the pedal's cost for nothing.
-    registry.registerType ("HM2StyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<HM2StyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 6.67f); });
+    registry.registerType ("HM2StyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<HM2StyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 11.09f); });
     using ClipModel = OpAmpClipperDistortionProcessor::Model;
     registry.markQualityDependent ("DistortionPlusStyleDistortion");
     registry.registerType ("DistortionPlusStyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<OpAmpClipperDistortionProcessor> (Orders { 0, 0, 1 }, 0.5, ClipModel::distortionPlus), 1000000.0), 8.95f); });
@@ -497,7 +499,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated placeholder (Twin Reverb's 6L6GC constants).
     SLO100StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SLO100StyleAmplifier");
-    registry.registerType ("SLO100StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<SLO100StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -18.92f); });
+    registry.registerType ("SLO100StyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<SLO100StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -17.42f); });
     // docs/circuits/MarkIICPlus.md. Mesa/Boogie Mark IIC+ Lead channel. Five cascaded 12AX7 gain stages with unique
     // inter-stage EQ/gain network, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated
     // placeholder (Twin Reverb's 6L6GC constants).

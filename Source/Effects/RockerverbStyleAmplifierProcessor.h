@@ -113,6 +113,30 @@ private:
         NodalCircuit::Node pPlateV9a = 0, pPlateV9b = 0, pPlateV8a = 0, pPlateV8b = 0, pPlateV10a = 0, pPlateV10b = 0;
         NodalCircuit::Node pDirtyOut = 0, pCleanOut = 0;
 
+        // Eco tier only: `pre` solves BOTH channels at once -- six triodes + both tone stacks
+        // (~50 nodes) every sample even though only one output is ever consumed. That is what
+        // keeps this amp over the ~10%-of-a-core A7S budget even in reducedOrder (the power
+        // stage went behavioural, the preamp kept being Newton-solved). `preDirty`/`preClean`
+        // are per-channel minis -- the selected channel's real clip stages and its REAL tone
+        // stack, with the stages that matter least folded (dirty: V8a folded into its own
+        // gain-pot network; clean keeps both stages, it barely clips). Only the selected
+        // channel's mini is solved per sample; the other's trap state just rests.
+        NodalCircuit preDirty, preClean;
+        NodalCircuit::DynamicState preDirtyRest, preCleanRest;
+        int rdSrcIn = 0, rdSrcF = 0;
+        int rdGainBTop = 0, rdGainBBot = 0, rdGainATop = 0, rdGainABot = 0;
+        int rdTrebleTop = 0, rdTrebleBot = 0, rdBass = 0, rdMidTop = 0, rdMidBot = 0, rdVolTop = 0, rdVolBot = 0;
+        NodalCircuit::Node rdPlateA = 0, rdPlateB = 0, rdPlateB2 = 0, rdPlateC = 0, rdOut = 0;
+        int rcSrcIn = 0, rcSrcF = 0;
+        int rcVolTop = 0, rcVolBot = 0, rcTrebleTop = 0, rcTrebleBot = 0, rcBassTop = 0, rcBassBot = 0;
+        NodalCircuit::Node rcPlateA = 0, rcPlateB = 0, rcOut = 0;
+        // Measured-vs-full trims applied to the selected mini's (AC-only) stack output, plus the
+        // extra input drive that stands in for the folded stages' gain.
+        double reducedPreTrim = 1.0;
+        int reducedSel = -1; // last solved eco channel -- a selection change restores the mini's rest state
+        static constexpr double dirtyDriveBoost = 1.0;
+        static constexpr double cleanDriveBoost = 1.0;
+
         // post block (always): R4 -> V7-A follower -> loop -> V7-B -> reverb mixer -> C3; then PI + power (full only)
         int wSrcPost = 0, wSrcD = 0, wSrcV7Bias = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
@@ -141,6 +165,7 @@ private:
     };
 
     void buildChannel (Channel& ch);
+    void buildReducedPreamps (Channel& ch);
     struct Knobs
     {
         double cVolume, cTreble, cBass, gain, treble, mid, bass, post, powerDrive, bias, tubeFeel;

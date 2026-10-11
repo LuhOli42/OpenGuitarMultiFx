@@ -283,7 +283,7 @@ void BassBigMuffStyleFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
 void BassBigMuffStyleFuzzProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
     // Same stand-in as BigMuffStyleFuzzProcessor: no Fuzz glyph exists on the sheet yet.
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::distortion_svg, IconData::distortion_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::fuzz_svg, IconData::fuzz_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

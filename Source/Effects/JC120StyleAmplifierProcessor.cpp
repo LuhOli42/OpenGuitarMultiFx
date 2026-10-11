@@ -1,4 +1,5 @@
 #include "JC120StyleAmplifierProcessor.h"
+#include "FastMath.h"
 #include "PotTaper.h"
 #include "DualMono.h"
 #include "IconKit.h"
@@ -344,7 +345,7 @@ double JC120StyleAmplifierProcessor::bbdChorus (Channel& ch, double dry, double 
     ch.bbdLfoPhase += speedHz / juce::jmax (1.0, sampleRate);
     if (ch.bbdLfoPhase >= 1.0)
         ch.bbdLfoPhase -= 1.0;
-    const double lfo = std::sin (2.0 * juce::MathConstants<double>::pi * ch.bbdLfoPhase);
+    const double lfo = (double) fast::sinCycles (ch.bbdLfoPhase);
     const double targetDelayMs = bbdCenterDelayMs + depthAmount * bbdDepthMs * lfo;
     const double targetDelaySamples = juce::jlimit (1.0, (double) Channel::bbdMaxDelay - 4.0, targetDelayMs * 0.001 * sampleRate);
 
@@ -577,7 +578,7 @@ void JC120StyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 
 void JC120StyleAmplifierProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::overdrive_svg, IconData::overdrive_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::amp_svg, IconData::amp_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

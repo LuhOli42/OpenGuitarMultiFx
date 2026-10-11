@@ -129,6 +129,13 @@ public:
         `scratch` is pre-sized. */
     void process (juce::AudioBuffer<float>& buffer, double sampleRate) noexcept;
 
+    /** Audio thread only. Stamps the audio callback's realtime status
+        onto every graph the callback can reach this block (active units
+        + the pending hand-off) -- see SignalGraph's RT-parity gate and
+        AudioEngine::detectCallbackRealtime. Runs before process() in the
+        same callback, so a unit can't process a block on a stale status. */
+    void setAudioCallerIsRealtime (bool isRealtime) noexcept;
+
     /** Called where the audio callback is provably not running (device
         (re)start): cuts every spill -- they were prepared for the old
         stream's rate/block size anyway. */

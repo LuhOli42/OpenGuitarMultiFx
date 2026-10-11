@@ -1,4 +1,5 @@
 #include "UniVibeProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -21,7 +22,7 @@ namespace
     */
     float asymmetricLfo (double phase) noexcept
     {
-        const float raw = (float) (std::sin (phase) + 0.35 * std::sin (2.0 * phase));
+        const float raw = (float) (fast::sinRadians (phase) + 0.35 * fast::sinRadians (2.0 * phase));
         constexpr float normalise = 1.0f / 1.35f;
         return raw * normalise;
     }
@@ -87,7 +88,7 @@ void UniVibeProcessor::process (juce::AudioBuffer<float>& buffer)
         const float wet = smoothedMix.getNextValue();
         const float lfoValue = asymmetricLfo (lfoPhase);
         const float freqHz = centreFreq + halfRange * depthAmount * lfoValue;
-        const float tanTerm = (float) std::tan (pi * (double) freqHz / currentSampleRate);
+        const float tanTerm = (float) fast::tanAllpass (pi * (double) freqHz / currentSampleRate);
         const float coeff = (tanTerm - 1.0f) / (tanTerm + 1.0f);
 
         // The lamp's brightness throbs the signal's level too, not just

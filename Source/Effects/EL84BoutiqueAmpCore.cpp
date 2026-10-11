@@ -1,6 +1,7 @@
 #include "EL84BoutiqueAmpCore.h"
 
 #include "IconKit.h"
+#include "PotTaper.h"
 #include "TubeAmpCommon.h"
 
 #include <IconData.h>
@@ -474,8 +475,9 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
 
     if (model == Model::matchlessHC30)
     {
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, smoothedParam (ch, 3, volume1Param, 0.4));
-        setPot (ch.pre2, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, smoothedParam (ch, 4, volume2Param, 0.4));
+        // Channel volumes: 1M audio taper (the real part family).
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 3, volume1Param, 0.4)));
+        setPot (ch.pre2, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, pots::audio (smoothedParam (ch, 4, volume2Param, 0.4)));
         const double bass = smoothedParam (ch, 5, bass1Param, 0.5), treble = smoothedParam (ch, 6, treble1Param, 0.5);
         ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 1.0e6));
         ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 1.0e6));
@@ -495,7 +497,8 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     {
         const double treble = smoothedParam (ch, 9, trebleParam, 0.5);
         const double bass = smoothedParam (ch, 10, bassParam, 0.5);
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, smoothedParam (ch, 8, gainParam, 0.5));
+        // Gain: 1M audio taper.
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 8, gainParam, 0.5)));
         ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 250.0e3));
         ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 250.0e3));
         ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
@@ -504,7 +507,8 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     }
     else if (model == Model::carmenGhia)
     {
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, smoothedParam (ch, 3, volume1Param, 0.4));
+        // Volume: 1M audio taper.
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 3, volume1Param, 0.4)));
         const double tone = smoothedParam (ch, 12, toneParam, 0.5);
         ch.pre.setCapacitance (ch.toneCap, 4.7e-9 * (0.2 + 1.6 * (1.0 - tone)));
     }
@@ -512,8 +516,9 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     {
         const double treble = smoothedParam (ch, 9, trebleParam, 0.5);
         const double bass = smoothedParam (ch, 10, bassParam, 0.5);
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, smoothedParam (ch, 13, preampParam, 0.5));
-        setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, smoothedParam (ch, 3, volume1Param, 0.5));
+        // Preamp and Volume: audio taper like the other gain/volume controls in the project.
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 13, preampParam, 0.5)));
+        setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, pots::audio (smoothedParam (ch, 3, volume1Param, 0.5)));
         ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 250.0e3));
         ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 250.0e3));
         ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
@@ -531,7 +536,8 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
             (model == Model::carmenGhia ? 400.0 : 130.0) * (0.05 + 0.95 * feel));
         if (model == Model::carmenGhia)
         {
-            const double master = smoothedParam (ch, 15, masterParam, 1.0);
+            // Ganged 250K post-PI master: audio taper, like a real dual-gang PPIMV pot.
+            const double master = pots::audio (smoothedParam (ch, 15, masterParam, 1.0));
             ch.power.setResistance (ch.rMasterTopA, boundedPot (1.0 - master, 250.0e3));
             ch.power.setResistance (ch.rMasterTopB, boundedPot (1.0 - master, 250.0e3));
         }
@@ -555,7 +561,7 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         // into the behavioural stage instead -- master attenuates the drive, bias shifts
         // the knee's operating point, tube feel scales the sag depth, and cut/presence
         // run as cheap one-poles on the output.
-        ch.bmDriveScale = smoothedParam (ch, 15, masterParam, 1.0);
+        ch.bmDriveScale = pots::audio (smoothedParam (ch, 15, masterParam, 1.0));
         ch.bmBias = bias;
         ch.bmFeel = feel;
         const double cutHz = 20000.0 * std::pow (0.15, smoothedParam (ch, 7, cutParam, 0.5));
@@ -595,10 +601,10 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     const double release = 1.0 - std::exp (-1.0 / (0.045 * juce::jmax (1.0, sampleRate)));
     const double magnitude = std::abs (drive);
     ch.envelope += (magnitude > ch.envelope ? attack : release) * (magnitude - ch.envelope);
-    const double gain = model == Model::carmenGhia ? 10.0 : model == Model::astroverb16 ? 18.0 : 14.0;
+    const double gain = model == Model::carmenGhia ? 10.0 : model == Model::astroverb16 ? 18.0 : model == Model::hotCat30 ? 0.9 : 14.0;
     const double level = model == Model::matchlessHC30 ? 1.17 :
-                         model == Model::hotCat30 ? 9.5 :
-                         model == Model::carmenGhia ? 22.4 : 21.4;
+                         model == Model::hotCat30 ? 14.0 :
+                         model == Model::carmenGhia ? 18.5 : 21.4;
     const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
     const double sag = reducedOrder ? 0.03 * ch.bmFeel : 0.025;
     return level * (std::tanh (drive * gain + asym) - std::tanh (asym)) * (model == Model::carmenGhia ? 0.65 : 0.8)
@@ -671,8 +677,10 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
     if (solveChannels == 0)
         return;
-    const double volumeTarget = model == Model::hotCat30 ? param (masterParam, 0.7) :
-        model == Model::matchlessHC30 ? param (masterParam, 0.7) : 1.0;
+    // The panel Master is a level control like the other volume pots: same audio taper law
+    // applied to the scalar gain it maps to.
+    const double volumeTarget = model == Model::hotCat30 ? pots::audio (param (masterParam, 0.7)) :
+        model == Model::matchlessHC30 ? pots::audio (param (masterParam, 0.7)) : 1.0;
     const double powerDriveTarget = std::pow (10.0, (param (powerParam, 1.0) - 1.0) * 18.0 / 20.0);
     const double outputTarget = std::pow (10.0, (param (outputParam, 0.5) - 0.5) * 48.0 / 20.0);
 
@@ -803,7 +811,7 @@ double EL84BoutiqueAmpCore::plateCurrentTotal() const noexcept
 
 void EL84BoutiqueAmpCore::drawIcon (juce::Graphics& g, juce::Rectangle<float> bounds) const
 {
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::overdrive_svg, IconData::overdrive_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::amp_svg, IconData::amp_svgSize);
     icon::drawSvg (g, bounds, svg.get());
 }
 

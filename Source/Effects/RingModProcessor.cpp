@@ -1,4 +1,5 @@
 #include "RingModProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -56,8 +57,8 @@ double RingModProcessor::carrier (double ph, int shapeIndex) const noexcept
     switch (shapeIndex)
     {
         case 1:  return 1.0 - 4.0 * std::abs (ph - 0.5); // triangle, -1 .. 1
-        case 2:  return juce::jlimit (-1.0, 1.0, 4.0 * std::sin (twoPi * ph)); // a square with rounded edges (a hard one would alias)
-        default: return std::sin (twoPi * ph);
+        case 2:  return juce::jlimit (-1.0, 1.0, 4.0 * (double) fast::sinCycles (ph)); // a square with rounded edges (a hard one would alias)
+        default: return fast::sinCycles (ph);
     }
 }
 

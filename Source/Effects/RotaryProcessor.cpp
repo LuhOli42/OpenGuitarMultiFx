@@ -1,4 +1,5 @@
 #include "RotaryProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -77,8 +78,8 @@ void RotaryProcessor::process (juce::AudioBuffer<float>& buffer)
         // TremoloProcessor, just computed twice at two different rates.
         const float depthAmount = smoothedDepth.getNextValue();
         const float wet = smoothedMix.getNextValue();
-        const float hornGain = 1.0f - depthAmount * 0.5f * (1.0f - (float) std::cos (hornPhase));
-        const float woofGain = 1.0f - depthAmount * 0.5f * (1.0f - (float) std::cos (woofPhase));
+        const float hornGain = 1.0f - depthAmount * 0.5f * (1.0f - fast::cosRadians (hornPhase));
+        const float woofGain = 1.0f - depthAmount * 0.5f * (1.0f - fast::cosRadians (woofPhase));
 
         for (int ch = 0; ch < numChannels; ++ch)
         {

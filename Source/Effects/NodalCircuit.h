@@ -329,9 +329,11 @@ public:
     /** A transistor as a ONE-port device (vbe only) whose collector current saturates smoothly at `saturationCurrent`
         (the load line's limit, (rail - Vce(sat)) / (collector + emitter resistance)): the collector junction, which
         would take a second Newton port, only ever matters as the point where a stage runs out of collector current, and
-        for a stage with a resistive load that point is known. Base current stays iC/beta of the UNSATURATED current
-        (no extra base current when the real transistor saturates); check that against the full model where it is used. */
-    void addBjtSaturating (Node collector, Node base, Node emitter, bool pnp, const BjtParams& p, double saturationCurrent)
+        for a stage with a resistive load that point is known. Base current stays iC/beta of the unsaturated current;
+        the bc junction the one-port lacks can be restored separately with addDiode where the circuit needs it (HM-2's
+        self-biased stages -- see docs/circuits/HM2StyleDistortion.md). */
+    void addBjtSaturating (Node collector, Node base, Node emitter, bool pnp, const BjtParams& p,
+                           double saturationCurrent)
     {
         Bjt q { collector, base, emitter, pnp, {}, saturationCurrent };
         q.model.setParameters (p.Is, p.Vt, p.betaF, p.betaR);

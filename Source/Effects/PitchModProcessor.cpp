@@ -1,4 +1,5 @@
 #include "PitchModProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -67,9 +68,9 @@ void PitchModProcessor::process (juce::AudioBuffer<float>& buffer)
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const float semitones = maxSemitones * smoothedDepth.getNextValue() * (float) std::sin (lfoPhase);
+        const float semitones = maxSemitones * smoothedDepth.getNextValue() * fast::sinRadians (lfoPhase);
         const float wet = smoothedMix.getNextValue();
-        const float ratio = std::pow (2.0f, semitones / 12.0f);
+        const float ratio = fast::pow2 (semitones / 12.0f);
 
         for (int ch = 0; ch < numChannels; ++ch)
         {

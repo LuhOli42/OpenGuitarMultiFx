@@ -107,6 +107,17 @@ void Spillover::sweep()
                  units.end());
 }
 
+void Spillover::setAudioCallerIsRealtime (bool isRealtime) noexcept
+{
+    for (int i = 0; i < activeCount; ++i)
+        if (auto* g = active[(size_t) i]->graph.get())
+            g->setAudioCallerIsRealtime (isRealtime);
+
+    if (auto* unit = pending.load (std::memory_order_acquire))
+        if (auto* g = unit->graph.get())
+            g->setAudioCallerIsRealtime (isRealtime);
+}
+
 void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate) noexcept
 {
     const int numSamples = buffer.getNumSamples();

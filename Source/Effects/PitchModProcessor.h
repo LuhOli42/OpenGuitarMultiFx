@@ -33,6 +33,10 @@ public:
     juce::Colour getAccentColour() const override { return juce::Colour (0xff7a5cc9); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
+    // Public so the FastMath domain tests can check the pow2() argument
+    // (semitones/12) stays inside its fit domain.
+    static constexpr float maxSemitones = 3.0f;
+
 private:
     // Two-grain doubler generalised to a continuously variable ratio --
     // see the class doc comment. `delayA -= (ratio - 1)` per sample: at
@@ -40,7 +44,6 @@ private:
     // (reading forward through history faster = pitch up); ratio<1
     // increases it (pitch down). Wrapping in BOTH directions is needed
     // here, unlike the fixed-ratio-always->1 case in ShimmerReverbProcessor.
-    static constexpr float maxSemitones = 3.0f;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* rateHz = nullptr;

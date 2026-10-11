@@ -6,6 +6,7 @@ juce_add_console_app(OpenGuitarMultiFx_Tests
 target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RunTests.cpp
   SignalGraphTests.cpp
+  SignalGraphBench.cpp
   EffectRegistryCategoryTests.cpp
   BypassCrossfadeTests.cpp
   ParamSmoothingTests.cpp
@@ -139,6 +140,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RotaryProcessorTests.cpp
   UniVibeProcessorTests.cpp
   PitchModProcessorTests.cpp
+  FastMathTests.cpp
   PitchShiftProcessorTests.cpp
   OctaverProcessorTests.cpp
   HarmonizerProcessorTests.cpp

@@ -2,6 +2,9 @@
 #include "SoftCeiling.h"
 
 #include <cmath>
+#if JUCE_LINUX
+ #include <sched.h> // sched_getscheduler, for the native-callback RT check in detectCallbackRealtime
+#endif
 
 namespace openguitarmultifx
 {
@@ -228,6 +231,7 @@ void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph)
 {
     if (newGraph != nullptr)
     {
+        newGraph->setAudioCallerIsRealtime (callbackIsRealtime.load (std::memory_order_relaxed));
         const auto sr = sampleRate.load (std::memory_order_relaxed);
         const auto bs = blockSize.load (std::memory_order_relaxed);
         if (sr > 0.0)
@@ -247,6 +251,7 @@ void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
     if (sr <= 0.0 || bs <= 0)
         return; // no device running -- nothing to spill onto
 
+    unit->graph->setAudioCallerIsRealtime (callbackIsRealtime.load (std::memory_order_relaxed));
     unit->prepare (sr, bs, 2); // prepareIfNeeded keeps every processor's tail state
     spillover.add (std::move (unit));
 }
@@ -345,8 +350,42 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
     }
 }
 
+void AudioEngine::detectCallbackRealtime() noexcept
+{
+    bool realtime = false;
+    if (const auto* t = juce::Thread::getCurrentThread())
+        realtime = t->isRealtime();
+   #if JUCE_LINUX
+    else
+    {
+        // A backend that invokes the callback from a NATIVE thread
+        // reports no juce::Thread at all -- ask the kernel directly.
+        const int policy = sched_getscheduler (0);
+        realtime = (policy == SCHED_FIFO || policy == SCHED_RR);
+    }
+   #endif
+
+    callbackIsRealtime.store (realtime, std::memory_order_relaxed);
+    callbackRealtimeDetected.store (true, std::memory_order_relaxed);
+
+    // Stamp every graph this callback can reach BEFORE any of them
+    // process this block: the published graph, the retired one still
+    // fading out, and every spill (active + the pending hand-off).
+    if (auto* g = graphSlot.currentRaw())
+        g->setAudioCallerIsRealtime (realtime);
+    if (fadingOutGraph != nullptr)
+        fadingOutGraph->setAudioCallerIsRealtime (realtime);
+    spillover.setAudioCallerIsRealtime (realtime);
+}
+
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
+    // A (re)opened device may invoke the callback from a DIFFERENT
+    // thread or scheduling policy -- the old classification is stale,
+    // re-detect on the new stream's first callback.
+    callbackRealtimeDetected.store (false, std::memory_order_relaxed);
+    callbackIsRealtime.store (false, std::memory_order_relaxed);
+
     activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
     swapFadeActive = false;
     fadeOutSamplesLeft = 0;
@@ -386,6 +425,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     // toward silence): a denormal float costs 50-150x a normal one on x86, and a chain whose input goes quiet is
     // exactly when they appear.
     const juce::ScopedNoDenormals noDenormals;
+
+    if (! callbackRealtimeDetected.load (std::memory_order_relaxed))
+        detectCallbackRealtime();
 
     const auto startTicks = juce::Time::getHighResolutionTicks();
 

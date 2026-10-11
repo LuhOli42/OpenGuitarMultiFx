@@ -46,3 +46,8 @@ trims are the negatives (+1.25 / -7.85 / -14.25 / -10.14 / -14.37). The OCD's tw
 **2026-10-10, 2N7000 body-diode retune** (the OCD and Zendrive clipper moved from the datasheet's worst-case MAX
 anchor to its TYPICAL: earlier clipping -> ~0.7-0.9 dB less output at noon): Zendrive +9.49, OCD +13.52 before
 the trim; the registry trims are now -9.49 / -13.52.
+
+**2026-10-11, second taper pass** (`GainStaging.md`): the HM-2's DIST and Level pots moved from `knob^2` to the real
+15% audio law, and the SLO-100's 500K Gain pots moved from linear to audio taper. Both lost level at noon and their
+trims moved by exactly that much -- HM-2 6.67 -> 11.09 dB, SLO-100 -18.92 -> -17.42 dB. The EL84 boutique family's
+amps are not in this test (they run without a registered noon-unity trim).

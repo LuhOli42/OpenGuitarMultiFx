@@ -1,4 +1,5 @@
 #include "CarrRamblerStyleAmplifierProcessor.h"
+#include "FastMath.h"
 #include "PotTaper.h"
 #include "DualMono.h"
 #include "IconKit.h"
@@ -680,7 +681,7 @@ void CarrRamblerStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
         lfoPhase += lfoHz / sampleRate;
         if (lfoPhase >= 1.0)
             lfoPhase -= 1.0;
-        const double lfo = std::sin (2.0 * juce::MathConstants<double>::pi * lfoPhase);
+        const double lfo = (double) fast::sinCycles (lfoPhase);
         const double depth = (double) in;
         // +-10 V of bias-vary swing at full Depth, on top of the grids' 0 V reference.
         const double tremVolts = depth * 10.0 * lfo;
@@ -805,7 +806,7 @@ void CarrRamblerStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
 void CarrRamblerStyleAmplifierProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
     // No dedicated amp glyph exists on the reference sheet yet (same placeholder the other amps use).
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::overdrive_svg, IconData::overdrive_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::amp_svg, IconData::amp_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 
