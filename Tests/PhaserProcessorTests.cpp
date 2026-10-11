@@ -53,10 +53,13 @@ public:
         beginTest ("zero mix leaves the signal completely unchanged");
         {
             PhaserProcessor phaser;
-            phaser.prepare (48000.0, 512, 1);
+            // Mix pinned before prepare() snaps it: a post-prepare write
+            // rides the ~10 ms param ramp, so the first samples blend the
+            // wet path in while mix is still falling to zero.
             auto state = phaser.getState();
             state->setAttribute ("phaser_mix", 0.0);
             phaser.setState (*state);
+            phaser.prepare (48000.0, 512, 1);
 
             juce::Random random (565758);
             juce::AudioBuffer<float> buffer (1, 2048);

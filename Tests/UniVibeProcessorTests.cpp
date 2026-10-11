@@ -53,11 +53,14 @@ public:
         beginTest ("zero depth and zero mix leaves a signal completely unchanged (static allpass, no throb, no wet blend)");
         {
             UniVibeProcessor vibe;
-            vibe.prepare (48000.0, 512, 1);
+            // Params pinned before prepare() snaps them: a post-prepare
+            // setState rides the ~10 ms param ramp, so the first samples
+            // still carry throb and wet blend while the knobs settle.
             auto state = vibe.getState();
             state->setAttribute ("univibe_depth", 0.0);
             state->setAttribute ("univibe_mix", 0.0);
             vibe.setState (*state);
+            vibe.prepare (48000.0, 512, 1);
 
             juce::Random random (666768);
             juce::AudioBuffer<float> buffer (1, 2048);

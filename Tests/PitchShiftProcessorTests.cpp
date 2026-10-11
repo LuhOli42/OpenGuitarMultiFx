@@ -42,11 +42,14 @@ public:
         beginTest ("zero mix leaves the signal completely unchanged regardless of the shift amount");
         {
             PitchShiftProcessor shift;
-            shift.prepare (48000.0, 512, 1);
+            // Params pinned before prepare() snaps them: a post-prepare
+            // setState rides the ~10 ms param ramp, so the first samples
+            // blend the shifted signal in while mix is still falling.
             auto state = shift.getState();
             state->setAttribute ("pitchshift_semitones", 12.0);
             state->setAttribute ("pitchshift_mix", 0.0);
             shift.setState (*state);
+            shift.prepare (48000.0, 512, 1);
 
             juce::Random random (757677);
             juce::AudioBuffer<float> buffer (1, 2048);
