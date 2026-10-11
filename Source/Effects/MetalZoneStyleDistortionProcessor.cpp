@@ -70,9 +70,55 @@ namespace
     constexpr double reducedHistW = (1.0 - reducedTheta) / reducedTheta;
     constexpr double macroPoleCap = 1.0 / (2.0 * 3.14159265358979323846 * 1.0e6 * 25.0); // m5218: GBW/dcGain = 25 Hz pole
     constexpr double railClampIs = 1.0e-9, railClampNVt = 25.85e-3; // addOpAmpMacro's integrator clamp diodes
+
+    // MZ_PROFILE: rough iteration-cost counters, printed at exit (debug only, zero cost when unset)
+    struct MzProf { long long newton = 0, pxIter = 0, legIter = 0, clipIter = 0, samples = 0; };
+    inline MzProf mzProf;
+    inline const bool mzProfiling = std::getenv ("MZ_PROFILE") != nullptr;
+    struct MzProfDump
+    {
+        ~MzProfDump()
+        {
+            if (mzProfiling)
+                juce::Logger::writeToLog (juce::String::formatted (
+                    "mzprof: %.2f newton, %.2f pxIter, %.2f legIter, %.2f clipIter per sample (%lld samples)",
+                    (double) mzProf.newton / juce::jmax (1LL, mzProf.samples),
+                    (double) mzProf.pxIter / juce::jmax (1LL, mzProf.samples),
+                    (double) mzProf.legIter / juce::jmax (1LL, mzProf.samples),
+                    (double) mzProf.clipIter / juce::jmax (1LL, mzProf.samples), mzProf.samples));
+        }
+    };
+    inline MzProfDump mzProfDump;
     constexpr double jfetDrop = -1.05;                            // Q011 source follower DC seed (fitted)
     constexpr double jfetIdss = 4.5e-3, jfetPinch = -1.2, jfetLambda = 0.02;   // jfet2SK184
     constexpr double followerDrop = 0.65;                          // bootstrap-branch emitter followers
+
+    /** SPICE's pnjlim: compresses a large forward-voltage Newton step logarithmically (same helper
+        NodalCircuit and EbersMollBJT use). Needed anywhere the reduced model solves a diode junction
+        on its own: a plain Newton step on an exponential overshoots volts past the knee and then
+        sheds only ~nVt per iteration on the way back -- the iterate never reaches the clamp inside
+        the iteration budget and the node runs unclamped. */
+    double limitJunction (double vnew, double vold, double vt, double vcrit) noexcept
+    {
+        if (vnew > vcrit && std::abs (vnew - vold) > 2.0 * vt)
+        {
+            if (vold > 0.0)
+            {
+                const double arg = (vnew - vold) / vt;
+                vnew = arg > 0.0 ? vold + vt * (2.0 + std::log (arg - 2.0))
+                                 : vold - vt * (2.0 + std::log (2.0 - arg));
+            }
+            else
+                vnew = vt * std::log (vnew / vt);
+        }
+        else if (vnew < 0.0)
+        {
+            const double arg = vold > 0.0 ? -vold - 1.0 : 2.0 * vold - 1.0;
+            if (vnew < arg)
+                vnew = arg;
+        }
+        return vnew;
+    }
 
     struct ReducedCap
     {
@@ -93,6 +139,7 @@ namespace
 
         double solvePx (double vAmp) noexcept
         {
+            const double vcritR = railClampNVt * std::log (railClampNVt / (1.4142135623730951 * railClampIs));
             double v = px;
             for (int i = 0; i < 8; ++i)
             {
@@ -103,20 +150,21 @@ namespace
                 // The clamp diodes hold the integrator node ~0.7 V past whichever rail it
                 // presses against; without this bound a wild vAmp throws v so far out that
                 // the exp()'s dwarf every other term and the Newton stalls off-rail forever.
-                v = juce::jlimit (m5218.lowRail - 1.0, m5218.highRail + 1.0, v - f / d);
+                // Junction-limit the step on whichever clamp diode the candidate pushes forward
+                // (v-highRail for the top one, lowRail-v for the bottom) -- a huge vAmp overshoot
+                // otherwise lands so deep in saturation that the Newton crawls back ~nVt/iter.
+                const double cand = v - f / d;
+                if (mzProfiling) ++mzProf.pxIter;
+                const double lTop = m5218.highRail + limitJunction (cand - m5218.highRail, v - m5218.highRail,
+                                                                    railClampNVt, vcritR);
+                const double lBot = m5218.lowRail - limitJunction (m5218.lowRail - cand, m5218.lowRail - v,
+                                                                   railClampNVt, vcritR);
+                const double next = std::abs (lTop - v) <= std::abs (lBot - v) ? lTop : lBot;
+                v = juce::jlimit (m5218.lowRail - 1.0, m5218.highRail + 1.0, next);
                 if (std::abs (f / d) < 1.0e-10)
                     break;
             }
             return v;
-        }
-
-        /** One iteration of {m-KCL, integrator}: given the (+) input, the inverting-node solve and
-            the output from the previous pass, return the new output. */
-        double finish (double vPlus, double vm) noexcept
-        {
-            px = solvePx (m5218.dcGain * (vPlus - vm));
-            out = juce::jlimit (m5218.lowRail, m5218.highRail, px);
-            return out;
         }
     };
 
@@ -175,6 +223,7 @@ namespace
                 const double dv1de = 1.0 + (gE10k + gT) / gE, dv1db = -gT / gE;
                 // base KCL: c2*(b - v1) - c2.ieq... current b->v1 through C2 plus rBase plus iB = 0
                 const double fb = c2.g * (b - n1) + c2.ieq + gB * (b - vBias) + iB;
+                if (mzProfiling) ++mzProf.legIter;
                 // n1 KCL: c1*(v1 - vm) - c1.ieq + rE*(v1 - e) + c2*(v1 - b) + c2.ieq = 0
                 const double fn = (c1.g + gE + c2.g) * n1 - c1.g * vm - gE * e - c2.g * b
                                   + c1.ieq - c2.ieq;
@@ -248,6 +297,8 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
 
     double gDist = 1.0 / 2.0e3;   // 1 / (rDist + R051): set from updatePots()
     double vk = 0.0;              // clipper node warm start
+    double vm4aPrev = vBias;      // IC4a's inverting node one sample back: the 22K load on IC4b's `o`
+    double dbgN27 = 0.0, dbgL = 0.0, dbgM2 = 0.0, dbgPrev2 = 0.0; // clipper internals, probed like the netlist's
 
     // probe mirrors of the netlist taps (vBias-centred, same picture)
     double ic3b = vBias, ic3a = vBias, ic4b = vBias, ic4a = vBias, ic3aPrev = vBias, ic3aP = vBias, ic3aQ = vBias;
@@ -302,9 +353,23 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         amp4b.cpx.vp = v;
         amp4a.cpx.vp = v;
         vk = 0.0;
+        vm4aPrev = v;
         ic3b = ic3a = ic4b = ic4a = ic3aPrev = ic3aP = ic3aQ = v;
-        for (int i = 0; i < 300; ++i)
-            step (0.0); // settle whatever the analytic seed missed
+        // Settle until the probe nodes stop moving: the clipper's 10 uF input cap discharges
+        // through ~2.3 kOhm (tau ~20 ms = ~400-800 sample steps), so a fixed 300-step budget
+        // leaves ic4b/ic4a visibly off-bias. Adaptive exit is cheaper than a bigger fixed count.
+        double last[8] = {};
+        for (int i = 0; i < 20000; ++i)
+        {
+            step (0.0);
+            const double now[8] = { ic3b, ic3a, ic4b, ic4a, vk, dbgL, dbgM2, dbgPrev2 };
+            double maxDelta = 0.0;
+            for (int j = 0; j < 8; ++j)
+                maxDelta = juce::jmax (maxDelta, std::abs (now[j] - last[j]));
+            if (i >= 64 && maxDelta < 1.0e-7)
+                break;
+            std::memcpy (last, now, sizeof (now));
+        }
     }
 
     /** One feedback-amp macro stage: the m-node KCL solved by a scalar Newton on v_m, so each
@@ -314,11 +379,19 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         form split on. F(v_m) is monotonically decreasing (feedback + leg conductances all pull
         down), which is why the Newton is safe here where the output-iterate loop was not.
         kFb = feedback conductance sum; gSum = kFb + the AFFINE leg admittances only (any real
-        legs come through `legs`); hm = the m-node history/drive terms. */
-    static double stageNewton (double vPlus, double kFb, double gSum, double hm, ReducedAmp& amp,
+        legs come through `legs`); hm = the m-node history/drive terms.
+        fbIeq/gOutExtra/vOutExtraSum model the op-amp's `o` node: in the netlist the stage output
+        sits behind the macro's outputOhms and droops under the block's own loads --
+        o = ob - rOut*(kFb*(o - vm) + fbIeq + gOutExtra*(o - vX)), solved in closed form below.
+        Every m-KCL element and every downstream tap sees `o`, not the rail-limited ideal `ob`.
+        For IC4b the load that matters is R028 22K into IC4a's inverting node (~0.18 V of sag at
+        the rail); the rest is millivolts. */
+    static double stageNewton (double vPlus, double kFb, double gSum, double hm, double fbIeq,
+                               double gOutExtra, double vOutExtraSum, ReducedAmp& amp,
                                BootstrapLeg* const* legs, int numLegs) noexcept
     {
         const double gRc = 1.0e-6, gain = m5218.dcGain;
+        const double oDenom = 1.0 + m5218.outputOhms * (kFb + gOutExtra);
         // F(vm) = kFb*vo(vm) - gSum*vm + hm - iLegs(vm) is continuous and monotone decreasing
         // (vo falls with vm through the ~196x integrator slope, then pins at a rail). An
         // unbracketed Newton never sees the razor-thin linear window: the iterate slams between
@@ -331,19 +404,30 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         for (int it = 0; it < 40; ++it)
         {
             const double pxLin = (gRc * gain * (vPlus - vm) + amp.cpx.ieq) / (gRc + amp.cpx.g);
-            double dVo;
+            double ob, dOb;
             if (pxLin > m5218.lowRail && pxLin < m5218.highRail)
             {
-                vo = pxLin;
+                ob = pxLin;
                 px = pxLin;
-                dVo = -gRc * gain / (gRc + amp.cpx.g);
+                dOb = -gRc * gain / (gRc + amp.cpx.g);
+            }
+            else if (pxLin >= m5218.highRail + 0.5 || pxLin <= m5218.lowRail - 0.5)
+            {
+                // Deep in saturation the integrator node lands ~0.65 V past the rail, so the
+                // follower output is exactly the rail -- no need for the px Newton per iteration.
+                // The committed px is resolved once below (the cap voltage does matter).
+                ob = pxLin >= m5218.highRail + 0.5 ? m5218.highRail : m5218.lowRail;
+                dOb = 0.0;
             }
             else
             {
                 px = amp.solvePx (gain * (vPlus - vm));
-                vo = juce::jlimit (m5218.lowRail, m5218.highRail, px);
-                dVo = 0.0; // output pinned: only the legs move F from here
+                ob = juce::jlimit (m5218.lowRail, m5218.highRail, px);
+                dOb = 0.0; // output pinned: only the legs move F from here
             }
+            // o = (ob + rOut*(kFb*vm - fbIeq + gOutExtra*vX)) / (1 + rOut*(kFb + gOutExtra))
+            vo = (ob + m5218.outputOhms * (kFb * vm - fbIeq + vOutExtraSum)) / oDenom;
+            const double dVo = (dOb + m5218.outputOhms * kFb) / oDenom;
             // m-node KCL: kFb*(vo - vm) + (history/drive) - (affine-leg currents) - (real-leg currents) = 0,
             // i.e. kFb*vo - gSum*vm + hm - iLegs, where gSum = kFb + affine legs and hm folds their offsets.
             double f = kFb * vo - gSum * vm + hm;
@@ -359,6 +443,7 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
                 lo = juce::jmax (lo, vm);
             else
                 hi = juce::jmin (hi, vm);
+            if (mzProfiling) ++mzProf.newton;
             double next = vm - f / df;
             if (! (next > lo && next < hi))
                 next = 0.5 * (lo + hi);
@@ -369,6 +454,11 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
             }
             vm = next;
         }
+        // Resolve the integrator node exactly once for the committed cap voltage when the
+        // converged iterate skipped the per-iteration solve (deep-rail fast path above).
+        const double pxLinF = (gRc * gain * (vPlus - vm) + amp.cpx.ieq) / (gRc + amp.cpx.g);
+        px = pxLinF <= m5218.lowRail || pxLinF >= m5218.highRail ? amp.solvePx (gain * (vPlus - vm))
+                                                                : pxLinF;
         amp.vm = vm;
         amp.px = px;
         amp.out = vo;
@@ -378,6 +468,7 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
 
     double step (double vin) noexcept
     {
+        if (mzProfiling) ++mzProf.samples;
         c042.begin(); c039.begin(); c033.begin(); c032.begin();
         leg3b.c1.begin(); leg3b.c2.begin();
         c031.begin(); c029.begin(); c030.begin(); c028.begin();
@@ -417,12 +508,13 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         // ---- IC3b ----
         const double kFb3b = 1.0 / 220.0e3 + c032.g;
         BootstrapLeg* const legs3b[] = { &leg3b };
-        const double vo3b = stageNewton (vnC, kFb3b, kFb3b, c032.ieq, amp3b, legs3b, 1);
+        const double vo3b = stageNewton (vnC, kFb3b, kFb3b, c032.ieq, c032.ieq, 0.0, 0.0, amp3b, legs3b, 1);
         const double vm3b = amp3b.vm;
         ic3b = vo3b;
 
         // ---- interstage + IC3a ----
-        const double g45 = 1.0 / 10150.0, g42 = 1.0e-4, g40 = 1.0e-5;
+        // The block boundary is src ->rOut(75)-> prev ->R045 10K-> p, so the series path is 10K+75.
+        const double g45 = 1.0 / 10075.0, g42 = 1.0e-4, g40 = 1.0e-5;
         const double aQ = c029.g / (c029.g + g40), bQ = (-c029.ieq + g40 * vBias) / (c029.g + g40); // q = aQ*p + bQ
         const double vp = (g45 * vo3b + g42 * vBias + c031.g * vBias + c031.ieq + c029.ieq + c029.g * bQ)
                           / (g45 + g42 + c031.g + c029.g * (1.0 - aQ));
@@ -431,16 +523,16 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         const double kFb3a = gDist + c028.g;
         const double g3a = kFb3a + kLeg3a;
         const double hm3a = c028.ieq - cLeg3a;
-        const double vo3a = stageNewton (vq, kFb3a, g3a, hm3a, amp3a, nullptr, 0);
+        const double vo3a = stageNewton (vq, kFb3a, g3a, hm3a, c028.ieq, 0.0, 0.0, amp3a, nullptr, 0);
         const double vm3a = amp3a.vm;
         const double vnR3a = (g41 * vm3a + c030.ieq) / (g41 + c030.g);
         ic3a = vo3a;
-        ic3aPrev = vo3b;
+        ic3aPrev = vo3b - m5218.outputOhms * g45 * (vo3b - vp); // prev = src - rOut*i45
         ic3aP = vp;
         ic3aQ = vq;
 
-        // ---- clipper: (150R+C027) -> n27 -> 2k2 -> k {diode pair to gnd, 10k -> l}; l: 4k7 -> n31 {C023}, C021 -> m2 {100k}
-        const double gE27 = c027.g / (1.0 + c027.g * 150.0), hE27 = c027.ieq / (1.0 + c027.g * 150.0);
+        // ---- clipper: (boundary 75R + C027) -> n27 -> 2k2 -> k {diode pair to gnd, 10k -> l}; l: 4k7 -> n31 {C023}, C021 -> m2 {100k}
+        const double gE27 = c027.g / (1.0 + c027.g * m5218.outputOhms), hE27 = c027.ieq / (1.0 + c027.g * m5218.outputOhms);
         const double g28 = 1.0 / 2.2e3, g32 = 1.0e-4, g47 = 1.0 / 4.7e3, g29 = 1.0e-5;
         const double a31 = g47 / (g47 + c023.g), b31 = c023.ieq / (g47 + c023.g);
         const double a2 = c021.g / (c021.g + g29), b2 = (-c021.ieq + g29 * vBias) / (c021.g + g29);
@@ -448,34 +540,44 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         const double aL = g32 / dL, bL = (c021.ieq + g47 * b31 + c021.g * b2) / dL;
         const double aK = g28 * gE27 / (gE27 + g28) + g32 * (1.0 - aL);
         const double bK = g28 * (gE27 * vo3a - hE27) / (gE27 + g28) + g32 * bL;
-        for (int i = 0; i < 8; ++i)
+        // pnjlim on whichever diode of the pair the step pushes forward: without it a hard drive
+        // overshoots past the knee and the Newton sheds ~siNVt/iteration -- vk never reaches the
+        // clamp inside the budget and the clip node runs unclamped (was the top residual).
+        const double vcritD = siNVt * std::log (siNVt / (1.4142135623730951 * siIs));
+        for (int i = 0; i < 12; ++i)
         {
             const double ep = std::exp (std::min (vk / siNVt, 40.0)), em = std::exp (std::min (-vk / siNVt, 40.0));
             const double f = aK * vk + siIs * (ep - em) - bK;
             const double d = aK + siIs / siNVt * (ep + em);
-            const double dv = f / d;
-            vk -= dv;
-            if (std::abs (dv) < 1.0e-10)
+            const double cand = vk - f / d;
+            if (mzProfiling) ++mzProf.clipIter;
+            const double next = cand >= 0.0 ? limitJunction (cand, juce::jmax (vk, 0.0), siNVt, vcritD)
+                                            : -limitJunction (-cand, juce::jmax (-vk, 0.0), siNVt, vcritD);
+            vk = next;
+            if (std::abs (f / d) < 1.0e-10)
                 break;
         }
         const double vn27 = (gE27 * vo3a - hE27 + g28 * vk) / (gE27 + g28);
         const double vl = aL * vk + bL;
         const double vn31 = a31 * vl + b31;
         const double vm2 = a2 * vl + b2;
+        dbgN27 = vn27; dbgL = vl; dbgM2 = vm2;
 
         // ---- IC4b ----
-        const double kFb4b = 1.0 / 3.3e3 + c022.g;
+        const double kFb4b = 1.0 / 3.3e3 + c022.g, g22 = 1.0 / 22.0e3;
         BootstrapLeg* const legs4b[] = { &legA4b, &legB4b };
-        const double vo4b = stageNewton (vm2, kFb4b, kFb4b, c022.ieq, amp4b, legs4b, 2);
+        // the 22K into IC4a's (-) is an in-block load on `o` -- vX is last sample's m4a (quasi-static)
+        const double vo4b = stageNewton (vm2, kFb4b, kFb4b, c022.ieq, c022.ieq, g22, g22 * vm4aPrev, amp4b, legs4b, 2);
         const double vm4b = amp4b.vm;
         ic4b = vo4b;
 
         // ---- IC4a inverter: m sees g22->vo4b and (g22||C018)->out; same stage() solve, the
         // input conductance folded into the history term. An iterate-the-output loop period-2
         // oscillates between the rails here, so it cannot be used. ----
-        const double g22 = 1.0 / 22.0e3;
-        const double vo4a = stageNewton (vBias, g22 + c018.g, g22 + g22 + c018.g, g22 * vo4b + c018.ieq, amp4a, nullptr, 0);
+        const double vo4a = stageNewton (vBias, g22 + c018.g, g22 + g22 + c018.g, g22 * vo4b + c018.ieq,
+                                         c018.ieq, 0.0, 0.0, amp4a, nullptr, 0);
         const double vm4a = amp4a.vm;
+        vm4aPrev = vm4a;
         ic4a = vo4a;
 
         // ---- commit every capacitor's terminal voltage ----
@@ -490,7 +592,8 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         c030.commit (vnR3a);
         c028.commit (vm3a - vo3a);
         const double iE27 = gE27 * (vo3a - vn27) - hE27;
-        c027.commit (vo3a - iE27 * 150.0 - vn27);
+        dbgPrev2 = vo3a - iE27 * m5218.outputOhms;   // boundary-node equivalent: drive behind rOut
+        c027.commit (vo3a - iE27 * m5218.outputOhms - vn27);
         c023.commit (vn31);
         c021.commit (vl - vm2);
         c022.commit (vm4b - vo4b);
@@ -703,6 +806,7 @@ void MetalZoneStyleDistortionProcessor::buildChannel (Channel& ch)
         for (auto n : { n27, k, l, n31 })
             c.setInitialGuess (n, 0.0);
         ch.dbgIc4b = o;
+        ch.dbgPrev2 = prev; ch.dbgK = k; ch.dbgL = l; ch.dbgM2 = m2;
         ch.out[2] = o4a;
     }
     }
@@ -868,6 +972,10 @@ double MetalZoneStyleDistortionProcessor::debugVoltage (Probe p) const noexcept
             case Probe::ic3aPrev: return ch.reduced->ic3aPrev;
             case Probe::ic3aP: return ch.reduced->ic3aP;
             case Probe::ic3aQ: return ch.reduced->ic3aQ;
+            case Probe::prev2:  return ch.reduced->dbgPrev2;
+            case Probe::clipK:  return ch.reduced->vk;
+            case Probe::clipL:  return ch.reduced->dbgL;
+            case Probe::clipM2: return ch.reduced->dbgM2;
         }
     }
     switch (p)
@@ -882,6 +990,10 @@ double MetalZoneStyleDistortionProcessor::debugVoltage (Probe p) const noexcept
         case Probe::ic3aPrev: return ch.blk[1].voltage (ch.dbgPrev);
         case Probe::ic3aP: return ch.blk[1].voltage (ch.dbgP);
         case Probe::ic3aQ: return ch.blk[1].voltage (ch.dbgQ);
+        case Probe::prev2:  return ch.blk[2].voltage (ch.dbgPrev2);
+        case Probe::clipK:  return ch.blk[2].voltage (ch.dbgK);
+        case Probe::clipL:  return ch.blk[2].voltage (ch.dbgL);
+        case Probe::clipM2: return ch.blk[2].voltage (ch.dbgM2);
     }
     return 0.0;
 }

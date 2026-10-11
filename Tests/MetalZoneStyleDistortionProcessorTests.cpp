@@ -207,6 +207,39 @@ public:
                     line << juce::String (f, 0) << ": " << juce::String (outDb (k, f, 0.0001), 1) << "  ";
                 logMessage ("Middle 1, Mid Freq " + juce::String (mf, 2) + ": " + line);
             }
+            // waveform dump: full-vs-reduced probe voltages to CSV for offline diffing
+            if (const auto dumpPath = juce::SystemStats::getEnvironmentVariable ("MZ_DUMP", {}); dumpPath.isNotEmpty())
+            {
+                juce::File f (dumpPath);
+                juce::String csv = "n,in,f_ic3b,r_ic3b,f_ic3a,r_ic3a,f_prev2,r_prev2,f_k,r_k,f_l,r_l,f_m2,r_m2,f_ic4b,r_ic4b,f_ic4a,r_ic4a\n";
+                K k; k.dist = 0.9f;
+                MetalZoneStyleDistortionProcessor full, red;
+                MetalZoneStyleDistortionProcessor::reducedOrder = false;
+                full.prepare (sr, 128, 1); setKnobs (full, k);
+                MetalZoneStyleDistortionProcessor::reducedOrder = true;
+                red.prepare (sr, 128, 1); setKnobs (red, k);
+                juce::AudioBuffer<float> buf (1, 1);
+                double phase = 0.0;
+                const int N = 6000;
+                for (int n = 0; n < N; ++n)
+                {
+                    phase += 2.0 * juce::MathConstants<double>::pi * 400.0 / sr;
+                    const float x = (float) (0.1 * std::sin (phase));
+                    buf.setSample (0, 0, x); full.process (buf);
+                    buf.setSample (0, 0, x); red.process (buf);
+                    csv << n << ',' << x
+                        << ',' << full.debugVoltage (Probe::ic3b) << ',' << red.debugVoltage (Probe::ic3b)
+                        << ',' << full.debugVoltage (Probe::ic3a) << ',' << red.debugVoltage (Probe::ic3a)
+                        << ',' << full.debugVoltage (Probe::prev2) << ',' << red.debugVoltage (Probe::prev2)
+                        << ',' << full.debugVoltage (Probe::clipK) << ',' << red.debugVoltage (Probe::clipK)
+                        << ',' << full.debugVoltage (Probe::clipL) << ',' << red.debugVoltage (Probe::clipL)
+                        << ',' << full.debugVoltage (Probe::clipM2) << ',' << red.debugVoltage (Probe::clipM2)
+                        << ',' << full.debugVoltage (Probe::ic4b) << ',' << red.debugVoltage (Probe::ic4b)
+                        << ',' << full.debugVoltage (Probe::ic4a) << ',' << red.debugVoltage (Probe::ic4a) << '\n';
+                }
+                f.replaceWithText (csv);
+                MetalZoneStyleDistortionProcessor::reducedOrder = false;
+            }
             // stage-by-stage error: full netlist vs companion model on the same hot input
             for (float d : { 0.2f, 0.5f, 0.9f })
             {

@@ -104,3 +104,38 @@ dist>=0.5, in>=0.1. Per-stage probe: ic3b error down to 3.95 mV rms (was >3 V), 
 ic4b up to 213 mV at dist 0.9. Still over the 1.2 dB band bar, so the flag stays off; measured
 eco cost if it shipped: **48.4% -> 27.7%** of a core. Solver failure rate 0.000000.
 The remaining HF excess suggests the last miss is in the IC3a/IC4b clip region, not the legs.
+
+## Reduced-order front-end, third pass (2026-10-11 -- fit CLOSED, blocked on CPU now)
+The remaining 5.68 dB band gap was NOT in the clip region after all -- it was three modelling
+bugs the band-delta had been smearing across the 1.6-12 kHz octaves:
+
+- **Wrong stage-output node.** The macro treated each op-amp stage's output as the stiff `o`
+  node, but the netlist's real `o` droops under its in-block loads. The companion model now
+  solves vo = (ob + rOut*(kFb*vm - fbIeq + vOutExtraSum)) / oDenom per Newton iteration, with
+  vOutExtraSum/gOutExtra folding in the extra conductances each stage's o-node actually sees.
+- **Clip Newton without junction limiting.** A hard step overshoots past the diode knee and
+  the iterate sheds ~nVt per iteration -- vk never reached the clamp inside the budget and
+  the node ran effectively unclamped. pnjlim (same helper NodalCircuit/EbersMollBJT use)
+  fixes it; clip solve now converges in ~2 iters.
+- **Block-boundary impedance** (the macro's o-node is the real 75 ohm output, not the 150R
+  the first macro assumed).
+
+Measured (ReducedOrderEquivalence, same harness): **worst level 0.01 dB, worst band 0.04 dB**
+across the whole dist/mid/input grid -- vs bar 2.0/1.2. DI render of the enabled reduced path
+is spectrally identical to the full path (<0.1 dB every octave band, same level/energy). The
+fit is done.
+
+**Why it still ships off:** the faithful nested solves cost ~3x the netlist they replace --
+a 44.1k stereo DI render at eco tier runs the reduced front-end at ~67% of a core vs ~21%
+for the full five-block path, and `RenderFx --bench` shows eco 127% vs the netlist's ~50%.
+mzprof at the bench: ~40 stageNewton + ~100 legNewton + ~4.7 pxNewton iterations per sample;
+the legs' inner 2x2 (vb, ve) solve is the dominant term. A "reduced" model that is slower
+buys nothing on the A7S. Kept improvements that were free: the deep-rail px fast path
+(pxIter 93.5 -> ~0.7 per sample: when pxLin sits >0.5 V past a rail the follower output IS
+the rail, so the per-iteration solvePx is skipped and px is solved once at commit).
+
+**The remaining lever is exactly the per-section clip fit the earlier attempt spec'd:**
+fit i_leg(vm) (or the whole stage's vo(vm)) as a cheap closed-form per sample -- the leg
+curve is smooth and monotone so a 3-eval polynomial or a rational knee should track it;
+then the stage Newton costs ~2 flops/iteration instead of a nested solve. Enabling wants
+eco render cost under the netlist's ~21%, not just under the fit bar.

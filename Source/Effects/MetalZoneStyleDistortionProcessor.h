@@ -43,15 +43,18 @@ public:
         clipper) for a per-component behavioural solve that keeps the same trapezoidal capacitor models
         but no Newton iterations. Blocks 3-4 (the High/Low and Middle/MidFreq EQ + output stage) stay
         netlist -- they are linear in practice, so the equivalence numbers live or die on the clip chain.
-        Off by default: it misses the equivalence bar (see EffectRegistry + the circuit doc); the
-        MZ_EXPLORE stage-diff probe in the tests measures reduced-vs-netlist for the next attempt. */
+        Off by default: it now NAILS the equivalence bar (0.01 dB level / 0.04 dB worst band vs the
+        netlist, ReducedOrderEquivalence) but the nested leg/stage Newtons cost ~3x the netlist they
+        replace (~67% vs ~21% of a core on a 44.1k stereo render) -- a "reduced" model that is
+        slower buys nothing. Revisit when the legs are cheap enough; the MZ_EXPLORE stage-diff probe
+        in the tests remains for that work. */
     static inline bool reducedOrder = false;
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8a8f99); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
-    enum class Probe { ic3b, ic3a, ic4b, ic4a, ic1a, ic2a, output, ic3aPrev, ic3aP, ic3aQ };
+    enum class Probe { ic3b, ic3a, ic4b, ic4a, ic1a, ic2a, output, ic3aPrev, ic3aP, ic3aQ, prev2, clipK, clipL, clipM2 };
     double debugVoltage (Probe p) const noexcept;
     double getSolveFailureRate() const noexcept
     {
@@ -75,7 +78,7 @@ private:
         int srcIn = 0;
         std::array<int, numBlocks> srcPrev {}; // blocks 1..5: the previous block's output
         std::array<NodalCircuit::Node, numBlocks> out {};
-        NodalCircuit::Node nOut = 0, dbgPrev = 0, dbgP = 0, dbgQ = 0, dbgIc4b = 0;
+        NodalCircuit::Node nOut = 0, dbgPrev = 0, dbgP = 0, dbgQ = 0, dbgIc4b = 0, dbgPrev2 = 0, dbgK = 0, dbgL = 0, dbgM2 = 0;
         int rDist = 0, rHighA = 0, rHighB = 0, rLowA = 0, rLowB = 0, rMidA = 0, rMidB = 0, rFreqA = 0, rFreqB = 0, rLevTop = 0, rLevBottom = 0;
     };
 
