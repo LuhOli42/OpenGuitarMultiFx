@@ -3,6 +3,7 @@
 #include "NodalCircuit.h"
 #include "TubeModels.h"
 
+#include <atomic>
 #include <cmath>
 
 namespace openguitarmultifx::tubeamp
@@ -37,6 +38,12 @@ inline double inputLimit (double x) noexcept
 }
 
 constexpr double declickDecay = 0.996; // per sample: the offset left by a restore dies away with a ~5 ms time constant
+
+/** Kill switch for the CabSim inside PowerStageTail (settings: "..." -> Settings -> Built-in cab voicing; the
+    OGMFX_CAB env var overrides it in renders/tests). Atomic because the UI toggles it while the audio thread
+    reads it per sample -- unlike the per-class `reducedOrder` flags, which are fixed before audio starts. When
+    off, the tail returns the raw power-stage signal so a real Cab/IR block downstream does not double-filter. */
+inline std::atomic<bool> cabVoicingEnabled { true };
 
 /**
     Voicing preset for PowerStageTail: how the removed output transformer + physical speaker + push-pull
@@ -189,6 +196,8 @@ struct PowerStageTail
         invRef = 1.0 / juce::jmax (1.0e-9, refVolts);
         lp1 = lp2 = lfState = env = dc = 0.0;
         resX1 = resX2 = resY1 = resY2 = 0.0;
+        // Prepared unconditionally so the Settings toggle can flip cabVoicingEnabled mid-session without a
+        // re-prepare -- uninitialised coefficients would output silence if the cab were switched on late.
         cab.prepare (fs, v.cabResHz, v.cabResDb, v.cabLoHz, v.cabLpHz, v.cabAirHz);
     }
 
@@ -209,12 +218,13 @@ struct PowerStageTail
         lfState += lfC * (vdc - lfState);
         const double lfn = lfState * invRef;
         const double vc = (vdc - lfState) + lfState / (1.0 + coreAmt * lfn * lfn);
+        const bool cabOn = cabVoicingEnabled.load (std::memory_order_relaxed);
         if (lpC < 0.0)
-            return cab.process (vc); // no output transformer (solid-state voicing)
+            return cabOn ? cab.process (vc) : vc; // no output transformer (solid-state voicing)
         // OT leakage inductance.
         lp1 += lpC * (vc - lp1);
         lp2 += lpC * (lp1 - lp2);
-        return cab.process (lp2);
+        return cabOn ? cab.process (lp2) : lp2;
     }
 
 private:

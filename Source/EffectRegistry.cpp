@@ -195,6 +195,33 @@ namespace
         return false;
     }
 
+    juce::File cabVoicingFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("OpenGuitarMultiFx").getChildFile ("cab_voicing.txt");
+    }
+
+    /** Loads the cab-voicing preference into tubeamp::cabVoicingEnabled once per process: the saved file first,
+        then the OGMFX_CAB development override on top (same precedence as OGMFX_QUALITY). Called from
+        registerBuiltInEffects -- the one entry point the app, RenderFx and every test harness share. */
+    void loadCabVoicingPreference()
+    {
+        static const bool once = []
+        {
+            bool on = true;
+            if (cabVoicingFile().existsAsFile())
+                on = cabVoicingFile().loadFileAsString().trim().toLowerCase() != "off";
+            const auto env = juce::SystemStats::getEnvironmentVariable ("OGMFX_CAB", {}).trim().toLowerCase();
+            if (env == "off" || env == "0" || env == "false")
+                on = false;
+            else if (env == "on" || env == "1" || env == "true")
+                on = true;
+            tubeamp::cabVoicingEnabled.store (on);
+            return true;
+        }();
+        (void) once;
+    }
+
     std::atomic<int>& qualityStorage()
     {
         static std::atomic<int> value = [] {
@@ -221,8 +248,26 @@ void EffectRegistry::saveOversamplingQuality()
 
 bool EffectRegistry::dependsOnOversamplingQuality (const juce::String& key) const { return qualityDependentKeys.count (key) > 0; }
 
+void EffectRegistry::setCabVoicingEnabled (bool enabled) noexcept
+{
+    tubeamp::cabVoicingEnabled.store (enabled, std::memory_order_relaxed);
+}
+
+bool EffectRegistry::getCabVoicingEnabled() noexcept
+{
+    return tubeamp::cabVoicingEnabled.load (std::memory_order_relaxed);
+}
+
+void EffectRegistry::saveCabVoicingEnabled()
+{
+    cabVoicingFile().getParentDirectory().createDirectory();
+    cabVoicingFile().replaceWithText (getCabVoicingEnabled() ? "on" : "off");
+}
+
 void registerBuiltInEffects (EffectRegistry& registry)
 {
+    loadCabVoicingPreference();
+
     registry.registerType ("NoiseGate", [] { return std::make_unique<GateProcessor>(); });
     registry.registerType ("Compressor", [] { return std::make_unique<CompressorProcessor>(); });
 

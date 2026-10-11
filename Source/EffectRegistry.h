@@ -59,6 +59,18 @@ pedal's orders): eco = none (cheapest, DEFAULT -- the user's choice; audible ali
     bool dependsOnOversamplingQuality (const juce::String& key) const;
     void markQualityDependent (const juce::String& key) { qualityDependentKeys.insert (key); }
 
+    /** The built-in cab voicing the reduced-order amps apply at the end of PowerStageTail
+        (tubeamp::cabVoicingEnabled). The tail reads the flag per sample, so a change takes effect on the
+        live chain immediately -- no processor rebuild. Off is the answer to "my chain already ends in a
+        Cab/IR block": without it the built-in voicing and the IR stack as two speaker filters in series. */
+    static void setCabVoicingEnabled (bool enabled) noexcept;
+    static bool getCabVoicingEnabled() noexcept;
+
+    /** Persists the choice in <app data>/OpenGuitarMultiFx/cab_voicing.txt ("on"/"off"), reloaded the next
+        time the registry is built. The OGMFX_CAB environment variable (on/off) wins over the file -- the
+        development/render override, same role as OGMFX_QUALITY. */
+    static void saveCabVoicingEnabled();
+
 private:
     std::map<juce::String, Creator> creators;
     std::map<juce::String, juce::String> displayNamesByKey;
