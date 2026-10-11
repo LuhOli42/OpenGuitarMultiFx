@@ -480,12 +480,14 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addCapacitor (fp, gnd, 1.5e-9);
         // DEPTH: the amp's variable LF damping control -- an R+L branch shunting the feedback node's
         // low-frequency content to ground. Depth up = less LF feedback = the low end blooms around the
-        // speaker resonance instead of staying damped; depth down = tighter. (Fryette publishes no
-        // schematic; the R+L LF shunt is the standard resonance implementation and the solver already
-        // supports inductors -- same element the V4B mid trap uses.)
+        // speaker resonance instead of staying damped; depth down = tighter. The 20H inductance is
+        // deliberate: at max Depth the branch is ~10k at 80Hz (strong vs the 25k presence return) but
+        // ~126k at 1kHz, so midrange feedback changes only ~1dB and the control stays LF-only. (Fryette
+        // publishes no schematic; the R+L LF shunt is the standard resonance implementation and the
+        // solver already supports inductors -- same element the V4B mid trap uses.)
         const auto dNode = c.addNode();
         ch.rDepth = c.addResistor (fp, dNode, 220.0e3);
-        ch.grpDepthL = c.addCoupledInductors ({ { dNode, gnd } }, { 1.0 });
+        ch.grpDepthL = c.addCoupledInductors ({ { dNode, gnd } }, { 20.0 });
 
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
