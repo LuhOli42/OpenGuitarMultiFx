@@ -16,6 +16,7 @@ Does not own: what the chain contains (see `Source/Effects`) or who builds/owns 
 | Chain ordering/execution, real split/merge (parallel lanes summed) | `SignalGraph.h` — 4 lanes matching `MainComponent::numRows`, lanes always run 0→3 (see its class doc for why that's always a valid order, no topo-sort needed) |
 | Pitch detection (tuner) | `PitchDetector.h/.cpp` — YIN algorithm, fed raw input in `AudioEngine`'s callback |
 | Level metering (IN/OUT footer meters) | `AudioEngine.cpp::audioDeviceIOCallbackWithContext` — peak-per-block via `FloatVectorOperations::findMinAndMax`, published as `std::atomic<float>` |
+| Master volume + free-form master EQ on the output bus | `MasterEq.{h,cpp}`, `AudioEngine`'s `masterGainSmooth`/`setMasterGainDb`, `MasterBusSettings.h` — see "Master section" below |
 
 ### Key Relationships
 - `AudioEngine` owns one `DeferredReclaimer<SignalGraph>`; `SignalGraph` owns non-owning `EffectProcessor*` pointers into whatever the UI's `chain` (`std::vector<std::unique_ptr<EffectProcessor>>`) keeps alive.
@@ -94,6 +95,15 @@ Does not own: what the chain contains (see `Source/Effects`) or who builds/owns 
 - Add a blocking call (mutex, I/O, allocation, exception, dynamic RTTI) inside `AudioEngine::process()`'s call path.
 - Delete a `DeferredReclaimer`-managed object anywhere but `sweep()`, from the control thread.
 - Cache `getAvailableInputChannelNames()`/`getAvailableOutputPairNames()` results — always re-query.
+
+## Master section (2026-10-11)
+
+Post-graph, pre-OUT-meter: input gain -> SignalGraph (its parallel spill already included) -> **`MasterEq` -> `masterGainSmooth` -> `lastOutputLevel` tap** -> stereo-pair silencing. The meter reads what actually reaches the device; the EQ goes first so a +12 dB peak can't be hidden by a low master fader.
+
+- `MasterEq` is the engine-side band cascade (`Source/Engine/MasterEq.{h,cpp}`): up to 16 `MasterEqBand`s (low/high cut up to 48 dB/oct as 4 cascaded Butterworth sections, low/high shelf, peak, notch). Edits land via `setBands()` on the control thread, which recomputes a plain-`float` `CoeffSet` and publishes it through `coeffSlot` — the same `DeferredReclaimer` swap as models/graphs; `sweep()` rides `timerCallback()`'s cadence like the other slots. `process()` detects a new pointer, **copies coefficients into the persistent `Biquad` array without resetting z1/z2** (state continuity across a mid-drag recompute — the anti-click trick `ParametricEQProcessor`'s ramped coefficients also aim at), then runs the whole cascade per sample. Because the swap preserves filter state rather than resetting it, the editor can publish on every drag move — no slew-limiting machinery needed.
+- `masterGainSmooth` (`SmoothedValue<float, Linear>`, 20 ms) ramps `setMasterGainDb()` changes; -60 dB on the UI is the floor, the engine accepts -70 dB as silence (the footer shows "-inf").
+- `Biquad.h` was **moved from `Source/Effects/` to `Source/Engine/`** — the engine can't include an effects header, and the section is a generic DSP primitive anyway. Its update functions return `const Biquad&` (the sync style `MultiChannelChain` already used) and it gained `makeNotch()` plus an optional RBJ shelf-slope `s` on the shelf makers.
+- `MasterBusSettings.h` persists gain + bands in `master_bus.xml` next to `inputgain.txt` — **app-level, not per-preset**: the master section trims the room/monitoring chain the whole rig plays through (same rationale as the input gain), and `MainComponent` debounces writes ~500 ms so a node drag does one disk write, not sixty.
 
 ## Sample rate (2026-09-24)
 `start()` opens the device at the user's saved rate (`sample_rate.txt`) or, without one, at **48 kHz when the device offers it** (JUCE's own default had picked 44.1 kHz on the UR44 while PipeWire ran at 48 kHz). `setSampleRate()` restarts the device at another rate; `audioDeviceAboutToStart()` now **re-prepares the already-published SignalGraph** for the device's actual rate and block size (the callback is not running yet, so that is safe), which also covers any other device restart. Processors ignore a `prepare()` at an unchanged rate.

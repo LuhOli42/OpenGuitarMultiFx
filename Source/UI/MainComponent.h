@@ -93,6 +93,7 @@ private:
     void applyRenderQuality (EffectRegistry::OversamplingQuality quality);
     void showPresetsPanel();
     void showTuner();
+    void showMasterEq();
     std::unique_ptr<juce::XmlElement> buildPresetXml() const;
     void applyPresetXml (const juce::XmlElement& xml);
     /** Saves under `name`, reusing its existing number if `name` is already a
@@ -300,9 +301,12 @@ private:
     std::array<RowEndpointBlock, numRows> rowInputBlocks;
     std::array<RowEndpointBlock, numRows> rowOutputBlocks;
 
-    // Tuner/BPM-tap-tempo/IN-OUT-meters bar, always pinned at the bottom --
-    // see FooterBar.h. Visual placeholder only until Phase 5.
+    // Tuner/BPM-tap/master-volume+EQ/IN-OUT-meters bar, always pinned at
+    // the bottom -- see FooterBar.h.
     FooterBar footerBar;
+    // >0 while a master-bus change (footer gain knob or EQ-band edit) is
+    // waiting for its debounced save -- see timerCallback().
+    int masterBusSaveCountdown = 0;
 
     ParameterPanel parameterPanel;
     PresetManager presets { getPresetsDirectory() };

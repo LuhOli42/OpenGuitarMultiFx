@@ -22,7 +22,48 @@ FooterBar::FooterBar()
     addAndMakeVisible (tapButton);
     tapButton.onClick = [this] { tapTempo(); };
 
+    addAndMakeVisible (eqButton);
+    eqButton.onClick = [this] { if (onMasterEqTapped) onMasterEqTapped(); };
+
+    // Master output level, post-graph: -60 dB .. +12 dB (a rotary matches the
+    // knob language the rest of the app speaks; double-tap snaps back to unity).
+    addAndMakeVisible (masterSlider);
+    masterSlider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
+    masterSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    masterSlider.setRange (-60.0, 12.0, 0.1);
+    masterSlider.setSkewFactor (0.4); // most of the throw near 0 dB, where it gets used
+    masterSlider.setDoubleClickReturnValue (true, 0.0);
+    masterSlider.onValueChange = [this]
+    {
+        masterDb = (float) masterSlider.getValue();
+        updateMasterReadout();
+        if (onMasterGainChanged)
+            onMasterGainChanged (masterDb);
+    };
+
+    addAndMakeVisible (masterValueLabel);
+    masterValueLabel.setJustificationType (juce::Justification::centred);
+    masterValueLabel.setFont (juce::Font (12.0f));
+    masterValueLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+
+    masterSlider.setValue (0.0, juce::dontSendNotification);
+    updateMasterReadout();
+
     setLevels (0.0f, 0.0f);
+}
+
+void FooterBar::setMasterGainDb (float db)
+{
+    masterSlider.setValue (db, juce::dontSendNotification);
+    masterDb = db;
+    updateMasterReadout();
+}
+
+void FooterBar::updateMasterReadout()
+{
+    masterValueLabel.setText (masterDb <= -59.9f ? "-inf"
+                                                 : (masterDb > 0.0f ? "+" : "") + juce::String (masterDb, 1) + " dB",
+                              juce::dontSendNotification);
 }
 
 void FooterBar::tapTempo()
@@ -73,6 +114,15 @@ void FooterBar::resized()
 
     // TUNER button where the live note letter and gauge used to be -- see the header for why they are gone.
     tunerButton.setBounds (area.removeFromLeft (150).withSizeKeepingCentre (150, 52));
+
+    area.removeFromLeft (16);
+
+    // EQ card button + master volume knob -- the master-section controls (see the header).
+    eqButton.setBounds (area.removeFromLeft (76).withSizeKeepingCentre (76, 52));
+    area.removeFromLeft (12);
+    auto masterZone = area.removeFromLeft (120).withSizeKeepingCentre (120, 72);
+    masterValueLabel.setBounds (masterZone.removeFromRight (56).reduced (0, 20));
+    masterSlider.setBounds (masterZone.withSizeKeepingCentre (64, 64));
 
     area.removeFromLeft (16);
 
