@@ -714,6 +714,7 @@ public:
         double u0[maxPortsV];
 
         // A saturating op-amp can need up to a few passes (ideal -> held at a rail -> back); everything else, one.
+        iterationsThisSample = 0;
         for (int attempt = 0; attempt < 4; ++attempt)
         {
             Model& M = ensureModel (satMode);
@@ -875,6 +876,21 @@ private:
     long long deadlineSamples = 0;               // samples solved in deadline mode
     int consecutiveFailures = 0;                 // see newtonPorts(): stops the fallback modes burning time in a runaway
     static constexpr int failureStreakBeforeGivingUp = 2;
+    // Storm mode: a sustained passage of expensive samples (needing rescues, or dozens of mode-0 iterations,
+    // or failing outright) auto-engages the same bounded-iteration path setDeadlineMode() uses, and drops out
+    // only after a long clean run -- exit hysteresis keeps one easy sample from bouncing the cap off and
+    // paying full-cascade re-entry samples again. It is evidence-gated -- the opposite of the
+    // wall-clock guard that was tried and removed on the Super Lead: ordinary blocks never see a capped Newton,
+    // while a block sitting inside a distortion transient can no longer burn 500 iterations per sample, which
+    // is what pushed peak-block CPU past 100%.
+    bool stormMode = false;
+    int expensiveStreak = 0;
+    int cleanStreak = 0;
+    int iterationsThisSample = 0;                  // cumulative Newton work in the current solveSample (all sat passes)
+    static constexpr int stormModeIterations = 24; // mode-0 cap while storming (normal solves take < 15)
+    static constexpr int stormSampleIterations = 64; // total per-sample Newton budget while storming, all passes
+    static constexpr int stormStreakLength = 3;    // expensive samples (net of clean ones) that mean "storm"
+    static constexpr int stormExitSamples = 512;   // consecutive clean solves before the storm is called over
     double theta = defaultTheta;
     double beDt = 0.0; // > 0 only during the pseudo-transient DC relaxation (backward Euler with this step)
 
@@ -1987,44 +2003,65 @@ private:
         can make the extrapolation overshoot into a region the iteration cannot come back from. */
     bool newtonPorts (const double* u0, const double (*Wm)[maxUnknowns], const double (*Km)[maxPortsI], double* curOut) noexcept
     {
-        if (deadlineIterations > 0)
+        bool ok;
+        if (deadlineIterations > 0 || stormMode)
         {
             ++deadlineSamples;
-            if (newtonPortsFrom (u0, Wm, Km, curOut, 0) || newtonPortsFrom (u0, Wm, Km, curOut, 1) || newtonPortsFrom (u0, Wm, Km, curOut, 2))
-                return true;
-            return false;
+            ok = newtonPortsFrom (u0, Wm, Km, curOut, 0)
+                 || newtonPortsFrom (u0, Wm, Km, curOut, 1)
+                 || newtonPortsFrom (u0, Wm, Km, curOut, 2);
+            if (ok)
+                consecutiveFailures = 0;
+            else
+                ++consecutiveFailures;
         }
-        if (newtonPortsFrom (u0, Wm, Km, curOut, 0))
+        else
         {
-            consecutiveFailures = 0;
-            return true;
+            if (newtonPortsFrom (u0, Wm, Km, curOut, 0))
+            {
+                consecutiveFailures = 0;
+                ok = true;
+            }
+            else
+            {
+                ++consecutiveFailures;
+                const bool streakRunaway = consecutiveFailures > failureStreakBeforeGivingUp;
+
+                // Mode 1 (retry from the last converged point, full-size steps) only rescues an OCCASIONAL sample whose
+                // predicted start was bad. Once several samples in a row have failed it rescues nothing -- it just burns 100
+                // more iterations per sample, on the audio thread, exactly when the circuit is being driven hardest. Measured
+                // on a distortion pedal at full gain into the Bassman: a burst of ~48 failing samples cost 13 ms in one 2.67 ms
+                // block (a dropout, and a CPU meter reading ~500%). Skipped once the failures are consecutive.
+                ok = (! streakRunaway && newtonPortsFrom (u0, Wm, Km, curOut, 1))
+                     || newtonPortsFrom (u0, Wm, Km, curOut, 2);
+                if (ok)
+                    consecutiveFailures = 0;
+            }
         }
 
-        ++consecutiveFailures;
-        const bool streakRunaway = consecutiveFailures > failureStreakBeforeGivingUp;
-
-        // Mode 1 (retry from the last converged point, full-size steps) only rescues an OCCASIONAL sample whose
-        // predicted start was bad. Once several samples in a row have failed it rescues nothing -- it just burns 100
-        // more iterations per sample, on the audio thread, exactly when the circuit is being driven hardest. Measured
-        // on a distortion pedal at full gain into the Bassman: a burst of ~48 failing samples cost 13 ms in one 2.67 ms
-        // block (a dropout, and a CPU meter reading ~500%). Skipped once the failures are consecutive.
-        if (! streakRunaway && newtonPortsFrom (u0, Wm, Km, curOut, 1))
+        // Storm bookkeeping, common to both branches: a solve under the cap is evidence of ease; anything
+        // else (a rescue, a slow convergence, an outright failure, a deadline-stand at the cap) is one more
+        // expensive sample -- a net streak of them means a sustained hard passage, so the next samples run
+        // bounded. Exit has hysteresis: leaving storm on the FIRST cheap sample thrashes -- every re-entry
+        // costs up to stormStreakLength more full-cascade samples, which is itself the spike. Staying stormed
+        // through a clean patch is nearly free (the cap just doesn't bind), so exit only after a long run.
+        const bool clean = ok && iterationsThisSample < stormModeIterations;
+        if (clean)
         {
-            consecutiveFailures = 0;
-            return true;
+            expensiveStreak = expensiveStreak > 0 ? expensiveStreak - 1 : 0;
+            if (stormMode && ++cleanStreak >= stormExitSamples)
+            {
+                stormMode = false;
+                cleanStreak = 0;
+            }
         }
-
-        // Mode 2 (last resort, quarter steps) is tried EVEN IN A STREAK, unlike mode 1 above: its own iteration budget
-        // is now evidence-gated (see the stall check inside newtonPortsFrom), so a genuinely stuck sample still bails
-        // out in about the same time as before, but a sample that is merely FAR from its last converged state -- which
-        // is exactly what a sustained streak under extreme, sustained drive is -- gets the room it actually needs to
-        // finish the walk instead of being refused a try at all. See docs/circuits/Bassman5F6A.md.
-        if (newtonPortsFrom (u0, Wm, Km, curOut, 2))
+        else
         {
-            consecutiveFailures = 0;
-            return true;
+            cleanStreak = 0;
+            if (++expensiveStreak >= stormStreakLength)
+                stormMode = true;
         }
-        return false;
+        return ok;
     }
 
     bool newtonPortsFrom (const double* u0, const double (*Wm)[maxUnknowns], const double (*Km)[maxPortsI], double* curOut, int mode) noexcept
@@ -2102,11 +2139,17 @@ private:
         // chance): past 300, recover()'s now-cheap, now-RECENT known-good restore (see the "known-good" DynamicState comment
         // in each amp's Channel struct) is a better outcome for one rare sample than a block-wide time spike.
         const int hardIterationCeiling = deadlineIterations > 0 ? (mode == 0 ? deadlineIterations : (mode == 1 ? 10 : 20))
-                                                               : (mode == 2 ? 300 : 100);
+                                                               : (stormMode ? (mode == 0 ? stormModeIterations : (mode == 1 ? 10 : 20))
+                                                                            : (mode == 2 ? 300 : 100));
         double progressCheckpoint = 1.0e300;
         double maxStepThisSolve = 0.0; // this iteration's pre-limit Newton step, for the stall check above
 
-        for (int iter = 0; iter < hardIterationCeiling && ! converged; ++iter)
+        // In storm mode the cap is also per-SAMPLE: a saturating op-amp flipping states re-runs this cascade
+        // once per solveSample attempt, so a per-call cap alone still allows ~4x the work. iterationsThisSample
+        // is cumulative across every newtonPortsFrom call in the sample; hitting it stops this call like a
+        // stall -- the next pass (or the deadline-stand below, for mode 0) handles what's left.
+        for (int iter = 0; iter < hardIterationCeiling && ! converged
+             && (stormMode ? iterationsThisSample < stormSampleIterations : true); ++iter)
         {
             if (mode == 2 && iter >= 100 && (iter % 100) == 0)
             {
@@ -2115,6 +2158,7 @@ private:
                 progressCheckpoint = maxStepThisSolve;
             }
             ++iterationsTotal;
+            ++iterationsThisSample;
             iterationsThisSolve = iter + 1;
 
             // J = I + K * D, exploiting that D is block-diagonal (each device
@@ -2338,8 +2382,13 @@ private:
             std::swap (Dnow, Dnext);
         }
 
-        if (! converged && deadlineIterations > 0 && mode == 0 && iterationsThisSolve >= deadlineIterations)
-            converged = true; // deadline: the last iterate stands (see setDeadlineMode())
+        const int mode0Cap = deadlineIterations > 0 ? deadlineIterations : stormModeIterations;
+        if (! converged && mode == 0
+            && ((deadlineIterations > 0 || stormMode) && iterationsThisSolve >= mode0Cap
+                || (stormMode && iterationsThisSample >= stormSampleIterations)))
+            converged = true; // deadline/storm: the last iterate stands (see setDeadlineMode()) --
+                              // hitting the shared sample budget mid-pass stands too, so a sat-mode
+                              // transition can never fail the whole sample in storm mode
 
         if (! converged)
         {
@@ -2386,6 +2435,7 @@ private:
     /** DC / relaxation path: node vector from the no-device response `xLinear`. */
     bool solveDevices() noexcept
     {
+        iterationsThisSample = 0;
         const int nv = (int) voltagePorts.size();
         const int ni = (int) currentPorts.size();
 

@@ -253,15 +253,22 @@ void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
 
 namespace
 {
-    /** Multiplies the block by a linear ramp: gain(i) = from + (to - from) * i / numSamples ... clamped to [0, 1]. */
-    void applyRamp (juce::AudioBuffer<float>& buffer, int numSamples, double startGain, double gainPerSample) noexcept
+    /** Equal-power crossfade: dst = dst*cos(t*pi/2) + src*sin(t*pi/2), with t walking t0 -> t0+numSamples*dt.
+        The two graphs' outputs are unrelated at the swap point, so only an equal-power law keeps the mix's
+        perceived level flat across the blend -- a linear pair would dip ~3 dB at the midpoint. */
+    void applyCrossfadeMix (juce::AudioBuffer<float>& dst, const juce::AudioBuffer<float>& src,
+                            int numSamples, double t0, double dt) noexcept
     {
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        for (int ch = 0; ch < dst.getNumChannels(); ++ch)
         {
-            auto* data = buffer.getWritePointer (ch);
-            double gain = startGain;
-            for (int i = 0; i < numSamples; ++i, gain += gainPerSample)
-                data[i] *= (float) juce::jlimit (0.0, 1.0, gain);
+            auto* d = dst.getWritePointer (ch);
+            const auto* s = src.getReadPointer (ch);
+            double t = t0;
+            for (int i = 0; i < numSamples; ++i, t += dt)
+            {
+                const double u = 0.5 * juce::MathConstants<double>::pi * juce::jlimit (0.0, 1.0, t);
+                d[i] = (float) ((double) d[i] * std::cos (u) + (double) s[i] * std::sin (u));
+            }
         }
     }
 }
@@ -270,10 +277,10 @@ void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples
 {
     processCurrentGraph (buffer, numSamples);
 
-    // Spills never run while a retired graph is fading out: a preset-switch
+    // Spills never run while a retired graph is crossfading: a preset-switch
     // teardown can leave a fading graph still pointing at the very
     // processors a pending spill owns, and one processor must never run
-    // twice in the same block. The tail just waits out the ~4 ms fade.
+    // twice in the same block. The tail just waits out the ~10 ms fade.
     if (fadingOutGraph == nullptr)
         spillover.process (buffer, sampleRate.load (std::memory_order_relaxed));
 }
@@ -291,11 +298,12 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
                                   && juce::Time::highResolutionTicksToSeconds (now - lastCallbackTicks) < 0.1;
         const double rate = sampleRate.load (std::memory_order_relaxed);
 
-        if (oldStillSafe && fadingOutGraph == nullptr && rate > 0.0)
+        if (oldStillSafe && fadingOutGraph == nullptr && rate > 0.0
+            && crossfadeScratch.getNumChannels() >= buffer.getNumChannels()
+            && crossfadeScratch.getNumSamples() >= numSamples)
         {
             fadingOutGraph = activeGraph;
-            fadeOutSamplesTotal = fadeOutSamplesLeft = juce::jmax (numSamples, (int) (0.004 * rate));
-            fadeInSamplesTotal = juce::jmax (1, (int) (0.010 * rate));
+            fadeOutSamplesTotal = fadeOutSamplesLeft = juce::jmax (numSamples, (int) (0.010 * rate));
         }
         activeGraph = graph;
     }
@@ -303,41 +311,48 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
 
     if (fadingOutGraph != nullptr)
     {
-        fadingOutGraph->process (buffer);
-        const int n = juce::jmin (numSamples, fadeOutSamplesLeft);
-        const double step = -1.0 / (double) fadeOutSamplesTotal;
-        applyRamp (buffer, n, (double) fadeOutSamplesLeft / (double) fadeOutSamplesTotal, step);
+        // Both graphs run on the same input this block: the retired one fills `buffer`, the new one fills
+        // the scratch, and applyCrossfadeMix blends them with an equal-power law. The outgoing lane keeps
+        // producing sound while the new one ramps in -- the gap the sequential fade used to leave is gone.
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            if (n < numSamples)
-                juce::FloatVectorOperations::clear (buffer.getWritePointer (ch) + n, numSamples - n);
+            juce::FloatVectorOperations::copy (crossfadeScratch.getWritePointer (ch),
+                                               buffer.getReadPointer (ch), numSamples);
+
+        fadingOutGraph->process (buffer);
+        if (graph != nullptr)
+            graph->process (crossfadeScratch);
+        else
+            crossfadeScratch.clear();
+
+        const int n = juce::jmin (numSamples, fadeOutSamplesLeft);
+        const double t0 = 1.0 - (double) fadeOutSamplesLeft / (double) fadeOutSamplesTotal;
+        applyCrossfadeMix (buffer, crossfadeScratch, n, t0, 1.0 / (double) fadeOutSamplesTotal);
+        if (n < numSamples) // the window ended mid-block: the tail of this block is pure new-graph output
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                juce::FloatVectorOperations::copy (buffer.getWritePointer (ch) + n,
+                                                   crossfadeScratch.getReadPointer (ch) + n,
+                                                   numSamples - n);
 
         fadeOutSamplesLeft -= n;
         if (fadeOutSamplesLeft <= 0)
-        {
             fadingOutGraph = nullptr;
-            fadeInSamplesLeft = fadeInSamplesTotal;
-        }
         return;
     }
 
     if (graph != nullptr)
         graph->process (buffer);
-
-    if (fadeInSamplesLeft > 0)
-    {
-        const int n = juce::jmin (numSamples, fadeInSamplesLeft);
-        const double step = 1.0 / (double) fadeInSamplesTotal;
-        applyRamp (buffer, n, 1.0 - (double) fadeInSamplesLeft / (double) fadeInSamplesTotal, step);
-        fadeInSamplesLeft -= n;
-    }
 }
 
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
     activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
     fadingOutGraph = nullptr;
-    fadeOutSamplesLeft = fadeInSamplesLeft = 0;
+    fadeOutSamplesLeft = 0;
     spillover.reset(); // spills were prepared for the old stream's rate/block size -- cut them all
+    // Pre-sized here (control thread) so the crossfade in processCurrentGraph() never allocates on the audio thread.
+    crossfadeScratch.setSize (juce::jmax (1, device->getOutputChannelNames().size()),
+                              juce::jmax (1, device->getCurrentBufferSizeSamples()),
+                              false, true, false);
 
     sampleRate.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
     blockSize.store (device->getCurrentBufferSizeSamples(), std::memory_order_relaxed);

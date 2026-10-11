@@ -92,6 +92,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   HM2StyleDistortionProcessorTests.cpp
   OpAmpClipperDistortionProcessorTests.cpp
   GuvnorStyleDistortionProcessorTests.cpp
+  GuvnorDeathRepro.cpp
   BluesBreakerStyleOverdriveProcessorTests.cpp
   RatStyleDistortionProcessorTests.cpp
   GE7StyleEqualizerProcessorTests.cpp

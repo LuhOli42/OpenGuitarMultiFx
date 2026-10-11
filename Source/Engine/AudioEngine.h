@@ -158,8 +158,9 @@ private:
     void processGraph (juce::AudioBuffer<float>& buffer, int numSamples);
 
     /** Audio thread. The graph itself: when a new one has just been published (a block was moved, added, removed, a
-        row re-routed) the old graph plays one more moment with a short fade-out and the new one fades in, instead of
-        switching the signal path between two samples. */
+        row re-routed) the retired graph and the new one run on the same input for ~10 ms and are mixed with an
+        equal-power crossfade -- the outgoing lane keeps driving sound while the new one takes over, so there is no
+        gap and no step between the two unrelated outputs. */
     void processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples);
 
     juce::AudioDeviceManager deviceManager;
@@ -174,11 +175,14 @@ private:
     std::atomic<float> lastOutputLevel { 0.0f };
     PitchDetector pitchDetector;
 
-    // Audio thread only (reset in audioDeviceAboutToStart, before the callback runs): the graph swap's fade.
+    // Audio thread only (reset in audioDeviceAboutToStart, before the callback runs): the graph swap's crossfade.
     SignalGraph* activeGraph = nullptr;      // the graph the previous block ran
-    SignalGraph* fadingOutGraph = nullptr;   // a retired graph still playing its fade-out (kept alive by graphSlot's margin)
-    int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0, fadeInSamplesLeft = 0, fadeInSamplesTotal = 0;
+    SignalGraph* fadingOutGraph = nullptr;   // a retired graph still playing its crossfade leg (kept alive by graphSlot's margin)
+    int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0;
     juce::int64 lastCallbackTicks = 0;
+    // Holds the new graph's output during a crossfade -- sized in audioDeviceAboutToStart (control thread),
+    // never touched for allocation on the audio thread.
+    juce::AudioBuffer<float> crossfadeScratch;
 
     std::atomic<bool> tunerActive { false }; // see setTunerActive()
     std::atomic<float> inputGainDb { 0.0f }, inputGainLinear { 1.0f }; // see setInputGainDb()
