@@ -41,4 +41,15 @@ inline double audio (double knob) noexcept { return law (knob, 0.15); }
 /** Anti-log / reverse-audio ("C") taper: 85% at half rotation -- the mirror of audio(). */
 inline double reverseAudio (double knob) noexcept { return 1.0 - audio (1.0 - knob); }
 
+/** Inverse of audio(): the knob rotation that puts the wiper at a given fraction of the track.
+    Used for parameter defaults -- "this knob should sit at half gain by default" means the
+    rotation audioInverse(0.5) (~0.81), not 0.5, on a real audio-taper pot. */
+inline double audioInverse (double wiper) noexcept
+{
+    const double y = wiper < 0.0 ? 0.0 : (wiper > 1.0 ? 1.0 : wiper);
+    const double r = 1.0 / 0.15 - 1.0;
+    const double b = r * r;
+    return std::log (1.0 + y * (b - 1.0)) / std::log (b);
+}
+
 } // namespace openguitarmultifx::pots

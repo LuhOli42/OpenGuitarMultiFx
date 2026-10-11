@@ -120,18 +120,20 @@ DividedBy13FTR37StyleAmplifierProcessor::DividedBy13FTR37StyleAmplifierProcessor
         {
             switch (juce::roundToInt (v)) { case 0: return juce::String ("Channel 1"); case 2: return juce::String ("Both"); default: return juce::String ("Channel 2"); }
         }));
-    auto ch1Vol = make ("f37_ch1_volume", "Ch1 Volume", 0.5f);
+    // audio-tapered pots: audioInverse() keeps each default's wiper fraction where it
+    // sat before the pots became audio taper (rotation, not fraction, is stored).
+    auto ch1Vol = make ("f37_ch1_volume", "Ch1 Volume", (float) pots::audioInverse (0.5));
     auto click = std::make_unique<juce::AudioParameterFloat> (
         "f37_click", "Ch1 Tone", juce::NormalisableRange<float> (0.0f, 5.0f, 1.0f), 3.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
         { return "Click " + juce::String (juce::roundToInt (v) + 1); }));
-    auto ch2Vol = make ("f37_ch2_volume", "Ch2 Volume", 0.5f);
+    auto ch2Vol = make ("f37_ch2_volume", "Ch2 Volume", (float) pots::audioInverse (0.5));
     auto boost = std::make_unique<juce::AudioParameterFloat> (
         "f37_boost", "Boost", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
         { return v < 0.5f ? juce::String ("Off") : juce::String ("On"); }));
     auto treble = make ("f37_treble", "Ch2 Treble", 0.5f);
-    auto bass = make ("f37_bass", "Ch2 Bass", 0.5f);
+    auto bass = make ("f37_bass", "Ch2 Bass", (float) pots::audioInverse (0.5));
     auto half = std::make_unique<juce::AudioParameterFloat> (
         "f37_half_power", "Power", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
