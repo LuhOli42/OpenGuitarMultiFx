@@ -5,18 +5,32 @@
 namespace openguitarmultifx
 {
 
-/** The device boundary's full scale: the DAC hard-clips whatever crosses 1.0, so the last thing the
-    output bus does is saturate into this soft limiter instead. Linear under ceilKnee, asymptotic to
-    ceilCeiling (the audit's clip meter counts |x| > 0.98, so the ceiling sits under it -- 0.88, not
-    0.93, because oversampling decimation rings a few percent past the bound on clipped edges). Also
-    used by amp models (`tubeamp::outputCeiling`) for the same "cannot swing past the rails" rule. */
-constexpr double ceilKnee = 0.6, ceilCeiling = 0.88;
-inline double softCeiling (double x) noexcept
+/** Two-stage saturator contract. A model (or its trim wrapper) may soft-limit its own emit into the
+    knee/ceiling it was voiced for (`modelSoftCeiling`). The device boundary then applies the same
+    curve with its knee AT the model ceiling (`deviceSoftCeiling`): an already-limited signal passes
+    through untouched, and only genuinely over-scale content -- a boosted last-in-chain pedal, the
+    sum of parallel lanes, master gain pushed hot -- saturates instead of hard-clipping the DAC.
+    The ceilings stay under the 0.98 the audit's clip meter counts (0.88/0.96, not ~0.93/0.99,
+    because the oversampling wrapper's decimation rings a few percent past the bound on clipped
+    edges). */
+inline double softCeiling (double x, double knee, double ceiling) noexcept
 {
     const double a = std::abs (x);
-    return a <= ceilKnee ? x
-                         : std::copysign (ceilKnee + (ceilCeiling - ceilKnee) * std::tanh ((a - ceilKnee) / (ceilCeiling - ceilKnee)),
-                                          x);
+    return a <= knee ? x
+                     : std::copysign (knee + (ceiling - knee) * std::tanh ((a - knee) / (ceiling - knee)),
+                                      x);
+}
+
+constexpr double modelKnee = 0.6, modelCeiling = 0.88;
+inline double modelSoftCeiling (double x) noexcept
+{
+    return softCeiling (x, modelKnee, modelCeiling);
+}
+
+constexpr double deviceKnee = modelCeiling, deviceCeiling = 0.96;
+inline double deviceSoftCeiling (double x) noexcept
+{
+    return softCeiling (x, deviceKnee, deviceCeiling);
 }
 
 } // namespace openguitarmultifx

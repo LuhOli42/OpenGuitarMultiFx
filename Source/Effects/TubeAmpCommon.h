@@ -42,11 +42,12 @@ constexpr double declickDecay = 0.996; // per sample: the offset left by a resto
 
 /** The emitted float's full scale: an amp's output stage cannot swing past its rails, so a hot Output/Level
     knob pushing the model toward the host's 0 dBFS clip should saturate, not emit an unbounded float that
-    hard-clips downstream. Same limiter the device boundary applies (see Engine/SoftCeiling.h). */
-constexpr double outKnee = ceilKnee, outCeil = ceilCeiling;
+    hard-clips downstream. The model-stage half of the two-stage contract in Engine/SoftCeiling.h -- the
+    device boundary's knee sits at this ceiling, so a limited emit reaches the DAC unchanged. */
+constexpr double outKnee = modelKnee, outCeil = modelCeiling;
 inline double outputCeiling (double x) noexcept
 {
-    return softCeiling (x);
+    return modelSoftCeiling (x);
 }
 
 /** Kill switch for the CabSim inside PowerStageTail (settings: "..." -> Settings -> Built-in cab voicing; the

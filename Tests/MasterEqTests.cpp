@@ -138,23 +138,33 @@ public:
             expectLessThan ((double) buf.getMagnitude (0, 0, 512), 1.0e-3);
         }
 
-        beginTest ("the output ceiling passes clean levels and saturates a hot last-in-chain pedal");
+        beginTest ("the two-stage ceilings: model limit passes the boundary, hot pedals saturate");
         {
-            // Below the knee the bus limiter is a no-op -- unity-level chains are untouched.
+            // Model stage: identity under its knee, bounded, monotonic, odd-symmetric.
             for (double x : { -0.6, -0.3, 0.0, 0.3, 0.6 })
-                expectWithinAbsoluteError (softCeiling (x), x, 1.0e-12);
-            // A boosted pedal hitting peaks of 1.4+ saturates under the ceiling instead of
-            // hard-clipping at the DAC -- bounded, monotonic, odd-symmetric.
+                expectWithinAbsoluteError (modelSoftCeiling (x), x, 1.0e-12);
             double prev = 0.0;
             for (double x = 0.6; x <= 8.0; x += 0.05)
             {
-                const double y = softCeiling (x);
-                expect (y >= prev && y <= ceilCeiling + 1.0e-9);
-                expectWithinAbsoluteError (softCeiling (-x), -y, 1.0e-12);
+                const double y = modelSoftCeiling (x);
+                expect (y >= prev && y <= modelCeiling + 1.0e-9);
+                expectWithinAbsoluteError (modelSoftCeiling (-x), -y, 1.0e-12);
                 prev = y;
             }
-            expectWithinAbsoluteError (softCeiling (1.4), 0.878, 0.01);
-            expectWithinAbsoluteError (softCeiling (100.0), ceilCeiling, 1.0e-9);
+            // An amp's already-limited emit reaches the device unchanged: the boundary's knee
+            // is the model ceiling, so everything the model stage can emit is identity there.
+            for (double x = -1.5; x <= 1.5; x += 0.01)
+                expectWithinAbsoluteError (deviceSoftCeiling (modelSoftCeiling (x)), modelSoftCeiling (x), 1.0e-12);
+            // A boosted last-in-chain pedal past the model ceiling still saturates at the
+            // boundary instead of hard-clipping the DAC.
+            for (double x : { 0.9, 1.1, 1.4, 2.0, 8.0 })
+            {
+                const double y = deviceSoftCeiling (x);
+                expect (y <= deviceCeiling + 1.0e-9);
+                expectWithinAbsoluteError (deviceSoftCeiling (-x), -y, 1.0e-12);
+            }
+            expectWithinAbsoluteError (deviceSoftCeiling (1.0), 0.952, 0.01);
+            expectWithinAbsoluteError (deviceSoftCeiling (100.0), deviceCeiling, 1.0e-9);
         }
 
         beginTest ("the maxBands cap holds");
