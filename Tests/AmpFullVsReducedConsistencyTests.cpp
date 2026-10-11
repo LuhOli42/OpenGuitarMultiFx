@@ -363,21 +363,21 @@ public:
     static const Bound* boundFor (const char* ampName)
     {
         static constexpr Bound b[] = {
-            { "superlead",   4.0,  8.0, 0.0 }, { "bassman",     14.0, 30.0, 0.0 },
-            { "twin",        3.0,  5.0, 0.0 }, { "deluxe",       6.0, 27.0, 0.0 },
-            { "jtm45",      12.0, 35.0, 0.0 }, { "jcm800",      -1.0,  0.0, 35.0 },
+            { "superlead",   4.0,  8.0, 0.0 }, { "bassman",      4.0, 16.0, 0.0 },
+            { "twin",        3.0,  5.0, 0.0 }, { "deluxe",       7.0, 26.0, 0.0 },
+            { "jtm45",       7.0, 26.0, 0.0 }, { "jcm800",      -1.0,  0.0, 35.0 },
             { "ac15",        5.0, 10.0, 0.0 }, { "ac30",         6.0,  6.0, 0.0 },
-            { "matchless",  10.0, 30.0, 0.0 }, { "hotcat",       3.0, 11.0, 0.0 },
+            { "matchless",   9.5, 17.0, 0.0 }, { "hotcat",       3.0, 11.0, 0.0 },
             { "carmenghia",  4.0,  8.0, 0.0 }, { "astroverb",    4.0,  7.0, 0.0 },
             { "slo100",     -1.0,  0.0, 35.0 }, { "markiic",    -1.0,  0.0, 35.0 },
             { "dualrect",   -1.0,  0.0, 35.0 }, { "evh5150",    -1.0,  0.0, 35.0 },
             { "powerball",  -1.0,  0.0, 35.0 }, { "rockerverb", -1.0,  0.0, 35.0 },
             { "eh150",       4.0,  7.0, 0.0 }, { "herzog",       4.0,  7.0, 0.0 },
-            { "knucklehead", 4.0, 12.0, 0.0 }, { "carr",        15.0,  6.0, 0.0 },
-            { "ftr37",      19.0, 13.0, 0.0 }, { "dumble",      -1.0,  0.0, 35.0 },
+            { "knucklehead", 4.0, 12.0, 0.0 }, { "carr",         1.5,  5.0, 0.0 },
+            { "ftr37",       4.0, 10.0, 0.0 }, { "dumble",      -1.0,  0.0, 35.0 },
             { "sunn",       -1.0,  0.0, 35.0 }, { "deliverance",-1.0,  0.0, 35.0 },
-            { "uberschall", -1.0,  0.0, 35.0 }, { "b15",         8.0, 24.0, 0.0 },
-            { "v4b",        -1.0,  0.0, 35.0 }, { "mesa400",    14.0, 12.0, 0.0 },
+            { "uberschall", -1.0,  0.0, 35.0 }, { "b15",         3.0, 13.0, 0.0 },
+            { "v4b",        -1.0,  0.0, 35.0 }, { "mesa400",     2.5, 10.0, 0.0 },
             { "acoustic360", 4.0,  9.0, 0.0 },
         };
         for (const auto& e : b)
@@ -391,6 +391,23 @@ public:
     template <typename Amp>
     void lockAmp (const char* ampName)
     {
+        if (std::getenv ("AMP_SILENCE") != nullptr)
+        {
+            const std::vector<float> z (48000, 0.0f);
+            for (bool reduced : { false, true })
+            {
+                const auto y = renderMode<Amp> (z, sr, reduced, nullptr);
+                double ss = 0.0;
+                for (float v : y) ss += (double) v * v;
+                const auto s = spectrum (y, sr);
+                double bf2[3];
+                reportBands (s, bf2);
+                logMessage (juce::String (ampName) + " SILENCE " + juce::String (reduced ? "red" : "full")
+                            + " rms " + juce::String (20.0 * std::log10 (std::sqrt (ss / y.size()) + 1.0e-30), 1)
+                            + " bands " + juce::String (bf2[0], 1) + "/" + juce::String (bf2[1], 1)
+                            + "/" + juce::String (bf2[2], 1));
+            }
+        }
         double worstLevel = 0.0, worstBand = 0.0;
         for (double rms : { 0.03, 0.4 })
         {
@@ -418,7 +435,12 @@ public:
                         + ": level " + juce::String (level, 2) + " dB, worst shape band "
                         + juce::String (band, 2) + " dB (bass " + juce::String (bb[0] - bf[0], 2)
                         + ", mid " + juce::String (bb[1] - bf[1], 2)
-                        + ", treb " + juce::String (bb[2] - bf[2], 2) + ")");
+                        + ", treb " + juce::String (bb[2] - bf[2], 2) + ")"
+                        + (std::getenv ("AMP_BANDS") != nullptr
+                               ? " [full " + juce::String (bf[0], 1) + "/" + juce::String (bf[1], 1)
+                                 + "/" + juce::String (bf[2], 1) + " red " + juce::String (bb[0], 1)
+                                 + "/" + juce::String (bb[1], 1) + "/" + juce::String (bb[2], 1) + "]"
+                               : ""));
             worstLevel = juce::jmax (worstLevel, std::abs (level));
             worstBand = juce::jmax (worstBand, band);
             expectLessThan (ff, 2.0e-2, juce::String (ampName) + ": full path solver fails");

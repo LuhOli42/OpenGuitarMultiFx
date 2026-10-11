@@ -599,6 +599,8 @@ void DeluxeReverbStyleAmplifierProcessor::prepare (double newSampleRate, int max
         ch = Channel {};
         buildChannel (ch);
         auto bmVoicing = voicings::fenderClean;
+        bmVoicing.cabLpHz = 9000.0;  // own netlist keeps more top than the shared open-back voicing
+        bmVoicing.cabAirHz = 13000.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's sat(d+shift)-sat(shift) law
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }

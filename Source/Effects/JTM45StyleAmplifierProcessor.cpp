@@ -699,6 +699,8 @@ void JTM45StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch = Channel {};
         buildChannel (ch);
         auto bmVoicing = voicings::britishNfb;
+        bmVoicing.cabLpHz = 8000.0;  // own netlist keeps more top than the shared closed-back voicing
+        bmVoicing.cabAirHz = 12000.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }

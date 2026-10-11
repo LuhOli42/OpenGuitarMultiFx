@@ -369,7 +369,7 @@ double AmpegB15StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, doubl
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
     ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState));
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState)) * bmLevelTrim;
     return ch.bmOutput;
 }
 
@@ -524,6 +524,8 @@ void AmpegB15StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch = Channel {};
         buildChannel (ch);
         auto bmVoicing = voicings::bassAmp;
+        bmVoicing.cabLpHz = 1500.0;  // own netlist is much darker than the shared bass cab past ~3 kHz
+        bmVoicing.cabAirHz = 2500.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }

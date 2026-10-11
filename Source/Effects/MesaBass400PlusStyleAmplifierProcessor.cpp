@@ -476,7 +476,7 @@ double MesaBass400PlusStyleAmplifierProcessor::behavioralPowerStage (Channel& ch
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
     ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState));
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState)) * bmLevelTrim;
     return ch.bmOutput;
 }
 
@@ -650,6 +650,8 @@ void MesaBass400PlusStyleAmplifierProcessor::prepare (double newSampleRate, int,
         ch = Channel {};
         buildChannel (ch);
         auto bmVoicing = voicings::bassAmp;
+        bmVoicing.cabLpHz = 5500.0;  // own netlist keeps more top than the shared bass-cab voicing
+        bmVoicing.cabAirHz = 8000.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }

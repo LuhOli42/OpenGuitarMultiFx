@@ -51,12 +51,13 @@ public:
         on centrally; the unit tests reset it to false so they keep probing the reference model. */
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 60.0;      // twelve 6L6s: closed-loop gain of the LTP + drivers + push-pull + OT + NFB
-    static constexpr double bmYmax = 0.208;      // fraction of the sag rail reachable at the speaker
+    static constexpr double bmYmax = 0.208;
+    static constexpr double bmLevelTrim = 0.266;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)      // fraction of the sag rail reachable at the speaker
     static constexpr double bmAsym = 0.09;       // push-pull clip asymmetry
     static constexpr double bmGridClampV = 70.0; // huge clean headroom: onset much later than the guitar-amp family
     static constexpr double bmDcHz = 8.0;        // OT low-frequency saturation rolloff
     static constexpr double bmShelfHz = 70.0;    // speaker-magnetics low-shelf pole
-    static constexpr double bmShelfHfGain = 0.53;
+    static constexpr double bmShelfHfGain = 0.65;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }

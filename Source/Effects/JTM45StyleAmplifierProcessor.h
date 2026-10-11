@@ -62,7 +62,7 @@ public:
     // unchanged; EffectRegistry.cpp turns it on centrally for the real app. docs/circuits/JTM45Marshall.md has the
     // calibration data and verified numbers.
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 0.021;   // fitted from this amp's own JM_POWERCAL sweep, see the .cpp -- much lower
+    static constexpr double bmGain0 = 0.045;   // fitted from this amp's own JM_POWERCAL sweep, see the .cpp -- much lower
     static constexpr double bmYmax = 0.001278; // than the Bassman's own numbers, a direct consequence of the softened
                                                 // pentode fit (see pentodeKt66()'s own note) needing a much bigger drive
                                                 // swing to reach the same relative saturation
@@ -73,7 +73,7 @@ public:
     // real frequency response beyond the tone stack that a flat memoryless curve lacks -- restored approximately with a
     // high-shelf cut, fitted against the full reference model's own measured gain at several frequencies (see the .cpp).
     static constexpr double bmShelfHz = 70.0;
-    static constexpr double bmShelfHfGain = 0.53;
+    static constexpr double bmShelfHfGain = 0.9;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
