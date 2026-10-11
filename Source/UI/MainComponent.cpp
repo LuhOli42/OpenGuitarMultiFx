@@ -4,9 +4,11 @@
 #include "SnapshotPresetXml.h"
 
 #include "AddEffectBrowserDialog.h"
+#include "MasterEqDialog.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "TunerOverlay.h"
 #include "../Engine/InputGainSettings.h"
+#include "../Engine/MasterBusSettings.h"
 #include "PresetBrowserDialog.h"
 #include "Tone3000Panel.h"
 #include "TouchSizing.h"
@@ -227,6 +229,12 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (footerBar);
     footerBar.onTunerTapped = [this] { showTuner(); };
+    footerBar.onMasterEqTapped = [this] { showMasterEq(); };
+    footerBar.onMasterGainChanged = [this] (float db)
+    {
+        audioEngine.setMasterGainDb (db);
+        masterBusSaveCountdown = 10; // trailing-edge save in timerCallback (~500 ms)
+    };
 
     if (! audioEngine.start())
         titleLabel.setText ("Audio device failed to open", juce::dontSendNotification);
@@ -234,6 +242,15 @@ MainComponent::MainComponent()
     // Remembered across launches -- the interface's gain staging, like the tuning before it, describes the hardware
     // plugged in rather than a sound, so it is not part of any guitar preset. See AudioEngine::setInputGainDb().
     audioEngine.setInputGainDb (inputgain::loadSavedGainDb());
+
+    // The master section (output gain + free-form EQ bands) is app-level for the same reason: it trims the
+    // monitoring chain the whole rig plays through, not a per-preset sound. See MasterBusSettings.h.
+    {
+        const auto master = masterbus::loadState();
+        audioEngine.setMasterGainDb (master.gainDb);
+        footerBar.setMasterGainDb (master.gainDb);
+        audioEngine.setMasterEqBands (master.bands);
+    }
 
     // Row 0 starts wired device-in -> device-out so the app still makes
     // sound out of the box; rows 1-3 start unrouted, showing a "+" at both
@@ -1011,6 +1028,21 @@ void MainComponent::showTuner()
     overlay->onDestroyed = [this] { audioEngine.setTunerActive (false); };
 
     overlayHost.pushOverlay (std::move (overlay));
+}
+
+void MainComponent::showMasterEq()
+{
+    auto dialog = std::make_unique<MasterEqDialog>();
+    dialog->setBands (audioEngine.getMasterEqBands());
+    dialog->getSampleRate = [this] { return audioEngine.getCurrentSampleRate(); };
+    dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
+    dialog->onBandsChanged = [this] (const std::vector<MasterEqBand>& bands)
+    {
+        audioEngine.setMasterEqBands (bands);
+        masterBusSaveCountdown = 10; // debounced save in timerCallback
+    };
+
+    overlayHost.pushOverlay (std::move (dialog));
 }
 
 void MainComponent::showPresetsPanel()
@@ -1862,6 +1894,11 @@ void MainComponent::timerCallback()
                       graveyard.end());
 
     parameterPanel.refresh();
+
+    // Debounced master-bus save: knob drags and node drags fire dozens of edits a second -- one write, ~500 ms
+    // after the last change, is plenty for a file read once per launch.
+    if (masterBusSaveCountdown > 0 && --masterBusSaveCountdown == 0)
+        masterbus::saveState ({ audioEngine.getMasterGainDb(), audioEngine.getMasterEqBands() });
 
     if (--ticksUntilDirtyCheck <= 0)
     {

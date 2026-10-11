@@ -341,6 +341,9 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     sampleRate.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
     blockSize.store (device->getCurrentBufferSizeSamples(), std::memory_order_relaxed);
     pitchDetector.prepare (device->getCurrentSampleRate());
+    masterEq.prepare (device->getCurrentSampleRate(), 2);
+    masterGainSmooth.reset (device->getCurrentSampleRate(), 0.02); // ~20 ms ramp, see setMasterGainDb()
+    masterGainSmooth.setCurrentAndTargetValue (masterGainLinear.load (std::memory_order_relaxed));
 
     // The graph that is already published was prepared for whatever rate the device ran at before (a rate change, a re-opened device);
     // the callback is not running yet, so preparing it here is safe. A processor whose rate did not change ignores the call.
@@ -414,6 +417,27 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 
     processGraph (buffer, numSamples);
 
+    // Master section: the free-form EQ, then the output gain -- both post-graph,
+    // so the OUT meter below reads the level actually about to reach the device.
+    masterEq.process (buffer);
+
+    masterGainSmooth.setTargetValue (masterGainLinear.load (std::memory_order_relaxed));
+    if (masterGainSmooth.isSmoothing())
+    {
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float g = masterGainSmooth.getNextValue();
+            for (int ch = 0; ch < numOutputChannels; ++ch)
+                outputChannelData[ch][i] *= g;
+        }
+    }
+    else
+    {
+        const float g = masterGainLinear.load (std::memory_order_relaxed);
+        if (! juce::approximatelyEqual (g, 1.0f))
+            buffer.applyGain (g);
+    }
+
     // Peak across every channel the graph actually produced -- what's
     // about to reach the device, before the pair-silencing below decides
     // which of those channels the listener actually hears.
@@ -460,6 +484,7 @@ void AudioEngine::timerCallback()
 {
     graphSlot.sweep();
     spillover.sweep();
+    masterEq.sweep();
 
     // YIN's O(window x tauMax) pass, on the control thread where unbounded work is allowed -- see PitchDetector::analyse().
     if (tunerActive.load (std::memory_order_relaxed))
