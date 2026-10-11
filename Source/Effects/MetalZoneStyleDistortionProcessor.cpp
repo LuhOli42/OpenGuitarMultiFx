@@ -5,6 +5,9 @@
 
 #include <IconData.h>
 
+#include <map>
+#include <mutex>
+
 namespace openguitarmultifx
 {
 
@@ -168,6 +171,21 @@ namespace
         }
     };
 
+    /** Surfaces of a BootstrapLeg's interior solve over the (u, q) domain it actually depends
+        on: u = c1.g*vm - c1.ieq + c2.ieq carries the drive plus both cap histories, q = c2.ieq
+        the base-KCL offset. u spans volts; q only milliamps, so three q-slices around the
+        measured range + a quadratic in q covers it -- Catmull-Rom cubic in u. Built once per
+        sample rate and shared by every channel and instance: the values depend only on the
+        leg's fixed component values and fs. */
+    struct LegLut
+    {
+        // outputs {v1, vb, ve} x 5 q-slices over +-h -> quadratic in q on the
+        // nearest triplet, CR cubic in u
+        static constexpr int NU = 2048, NS = 15;
+        std::array<std::array<double, NU>, NS> s;
+        double u0 = 0.0, invDu = 1.0, q0 = 0.0, invH = 1.0;
+    };
+
     /** IC3b/IC4b's inverting-leg branch: series cap C1 into node n1; n1 -> rE -> the emitter;
         n1 -> C2 -> the base; base -> rBase -> vBias; collector pinned to the rail (a ONE-port
         2SC3378 on vbe -- see addBootstrapBranch in the netlist for the topology this mirrors).
@@ -183,6 +201,8 @@ namespace
         ReducedCap c1, c2;
         double f1, f2, rE, rBase;
         double gE = 0.0, gB = 0.0, v1 = vBias, vb = vBias, ve = vBias - followerDrop;
+        int id = 0;
+        const LegLut* lut = nullptr; // set in prepare; table is shared const state, off-heap
 
         // npn2SC3378 as a one-port (collector on the fixed 9 V rail): iE_out = isEff*(e^vbe-1),
         // iB = isB*(e^vbe-1), both ~exact while vbc stays deeply reverse (base can reach at
@@ -192,8 +212,8 @@ namespace
         static constexpr double invVt = 1.0 / 25.85e-3;
         static constexpr double gE10k = 1.0e-4; // the emitter's 10K to ground
 
-        BootstrapLeg (double c1F, double c2F, double emitterOhms, double baseOhms)
-            : f1 (c1F), f2 (c2F), rE (emitterOhms), rBase (baseOhms) {}
+        BootstrapLeg (double c1F, double c2F, double emitterOhms, double baseOhms, int legId)
+            : f1 (c1F), f2 (c2F), rE (emitterOhms), rBase (baseOhms), id (legId) {}
 
         void prepare (double fs) noexcept
         {
@@ -206,13 +226,14 @@ namespace
             ve = vBias - followerDrop;
         }
 
-        /** The leg current out of the m node at terminal voltage vm, with the interior nodes
-            (v1, v_b, v_e) solved to KCL for this sample's capacitor state. Writes the solved
-            v1/vb/ve for commit() and returns the differential conductance through dIdv. */
-        double eval (double vm, double& dIdv) noexcept
+        /** The interior solve, parameterised by the two scalars it actually depends on:
+            u = c1.g*vm - c1.ieq + c2.ieq (drive + both cap histories folded into one
+            current) and q = c2.ieq (the base-KCL history offset). Solves (vb, ve) and
+            writes v1/vb/ve for commit(). */
+        void solveU (double u, double q, int maxIters = 10) noexcept
         {
             double b = vb, e = ve;
-            for (int i = 0; i < 10; ++i)
+            for (int i = 0; i < maxIters; ++i)
             {
                 const double ex = std::exp (std::min ((b - e) * invVt, 40.0));
                 const double iEo = isEff * (ex - 1.0), iB = isB * (ex - 1.0);
@@ -221,12 +242,11 @@ namespace
                 // so gE*(v1 - e) = gE10k*e - iEo (at DC: v1 = e, iEo = gE10k*e).
                 const double n1 = e + (gE10k * e - iEo) / gE;
                 const double dv1de = 1.0 + (gE10k + gT) / gE, dv1db = -gT / gE;
-                // base KCL: c2*(b - v1) - c2.ieq... current b->v1 through C2 plus rBase plus iB = 0
-                const double fb = c2.g * (b - n1) + c2.ieq + gB * (b - vBias) + iB;
+                // base KCL: current b->v1 through C2 plus rBase plus iB = 0
+                const double fb = c2.g * (b - n1) + q + gB * (b - vBias) + iB;
                 if (mzProfiling) ++mzProf.legIter;
-                // n1 KCL: c1*(v1 - vm) - c1.ieq + rE*(v1 - e) + c2*(v1 - b) + c2.ieq = 0
-                const double fn = (c1.g + gE + c2.g) * n1 - c1.g * vm - gE * e - c2.g * b
-                                  + c1.ieq - c2.ieq;
+                // n1 KCL with u standing in for c1.g*vm - c1.ieq + c2.ieq
+                const double fn = (c1.g + gE + c2.g) * n1 - u - gE * e - c2.g * b;
                 const double j11 = c2.g * (1.0 - dv1db) + gB + gBi;
                 const double j12 = -c2.g * dv1de - gBi;
                 const double j21 = (c1.g + gE + c2.g) * dv1db - c2.g;
@@ -252,15 +272,72 @@ namespace
             vb = b;
             ve = e;
             const double ex = std::exp (std::min ((b - e) * invVt, 40.0));
-            const double gT = isEff * invVt * ex, gBi = isB * invVt * ex;
             v1 = e + (gE10k * e - isEff * (ex - 1.0)) / gE;
-            // dv1/dvm at the solved point: differentiate the three KCLs with dvm = 1.
+        }
+
+        /** dv1/dvm at the solved point: differentiate the three KCLs with dvm = 1
+            (i.e. du/dvm = c1.g). */
+        double dIdvAtSolved() const noexcept
+        {
+            const double ex = std::exp (std::min ((vb - ve) * invVt, 40.0));
+            const double gT = isEff * invVt * ex, gBi = isB * invVt * ex;
             const double d = gE + gE10k + gT;
             const double r1 = (c2.g + gBi * gE / d) / (c2.g + gB + gBi - gBi * gT / d);
             const double r2 = (gE + gT * r1) / d;
             const double dv1 = c1.g / (c1.g + gE + c2.g - gE * r2 - c2.g * r1);
-            dIdv = c1.g * (1.0 - dv1);
-            return c1.g * (vm - v1) - c1.ieq;
+            return c1.g * (1.0 - dv1);
+        }
+
+        /** The leg current out of the m node at terminal voltage vm, with the interior nodes
+            (v1, v_b, v_e) solved to KCL for this sample's capacitor state. Writes the solved
+            v1/vb/ve for commit() and returns the differential conductance through dIdv. */
+        double eval (double vm, double& dIdv) noexcept
+        {
+            const double u = c1.g * vm - c1.ieq + c2.ieq;
+            const double q = c2.ieq;
+            if (lut != nullptr)
+            {
+                const double fu = (u - lut->u0) * lut->invDu;
+                const int iu = (int) std::floor (fu);
+                const double dq = q - lut->q0;
+                const double tq = dq * lut->invH; // slice units: |tq| <= 2 covers |dq| <= qH
+                if (iu >= 1 && iu <= LegLut::NU - 3 && std::abs (tq) <= 2.0)
+                {
+                    const double t = fu - iu;
+                    const double w0 = t * (t * (1.0 - 0.5 * t) - 0.5);
+                    const double w1 = t * t * (1.5 * t - 2.5) + 1.0;
+                    const double w2 = t * (t * (2.0 - 1.5 * t) + 0.5);
+                    const double w3 = t * t * (0.5 * t - 0.5);
+                    // all 5 q-slices through one quartic (Lagrange on {-2,-1,0,1,2}) --
+                    // smooth across the whole q range, no kinks at triplet boundaries
+                    const double x = tq, x2 = x * x;
+                    const double qw[5] = {
+                        x * (x2 - 1.0) * (x - 2.0) / 24.0,
+                        -x * (x2 - 4.0) * (x - 1.0) / 6.0,
+                        (x2 - 4.0) * (x2 - 1.0) / 4.0,
+                        -x * (x2 - 4.0) * (x + 1.0) / 6.0,
+                        x * (x2 - 1.0) * (x + 2.0) / 24.0 };
+                    double uq[LegLut::NS];
+                    for (int k = 0; k < LegLut::NS; ++k)
+                    {
+                        const double* p = lut->s[k].data() + (iu - 1);
+                        uq[k] = w0 * p[0] + w1 * p[1] + w2 * p[2] + w3 * p[3];
+                    }
+                    double out[3];
+                    for (int o = 0; o < 3; ++o)
+                    {
+                        const int base = o * 5;
+                        out[o] = qw[0] * uq[base] + qw[1] * uq[base + 1] + qw[2] * uq[base + 2]
+                               + qw[3] * uq[base + 3] + qw[4] * uq[base + 4];
+                    }
+                    v1 = out[0]; vb = out[1]; ve = out[2];
+                    dIdv = dIdvAtSolved(); // closed form is exact and cheap; no need for a surface
+                    return u - q - c1.g * v1;
+                }
+            }
+            solveU (u, q);
+            dIdv = dIdvAtSolved();
+            return u - q - c1.g * v1;
         }
 
         void commit (double vm) noexcept
@@ -269,6 +346,82 @@ namespace
             c2.commit (v1 - vb);
         }
     };
+
+    // The three legs' component values, shared between the member initializers below and the
+    // LUT builder (single source so a re-tune can never drift the table off the real branch).
+    struct LegParams { double f1, f2, rE, rB; };
+    constexpr std::array<LegParams, 3> legParams = { {
+        { 0.027e-6, 0.01e-6, 2.2e3, 47.0e3 },   // leg3b  (Q010 on IC3b's (-))
+        { 0.015e-6, 0.0015e-6, 1.0e3, 47.0e3 }, // legA4b (Q008 on IC4b's (-))
+        { 0.22e-6, 0.047e-6, 470.0, 470.0e3 },  // legB4b (Q007 on IC4b's (-))
+    } };
+
+    // (u, q) extents measured by MZ_PROFILE on the DI render at 48 kHz, padded ~2-4x for knob
+    // extremes and wild Newton trials; u and q both scale with the caps' conductance, i.e. with
+    // fs. Outside the box eval() still takes the exact Newton -- padding only buys speed.
+    struct LegLutDomain { double uLo, uHi, q0, qH; };
+    constexpr std::array<LegLutDomain, 3> legLutDomains = { {
+        { -0.005, 0.05, -0.00046, 0.0006 },  // measured u [0.0066, 0.010], q [-0.00052, -0.00039]
+        { -0.005, 0.05, -0.00003, 0.0003 },  // measured u [0.0024, 0.009], q [-0.00008, 0.00001]
+        { -0.01, 0.50, -0.0013, 0.003 },     // measured u [0.0225, 0.145], q [-0.00244, -0.00025]
+    } };
+
+    void buildLegLut (const LegParams& p, double fs, const LegLutDomain& d, LegLut& lut)
+    {
+        BootstrapLeg leg (p.f1, p.f2, p.rE, p.rB, 0);
+        leg.prepare (fs);
+        const double du = (d.uHi - d.uLo) / (LegLut::NU - 3); // nodes 1..NU-2 span [uLo, uHi]
+        lut.u0 = d.uLo - du;
+        lut.invDu = 1.0 / du;
+        lut.q0 = d.q0;
+        lut.invH = 2.0 / d.qH; // slice spacing is qH/2
+        // The (u, q) -> root map is multi-valued at the domain edges, so build outward from
+        // the DC point with warm start -- that follows the physical branch the runtime's
+        // warm-started Newton stays on, instead of whatever the edge raster first finds.
+        const double uDc = p.f1 * fs / reducedTheta * vBias; // caps open, vm at vBias
+        const int iuDc = juce::jmax (1, (int) std::lround ((uDc - lut.u0) * lut.invDu));
+        for (int slice = 0; slice < 5; ++slice)
+        {
+            const double q = d.q0 + (slice - 2) * d.qH * 0.5;
+            leg.vb = vBias;
+            leg.ve = vBias - followerDrop;
+            double bDc = 0.0, eDc = 0.0;
+            for (int step = 0; step < LegLut::NU; ++step)
+            {
+                const int iu = step <= LegLut::NU - 1 - iuDc ? iuDc + step : iuDc - (step - (LegLut::NU - 1 - iuDc));
+                if (step == LegLut::NU - iuDc) { leg.vb = bDc; leg.ve = eDc; } // left sweep reseeds at DC
+                leg.solveU (lut.u0 + iu * du, q, 200);
+                if (iu == iuDc) { bDc = leg.vb; eDc = leg.ve; }
+                const size_t i = (size_t) iu;
+                lut.s[slice][i] = leg.v1;
+                lut.s[5 + slice][i] = leg.vb;
+                lut.s[10 + slice][i] = leg.ve;
+            }
+        }
+    }
+
+    struct ReducedLegLuts { std::array<LegLut, 3> t; };
+
+    /** Tables keyed by sample rate, built once under a mutex in prepare() -- the audio thread
+        only ever reads them through the legs' const pointers. */
+    const ReducedLegLuts& reducedLegLuts (double fs)
+    {
+        static std::mutex lutMutex;
+        static std::map<double, std::unique_ptr<ReducedLegLuts>> cache;
+        const std::lock_guard<std::mutex> lock (lutMutex);
+        auto& slot = cache[fs];
+        if (slot == nullptr)
+        {
+            slot = std::make_unique<ReducedLegLuts>();
+            const double k = fs / 48000.0;
+            for (size_t i = 0; i < 3; ++i)
+            {
+                const auto& d = legLutDomains[i];
+                buildLegLut (legParams[i], fs, { d.uLo * k, d.uHi * k, d.q0 * k, d.qH * k }, slot->t[i]);
+            }
+        }
+        return *slot;
+    }
 }
 
 /** The reducedOrder substitute for blocks 0-2. See the netlist in buildChannel() for the topology
@@ -279,7 +432,7 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
     ReducedCap c042, c039, c033;
     // IC3b: fb 220k || C032; (-) leg = the Q010 bootstrap branch
     ReducedCap c032;
-    BootstrapLeg leg3b { 0.027e-6, 0.01e-6, 2.2e3, 47.0e3 };
+    BootstrapLeg leg3b { legParams[0].f1, legParams[0].f2, legParams[0].rE, legParams[0].rB, 0 };
     ReducedAmp amp3b;
     // IC3a interstage: p {10k, C031} -> C029 -> q {100k}; leg = 1k -> nR -> C030; fb = (rDist+1k) || C028
     ReducedCap c031, c029, c030, c028;
@@ -288,8 +441,8 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
     ReducedCap c027, c023, c021;
     // IC4b: fb 3k3 || C022; legs = the Q008 and Q007 bootstrap branches
     ReducedCap c022;
-    BootstrapLeg legA4b { 0.015e-6, 0.0015e-6, 1.0e3, 47.0e3 };
-    BootstrapLeg legB4b { 0.22e-6, 0.047e-6, 470.0, 470.0e3 };
+    BootstrapLeg legA4b { legParams[1].f1, legParams[1].f2, legParams[1].rE, legParams[1].rB, 1 };
+    BootstrapLeg legB4b { legParams[2].f1, legParams[2].f2, legParams[2].rE, legParams[2].rB, 2 };
     ReducedAmp amp4b;
     // IC4a inverter: 22k in, 22k || C018 fb, (+) at vBias
     ReducedCap c018;
@@ -324,6 +477,12 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         c022.prepare (47.0e-12, fs);
         legA4b.prepare (fs);
         legB4b.prepare (fs);
+        const auto& luts = reducedLegLuts (fs);
+        {
+            leg3b.lut = &luts.t[0];
+            legA4b.lut = &luts.t[1];
+            legB4b.lut = &luts.t[2];
+        }
         amp4b.prepare (fs);
         c018.prepare (10.0e-12, fs);
         amp4a.prepare (fs);
@@ -398,7 +557,48 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         // the two railed equilibria forever (the documented "Newton rails cycle"). Keep a sign
         // bracket on vm; Newton inside it, bisection when Newton would leave it — converges
         // unconditionally, and quadratically once the iterate lands in the linear window.
-        double lo = -100.0, hi = 100.0;
+        if (numLegs == 0)
+        {
+            // With no legs F is piecewise-AFFINE in vm: in the linear band ob = pxLin
+            // (affine in vm), deep past a rail ob = the rail constant. The only non-affine
+            // stretch is the ~0.5 V clamp-diode transition hugging each rail. Solve each
+            // region's affine root and keep the one that lands inside its own region;
+            // only fall through to the Newton when the root sits in a transition band.
+            const double k1 = gRc * gain / (gRc + amp.cpx.g); // d pxLin/d vm ~ -196
+            const double k0 = (gRc * gain * vPlus + amp.cpx.ieq) / (gRc + amp.cpx.g);
+            const double c = m5218.outputOhms * (vOutExtraSum - fbIeq);
+            auto affineRoot = [&] (double obConst, bool linearOb) -> double
+            {
+                const double a = (obConst + (linearOb ? k0 : 0.0) + c) / oDenom;
+                const double bVo = ((linearOb ? -k1 : 0.0) + m5218.outputOhms * kFb) / oDenom;
+                return (kFb * a + hm) / (gSum - kFb * bVo);
+            };
+            double vmA = affineRoot (0.0, true);
+            double pxA = k0 - k1 * vmA;
+            if (pxA > m5218.lowRail && pxA < m5218.highRail)
+            {
+                const double voA = (pxA + m5218.outputOhms * (kFb * vmA - fbIeq + vOutExtraSum)) / oDenom;
+                amp.vm = vmA;
+                amp.px = pxA;
+                amp.out = voA;
+                amp.cpx.commit (pxA);
+                return voA;
+            }
+            const bool highSide = pxA >= m5218.highRail;
+            const double rail = highSide ? m5218.highRail : m5218.lowRail;
+            vmA = affineRoot (rail, false);
+            pxA = k0 - k1 * vmA;
+            if (highSide ? pxA >= m5218.highRail + 0.5 : pxA <= m5218.lowRail - 0.5)
+            {
+                const double voA = (rail + m5218.outputOhms * (kFb * vmA - fbIeq + vOutExtraSum)) / oDenom;
+                amp.vm = vmA;
+                amp.px = amp.solvePx (gain * (vPlus - vmA));
+                amp.out = voA;
+                amp.cpx.commit (amp.px);
+                return voA;
+            }
+        }
+        double lo = -30.0, hi = 30.0;
         double vm = juce::jlimit (lo, hi, amp.vm); // warm start on last sample's inverting node
         double vo = amp.out, px = amp.px;
         for (int it = 0; it < 40; ++it)

@@ -125,17 +125,39 @@ across the whole dist/mid/input grid -- vs bar 2.0/1.2. DI render of the enabled
 is spectrally identical to the full path (<0.1 dB every octave band, same level/energy). The
 fit is done.
 
-**Why it still ships off:** the faithful nested solves cost ~3x the netlist they replace --
-a 44.1k stereo DI render at eco tier runs the reduced front-end at ~67% of a core vs ~21%
-for the full five-block path, and `RenderFx --bench` shows eco 127% vs the netlist's ~50%.
-mzprof at the bench: ~40 stageNewton + ~100 legNewton + ~4.7 pxNewton iterations per sample;
-the legs' inner 2x2 (vb, ve) solve is the dominant term. A "reduced" model that is slower
-buys nothing on the A7S. Kept improvements that were free: the deep-rail px fast path
-(pxIter 93.5 -> ~0.7 per sample: when pxLin sits >0.5 V past a rail the follower output IS
-the rail, so the per-iteration solvePx is skipped and px is solved once at commit).
+**Solved 2026-10-11 (reducedOrder enabled):** the faithful nested solves cost ~3x the netlist
+they replaced (~67% vs ~21% eco render, ~127% vs ~51% bench) because the legs' inner 2x2
+(vb, ve) solve dominates -- ~40 stageNewton + ~100 legNewton iterations per sample. Both
+nested solves are now replaced by fitted curves:
 
-**The remaining lever is exactly the per-section clip fit the earlier attempt spec'd:**
-fit i_leg(vm) (or the whole stage's vo(vm)) as a cheap closed-form per sample -- the leg
-curve is smooth and monotone so a 3-eval polynomial or a rational knee should track it;
-then the stage Newton costs ~2 flops/iteration instead of a nested solve. Enabling wants
-eco render cost under the netlist's ~21%, not just under the fit bar.
+- **BootstrapLeg LUT.** The leg's interior solve parameterises to exactly two scalars:
+  u = c1.g*vm - c1.ieq + c2.ieq (drive + cap histories) and q = c2.ieq (base-KCL history).
+  `buildLegLut` sweeps (u, q) over the runtime-measured domain (`legLutDomains`, scaled by
+  fs/48k) once per sample rate under a mutex, warm-starting each cell from its neighbour
+  and the DC point -- and tabulates {v1, vb, ve} on a 1024 u-grid x 5 q-slices.
+  `eval()` serves it with a Catmull-Rom cubic in u and a quartic (Lagrange) through all
+  5 q-slices; dIdv is recomputed by the closed form at the interpolated (vb, ve).
+  Out-of-domain (u, q) falls back to the real solveU.
+- **Legless stage Newton -> closed form.** With no bootstrap legs the stage F is affine in
+  vm per operating region, so `affineRoot` solves it directly and commits when the root
+  lands inside its region (linear band, or >0.5 V past a rail); only the rail-transition
+  band still runs the bracketed Newton (tol stays 1e-10 -- 1e-6 left the iterate
+  under-resolved and showed up as ~-69 dB of non-periodic chatter on the steady-state
+  test, vs -144 dB at 1e-10; the LUT evals are cheap enough that the extra Newton
+  iterations cost almost nothing).
+
+Result: `RenderFx --bench` reduced ~30-36% vs high ~57-75% (eco render ~26%), and
+ReducedOrderEquivalence measures 0.46 dB worst level / 0.51 dB worst band vs the full
+netlist -- inside the #71 bounds (2.0/1.2). The LUT-induced delta vs the exact Newton is
+the whole of that residual (the LUT-less build still measures 0.01/0.04).
+
+**Watch out:** the leg is multi-valued at u < ~0 (the degenerate region where the bootstrap
+emitter can't source) -- uLo bounds were chosen to exclude it; extending the domain into it
+tabulates a different solution branch than runtime Newton finds and the error is silent
+(the static verify sweep can't see it). A denser 7-slice q layout regressed to 17.7 dB
+worst-band in the mid-0.2 configs for a not-fully-root-caused interpolation-side error
+(all hits, clean static sweep, no drift); the 5-slice layout above is the verified one.
+
+Other over-budget nodal pedals (BassBigMuff ~27%, TubeDriver ~24%, ODR1 ~23%) don't share
+this problem shape -- their cost is spread over the whole netlist solve, not one nested
+per-leg loop parameterised by 2 scalars, so the trick does not transfer.
