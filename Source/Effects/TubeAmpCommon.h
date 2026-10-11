@@ -122,9 +122,10 @@ struct CabSim
     {
         const double pi = juce::MathConstants<double>::pi;
         // Biquad designs go unstable when their frequency is at/above ~Nyquist (a 32 kHz WAV through
-        // RenderFx is a real case). Same 0.4*fs cap the OT poles use: a corner that high means "no
-        // filter at this rate" -- bypass rather than cram it under the limit.
-        const double cap = 0.4 * fs;
+        // RenderFx is a real case). A corner that high means "no filter at this rate" -- bypass rather
+        // than cram it under the limit. Just under Nyquist is the bound (stable for w0 < pi); the OT
+        // poles' tighter 0.4*fs is a property of their coefficient solve, not of these biquads.
+        const double cap = 0.49 * fs;
         loC = 1.0 - std::exp (-2.0 * pi * juce::jmin (loHz, cap) / fs);
         // Cone/cab resonance: RBJ peaking biquad, +cabResDb at cabResHz, back to 0 dB either side.
         const double w0 = 2.0 * pi * juce::jmin (resHz, cap) / fs;
@@ -201,9 +202,9 @@ struct PowerStageTail
         lfC = 1.0 - std::exp (-2.0 * pi * v.lfHz / fs);
         envC = 1.0 - std::exp (-1.0 / (0.02 * fs)); // ~20 ms: tracks the note level, not individual cycles
         dcC = 1.0 - std::exp (-2.0 * pi * 12.0 / fs); // the OT can't pass DC: ~12 Hz mean subtraction
-        // Same 0.4*fs cap as the OT poles and CabSim: a resonance above ~Nyquist can't be voiced anyway,
+        // Same just-under-Nyquist cap as CabSim: a resonance at/above ~Nyquist can't be voiced anyway,
         // and the biquad design diverges there (32 kHz hosts are real), so both bumps drop out cleanly.
-        const double cap = 0.4 * fs;
+        const double cap = 0.49 * fs;
         if (v.resHz < cap)
         {
             const double w = 2.0 * pi * v.resHz / fs;
