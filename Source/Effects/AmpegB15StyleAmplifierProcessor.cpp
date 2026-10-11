@@ -750,7 +750,7 @@ void AmpegB15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = outputCeiling (speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain);
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;
@@ -758,7 +758,6 @@ void AmpegB15StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 }
                 out += ch.declick;
                 ch.declick *= declickDecay;
-                out = outputCeiling (out); // the restore offset can push a ceiling-level emit back over full scale
             }
             ch.lastEmitted = out;
             data[i] = (float) out;
