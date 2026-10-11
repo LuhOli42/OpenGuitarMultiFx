@@ -5,13 +5,19 @@
 namespace openguitarmultifx
 {
 
-Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
-    : manager (managerToUse)
+Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updaterToUse)
+    : manager (managerToUse),
+      updater (updaterToUse)
 {
     addAndMakeVisible (titleLabel);
     titleLabel.setFont (juce::Font (23.0f, juce::Font::bold));
 
-    addAndMakeVisible (qualitySectionLabel);
+    addAndMakeVisible (viewport);
+    viewport.setViewedComponent (&content, false);
+    viewport.setScrollBarsShown (true, false);
+    viewport.setScrollBarThickness (10);
+
+    content.addAndMakeVisible (qualitySectionLabel);
     qualitySectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     qualitySectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
@@ -19,7 +25,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
     const struct { juce::TextButton* button; Q quality; } choices[] = { { &ecoButton, Q::eco }, { &normalButton, Q::balanced }, { &highButton, Q::high } };
     for (const auto& c : choices)
     {
-        addAndMakeVisible (*c.button);
+        content.addAndMakeVisible (*c.button);
         c.button->setClickingTogglesState (true);
         c.button->setRadioGroupId (4711);
         c.button->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5c56));
@@ -34,16 +40,16 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
         };
     }
 
-    addAndMakeVisible (qualityHintLabel);
+    content.addAndMakeVisible (qualityHintLabel);
     qualityHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     qualityHintLabel.setFont (juce::Font (14.0f));
     refreshQualityHint();
 
-    addAndMakeVisible (cabSectionLabel);
+    content.addAndMakeVisible (cabSectionLabel);
     cabSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     cabSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
-    addAndMakeVisible (cabVoicingButton);
+    content.addAndMakeVisible (cabVoicingButton);
     cabVoicingButton.setClickingTogglesState (true);
     cabVoicingButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5c56));
     cabVoicingButton.setToggleState (EffectRegistry::getCabVoicingEnabled(), juce::dontSendNotification);
@@ -56,43 +62,71 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse)
         refreshCabHint();
     };
 
-    addAndMakeVisible (cabHintLabel);
+    content.addAndMakeVisible (cabHintLabel);
     cabHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     cabHintLabel.setFont (juce::Font (14.0f));
     refreshCabHint();
 
-    addAndMakeVisible (rateSectionLabel);
+    content.addAndMakeVisible (rateSectionLabel);
     rateSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     rateSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-    addAndMakeVisible (rateHintLabel);
+    content.addAndMakeVisible (rateHintLabel);
     rateHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     rateHintLabel.setFont (juce::Font (14.0f));
 
-    addAndMakeVisible (tone3000SectionLabel);
+    content.addAndMakeVisible (tone3000SectionLabel);
     tone3000SectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     tone3000SectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
-    addAndMakeVisible (clientIdLabel);
+    content.addAndMakeVisible (clientIdLabel);
 
-    addAndMakeVisible (clientIdField);
+    content.addAndMakeVisible (clientIdField);
     clientIdField.setTextToShowWhenEmpty ("t3k_pub_...", juce::Colours::grey);
     clientIdField.setText (manager.getClientId(), juce::dontSendNotification);
 
-    addAndMakeVisible (saveClientIdButton);
+    content.addAndMakeVisible (saveClientIdButton);
     saveClientIdButton.onClick = [this]
     {
         manager.setClientId (clientIdField.getText());
         refreshLoginState();
     };
 
-    addAndMakeVisible (loginButton);
+    content.addAndMakeVisible (loginButton);
     loginButton.onClick = [this] { doLogin(); };
 
-    addAndMakeVisible (logoutButton);
+    content.addAndMakeVisible (logoutButton);
     logoutButton.onClick = [this] { manager.logOut(); refreshLoginState(); };
 
-    addAndMakeVisible (statusLabel);
+    content.addAndMakeVisible (statusLabel);
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+
+    content.addAndMakeVisible (updateSectionLabel);
+    updateSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
+    updateSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+
+    content.addAndMakeVisible (currentVersionLabel);
+    currentVersionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    currentVersionLabel.setText ("installed: " + updater.getCurrentVersion(), juce::dontSendNotification);
+
+    content.addAndMakeVisible (checkUpdateButton);
+    checkUpdateButton.onClick = [this] { doCheckForUpdate(); };
+
+    content.addChildComponent (installUpdateButton);
+    installUpdateButton.onClick = [this] { doInstallUpdate(); };
+
+    content.addChildComponent (restartAppButton);
+    restartAppButton.onClick = [this] { updater.restartNow(); };
+
+    content.addAndMakeVisible (updateStatusLabel);
+    updateStatusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    updateStatusLabel.setFont (juce::Font (14.0f));
+    updateStatusLabel.setText (updater.isPackagedInstall()
+        ? "Updates install through the system updater; the app restarts on the new version."
+        : "Updates are downloaded, checksum-verified and staged next to the binary; they apply on restart.",
+        juce::dontSendNotification);
+
+    content.addChildComponent (updateProgressBar);
+    updateProgressBar.setPercentageDisplay (false);
 
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
@@ -115,7 +149,7 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
     for (double r : rateValues)
     {
         auto* b = rateButtons.add (new juce::TextButton (juce::String (r / 1000.0, r == 44100.0 || r == 88200.0 ? 1 : 0) + " kHz"));
-        addAndMakeVisible (b);
+        content.addAndMakeVisible (b);
         b->setClickingTogglesState (true);
         b->setRadioGroupId (4712);
         b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5c56));
@@ -286,6 +320,23 @@ void Tone3000Panel::resized()
     titleLabel.setBounds (titleRow);
     area.removeFromTop (10);
 
+    viewport.setBounds (area);
+
+    // Measure pass (all section rows are fixed-height, so the width is all
+    // that matters) then the real one on the content's own bounds. The
+    // measure rect needs real height: removeFromTop clamps to what's left,
+    // so a zero-height bounds would never advance.
+    const int w = juce::jmax (120, viewport.getMaximumVisibleWidth());
+    const int h = layoutSections ({ 0, 0, w, 10000 });
+    content.setSize (w, h);
+    layoutSections (content.getLocalBounds());
+}
+
+int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
+{
+    auto area = bounds.reduced (6, 0);
+    const int startY = area.getY();
+
     qualitySectionLabel.setBounds (area.removeFromTop (20));
     area.removeFromTop (6);
     auto qualityRow = area.removeFromTop (touch::minTapTarget);
@@ -333,7 +384,93 @@ void Tone3000Panel::resized()
 
     area.removeFromTop (10);
     statusLabel.setBounds (area.removeFromTop (44));
+    area.removeFromTop (14);
 
+    updateSectionLabel.setBounds (area.removeFromTop (20));
+    area.removeFromTop (6);
+    auto updateRow = area.removeFromTop (touch::minTapTarget);
+    checkUpdateButton.setBounds (updateRow.removeFromLeft (160));
+    updateRow.removeFromLeft (8);
+    installUpdateButton.setBounds (updateRow.removeFromLeft (170));
+    updateRow.removeFromLeft (8);
+    restartAppButton.setBounds (updateRow.removeFromLeft (130));
+    updateRow.removeFromLeft (8);
+    currentVersionLabel.setBounds (updateRow);
+    area.removeFromTop (6);
+    updateStatusLabel.setBounds (area.removeFromTop (44));
+    updateProgressBar.setBounds (area.removeFromTop (12));
+    area.removeFromTop (10);
+
+    return area.getY() - startY;
+}
+
+void Tone3000Panel::doCheckForUpdate()
+{
+    checkUpdateButton.setEnabled (false);
+    installUpdateButton.setVisible (false);
+    restartAppButton.setVisible (false);
+    pendingUpdate.reset();
+    updateStatusLabel.setText ("checking for updates...", juce::dontSendNotification);
+    updateProgressValue = -1.0;
+    updateProgressBar.setVisible (true);
+
+    updater.checkForUpdate ([safeThis = juce::Component::SafePointer<Tone3000Panel> (this)]
+                            (const AppUpdater::CheckResult& res)
+    {
+        if (safeThis == nullptr)
+            return;
+        safeThis->updateProgressBar.setVisible (false);
+        safeThis->checkUpdateButton.setEnabled (true);
+        safeThis->updateStatusLabel.setText (res.message, juce::dontSendNotification);
+
+        if (res.status == AppUpdater::CheckResult::Status::updateAvailable)
+        {
+            safeThis->pendingUpdate = res.candidate;
+            safeThis->installUpdateButton.setButtonText ("Update to " + res.candidate.version);
+            safeThis->installUpdateButton.setVisible (true);
+        }
+    });
+}
+
+void Tone3000Panel::doInstallUpdate()
+{
+    if (! pendingUpdate.has_value())
+        return;
+    const auto candidate = *pendingUpdate;
+    pendingUpdate.reset();
+
+    checkUpdateButton.setEnabled (false);
+    installUpdateButton.setEnabled (false);
+    // Packaged installs delegate to the root updater script -- no
+    // measurable progress there, so the bar runs indeterminate.
+    updateProgressValue = updater.isPackagedInstall() ? -1.0 : 0.0;
+    updateProgressBar.setVisible (true);
+    updateStatusLabel.setText ("starting update to " + candidate.version + "...",
+                               juce::dontSendNotification);
+
+    updater.downloadAndInstall (candidate,
+        [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)] (const juce::String& line)
+        {
+            if (safeThis != nullptr)
+                safeThis->updateStatusLabel.setText (line, juce::dontSendNotification);
+        },
+        [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)] (double p)
+        {
+            if (safeThis != nullptr)
+                safeThis->updateProgressValue = p;
+        },
+        [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)]
+            (bool ok, juce::String message, bool restartRequired)
+        {
+            if (safeThis == nullptr)
+                return;
+            safeThis->updateProgressBar.setVisible (false);
+            safeThis->updateStatusLabel.setText (message, juce::dontSendNotification);
+            safeThis->checkUpdateButton.setEnabled (! ok);
+            safeThis->installUpdateButton.setEnabled (true);
+            if (ok && restartRequired)
+                safeThis->restartAppButton.setVisible (true);
+        });
 }
 
 void Tone3000Panel::paint (juce::Graphics& g)

@@ -36,7 +36,11 @@ class OpenGuitarMultiFxApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "OpenGuitarMultiFx"; }
-    const juce::String getApplicationVersion() override { return "0.1.0"; }
+    // Baked in by CMake from `git describe --tags --match 'v*' --dirty` --
+    // the same string scripts/package.sh writes into the release VERSION
+    // file, so the Settings "Software update" section and the updater's
+    // version comparison see what the release actually was.
+    const juce::String getApplicationVersion() override { return OGMFX_VERSION; }
 
     void initialise (const juce::String&) override
     {

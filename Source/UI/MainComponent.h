@@ -14,6 +14,7 @@
 #include "../Presets/PresetManager.h"
 #include "../Presets/PresetLibrary.h"
 #include "../Tone3000/Tone3000Manager.h"
+#include "../Updater/AppUpdater.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -209,6 +210,13 @@ private:
     EffectRegistry registry;
     AudioEngine audioEngine;
     Tone3000Manager tone3000;
+
+    // Long-lived here (not inside the Settings card, which gets rebuilt on
+    // every open) so a running check/download isn't orphaned when the
+    // overlay closes.
+    AppUpdater appUpdater { juce::JUCEApplication::getInstance() != nullptr
+                                ? juce::JUCEApplication::getInstance()->getApplicationVersion()
+                                : juce::String ("0.0.0-dev") };
 
     std::vector<std::unique_ptr<EffectProcessor>> chain;
     juce::OwnedArray<EffectBlockComponent> blocks;

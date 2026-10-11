@@ -1,0 +1,345 @@
+#include "AppUpdater.h"
+
+#include <thread>
+
+namespace openguitarmultifx
+{
+
+namespace
+{
+    constexpr int connectTimeoutMs = 15000;
+
+    bool httpGetText (const juce::String& url, juce::String& body)
+    {
+        auto options = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+                           .withExtraHeaders ("Accept: application/vnd.github+json\n"
+                                              "User-Agent: ogmfx-updater")
+                           .withConnectionTimeoutMs (connectTimeoutMs)
+                           .withNumRedirectsToFollow (5);
+        if (auto stream = juce::URL (url).createInputStream (options))
+        {
+            body = stream->readEntireStreamAsString();
+            return body.isNotEmpty();
+        }
+        return false;
+    }
+
+    bool httpGetFile (const juce::String& url, const juce::File& dest,
+                      const std::function<void (double)>& progress)
+    {
+        auto options = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+                           .withExtraHeaders ("User-Agent: ogmfx-updater")
+                           .withConnectionTimeoutMs (connectTimeoutMs)
+                           .withNumRedirectsToFollow (5);
+        auto stream = juce::URL (url).createInputStream (options);
+        if (stream == nullptr)
+            return false;
+
+        dest.deleteFile();
+        juce::FileOutputStream out (dest);
+        if (! out.openedOk())
+            return false;
+
+        const auto total = stream->getTotalLength();
+        juce::MemoryBlock buffer ((size_t) 64 * 1024);
+        juce::int64 received = 0;
+
+        while (! stream->isExhausted())
+        {
+            const auto got = stream->read (buffer.getData(), (int) buffer.getSize());
+            if (got <= 0)
+                break;
+            out.write (buffer.getData(), (size_t) got);
+            received += got;
+            if (progress && total > 0)
+                progress (juce::jlimit (0.0, 1.0, (double) received / (double) total));
+        }
+
+        out.flush();
+        // getTotalLength() can report -1 on chunked responses; only treat
+        // a known-length shortfall as an error, never an unknown one.
+        return received > 0 && (total < 0 || received >= total);
+    }
+} // namespace
+
+AppUpdater::AppUpdater (juce::String version)
+    : currentVersion (std::move (version))
+{
+    loadUpdaterConf();
+}
+
+AppUpdater::~AppUpdater()
+{
+    aliveFlag->store (false);
+}
+
+void AppUpdater::loadUpdaterConf()
+{
+    // Same file ogmfx-update.sh sources: bash KEY="value" lines, parsed
+    // here as plain text. Absent on unpackaged installs -> defaults stay.
+    const auto conf = juce::File ("/etc/ogmfx/updater.conf").loadFileAsString();
+    for (const auto& line : juce::StringArray::fromLines (conf))
+    {
+        auto unquote = [] (juce::String v)
+        {
+            v = v.trim();
+            return v.startsWithChar ('\"') && v.endsWithChar ('\"')
+                     ? v.substring (1, v.length() - 1) : v;
+        };
+        if (line.trimStart().startsWith ("repo="))
+            repo = unquote (line.fromFirstOccurrenceOf ("=", false, false));
+        else if (line.trimStart().startsWith ("channel="))
+            channel = unquote (line.fromFirstOccurrenceOf ("=", false, false));
+    }
+    if (channel != "stable" && channel != "beta")
+        channel = "stable";
+}
+
+updatecore::Fetcher AppUpdater::makeFetcher() const
+{
+    updatecore::Fetcher fetch;
+    fetch.getText = [] (const juce::String& url, juce::String& body)
+    {
+        return httpGetText (url, body);
+    };
+    fetch.getFile = [] (const juce::String& url, const juce::File& dest,
+                        const std::function<void (double)>& progress)
+    {
+        return httpGetFile (url, dest, progress);
+    };
+    return fetch;
+}
+
+bool AppUpdater::isPackagedInstall() const
+{
+    const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                         .getFullPathName();
+    return exe.startsWith ("/opt/ogmfx/");
+}
+
+juce::File AppUpdater::getStagingDir() const
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("OpenGuitarMultiFx")
+               .getChildFile ("update-staging");
+}
+
+void AppUpdater::checkForUpdate (std::function<void (const CheckResult&)> onDone)
+{
+    if (busy.exchange (true))
+    {
+        CheckResult res;
+        res.message = "an update is already in progress";
+        onDone (res);
+        return;
+    }
+
+    const auto fetch = makeFetcher();
+    const auto apiBase = "https://api.github.com/repos/" + repo;
+    const auto updateChannel = channel;
+    const auto current = currentVersion;
+    const auto arch = updatecore::archName();
+    const auto alive = aliveFlag;
+
+    std::thread ([=, this]() mutable
+    {
+        CheckResult res;
+        juce::String error;
+        auto candidate = updatecore::findUpdate (fetch, apiBase, updateChannel, arch, error);
+
+        if (! candidate)
+        {
+            res.status = CheckResult::Status::failed;
+            res.message = error;
+        }
+        else if (updatecore::compareVersions (candidate->version, current) > 0)
+        {
+            res.status = CheckResult::Status::updateAvailable;
+            res.candidate = *candidate;
+            res.message = "update available: " + candidate->version;
+        }
+        else
+        {
+            res.status = CheckResult::Status::upToDate;
+            res.message = "up to date (latest is " + candidate->version + ")";
+        }
+
+        busy.store (false);
+        juce::MessageManager::callAsync ([alive, res = std::move (res),
+                                        onDone = std::move (onDone)]() mutable
+        {
+            if (alive->load() && onDone)
+                onDone (res);
+        });
+    }).detach();
+}
+
+void AppUpdater::downloadAndInstall (
+    const updatecore::UpdateCandidate& candidate,
+    std::function<void (const juce::String&)> onStatus,
+    std::function<void (double)> onProgress,
+    std::function<void (bool, juce::String, bool)> onDone)
+{
+    if (busy.exchange (true))
+    {
+        if (onDone)
+            onDone (false, "an update is already in progress", false);
+        return;
+    }
+
+    const auto fetch = makeFetcher();
+    const auto staging = getStagingDir();
+    const auto alive = aliveFlag;
+    const bool packaged = isPackagedInstall();
+
+    if (packaged)
+    {
+        std::thread ([=, this]() mutable
+        {
+            runPackagedApply (onStatus, onDone);
+            busy.store (false);
+        }).detach();
+        return;
+    }
+
+    std::thread ([=, this]() mutable
+    {
+        // Defined inside the thread body: it must reference THIS lambda's
+        // captured copies of the callbacks, not the caller's stack.
+        auto post = [&] (auto&& cb, auto&&... args)
+        {
+            juce::MessageManager::callAsync ([alive, cb,
+                                            ... capturedArgs = std::forward<decltype (args)> (args)]() mutable
+            {
+                if (alive->load() && cb)
+                    cb (std::move (capturedArgs)...);
+            });
+        };
+
+        if (onStatus)
+            post (onStatus, juce::String ("downloading " + candidate.version + "..."));
+
+        juce::String error;
+        auto binary = updatecore::stageFromUrls (fetch, candidate, staging,
+                                                 [&] (double p) { if (onProgress) post (onProgress, p); },
+                                                 error);
+
+        if (binary == juce::File())
+        {
+            busy.store (false);
+            if (onDone)
+                post (onDone, false, "update failed: " + error, false);
+            return;
+        }
+
+        if (onStatus)
+            post (onStatus, juce::String ("installing..."));
+
+        const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+        const bool ok = updatecore::stageBinarySwap (binary, exe, error);
+
+        busy.store (false);
+        if (onDone)
+        {
+            if (ok)
+                post (onDone, true,
+                      candidate.version + " staged -- restart to finish the update", true);
+            else
+                post (onDone, false, "update failed: " + error, false);
+        }
+    }).detach();
+}
+
+void AppUpdater::runPackagedApply (std::function<void (const juce::String&)> onStatus,
+                                   std::function<void (bool, juce::String, bool)> onDone)
+{
+    const auto alive = aliveFlag;
+    auto post = [&] (auto&& cb, auto&&... args)
+    {
+        juce::MessageManager::callAsync ([alive, cb, ... capturedArgs = std::forward<decltype (args)> (args)]() mutable
+        {
+            if (alive->load() && cb)
+                cb (std::move (capturedArgs)...);
+        });
+    };
+
+    // The root-side updater owns the whole swap/health-check/rollback
+    // flow. It needs root, which the ogmfx user reaches through the
+    // packaging/ogmfx-updater.sudoers rule (NOPASSWD on this one script).
+    juce::StringArray cmd;
+    const juce::File sudoBin ("/usr/bin/sudo");
+    const juce::File updateScript ("/usr/local/sbin/ogmfx-update.sh");
+
+    if (sudoBin.existsAsFile() && updateScript.existsAsFile())
+        cmd = { sudoBin.getFullPathName(), "-n", updateScript.getFullPathName(), "--force" };
+    else
+        cmd = { "systemctl", "start", "ogmfx-updater.service" };
+
+    // cb is a std::function copied into the async lambda, so passing the
+    // callbacks themselves (not [&] wrappers, which would dangle after
+    // this frame returns) is what keeps the message-thread call safe.
+    if (onStatus)
+        post (onStatus, juce::String ("installing via the system updater..."));
+
+    juce::ChildProcess proc;
+    if (! proc.start (cmd))
+    {
+        if (onDone)
+            post (onDone, false, juce::String ("could not start the system updater"), false);
+        return;
+    }
+
+    juce::String output;
+    char buffer[4096];
+    while (proc.isRunning())
+    {
+        const auto n = proc.readProcessOutput (buffer, sizeof (buffer));
+        if (n > 0)
+            output += juce::String::fromUTF8 (buffer, (int) n);
+        if (onStatus && output.isNotEmpty())
+        {
+            const auto lines = juce::StringArray::fromLines (output.trimEnd());
+            post (onStatus, lines.isEmpty() ? juce::String() : lines[lines.size() - 1]);
+        }
+        juce::Thread::sleep (200);
+    }
+    // Drain whatever the child printed in its last moments.
+    while (true)
+    {
+        const auto n = proc.readProcessOutput (buffer, sizeof (buffer));
+        if (n <= 0)
+            break;
+        output += juce::String::fromUTF8 (buffer, (int) n);
+    }
+
+    const int exitCode = (int) proc.getExitCode();
+    if (exitCode == 0)
+    {
+        // On success the script restarts ogmfx.service -- usually killing
+        // this app before this callback lands. If we are still here (e.g.
+        // throttled check), say so plainly.
+        if (onDone)
+            post (onDone, true,
+                  juce::String ("system updater finished -- the app will restart on the new version"),
+                  false);
+        return;
+    }
+
+    auto lines = juce::StringArray::fromLines (output);
+    while (lines.size() > 3)
+        lines.remove (0);
+    if (onDone)
+        post (onDone, false,
+              "update failed (the previous version stays live): " + lines.joinIntoString (" / "),
+              false);
+}
+
+void AppUpdater::restartNow()
+{
+    const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+    if (exe.startAsProcess())
+        if (auto* app = juce::JUCEApplicationBase::getInstance())
+            app->systemRequestedQuit();
+}
+
+} // namespace openguitarmultifx

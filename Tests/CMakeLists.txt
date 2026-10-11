@@ -19,6 +19,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   MidiLearnPresetXmlTests.cpp
   MasterEqTests.cpp
   SnapshotPresetXmlTests.cpp
+  UpdateCoreTests.cpp
   GateProcessorTests.cpp
   CompressorProcessorTests.cpp
   PositiveGroundBoosterProcessorTests.cpp
@@ -161,6 +162,7 @@ set(OGMFX_SOURCES
   ../Source/Engine/ParameterManager.cpp
   ../Source/Presets/PresetManager.cpp
   ../Source/Presets/PresetLibrary.cpp
+  ../Source/Updater/UpdaterCore.cpp
   ../Source/UI/SnapshotPresetXml.cpp
   ../Source/Effects/GateProcessor.cpp
   ../Source/Effects/CompressorProcessor.cpp
@@ -290,6 +292,7 @@ target_link_libraries(OpenGuitarMultiFx_Tests PRIVATE
   juce::juce_audio_formats
   juce::juce_audio_processors
   juce::juce_core
+  juce::juce_cryptography
   juce::juce_dsp
   juce::juce_events
   juce::juce_recommended_config_flags
@@ -346,6 +349,7 @@ target_link_libraries(OpenGuitarMultiFx_RenderFx PRIVATE
   juce::juce_audio_formats
   juce::juce_audio_processors
   juce::juce_core
+  juce::juce_cryptography
   juce::juce_dsp
   juce::juce_events
   juce::juce_recommended_config_flags

@@ -42,6 +42,32 @@ locations above; `ExecStart` in the service assumes
 Manual rollback: `ogmfx-update.sh --rollback` swaps `current`/`previous`
 back and restarts the service.
 
+## In-app trigger (Settings → Software update)
+
+The app's Settings card has an Update section that runs the same flow on
+demand instead of waiting for the timer. Two cases, decided by where the
+running binary lives:
+
+- **Packaged install** (`/opt/ogmfx/current/...` — the A7S image and any
+  device installed via `install.sh`): the app shells out to
+  `sudo -n /usr/local/sbin/ogmfx-update.sh --force`. The `ogmfx` user has
+  no general sudo; `packaging/ogmfx-updater.sudoers` (installed by
+  `install.sh` as `/etc/sudoers.d/ogmfx-updater`) grants NOPASSWD for
+  that one script. Without sudo the app falls back to
+  `systemctl start ogmfx-updater.service`. Either way the script itself
+  restarts `ogmfx.service` into the new release, so a successful apply
+  exits the app. `--force` re-checks even inside the check interval;
+  the script's `flock` makes a concurrent timer tick harmless.
+- **Unpacked/dev binary**: the app downloads `ogmfx-<v>-<arch>.tar.gz` +
+  `.sha256`, verifies the checksum, extracts `bin/OpenGuitarMultiFx`,
+  renames the running exe to `.bak` and swaps the new one in atomically,
+  then prompts for restart. Nothing the running process needs is touched
+  before the staged binary is verified.
+
+All of it runs on a control-side background thread
+(`Source/Updater/AppUpdater`); the audio path never sees it. Channel
+(stable/beta) and repo come from `/etc/ogmfx/updater.conf` when present.
+
 Every failure path exits non-zero with `current` still pointing at the
 release that was live before the run. The script is idempotent and takes a
 `flock` so a timer tick can't overlap a manual run.

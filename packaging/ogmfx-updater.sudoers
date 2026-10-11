@@ -1,0 +1,7 @@
+# Lets the kiosk app (running as the unprivileged ogmfx user) trigger a
+# manual update/rollback through the root-side updater script -- the only
+# privilege the in-app updater needs, and the script itself accepts only
+# --check/--force/--rollback. Everything else about the update (download,
+# checksum, symlink swap, health check, rollback) runs inside
+# ogmfx-update.sh as root, same as the periodic ogmfx-updater.timer path.
+ogmfx ALL=(root) NOPASSWD: /usr/local/sbin/ogmfx-update.sh
