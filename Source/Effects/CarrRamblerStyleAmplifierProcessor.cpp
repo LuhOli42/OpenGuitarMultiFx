@@ -478,7 +478,7 @@ double CarrRamblerStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (blocked - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState)) * bmLevelTrim;
+    ch.bmOutput = ch.bmTail.process ((ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState)) * bmLevelTrim);
     return ch.bmOutput;
 }
 

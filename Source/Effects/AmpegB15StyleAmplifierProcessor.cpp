@@ -369,7 +369,7 @@ double AmpegB15StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, doubl
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / sampleRate);
     ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState)) * bmLevelTrim;
+    ch.bmOutput = ch.bmTail.process ((ch.bmToneState + bmShelfHfGain * (rawAc - ch.bmToneState)) * bmLevelTrim);
     return ch.bmOutput;
 }
 
