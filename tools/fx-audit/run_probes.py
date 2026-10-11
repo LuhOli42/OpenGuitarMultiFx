@@ -104,6 +104,10 @@ for k in TIME:
     for probe in ('probe-clicks.wav', 'probe-sweep.wav'):
         jobs.append((f'{k}__{probe[:-4]}', PROBES_DIR + '/' + probe, k, ['--model=' + CABIR] if k == 'Reverb' else []))
 
+# OC-2 is nonlinear so it lives in LINEAR for the sine probes, but it still gets
+# the click transient probe like the other pitch/modulation effects.
+jobs.append(('BossOC2StyleOctaver__probe-clicks', PROBES_DIR + '/probe-clicks.wav', 'BossOC2StyleOctaver', []))
+
 def run(job):
     outname, inf, key, extra = job
     out = f'{OUT}/{outname}.wav'
@@ -119,9 +123,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
             fails.append(res)
             print(res[0], '| rc', res[3], '|', res[2][:150], flush=True)
 
-if fails:
-    sys.exit(f'{len(fails)} probe renders failed')
-
 with open(A + '/probes.csv', 'w', newline='') as f:
     w = csv.writer(f); w.writerow(['variant', 'stdout', 'stderr', 'rc']); w.writerows(results)
 print('DONE', len(results))
+
+if fails:
+    sys.exit(f'{len(fails)} probe renders failed')
