@@ -99,17 +99,54 @@ private:
         {
             // Middle at zero shorts the trap's rheostat: the resonant peak should land on the selected
             // tap's frequency. Measure the cathode follower's output (the trap's effect at the mid node
-            // propagates there, and unlike midNode it has ~0 V DC so a peak reading sees the AC).
+            // propagates there). Two pitfalls shaped this helper: the follower sits on a tap-dependent
+            // DC offset of volts (-6.2 V on the 800 Hz tap, +1.1 V on 220 Hz), so a raw |v| "peak"
+            // mostly reads DC -- measure AC rms about the window mean instead; and debugVoltage() is
+            // a post-block read, so at 750 Hz in 128-sample blocks it samples one fixed phase every
+            // block (750 * 128 / 48000 = exactly 2 cycles) -- process in small blocks so the probe is
+            // read several times per cycle.
             SVTStyleAmplifierProcessor amp;
             amp.prepare (48000.0, 128, 1);
             setParam (amp, "svt_middle", 0.0f);
             setParam (amp, "svt_master", 1.0f);
-            const double r800 = runSine (amp, 750.0, 0.02, 1.0, 0.2, (int) P::followerOut);
-            setParam (amp, "svt_mid_freq", 0.0f);
-            const double r220 = runSine (amp, 750.0, 0.02, 0.5, 0.2, (int) P::followerOut);
-            // A 750 Hz tone should be stronger with the ~800 Hz tap selected than the ~220 Hz one.
-            expectGreaterThan (r800 / juce::jmax (1.0e-9, r220), 1.2,
-                               "750 Hz follower out: 800Hz-tap " + juce::String (r800) + " vs 220Hz-tap " + juce::String (r220));
+            auto followerAc = [&] (float tap)
+            {
+                setParam (amp, "svt_mid_freq", tap);
+                constexpr int blk = 8;
+                juce::AudioBuffer<float> buf (1, blk);
+                const double sr = 48000.0;
+                // The tap switch re-stamps the trap's L and C mid-transient and the DC operating point
+                // relaxes on the seconds scale -- settle well past that before measuring.
+                const int warm = (int) (2.0 * sr), meas = (int) (0.5 * sr);
+                double s = 0.0, sq = 0.0;
+                int n = 0;
+                for (int i = 0; i < warm + meas; i += blk)
+                {
+                    for (int k = 0; k < blk; ++k)
+                        buf.setSample (0, k, (float) (0.02 * std::sin (2.0 * juce::MathConstants<double>::pi * 750.0 * (i + k) / sr)));
+                    amp.process (buf);
+                    if (i >= warm)
+                    {
+                        const double v = amp.debugVoltage (P::followerOut);
+                        s += v;
+                        sq += v * v;
+                        ++n;
+                    }
+                }
+                const double mean = s / n;
+                return std::sqrt (juce::jmax (0.0, sq / n - mean * mean));
+            };
+            const double a800 = followerAc (1.0f);   // default tap
+            const double a220 = followerAc (0.0f);
+            const double a3k = followerAc (2.0f);
+            // A 750 Hz tone should be much stronger at the follower with the ~800 Hz tap selected
+            // than with either of the off-resonance taps.
+            logMessage ("750 Hz follower AC rms: 800Hz-tap " + juce::String (a800, 4) + " V, 220Hz-tap " + juce::String (a220, 4)
+                        + " V, 3kHz-tap " + juce::String (a3k, 4) + " V");
+            expectGreaterThan (a800 / juce::jmax (1.0e-9, a220), 1.2,
+                               "800 vs 220 tap ratio " + juce::String (a800 / a220));
+            expectGreaterThan (a800 / juce::jmax (1.0e-9, a3k), 1.2,
+                               "800 vs 3k tap ratio " + juce::String (a800 / a3k));
         }
 
         beginTest ("bass knob swings 40 Hz at the tone stack");

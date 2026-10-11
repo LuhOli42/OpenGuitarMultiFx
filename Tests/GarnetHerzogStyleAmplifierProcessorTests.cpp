@@ -57,6 +57,11 @@ public:
 
     void runTest() override
     {
+        // reducedOrder is a static flag: an earlier suite that ran registerBuiltInEffects
+        // leaves it true, and in reducedOrder the physical power stage is bypassed so every
+        // power-section DC probe below reads 0. Pin the full netlist like the sibling suites do.
+        Amp::reducedOrder = false;
+
         beginTest ("the model converges to a sane DC operating point");
         {
             Amp amp;
