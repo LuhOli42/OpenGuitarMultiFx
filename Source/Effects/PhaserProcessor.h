@@ -32,6 +32,11 @@ public:
     juce::Colour getAccentColour() const override { return juce::Colour (0xff7a5cc9); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
+    // Swept allpass break-frequency range -- public so the FastMath domain
+    // tests can check the tan() argument stays inside its fit domain.
+    static constexpr float minFreqHz = 200.0f;
+    static constexpr float maxFreqHz = 2000.0f;
+
 private:
     struct AllpassStage
     {
@@ -50,8 +55,6 @@ private:
     };
 
     static constexpr int numStages = 4;
-    static constexpr float minFreqHz = 200.0f;
-    static constexpr float maxFreqHz = 2000.0f;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* rateHz = nullptr;

@@ -1,4 +1,5 @@
 #include "TwinReverbStyleAmplifierProcessor.h"
+#include "FastMath.h"
 #include "PotTaper.h"
 #include "DualMono.h"
 #include "IconKit.h"
@@ -740,7 +741,7 @@ void TwinReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
         if (lfoPhase >= 1.0)
             lfoPhase -= 1.0;
         const double tremDepth = (double) in;
-        const double tremMod = 1.0 - tremDepth * 0.5 * (1.0 + std::sin (2.0 * juce::MathConstants<double>::pi * lfoPhase));
+        const double tremMod = 1.0 - tremDepth * 0.5 * (1.0 + (double) fast::sinCycles (lfoPhase));
 
         if (++controlCounter >= controlInterval)
         {

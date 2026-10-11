@@ -139,6 +139,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RotaryProcessorTests.cpp
   UniVibeProcessorTests.cpp
   PitchModProcessorTests.cpp
+  FastMathTests.cpp
   PitchShiftProcessorTests.cpp
   OctaverProcessorTests.cpp
   HarmonizerProcessorTests.cpp

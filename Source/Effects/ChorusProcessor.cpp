@@ -1,4 +1,5 @@
 #include "ChorusProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -69,7 +70,7 @@ void ChorusProcessor::process (juce::AudioBuffer<float>& buffer)
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const float delayMs = centreDelayMs + smoothedDepth.getNextValue() * maxDepthMs * (float) std::sin (lfoPhase);
+        const float delayMs = centreDelayMs + smoothedDepth.getNextValue() * maxDepthMs * fast::sinRadians (lfoPhase);
         const float wet = smoothedMix.getNextValue();
         const float delaySamples = delayMs * 0.001f * (float) currentSampleRate;
 

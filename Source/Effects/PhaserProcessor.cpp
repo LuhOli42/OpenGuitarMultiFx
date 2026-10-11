@@ -1,4 +1,5 @@
 #include "PhaserProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -80,8 +81,8 @@ void PhaserProcessor::process (juce::AudioBuffer<float>& buffer)
         const float depthAmount = smoothedDepth.getNextValue();
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
-        const float freqHz = centreFreq + halfRange * depthAmount * (float) std::sin (lfoPhase);
-        const float tanTerm = (float) std::tan (pi * (double) freqHz / currentSampleRate);
+        const float freqHz = centreFreq + halfRange * depthAmount * fast::sinRadians (lfoPhase);
+        const float tanTerm = (float) fast::tanAllpass (pi * (double) freqHz / currentSampleRate);
         const float coeff = (tanTerm - 1.0f) / (tanTerm + 1.0f);
 
         for (int ch = 0; ch < numChannels; ++ch)

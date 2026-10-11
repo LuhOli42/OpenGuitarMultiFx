@@ -1,4 +1,5 @@
 #include "FlangerProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -77,7 +78,7 @@ void FlangerProcessor::process (juce::AudioBuffer<float>& buffer)
     {
         // Centred so the sweep never reaches (or crosses) zero delay --
         // a true zero-crossing would need a discontinuous read index.
-        const float delayMs = centreDelayMs + smoothedDepth.getNextValue() * maxDepthMs * (float) std::sin (lfoPhase);
+        const float delayMs = centreDelayMs + smoothedDepth.getNextValue() * maxDepthMs * fast::sinRadians (lfoPhase);
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
         const float delaySamples = delayMs * 0.001f * (float) currentSampleRate;

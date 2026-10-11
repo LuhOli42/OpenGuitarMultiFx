@@ -1,4 +1,5 @@
 #include "TapeDelayProcessor.h"
+#include "FastMath.h"
 #include "IconKit.h"
 
 #include <IconData.h>
@@ -76,7 +77,7 @@ void TapeDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
 
-        const float wobble = std::sin (wowPhase) * wowDepthSamples;
+        const float wobble = fast::sinRadians (wowPhase) * wowDepthSamples;
         wowPhase += wowPhaseInc;
         if (wowPhase > juce::MathConstants<float>::twoPi)
             wowPhase -= juce::MathConstants<float>::twoPi;
