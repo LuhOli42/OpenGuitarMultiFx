@@ -159,9 +159,11 @@ The Settings screen ("..." button, `Tone3000Panel`) has a **Rendering quality** 
   Used by the amplifiers: Bassman Amplifier (Power Drive, Bias, Tube Feel, Speaker) and the neural amps / amp+cab (Sag).
 * **Menu.** "Amplifiers" was split into **Modeled Amps** (circuit-modelled: Bassman Amplifier), **Neural** (Neural Amp,
   Neural Amp + Cab, Neural Pedal) and **Cabs** (Cab, Dynamic Cab). New modelled amps go in "Modeled Amps".
-  "Drive" was split (2026-09-21) into **Overdrive** and **Distortion**, by display-name suffix in `categoryForDisplayName()`:
-  "...-Style Distortion" -> Distortion (DS-1, HM-2, Distortion+, Guv'nor, RAT), "...-Style Overdrive" and the Rangemaster booster ->
-  Overdrive. A future Fuzz gets its own submenu. The generic tanh "Overdrive" (no reference pedal) was removed.
+  "Drive" was split (2026-09-21) into **Overdrive** and **Distortion**, originally by display-name suffix in `categoryForDisplayName()`.
+  **SUPERSEDED 2026-10-10**: the picker is now `AddEffectBrowserDialog` (OverlayHost card: category rail + tile grid + live
+  search), and categories are `EffectRegistry::Category` metadata passed at `registerType()` time — `categoryForDisplayName()`
+  and the nested PopupMenu are gone. Amps are split **Guitar Amps** vs **Bass Amps** (SVT, B-15, V4B, Bass 400+, Acoustic 360,
+  Trace Elliot GP12) at registration, not by name.
 
 ## Sample rate (2026-09-24)
 The Settings screen has a **Sample rate** row (44.1 / 48 / 88.2 / 96 kHz, only those the open device offers). Choosing one calls `AudioEngine::setSampleRate()`: it takes the audio callback off, reopens the device at that rate (restoring the previous rate if the device refuses), puts the callback back and remembers the choice in `sample_rate.txt` next to `render_quality.txt`. The panel is told the rates by the host (`Tone3000Panel::showSampleRates`), not by reaching into the engine. Not yet checked on screen: a screenshot of the Settings card was attempted but the app window was behind other windows on the user's desktop, so this row is verified by build and by the engine's code path only.

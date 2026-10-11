@@ -228,6 +228,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/Effects/OctaverProcessor.cpp
   Source/Effects/HarmonizerProcessor.cpp
   Source/Effects/LooperProcessor.cpp
+  Source/UI/AddEffectBrowserDialog.cpp
   Source/UI/ChainContainer.cpp
   Source/UI/EffectBlockComponent.cpp
   Source/UI/FooterBar.cpp
