@@ -236,7 +236,11 @@ MainComponent::MainComponent()
         masterBusSaveCountdown = 10; // trailing-edge save in timerCallback (~500 ms)
     };
 
-    audioDeviceOk = audioEngine.start();
+    audioEngine.start();
+    // start()'s return reflects the requested setup, not the final device state --
+    // its USB-switch path can fail on both legs and still return true. The only
+    // honest liveness signal is whether a device is open right now.
+    audioDeviceOk = audioEngine.getDeviceManager().getCurrentAudioDevice() != nullptr;
     if (! audioDeviceOk)
     {
         titleLabel.setText ("Audio device failed to open", juce::dontSendNotification);
@@ -961,15 +965,10 @@ void MainComponent::showSettingsPanel()
     panel->onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     panel->onPopOverlay  = [this] { overlayHost.popOverlay(); };
     panel->onQualityChanged = [this] (EffectRegistry::OversamplingQuality q) { applyRenderQuality (q); };
-    panel->onSampleRateChanged = [this] (double rate)
-    {
-        const auto error = audioEngine.setSampleRate (rate);
-        // A failed rate switch can also be the only recovery path after a
-        // start() failure, so track device liveness through it too.
-        audioDeviceOk = error.isEmpty();
-        cpuLabel.setColour (juce::Label::textColourId, audioDeviceOk ? juce::Colours::white : juce::Colours::orange);
-        return error;
-    };
+    // The return value only reports whether the REQUESTED rate applied (Settings
+    // shows it) -- a failed switch can still leave a device open, and timerCallback
+    // re-derives audioDeviceOk from the device itself every tick regardless.
+    panel->onSampleRateChanged = [this] (double rate) { return audioEngine.setSampleRate (rate); };
     panel->showSampleRates (audioEngine.getAvailableSampleRates(), audioEngine.getCurrentSampleRate());
 
     overlayHost.pushOverlay (std::move (panel));
@@ -1885,6 +1884,17 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 
 void MainComponent::timerCallback()
 {
+    // Re-derive device liveness every tick rather than latching it from
+    // start()/rate-switch results -- a mid-session unplug, a start() that
+    // returned true with no device left open, or a failed rate switch that
+    // then recovered all reduce to the same question: is a device open now.
+    const bool deviceOk = audioEngine.getDeviceManager().getCurrentAudioDevice() != nullptr;
+    if (deviceOk != audioDeviceOk)
+    {
+        audioDeviceOk = deviceOk;
+        cpuLabel.setColour (juce::Label::textColourId, audioDeviceOk ? juce::Colours::white : juce::Colours::orange);
+    }
+
     // Average and worst-block, not one number: see AudioEngine::getPeakCpuUsage().
     // roundToInt, not String(double, 0): JUCE reads 0 decimal places as "shortest representation" and prints every digit.
     if (audioDeviceOk)
