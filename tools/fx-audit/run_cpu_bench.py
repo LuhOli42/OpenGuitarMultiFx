@@ -14,7 +14,8 @@ Environment overrides:
     NAM_FIXTURE    .nam for Neural*  (default: Tests/fixtures/lstm.nam)
     CAB_IR         IR for Cab        (default: tools/fx-audit/ir/cab-4x12.wav)
     BENCH_REPS     measured reps     (default: 3, best-of like run_renders)
-    BENCH_WORKERS  parallel jobs     (default: 4 -- raise only on idle boxes)
+    BENCH_WORKERS  parallel jobs     (default: 4, or the core count when
+                   BENCH_CORESET is set -- benchmarking is timing-sensitive)
     BENCH_CORESET  Linux CPU list    (e.g. "0,1" -> os.sched_setaffinity)
     BENCH_CSV      csv output path   (default: tools/fx-audit/cpu-bench.csv)
     BENCH_MD       md report path    (default: <BENCH_CSV minus .csv>.md)
@@ -26,8 +27,11 @@ DI = os.environ.get('DI_WAV', 'Tests/fixtures/di/guitar-di.wav')
 NAM = os.environ.get('NAM_FIXTURE', 'Tests/fixtures/lstm.nam')
 CABIR = os.environ.get('CAB_IR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ir', 'cab-4x12.wav'))
 REPS = os.environ.get('BENCH_REPS', '3')
-WORKERS = int(os.environ.get('BENCH_WORKERS', '4'))
 CORESET = os.environ.get('BENCH_CORESET', '')
+# Pinned runs must not over-subscribe the allowed cores -- two benchmarks
+# racing for one core inflate each other's CPU% and peak-block times.
+_default_workers = str(len(CORESET.split(','))) if CORESET else '4'
+WORKERS = int(os.environ.get('BENCH_WORKERS', _default_workers))
 CSV_OUT = os.environ.get('BENCH_CSV', 'tools/fx-audit/cpu-bench.csv')
 MD_OUT = os.environ.get('BENCH_MD', re.sub(r'\.csv$', '', CSV_OUT) + '.md')
 FLAG_CPU_PCT = float(os.environ.get('BENCH_FLAG_CPU_PCT', '10.0'))  # A7S reduced-quality budget
@@ -44,7 +48,7 @@ def list_keys():
 
 def model_args(key):
     if key.startswith('Neural'): return ['--model=' + NAM]
-    if key in ('Cab', 'DynamicCab'): return ['--model=' + CABIR]
+    if key in ('Cab', 'DynamicCab', 'Reverb'): return ['--model=' + CABIR]
     return []
 
 def run(key):
@@ -62,10 +66,15 @@ for f, why in [(BIN, 'binary'), (DI, 'DI wav')]:
 for f in (NAM, CABIR):
     if not os.path.exists(f): print(f'warning: missing model fixture {f} (Neural*/Cab rows will measure ~0 CPU)', file=sys.stderr)
 
-rows = []
+rows, failures = [], []
 with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
     for key, krows, err, rc in ex.map(run, keys):
         rows.extend(krows)
+        for r in krows:
+            if r.split(',')[-1] != 'ok':
+                failures.append(r)
+        if rc != 0 or len(krows) != 2:
+            failures.append(f'{key}: rc={rc} rows={len(krows)}')
         print(key, '|', (err.splitlines()[-1][:160] if err else ''), ('rc=' + str(rc)) if rc else '', flush=True)
 
 with open(CSV_OUT, 'w', newline='') as f:
@@ -123,4 +132,9 @@ with open(MD_OUT, 'w') as f:
     f.write('\n'.join(lines))
 print('wrote', MD_OUT)
 print('flagged:', ', '.join(flagged) if flagged else 'none')
+if failures:
+    print('FAILED ROWS (outputs written but table is incomplete):', file=sys.stderr)
+    for f_ in failures:
+        print(' ', f_, file=sys.stderr)
+    sys.exit(1)
 print('DONE')

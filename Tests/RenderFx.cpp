@@ -18,8 +18,10 @@
 //                                   [--sr=48000] [--block=256] [--repeat=3] [--model=..] [--model2=..]
 //                                   [--nam=<file>] [--ir=<file>]
 //
-// --nam feeds every Neural* key, --ir feeds Cab/DynamicCab -- so a single
-// invocation produces the whole table on the device (see tools/fx-audit/
+// --nam feeds every Neural* key, --ir feeds the convolution keys (Cab,
+// DynamicCab, Reverb -- all IRLoaderProcessor roles; without an IR Reverb
+// would measure passthrough, not convolution) -- so a single invocation
+// produces the whole table on the device (see tools/fx-audit/
 // run_cpu_bench.py for the parallel per-key variant used for the x86 table).
 //
 // Tiers compared: "high" (OversamplingQuality::high, the desktop reference) and
@@ -87,8 +89,10 @@ static std::vector<float> resampleMono (const float* in, juce::int64 inN, double
 {
     if (inSr == outSr)
         return { in, in + inN };
+    if (inN < 4) // shorter than the interpolation window -- reject instead of overflowing outN
+        return {};
     const double step = inSr / outSr;
-    const juce::int64 outN = (juce::int64) ((inN - 2) / step); // keep the interpolation window in range
+    const auto outN = juce::jmax ((juce::int64) 0, (juce::int64) ((inN - 2) / step)); // keep the interpolation window in range
     std::vector<float> out ((size_t) outN);
     for (juce::int64 i = 0; i < outN; ++i)
     {
@@ -142,7 +146,7 @@ static int runBench (EffectRegistry& registry, const juce::StringArray& args)
     {
         std::cerr << "usage: RenderFx --bench <in.wav> <out.csv|-> [EffectKey ...] [param=value ...]\n"
                      "              [--sr=48000] [--block=256] [--repeat=3] [--model=..] [--model2=..]\n"
-                     "              [--nam=<file> (Neural* keys)] [--ir=<file> (Cab/DynamicCab)]\n";
+                     "              [--nam=<file> (Neural* keys)] [--ir=<file> (Cab/DynamicCab/Reverb)]\n";
         return 2;
     }
 
@@ -196,6 +200,7 @@ static int runBench (EffectRegistry& registry, const juce::StringArray& args)
 
     juce::String csv = "effect,quality,sr,block,channels,reps,audio_ms,proc_ms,cpu_pct,rtf,peak_block_ms,budget_ms,peak_block_pct,blocks_over_budget,status\n";
     juce::AudioBuffer<float> dry = input;
+    bool anyFailed = false;
 
     for (auto& key : keys)
         for (auto& [label, quality] : tiers)
@@ -219,7 +224,8 @@ static int runBench (EffectRegistry& registry, const juce::StringArray& args)
                         fx->loadModelFile (juce::File (model2Path), 1);
                     if (namPath.isNotEmpty() && key.startsWith ("Neural") && fx->wantsModelFile())
                         fx->loadModelFile (juce::File (namPath), 0);
-                    if (irPath.isNotEmpty() && (key == "Cab" || key == "DynamicCab") && fx->wantsModelFile())
+                    if (irPath.isNotEmpty() && (key == "Cab" || key == "DynamicCab" || key == "Reverb")
+                        && fx->wantsModelFile())
                         fx->loadModelFile (juce::File (irPath), 0);
                     fx->prepare (sampleRate, block, 1);
 
@@ -252,6 +258,7 @@ static int runBench (EffectRegistry& registry, const juce::StringArray& args)
             {
                 r.status = "exception";
             }
+            anyFailed = anyFailed || r.status != "ok";
             csv << r.key << ',' << r.quality << ',' << (int) sampleRate << ',' << block << ",1,"
                 << repeats << ',' << juce::String (r.audioMs, 1) << ',' << juce::String (r.procMs, 2)
                 << ',' << juce::String (r.cpuPct, 3) << ',' << juce::String (r.rtf, 1)
@@ -270,7 +277,9 @@ static int runBench (EffectRegistry& registry, const juce::StringArray& args)
         std::cerr << "cannot write " << outFile.getFullPathName() << "\n";
         return 1;
     }
-    return 0;
+    // Nonzero if any row failed -- the CSV still got written, but a green exit
+    // must mean every measured row is real.
+    return anyFailed ? 1 : 0;
 }
 
 int main (int argc, char* argv[])
