@@ -47,6 +47,52 @@ private:
 
     void runTest() override
     {
+        SVTStyleAmplifierProcessor::reducedOrder = false;
+
+        if (juce::SystemStats::getEnvironmentVariable ("SVT_POWERCAL", {}).isNotEmpty())
+        {
+            // Calibration sweep for the reduced-order power stage (same methodology as Bassman's
+            // BM_POWERCAL): drive the full reference model with a slow settled sine at a range of
+            // levels and print (power-input peak, speaker peak/rms, plate rail) per level.
+            beginTest ("power-stage calibration sweep (dev only)");
+            SVTStyleAmplifierProcessor amp;
+            setParam (amp, "svt_input", 0.0f);
+            setParam (amp, "svt_gain", 0.8f);
+            setParam (amp, "svt_master", 1.0f);
+            setParam (amp, "svt_power", 1.0f);
+            amp.prepare (48000.0, 128, 2);
+            const double twoPi = 2.0 * juce::MathConstants<double>::pi;
+            for (double level : { 1.0e-4, 2.0e-4, 4.0e-4, 7.0e-4, 1.0e-3, 1.5e-3, 2.0e-3, 3.0e-3,
+                                  4.0e-3, 5.5e-3, 7.0e-3, 9.0e-3, 0.012, 0.016, 0.02, 0.03,
+                                  0.05, 0.08, 0.12, 0.18, 0.28, 0.4 })
+            {
+                const long long total = (long long) (1.5 * 48000.0);
+                const long long measureFrom = total - (long long) (0.1 * 48000.0);
+                double drivePeak = 0.0, outPeak = 0.0, outSumSq = 0.0;
+                long long n2 = 0;
+                juce::AudioBuffer<float> one (2, 1);
+                for (long long n = 0; n < total; ++n)
+                {
+                    const float v = (float) (level * std::sin (twoPi * 100.0 * (double) n / 48000.0));
+                    one.setSample (0, 0, v);
+                    one.setSample (1, 0, v);
+                    amp.process (one);
+                    if (n >= measureFrom)
+                    {
+                        drivePeak = juce::jmax (drivePeak, std::abs (amp.debugVoltage (P::powerInput)));
+                        const double y = amp.debugVoltage (P::speaker);
+                        outPeak = juce::jmax (outPeak, std::abs (y));
+                        outSumSq += y * y;
+                        ++n2;
+                    }
+                }
+                logMessage ("powercal drive_pk=" + juce::String (drivePeak, 6) + " out_pk=" + juce::String (outPeak, 4)
+                            + " out_rms=" + juce::String (std::sqrt (outSumSq / (double) juce::jmax (1LL, n2)), 4)
+                            + " rail=" + juce::String (amp.railPlates(), 2)
+                            + " fails=" + juce::String (amp.getSolveFailureRate(), 6));
+            }
+        }
+
         beginTest ("DC operating points land near the schematic's marked voltages (+-30%)");
         {
             SVTStyleAmplifierProcessor amp;

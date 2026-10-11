@@ -26,8 +26,11 @@
 #include "Effects/RiveraKnuckleheadStyleAmplifierProcessor.h"
 #include "Effects/RockerverbStyleAmplifierProcessor.h"
 #include "Effects/SLO100StyleAmplifierProcessor.h"
+#include "Effects/SVTStyleAmplifierProcessor.h"
+#include "Effects/KometConcordeStyleAmplifierProcessor.h"
 #include "Effects/SunnModelTStyleAmplifierProcessor.h"
 #include "Effects/SuperLeadStyleAmplifierProcessor.h"
+#include "Effects/TrainwreckExpressStyleAmplifierProcessor.h"
 #include "Effects/TwinReverbStyleAmplifierProcessor.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -379,7 +382,8 @@ public:
             { "sunn",        18.0, 15.0, 0.0 }, { "deliverance",  3.0, 12.0, 0.0 },
             { "uberschall",   3.0, 14.0, 0.0 }, { "b15",         3.0, 13.0, 0.0 },
             { "v4b",         18.0, 30.0, 0.0 }, { "mesa400",     2.5, 10.0, 0.0 },
-            { "acoustic360", 4.0,  9.0, 0.0 },
+            { "acoustic360", 4.0,  9.0, 0.0 }, { "svt",         2.5,  5.0, 0.0 },
+            { "trainwreck",   1.5,  1.5, 0.0 }, { "komet",       1.5,  5.0, 0.0 },
         };
         for (const auto& e : b)
             if (juce::String (e.ampName) == ampName)
@@ -583,6 +587,9 @@ public:
         AMP_ENTRY ("v4b",         AmpegV4BStyleAmplifierProcessor)
         AMP_ENTRY ("mesa400",     MesaBass400PlusStyleAmplifierProcessor)
         AMP_ENTRY ("acoustic360", Acoustic360StyleAmplifierProcessor)
+        AMP_ENTRY ("svt",        SVTStyleAmplifierProcessor)
+        AMP_ENTRY ("trainwreck", TrainwreckExpressStyleAmplifierProcessor)
+        AMP_ENTRY ("komet",      KometConcordeStyleAmplifierProcessor)
 
 #undef AMP_ENTRY
     }

@@ -2,6 +2,9 @@
 #include "Effects/DeluxeReverbStyleAmplifierProcessor.h"
 #include "Effects/CarrRamblerStyleAmplifierProcessor.h"
 #include "Effects/DividedBy13FTR37StyleAmplifierProcessor.h"
+#include "Effects/SVTStyleAmplifierProcessor.h"
+#include "Effects/TrainwreckExpressStyleAmplifierProcessor.h"
+#include "Effects/KometConcordeStyleAmplifierProcessor.h"
 
 #include <juce_core/juce_core.h>
 
@@ -264,6 +267,36 @@ public:
                    DividedBy13FTR37StyleAmplifierProcessor::Probe::speaker,
                    lv, DividedBy13FTR37StyleAmplifierProcessor::bmGain0, DividedBy13FTR37StyleAmplifierProcessor::bmYmax,
                    DividedBy13FTR37StyleAmplifierProcessor::bmKneeN, 410.0, false);
+        }
+        if (wanted ("svt"))
+        {
+            SVTStyleAmplifierProcessor amp;
+            bench ("svt", amp, &SVTStyleAmplifierProcessor::reducedOrder,
+                   [&] (auto& a) { setById (a, "svt_input", 0.0f); setById (a, "svt_gain", 0.8f); setById (a, "svt_master", 1.0f); setById (a, "svt_power", 1.0f); },
+                   SVTStyleAmplifierProcessor::Probe::powerInput,
+                   SVTStyleAmplifierProcessor::Probe::speaker,
+                   lv, SVTStyleAmplifierProcessor::bmGain0, SVTStyleAmplifierProcessor::bmYmax,
+                   SVTStyleAmplifierProcessor::bmKneeN, 690.0, true);
+        }
+        if (wanted ("trainwreck"))
+        {
+            TrainwreckExpressStyleAmplifierProcessor amp;
+            bench ("trainwreck", amp, &TrainwreckExpressStyleAmplifierProcessor::reducedOrder,
+                   [&] (auto& a) { setById (a, "twx_volume", 0.8f); setById (a, "twx_power", 1.0f); },
+                   TrainwreckExpressStyleAmplifierProcessor::Probe::powerInput,
+                   TrainwreckExpressStyleAmplifierProcessor::Probe::speaker,
+                   lv, 94.0 /* Spec::bmGain0 (express) */, 0.108 /* Spec::bmYmax */,
+                   3.0 /* Spec::bmKneeN (express) */, 395.0, true);
+        }
+        if (wanted ("komet"))
+        {
+            KometConcordeStyleAmplifierProcessor amp;
+            bench ("komet", amp, &KometConcordeStyleAmplifierProcessor::reducedOrder,
+                   [&] (auto& a) { setById (a, "kcd_volume", 0.8f); setById (a, "kcd_power", 1.0f); },
+                   KometConcordeStyleAmplifierProcessor::Probe::powerInput,
+                   KometConcordeStyleAmplifierProcessor::Probe::speaker,
+                   lv, 29.0 /* Spec::bmGain0 (concorde) */, 0.112 /* Spec::bmYmax */,
+                   2.0 /* Spec::bmKneeN (concorde) */, 460.0, true);
         }
     }
 };

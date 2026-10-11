@@ -62,6 +62,14 @@ struct TrainwreckExpressStyleAmplifierProcessor::Spec
     double biasNominal;     // grid volts with the trimmer at noon
     double biasSpan;        // +/- volts over the Bias knob
     double idlePlateCurrent;
+    // reducedOrder behavioural-stage constants, fitted per model (TWX_POWERCAL + PowerStageAsymBench):
+    double bmGain0;         // in -> speaker volts, small-signal, at the nominal rail
+    double bmYmax;          // peak output as a fraction of the (possibly sagged) rail at full drive
+    double bmAsym;          // push-pull clip asymmetry, envelope-scaled
+    double bmLevelTrim;     // post-stage level trim against this model's own netlist
+    double bmKneeN;         // knee order of the saturating polynomial (lower = earlier, softer clip)
+    double bmSagC;          // plate-rail droop per volt of drive envelope
+    double bmSagFloor;      // deepest the rail can sag, as a fraction of the nominal rail
 };
 
 const TrainwreckExpressStyleAmplifierProcessor::Spec& TrainwreckExpressStyleAmplifierProcessor::spec() const noexcept
@@ -71,11 +79,13 @@ const TrainwreckExpressStyleAmplifierProcessor::Spec& TrainwreckExpressStyleAmpl
     // cutoff sits lower than a real tube's -- a plexi is -55 V there) reaches a comparable ~40 mA idle at about -41 V, so noon
     // is -41 V (estimated operating-point match, not a voltage match).
     static const Spec express { "trainwreck_express", "Trainwreck Express-Style Amplifier", "twx_", false,
-                                395.0, 60.0, 80.0e-6, 295.0 / 380.0, 275.0 / 380.0, 5000.0, 6.0, -41.0, 6.0, 0.040 };
+                                395.0, 60.0, 80.0e-6, 295.0 / 380.0, 275.0 / 380.0, 5000.0, 6.0, -41.0, 6.0, 0.040,
+                                94.0, 0.108, 0.0, 1.35, 3.0, 0.0075, 0.975 };
     // Concorde: 4k8 primary and diode rectification reported by an Amp Garage builder; rails ESTIMATED (diode rectifier ->
     // higher than the Express); bias ESTIMATED for the same ~40 mA idle at those rails.
     static const Spec concorde { "komet_concorde", "Komet Concorde-Style Amplifier", "kcd_", true,
-                                 460.0, 60.0, 100.0e-6, 335.0 / 445.0, 300.0 / 445.0, 4800.0, 6.0, -51.0, 7.0, 0.040 };
+                                 460.0, 60.0, 100.0e-6, 335.0 / 445.0, 300.0 / 445.0, 4800.0, 6.0, -51.0, 7.0, 0.040,
+                                 29.0, 0.112, 0.0, 1.30, 2.0, 0.0005, 0.96 };
     return model == Model::concorde ? concorde : express;
 }
 
@@ -261,11 +271,19 @@ void TrainwreckExpressStyleAmplifierProcessor::buildChannel (Channel& ch)
     // ================================================================ power: LTP PI + 2x EL34, fixed bias, NO global NFB
     {
         auto& c = ch.power;
-        const auto rail = c.addNode(), piRail = c.addNode(), biasSrc = c.addNode(), in = c.addNode();
+        const auto in = c.addNode();
+        ch.wSrcIn = c.addSource (in, 0.0);
+        // The behavioural path probes the drive right at this node (Probe::powerInput), so it
+        // survives in reducedOrder too; the 1M leak gives it a DC path the coupling cap used to.
+        ch.wTone = in;
+        c.addResistor (in, gnd, 1.0e6);
+        ch.rHiCut = -1;
+        if (! reducedOrder)
+        {
+        const auto rail = c.addNode(), piRail = c.addNode(), biasSrc = c.addNode();
         ch.wSrcRail = c.addSource (rail, s.railPlates);
         ch.wSrcPi = c.addSource (piRail, screenNominal * s.piFraction);
         ch.wSrcBias = c.addSource (biasSrc, s.biasNominal * 1.15);
-        ch.wSrcIn = c.addSource (in, 0.0);
 
         ch.wPiGrid = c.addNode();
         if (s.concorde)
@@ -305,7 +323,6 @@ void TrainwreckExpressStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.wPiGrid, 39.0);
         c.setInitialGuess (gB, 39.0);
 
-        ch.rHiCut = -1;
         if (s.concorde)
         {
             // Hi-Cut: a variable R + 1 nF across the PI outputs, "in the power amp" (Komet's manual); values estimated.
@@ -386,6 +403,7 @@ void TrainwreckExpressStyleAmplifierProcessor::buildChannel (Channel& ch)
         }
         c.setInitialGuess (a1, s.railPlates);
         c.setInitialGuess (a2, s.railPlates);
+        }
     }
 }
 
@@ -412,21 +430,26 @@ void TrainwreckExpressStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rMid, mid);
         ch.pre.setResistance (ch.rVolTop, juce::jmax (1.0, 1.0e6 - volBottom));
         ch.pre.setResistance (ch.rVolBot, volBottom);
-        ch.power.setResistance (ch.rPresence, presenceR);
-        if (ch.rHiCut >= 0)
-            ch.power.setResistance (ch.rHiCut, hiCutR);
-        // the bias supply sits behind 15k into a 220k || 220k grid-leak pair that draws no DC: source volts = grid volts
-        ch.power.setSource (ch.wSrcBias, biasVolts);
+        if (! reducedOrder)
+        {
+            ch.power.setResistance (ch.rPresence, presenceR);
+            if (ch.rHiCut >= 0)
+                ch.power.setResistance (ch.rHiCut, hiCutR);
+            // the bias supply sits behind 15k into a 220k || 220k grid-leak pair that draws no DC: source volts = grid volts
+            ch.power.setSource (ch.wSrcBias, biasVolts);
+        }
         ch.supply.setResistance (ch.rRect, rectifier);
     }
-    if (appliedSpeaker != k.speaker && ! resistiveLoadForced)
+    if (! reducedOrder && appliedSpeaker != k.speaker && ! resistiveLoadForced)
     {
         for (auto& ch : channels)
             applySpeaker (ch, k.speaker);
         appliedSpeaker = k.speaker;
     }
 
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
+    // reducedOrder: the load is whatever PowerStageTail voices, not the knob -- leave the
+    // compensation at unity rather than turning Speaker into a level control.
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
 }
 
 void TrainwreckExpressStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -445,6 +468,8 @@ void TrainwreckExpressStyleAmplifierProcessor::applySpeaker (Channel& ch, int in
 
 void TrainwreckExpressStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 {
+    if (reducedOrder)
+        return;
     for (auto& ch : channels)
     {
         ch.power.setResistance (ch.rSpkRe, ohms);
@@ -475,7 +500,14 @@ void TrainwreckExpressStyleAmplifierProcessor::updateSupply (Channel& ch) const
 {
     const auto& s = spec();
     const double n = (double) juce::jmax (1, ch.sumCount);
-    if (ch.sumCount > 0)
+    if (reducedOrder)
+    {
+        // No output-stage currents are probed in the behavioural path -- hold the supply at its
+        // idle loading so the preamp rail still sits where the reference runs it.
+        ch.supply.setCurrentSource (ch.iA, -2.0 * s.idlePlateCurrent);
+        ch.supply.setCurrentSource (ch.iB, -(0.01 + preampAndPiCurrent));
+    }
+    else if (ch.sumCount > 0)
     {
         ch.supply.setCurrentSource (ch.iA, -juce::jlimit (0.0, 0.5, ch.sumPlate / n));
         ch.supply.setCurrentSource (ch.iB, -juce::jlimit (0.0, 0.1, ch.sumScreen / n + preampAndPiCurrent));
@@ -487,9 +519,12 @@ void TrainwreckExpressStyleAmplifierProcessor::updateSupply (Channel& ch) const
 
     const double plates = juce::jlimit (0.0, 600.0, ch.supply.voltage (ch.sA));
     const double screens = juce::jlimit (0.0, 600.0, ch.supply.voltage (ch.sB));
-    ch.power.setSource (ch.wSrcRail, plates);
-    ch.power.setPentodeScreen (ch.penA, screens);
-    ch.power.setPentodeScreen (ch.penB, screens);
+    if (! reducedOrder)
+    {
+        ch.power.setSource (ch.wSrcRail, plates);
+        ch.power.setPentodeScreen (ch.penA, screens);
+        ch.power.setPentodeScreen (ch.penB, screens);
+    }
     // the 9k1 / 20 uF-class decoupling chain to the PI and preamp taps
     constexpr double decouplingTau = 9.1e3 * 20.0e-6;
     const double dt = (double) supplyInterval / juce::jmax (1.0, sampleRate);
@@ -497,8 +532,64 @@ void TrainwreckExpressStyleAmplifierProcessor::updateSupply (Channel& ch) const
     ch.piRail += a * (screens * s.piFraction - ch.piRail);
     const double b = 1.0 - std::exp (-dt / (2.0 * decouplingTau)); // the preamp sits one more RC section down the chain
     ch.preRail += b * (screens * s.preFraction - ch.preRail);
-    ch.power.setSource (ch.wSrcPi, ch.piRail);
+    if (! reducedOrder)
+        ch.power.setSource (ch.wSrcPi, ch.piRail);
     ch.pre.setSource (ch.pSrcRail, ch.preRail);
+}
+
+double TrainwreckExpressStyleAmplifierProcessor::sagRail (double envelope) const noexcept
+{
+    // Solid-state rectifier: the 'wreck sags less than a tube-rectified amp at the same envelope
+    // (POWERCAL sweeps: Express reaches ~385 V, Concorde ~446 V at maximum drive).
+    const auto& s = spec();
+    return s.railPlates * juce::jlimit (s.bmSagFloor, 1.0, 1.0 - s.bmSagC * envelope);
+}
+
+double TrainwreckExpressStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double driveVoltage, double bias, double feel) const noexcept
+{
+    const auto& s = spec();
+    constexpr double attackMs = 8.0, releaseMs = 45.0;
+    const double absDrive = std::abs (driveVoltage);
+    const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
+    const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
+    ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
+    ch.bmRail = s.railPlates - feel * (s.railPlates - sagRail (ch.bmEnvelope));
+
+    const double k = ch.bmRail * s.bmYmax / s.bmGain0;
+    // The fitted offset rides the drive envelope: pair imbalance grows with swing (the stage
+    // is ~linear below the knee, where a static shift would crush clean small-signal gain).
+    const double envScale = juce::jlimit (0.0, 1.0, ch.bmEnvelope / juce::jmax (1.0e-9, k));
+    const double shift = (s.bmAsym * envScale + 0.6 * (bias - 0.5)) * k;
+    const auto sat = [k, rail = ch.bmRail, ymax = s.bmYmax, kneeN = s.bmKneeN] (double xx)
+    {
+        const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
+        const double yx = ymax * ux / std::pow (1.0 + std::pow (ux, kneeN), 1.0 / kneeN);
+        return std::copysign (yx * rail, xx);
+    };
+    const double raw = juce::jlimit (-ch.bmRail * s.bmYmax, ch.bmRail * s.bmYmax,
+                                     sat (driveVoltage + shift) - sat (shift));
+
+    // OT DC-block: the offset clip rectifies part of the signal into a moving DC
+    // level a real output transformer cannot pass.
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / juce::jmax (1.0, sampleRate));
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double blocked = raw - ch.bmDcState;
+
+    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
+    ch.bmToneState += shelfCoeff * (blocked - ch.bmToneState);
+    const double shaped = ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState);
+
+    // Presence and (Concorde) Hi-Cut live in the removed netlist only; in reducedOrder Presence becomes a
+    // first-order HF shelf on the fitted output -- flat at the 0.5 default -- and Hi-Cut a variable
+    // top-rolloff, flat at the 0.0 default.
+    const double presAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 4500.0 / juce::jmax (1.0, sampleRate));
+    ch.bmPresState += presAlpha * (shaped - ch.bmPresState);
+    const double voiced = ch.bmPresState + (0.64 + 0.72 * juce::jlimit (0.0, 1.0, (double) lastKnobs.presence)) * (shaped - ch.bmPresState);
+    const double cutHz = 20000.0 * std::pow (0.06, juce::jlimit (0.0, 1.0, (double) lastKnobs.hiCut));
+    const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cutHz / juce::jmax (1.0, sampleRate));
+    ch.bmCutState += cut * (voiced - ch.bmCutState);
+    ch.bmOutput = ch.bmTail.process (ch.bmCutState * s.bmLevelTrim);
+    return ch.bmOutput;
 }
 
 double TrainwreckExpressStyleAmplifierProcessor::preampOutput (const Channel& ch) const noexcept
@@ -527,20 +618,21 @@ double TrainwreckExpressStyleAmplifierProcessor::debugVoltage (Probe p) const no
         case Probe::powerGridB: return ch.power.voltage (ch.wGridB);
         case Probe::powerPlateA: return ch.power.voltage (ch.wPP1);
         case Probe::powerPlateB: return ch.power.voltage (ch.wPP2);
-        case Probe::speaker: return ch.power.voltage (ch.wOut);
+        case Probe::speaker: return reducedOrder ? ch.bmOutput : ch.power.voltage (ch.wOut);
         case Probe::biasNode: return ch.power.voltage (ch.wBias);
+        case Probe::powerInput: return ch.power.voltage (ch.wTone);
     }
     return 0.0;
 }
 
 double TrainwreckExpressStyleAmplifierProcessor::plateCurrentA() const noexcept
 {
-    return channels[0].power.pentodePlateCurrent (channels[0].penA);
+    return reducedOrder ? spec().idlePlateCurrent : channels[0].power.pentodePlateCurrent (channels[0].penA);
 }
 
 double TrainwreckExpressStyleAmplifierProcessor::plateCurrentB() const noexcept
 {
-    return channels[0].power.pentodePlateCurrent (channels[0].penB);
+    return reducedOrder ? spec().idlePlateCurrent : channels[0].power.pentodePlateCurrent (channels[0].penB);
 }
 
 void TrainwreckExpressStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
@@ -598,20 +690,36 @@ void TrainwreckExpressStyleAmplifierProcessor::prepare (double newSampleRate, in
             passOk = ch.pre.prepare (newSampleRate) && passOk;
 
             ch.power.setSource (ch.wSrcIn, 0.0);
-            ch.power.setSource (ch.wSrcRail, plates);
-            ch.power.setSource (ch.wSrcPi, ch.piRail);
-            ch.power.setPentodeScreen (ch.penA, screens);
-            ch.power.setPentodeScreen (ch.penB, screens);
+            if (! reducedOrder)
+            {
+                ch.power.setSource (ch.wSrcRail, plates);
+                ch.power.setSource (ch.wSrcPi, ch.piRail);
+                ch.power.setPentodeScreen (ch.penA, screens);
+                ch.power.setPentodeScreen (ch.penB, screens);
+            }
             passOk = ch.power.prepare (newSampleRate) && passOk;
-            ch.power.solveSample();
-            double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
-            ipRun += 0.5 * ((ipA + ipB) - ipRun);
-            isRun += 0.5 * ((isA + isB) - isRun);
+            if (! reducedOrder)
+            {
+                ch.power.solveSample();
+                double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+                ipRun += 0.5 * ((ipA + ipB) - ipRun);
+                isRun += 0.5 * ((isA + isB) - isRun);
+            }
         }
         dcOk = passOk && dcOk;
         ch.outDc = ch.pre.voltage (ch.pOut);
+        // The behavioural tail (OT/speaker resonances, cab voicing) is prepared in both modes so
+        // tests can flip the static reducedOrder flag on an already-prepared amp without re-preparing.
+        auto voicing = tubeamp::voicings::britishNfb;
+        voicing.asym = 0.0;                // the fitted asymmetry lives in the knee's offset instead
+        voicing.presenceHz = 4500.0;       // the 'wreck's presence region -- the R+C shunt across the primary
+        voicing.presenceDb = 2.5;
+        voicing.presenceQ = 1.1;
+        voicing.cabLpHz = 5200.0;          // open-back 4x12 on the 16 ohm tap
+        voicing.cabAirHz = 9000.0;
+        ch.bmTail.prepare (newSampleRate, voicing, 1.0 / outputScale);
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
@@ -682,12 +790,15 @@ void TrainwreckExpressStyleAmplifierProcessor::process (juce::AudioBuffer<float>
 
             ch.power.setSource (ch.wSrcIn, masterGain * preampOutput (ch));
             const bool okPower = ch.power.solveSample();
-            double ipA, ipB, isA, isB;
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
-            ch.sumPlate += ipA + ipB;
-            ch.sumScreen += isA + isB;
-            ++ch.sumCount;
+            if (! reducedOrder)
+            {
+                double ipA, ipB, isA, isB;
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+                ch.sumPlate += ipA + ipB;
+                ch.sumScreen += isA + isB;
+                ++ch.sumCount;
+            }
             bool ok = okPre && okPower;
             if (chIdx == 0)
             {
@@ -701,7 +812,8 @@ void TrainwreckExpressStyleAmplifierProcessor::process (juce::AudioBuffer<float>
                 updateSupply (ch);
             }
 
-            const double speakerVolts = ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone), bi, fe)
+                                                     : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 120.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;
@@ -726,7 +838,7 @@ void TrainwreckExpressStyleAmplifierProcessor::process (juce::AudioBuffer<float>
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;

@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -45,12 +46,25 @@ public:
 
     /** Amplifier output (speaker-terminal volts, 16 ohm tap) is scaled by this to get a signal level: ~45 W into 16 ohm is
         38 V peak. */
-    static constexpr double outputScale = 1.0 / 38.0;
+    static constexpr double outputScale = 1.0 / 38.0;     // reducedOrder speaker-level mapping (below)
+    static constexpr double fullOutputScale = 1.0 / 38.0; // full netlist
+
+    /** Ships reducedOrder in the app: the full LTP PI + 2x EL34 + OT netlist (no NFB) is the calibration
+        reference, the behavioural stage below is what the A7S's eco tier runs. EffectRegistry.cpp flips
+        this on centrally; the unit tests reset it to false so they keep probing the reference model.
+        Per-model constants live in Spec (the Express and the Concorde share the class); fitted
+        (TWX_POWERCAL) against each model's own stabilised reference. */
+    static inline bool reducedOrder = false;
+    static constexpr double bmKneeN = 6.0;
+    static constexpr double bmShelfHz = 80.0;    // speaker-magnetics low-shelf pole
+    static constexpr double bmShelfHfGain = 0.55;
+    static constexpr double bmDcHz = 9.0;        // OT low-frequency saturation rolloff
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
     enum class Probe { stage1Plate, stage1Cathode, stage2Plate, stage2Cathode, stage3Plate, stage3Cathode, follower, toneOut,
-                       piGrid, piPlateA, piPlateB, piCathode, powerGridA, powerGridB, powerPlateA, powerPlateB, speaker, biasNode };
+                       piGrid, piPlateA, piPlateB, piCathode, powerGridA, powerGridB, powerPlateA, powerPlateB, speaker, biasNode,
+                       powerInput };
     double debugVoltage (Probe p) const noexcept;
     double getSolveFailureRate() const noexcept
     {
@@ -106,6 +120,19 @@ private:
         int sumCount = 0;
         int supplyCounter = 0;
         double piRail = 0.0, preRail = 0.0;
+
+        // reducedOrder behavioural-stage state (EffectRegistry.cpp flips reducedOrder on for the
+        // shipping build): the fitted power-stage envelope/rail, the latest sample output and the
+        // tone/dc/presence filters that shape it.
+        NodalCircuit::Node wTone = 0; ///< survives in the reduced path -- the PI coupling cap's input node.
+        double bmRail = 0.0;      // latest sag-managed plate-rail estimate, volts
+        double bmEnvelope = 0.0;  // |input| follower, volts
+        double bmOutput = 0.0;
+        double bmToneState = 0.0;
+        double bmDcState = 0.0;
+        double bmPresState = 0.0;   // presence HF-shelf lowpass state (reducedOrder only)
+        double bmCutState = 0.0;    // Hi-Cut lowpass state (reducedOrder, Concorde)
+        tubeamp::PowerStageTail bmTail;
     };
 
     struct Spec;
@@ -122,6 +149,11 @@ private:
     void applySpeaker (Channel& ch, int index) const;
     void updateSupply (Channel& ch) const;
     double preampOutput (const Channel& ch) const noexcept;
+    /** reducedOrder: sag-managed plate-rail estimate from the envelope follower (fitted, TWX_POWERCAL). */
+    double sagRail (double envelope) const noexcept;
+    /** reducedOrder: fitted power-stage surrogate -- the envelope-scaled knee + the OT/speaker shaping
+        all the removed blocks used to provide. process() calls it with the PI input drive. */
+    double behavioralPowerStage (Channel& ch, double driveVoltage, double bias, double feel) const noexcept;
 
     const Model model;
     int appliedSpeaker = -1;
