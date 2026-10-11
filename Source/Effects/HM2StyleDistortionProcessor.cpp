@@ -104,7 +104,11 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addResistor (b6, c6, 470.0e3);
         c.addCapacitor (b6, c6, 10.0e-12);
         if (reducedOrder)
+        {
             c.addBjtSaturating (c6, b6, e6, false, npn2SC2240, q6SaturationCurrent);
+            if (satBcDiode6 > 0.0)
+                c.addDiode (b6, c6, satBcDiode6 * npn2SC2240.Is / npn2SC2240.betaR, npn2SC2240.Vt);
+        }
         else
             c.addBjt (c6, b6, e6, false, npn2SC2240);
         c.addResistor (e6, gnd, 22.0);
@@ -116,7 +120,11 @@ void HM2StyleDistortionProcessor::buildChannel (Channel& ch)
         c.addResistor (v9f, b7, 100.0e3);
         c.addResistor (v9f, e7, 120.0);
         if (reducedOrder)
+        {
             c.addBjtSaturating (c7, b7, e7, true, pnp2SA970, q7SaturationCurrent);
+            if (satBcDiode7 > 0.0)
+                c.addDiode (c7, b7, satBcDiode7 * pnp2SA970.Is / pnp2SA970.betaR, pnp2SA970.Vt);
+        }
         else
             c.addBjt (c7, b7, e7, true, pnp2SA970);
         c.addResistor (b7, c7, 470.0e3);
