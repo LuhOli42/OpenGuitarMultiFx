@@ -40,7 +40,15 @@ public:
     /** Wired by whoever hosts this dialog to OverlayHost::popOverlay. */
     std::function<void()> onPopOverlay;
 
+    /** Optional escape from the empty state: pops this card and opens the
+        TONE3000 search. Only shown when wired AND the list is empty -- when
+        installed files exist the host's own Search button already covers it. */
+    std::function<void()> onSearchRequested;
+
 private:
+    void parentHierarchyChanged() override;
+    void updateEmptyState();
+
     int getNumRows() override;
     void paintListBoxItem (int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override;
     void listBoxItemClicked (int row, const juce::MouseEvent&) override;
@@ -48,6 +56,7 @@ private:
     juce::Label titleLabel;
     juce::ListBox listBox { "installedModels", this };
     juce::Label emptyStateLabel;
+    juce::TextButton searchButton { "Search TONE3000..." };
     juce::TextButton importButton { "Import from device..." };
     juce::TextButton closeButton { "Close" };
 

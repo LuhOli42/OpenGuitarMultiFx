@@ -318,6 +318,7 @@ private:
     int currentPresetNumber = 0;      // 0 = none yet; a real preset's number is always >= 1
     std::unique_ptr<juce::XmlElement> presetBaseline; // see capturePresetBaseline()
     bool presetDirty = false;         // last value shown in the title; refreshed every dirtyCheckIntervalTicks
+    bool audioDeviceOk = true;        // false when the audio device failed to open; cpuLabel becomes a persistent warning
     int ticksUntilDirtyCheck = 0;
     static constexpr int dirtyCheckIntervalTicks = 10; // x 50ms timer: rebuilding the preset XML twice a second is plenty
 

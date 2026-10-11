@@ -1,6 +1,7 @@
 #include "ParameterPanel.h"
 
 #include "ModelListDialog.h"
+#include "PromptCards.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Tone3000SearchDialog.h"
 #include "TouchSizing.h"
@@ -215,6 +216,9 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 const auto range = floatParam->getNormalisableRange();
                 row.slider->setRange (range.start, range.end, range.interval > 0.0f ? range.interval : 0.01);
                 row.slider->setValue (floatParam->get(), juce::dontSendNotification);
+                // Double-tap restores the param's default, matching the master knob's double-click-to-zero in FooterBar.
+                row.slider->setDoubleClickReturnValue (true, range.convertFrom0to1 (
+                    static_cast<juce::AudioProcessorParameter*> (floatParam)->getDefaultValue()));
                 const bool isSelector = range.interval >= 1.0f && (range.end - range.start) / range.interval <= 8.0f; // 4/8/16 ohm, Normal/Jumped/Bright...
                 if (isSelector)
                 {
@@ -353,11 +357,18 @@ void ParameterPanel::browseInstalledModelsForSlot (int slot)
         }
         catch (const std::exception& e)
         {
-            juce::AlertWindow::showMessageBoxAsync (
-                juce::MessageBoxIconType::WarningIcon, "Failed to load model", e.what());
+            // OverlayHost card, not juce::AlertWindow -- the target device has no window
+            // manager for a native popup (see OverlayHost / AGENTS.md's no-DialogWindow rule).
+            if (onPushOverlay)
+                onPushOverlay (std::make_unique<ChoiceCard> (
+                    "Failed to load model", e.what(), juce::StringArray { "OK" },
+                    [this] (int) { if (onPopOverlay) onPopOverlay(); }));
         }
     };
     dialog->onPopOverlay = [this] { if (onPopOverlay) onPopOverlay(); };
+
+    if (tone3000 != nullptr)
+        dialog->onSearchRequested = [this, slot] { openTone3000SearchForSlot (slot); };
 
     if (onPushOverlay)
         onPushOverlay (std::move (dialog));
@@ -456,8 +467,13 @@ void ParameterPanel::openTone3000SearchForSlot (int slot)
         }
         catch (const std::exception& e)
         {
-            juce::AlertWindow::showMessageBoxAsync (
-                juce::MessageBoxIconType::WarningIcon, "Failed to load model", e.what());
+            // OverlayHost card, not juce::AlertWindow -- see the same handler in
+            // browseInstalledModelsForSlot(). The search dialog stays open under
+            // this card, so dismissing the error lands back on the result list.
+            if (onPushOverlay)
+                onPushOverlay (std::make_unique<ChoiceCard> (
+                    "Failed to load model", e.what(), juce::StringArray { "OK" },
+                    [this] (int) { if (onPopOverlay) onPopOverlay(); }));
         }
     };
     dialog->onPopOverlay = [this] { if (onPopOverlay) onPopOverlay(); };

@@ -136,7 +136,8 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
         };
     }
 
-    rateHintLabel.setText (rateValues.isEmpty() ? "No audio device is open." : "The rate the audio device runs at (48 kHz is the default). Changing it restarts audio.",
+    // Empty here can mean no device OR a device that reports no supported rate -- both read the same.
+    rateHintLabel.setText (rateValues.isEmpty() ? "No usable sample rate reported by the audio device." : "The rate the audio device runs at (48 kHz is the default). Changing it restarts audio.",
                            juce::dontSendNotification);
     resized();
 }
