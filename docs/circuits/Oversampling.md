@@ -113,3 +113,18 @@ oversampling factor it needs is what sets the cost.
 | OCD (MOSFET mode) | -25.1 | -40.6 | -62.0 | -75.6 | 1x / 2x / 4x | 5.3% |
 The Zendrive's clipper sits in the feedback of a stage with modest gain (x1 .. x500 with the diodes limiting at ~1 V), so like the Tube Screamers it
 is clean at 1x. The Crunch Box (x6700 into LEDs), the OCD (hard clipper between two gain stages) and the RATs follow the DS-1 / BD-2 pattern.
+
+## Eco-tier CPU pass (2026-10-11): alias re-measured per offender (non-harmonic / harmonic at 1x, PEDAL_ALIAS probes)
+The -40 dB bar decided which eco orders could drop a step and which needed a reduced-order netlist instead.
+
+| Pedal | alias at 1x | verdict |
+|---|---|---|
+| Overdriver | -41.2 | eco 2x -> 1x (8.8% -> 2.2% eco) |
+| Bass Big Muff | -43.3 | eco 2x -> 1x (16.5% -> 5.1% eco) |
+| SansAmp BDDI | -58.3 | eco 2x -> 1x (11.2% -> 2.8% eco) |
+| Zendrive | -39.8 | borderline, kept |
+| Big Muff USA / Russian / Sovtek | -21.2 / -26.2 / -23.3 | reducedOrder: 4 saturating 1-port BJTs (~16% -> ~12% eco) |
+| Metal Zone | -21.9 (2x only -27.8) | stays 2x; reduced model is a bigger job (m5218 macros) |
+| HM-2 | -19.1 | stays 2x; reducedOrder still rejected (see its doc -- pop mechanism found, corner remains) |
+| ToneBender Ge / Si | -15.3 / -14.5 | stays 2x; 1-port saturating swap misfit the Q2/Q3 feedback pair (level swings +-6 dB) |
+| DS-1 / BD-2 / OCD / CrunchBox / RATs / ODR-1 / DT-1 / Darkglass / TubeDriver / FuzzFaces | -10 .. -35 | stays 2x (all fail the -40 dB bar) |

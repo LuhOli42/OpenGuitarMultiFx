@@ -131,6 +131,12 @@ feedback is asking for. So the Russian's stages run with weak feedback and less 
 One `NodalCircuit` block (every stage loads the one before it through its coupling cap, so there is no node that
 cannot be loaded back and therefore no valid cut). Four two-port BJTs plus two anti-parallel diode pairs.
 
+* **reducedOrder (shipped, 2026-10-11):** the four transistors become one-port saturating devices
+  (`NodalCircuit::addBjtSaturating`), 4 Newton ports dropped. Saturation limit = the load line of each stage
+  fitted against the two-port netlist (x1.5 input stage, x2.0 clipping stages, x1.5 output stage of
+  (rail - Vce(sat)) / (Rc + Re)); enabled because `ReducedOrderEquivalenceTests` holds it to level 0.28 dB /
+  worst octave band 0.52 dB across all three models x sustain x tone x input.
+
 * **1.28 (USA) / 1.30 (Russian) Newton iterations per sample** — cheap, the circuit is well-conditioned.
 * **7.32% / 7.17% of a core** at 1x (dev PC, dual-mono input), next to the HM-2's 6.39%. Above the project's 5%
   per-pedal target, in the same bracket as the other four-device netlists.

@@ -302,8 +302,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("TS9StyleOverdrive");
     registry.registerType ("TS9StyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts9), 500000.0), 10.84f); });
     // One class, two models (USA V3 and the Russian green one share one circuit, see
-    // docs/circuits/BigMuffStyleFuzz.md).
+    // docs/circuits/BigMuffStyleFuzz.md). reducedOrder: the four transistors become one-port
+    // saturating devices in Eco (fitted vs the two-port netlist in ReducedOrderEquivalenceTests,
+    // worst band 0.61 dB).
     using MuffModel = BigMuffStyleFuzzProcessor::Model;
+    BigMuffStyleFuzzProcessor::reducedOrder = true;
     registry.markQualityDependent ("BigMuffStyleFuzz");
     registry.registerType ("BigMuffStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<BigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }, MuffModel::usV3), 65000.0), -5.42f); });
     registry.markQualityDependent ("SovtekBigMuffStyleFuzz");
@@ -313,7 +316,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // The bass variant of the same circuit family: Sovtek voicing + Bass Boost / DRY switches
     // (docs/circuits/BassBigMuffStyleFuzz.md). Same input loading as the other muffs' ~100k.
     registry.markQualityDependent ("BassBigMuffStyleFuzz");
-    registry.registerType ("BassBigMuffStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<BassBigMuffStyleFuzzProcessor> (Orders { 1, 1, 2 }), 100000.0), -8.40f); });
+    registry.registerType ("BassBigMuffStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<BassBigMuffStyleFuzzProcessor> (Orders { 0, 1, 2 }), 100000.0), -8.40f); });
     using FFModel = FuzzFaceStyleFuzzProcessor::Model;
     registry.markQualityDependent ("FuzzFaceStyleFuzz");
     registry.registerType ("FuzzFaceStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<FuzzFaceStyleFuzzProcessor> (Orders { 1, 1, 2 }, FFModel::germanium), 15000.0), 13.40f); });
@@ -325,7 +328,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("SiliconToneBenderStyleFuzz");
     registry.registerType ("SiliconToneBenderStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<ToneBenderStyleFuzzProcessor> (Orders { 1, 2, 3 }, TBModel::silicon), 8000.0), 1.14f); });
     registry.markQualityDependent ("OverdriverStyleOverdrive");
-    registry.registerType ("OverdriverStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<OverdriverStyleOverdriveProcessor> (Orders { 1, 1, 2 }), 1000000.0), -12.73f); });
+    registry.registerType ("OverdriverStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<OverdriverStyleOverdriveProcessor> (Orders { 0, 1, 2 }), 1000000.0), -12.73f); });
     registry.markQualityDependent ("MetalZoneStyleDistortion");
     registry.registerType ("MetalZoneStyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<MetalZoneStyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 2.23f); });
     registry.markQualityDependent ("TubeDriverStyleOverdrive");
@@ -405,7 +408,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("DarkglassB7KStyleOverdrive");
     registry.registerType ("DarkglassB7KStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<DarkglassB7KStyleOverdriveProcessor> (Orders { 1, 2, 3 }), 500000.0), 4.13f); });
     registry.markQualityDependent ("SansAmpBDDIStyleOverdrive");
-    registry.registerType ("SansAmpBDDIStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<SansAmpBDDIStyleOverdriveProcessor> (Orders { 1, 2, 3 }), 470000.0), 5.9f); });
+    registry.registerType ("SansAmpBDDIStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<SansAmpBDDIStyleOverdriveProcessor> (Orders { 0, 2, 3 }), 470000.0), 5.9f); });
     registry.registerType ("CentaurStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (std::make_unique<CentaurStyleOverdriveProcessor>(), 1000000.0), -12.09f); });
     registry.markQualityDependent ("TS10StyleOverdrive");
     registry.registerType ("TS10StyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 500000.0), 11.34f); });

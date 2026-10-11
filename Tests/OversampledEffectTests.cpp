@@ -21,6 +21,10 @@
 #include "Effects/ToneBenderStyleFuzzProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
 #include "Effects/TubeScreamerStyleOverdriveProcessor.h"
+#include "Effects/DS1StyleDistortionProcessor.h"
+#include "Effects/SansAmpBDDIStyleOverdriveProcessor.h"
+#include "Effects/DarkglassB7KStyleOverdriveProcessor.h"
+#include "Effects/BassBigMuffStyleFuzzProcessor.h"
 
 #include <juce_core/juce_core.h>
 
@@ -293,6 +297,13 @@ public:
                 { "Crunch Box", [] { return std::make_unique<CrunchBoxStyleDistortionProcessor>(); } },
                 { "Zendrive", [] { return std::make_unique<ZendriveStyleOverdriveProcessor>(); } },
                 { "OCD", [] { return std::make_unique<OCDStyleOverdriveProcessor>(); } },
+                { "DS-1", [] { return std::make_unique<DS1StyleDistortionProcessor>(); } },
+                { "HM-2", [] { return std::make_unique<HM2StyleDistortionProcessor>(); } },
+                { "BD-2", [] { return std::make_unique<BD2StyleOverdriveProcessor>(); } },
+                { "Big Muff Sovtek", [] { return std::make_unique<BigMuffStyleFuzzProcessor> (BigMuffStyleFuzzProcessor::Model::sovtekFirstEdition); } },
+                { "Bass Big Muff", [] { return std::make_unique<BassBigMuffStyleFuzzProcessor>(); } },
+                { "SansAmp BDDI", [] { return std::make_unique<SansAmpBDDIStyleOverdriveProcessor>(); } },
+                { "Darkglass B7K", [] { return std::make_unique<DarkglassB7KStyleOverdriveProcessor>(); } },
             };
             beginTest ("alias measurement (dev only, PEDAL_ALIAS=1)");
             const juce::String only = juce::SystemStats::getEnvironmentVariable ("PEDAL_ALIAS_ONLY", {});

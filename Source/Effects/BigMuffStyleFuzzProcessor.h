@@ -85,6 +85,11 @@ public:
     };
     static const ModelSpec& specFor (Model m) noexcept;
 
+    /** Eco tier: the four transistors become one-port devices with a smooth collector-current limit
+        (NodalCircuit::addBjtSaturating), like the HM-2's gain stages. Fitted against the two-port
+        netlist in ReducedOrderEquivalenceTests. */
+    static inline bool reducedOrder = false;
+
 private:
     struct Channel
     {
