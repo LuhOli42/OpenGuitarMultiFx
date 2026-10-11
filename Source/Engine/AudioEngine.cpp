@@ -251,37 +251,13 @@ void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
     spillover.add (std::move (unit));
 }
 
-namespace
-{
-    /** Equal-power crossfade: dst = dst*cos(t*pi/2) + src*sin(t*pi/2), with t walking t0 -> t0+numSamples*dt.
-        The two graphs' outputs are unrelated at the swap point, so only an equal-power law keeps the mix's
-        perceived level flat across the blend -- a linear pair would dip ~3 dB at the midpoint. */
-    void applyCrossfadeMix (juce::AudioBuffer<float>& dst, const juce::AudioBuffer<float>& src,
-                            int numSamples, double t0, double dt) noexcept
-    {
-        for (int ch = 0; ch < dst.getNumChannels(); ++ch)
-        {
-            auto* d = dst.getWritePointer (ch);
-            const auto* s = src.getReadPointer (ch);
-            double t = t0;
-            for (int i = 0; i < numSamples; ++i, t += dt)
-            {
-                const double u = 0.5 * juce::MathConstants<double>::pi * juce::jlimit (0.0, 1.0, t);
-                d[i] = (float) ((double) d[i] * std::cos (u) + (double) s[i] * std::sin (u));
-            }
-        }
-    }
-}
-
 void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples)
 {
     processCurrentGraph (buffer, numSamples);
 
-    // Spills never run while a retired graph is crossfading: a preset-switch
-    // teardown can leave a fading graph still pointing at the very
-    // processors a pending spill owns, and one processor must never run
-    // twice in the same block. The tail just waits out the ~10 ms fade.
-    if (fadingOutGraph == nullptr)
+    // Spills never run during a swap fade: the recorded tail already carries the outgoing lane's
+    // sound, and a pending spill adding its tail on top would double-count the same tail.
+    if (! swapFadeActive)
         spillover.process (buffer, sampleRate.load (std::memory_order_relaxed));
 }
 
@@ -292,67 +268,96 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
 
     if (graph != activeGraph)
     {
-        // The old graph is still alive: DeferredReclaimer frees a retired graph 500 ms after it was retired, and it was
-        // retired after the previous callback -- so it is safe to run once more as long as that callback was recent.
-        const bool oldStillSafe = activeGraph != nullptr
-                                  && juce::Time::highResolutionTicksToSeconds (now - lastCallbackTicks) < 0.1;
+        // Arm the swap fade: replay the last ~10 ms of output the outgoing graph already produced
+        // (recorded in outputTailRing) faded out under the new graph's live output. The retired
+        // graph itself is never run -- every processor it shares with the new graph would advance
+        // its state twice per block otherwise, which is exactly the rule spills live by.
         const double rate = sampleRate.load (std::memory_order_relaxed);
-
-        if (oldStillSafe && fadingOutGraph == nullptr && rate > 0.0
-            && crossfadeScratch.getNumChannels() >= buffer.getNumChannels()
-            && crossfadeScratch.getNumSamples() >= numSamples)
+        const int window = rate > 0.0 ? juce::jmax (numSamples, (int) (0.010 * rate)) : 0;
+        const bool recent = activeGraph != nullptr
+                            && juce::Time::highResolutionTicksToSeconds (now - lastCallbackTicks) < 0.1;
+        if (recent && ! swapFadeActive && window > 0 && window <= outputTailRing.getNumSamples()
+            && tailRingSamples >= window && outputTailRing.getNumChannels() >= buffer.getNumChannels())
         {
-            fadingOutGraph = activeGraph;
-            fadeOutSamplesTotal = fadeOutSamplesLeft = juce::jmax (numSamples, (int) (0.010 * rate));
+            swapFadeActive = true;
+            fadeOutSamplesTotal = fadeOutSamplesLeft = window;
+            tailReadIndex = (tailRingWrite - window + outputTailRing.getNumSamples())
+                            % outputTailRing.getNumSamples();
         }
         activeGraph = graph;
     }
     lastCallbackTicks = now;
 
-    if (fadingOutGraph != nullptr)
-    {
-        // Both graphs run on the same input this block: the retired one fills `buffer`, the new one fills
-        // the scratch, and applyCrossfadeMix blends them with an equal-power law. The outgoing lane keeps
-        // producing sound while the new one ramps in -- the gap the sequential fade used to leave is gone.
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            juce::FloatVectorOperations::copy (crossfadeScratch.getWritePointer (ch),
-                                               buffer.getReadPointer (ch), numSamples);
-
-        fadingOutGraph->process (buffer);
-        if (graph != nullptr)
-            graph->process (crossfadeScratch);
-        else
-            crossfadeScratch.clear();
-
-        const int n = juce::jmin (numSamples, fadeOutSamplesLeft);
-        const double t0 = 1.0 - (double) fadeOutSamplesLeft / (double) fadeOutSamplesTotal;
-        applyCrossfadeMix (buffer, crossfadeScratch, n, t0, 1.0 / (double) fadeOutSamplesTotal);
-        if (n < numSamples) // the window ended mid-block: the tail of this block is pure new-graph output
-            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-                juce::FloatVectorOperations::copy (buffer.getWritePointer (ch) + n,
-                                                   crossfadeScratch.getReadPointer (ch) + n,
-                                                   numSamples - n);
-
-        fadeOutSamplesLeft -= n;
-        if (fadeOutSamplesLeft <= 0)
-            fadingOutGraph = nullptr;
-        return;
-    }
-
     if (graph != nullptr)
         graph->process (buffer);
+
+    // Record this block's output before any fade mixing: the ring always holds the clean
+    // single-graph signal a later swap replays. Frozen while a fade is active: when the ring is
+    // exactly one window long the writer would clobber the tail before the replay reaches it.
+    const int ringLen = outputTailRing.getNumSamples();
+    if (ringLen > 0 && ! swapFadeActive)
+    {
+        const int ringChans = outputTailRing.getNumChannels();
+        const int w0 = tailRingWrite;
+        for (int ch = 0; ch < buffer.getNumChannels() && ch < ringChans; ++ch)
+        {
+            auto* w = outputTailRing.getWritePointer (ch);
+            const auto* s = buffer.getReadPointer (ch);
+            int p = w0;
+            for (int i = 0; i < numSamples; ++i)
+            {
+                w[p] = s[i];
+                if (++p >= ringLen) p = 0;
+            }
+        }
+        tailRingWrite = (w0 + numSamples) % ringLen;
+        tailRingSamples = juce::jmin (ringLen, tailRingSamples + numSamples);
+    }
+
+    if (swapFadeActive)
+    {
+        // out = live*t + tail*(1-t), linear law: the legs are usually the same processors under a
+        // new routing plus the recorded continuation of the same signal (correlated), where an
+        // equal-power pair would surge ~3 dB at the midpoint; here linear stays level and cannot
+        // push an unchanged signal past unity.
+        const int n = juce::jmin (numSamples, fadeOutSamplesLeft);
+        const double dt = 1.0 / (double) fadeOutSamplesTotal;
+        const double t0 = 1.0 - (double) fadeOutSamplesLeft / (double) fadeOutSamplesTotal;
+        for (int ch = 0; ch < buffer.getNumChannels() && ch < outputTailRing.getNumChannels(); ++ch)
+        {
+            auto* d = buffer.getWritePointer (ch);
+            const auto* tail = outputTailRing.getReadPointer (ch);
+            double t = t0;
+            int p = tailReadIndex;
+            for (int i = 0; i < n; ++i, t += dt)
+            {
+                d[i] = (float) ((double) d[i] * t + (double) tail[p] * (1.0 - t));
+                if (++p >= ringLen) p = 0;
+            }
+        }
+        tailReadIndex = (tailReadIndex + n) % ringLen;
+        fadeOutSamplesLeft -= n;
+        if (fadeOutSamplesLeft <= 0)
+        {
+            swapFadeActive = false;
+            tailRingSamples = 0; // recording resumes below -- only fresh new-graph output may arm the next fade
+        }
+    }
 }
 
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
     activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
-    fadingOutGraph = nullptr;
+    swapFadeActive = false;
     fadeOutSamplesLeft = 0;
+    tailRingWrite = tailRingSamples = tailReadIndex = 0;
     spillover.reset(); // spills were prepared for the old stream's rate/block size -- cut them all
-    // Pre-sized here (control thread) so the crossfade in processCurrentGraph() never allocates on the audio thread.
-    crossfadeScratch.setSize (juce::jmax (1, device->getOutputChannelNames().size()),
-                              juce::jmax (1, device->getCurrentBufferSizeSamples()),
-                              false, true, false);
+    // Pre-sized here (control thread) so the swap fade in processCurrentGraph() never allocates on the audio
+    // thread: the ring must hold the larger of one callback or the ~10 ms fade window.
+    const double devRate = device->getCurrentSampleRate() > 0.0 ? device->getCurrentSampleRate() : 48000.0;
+    outputTailRing.setSize (juce::jmax (1, device->getOutputChannelNames().size()),
+                            juce::jmax (1, juce::jmax (device->getCurrentBufferSizeSamples(), (int) (0.010 * devRate))),
+                            false, true, false);
 
     sampleRate.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
     blockSize.store (device->getCurrentBufferSizeSamples(), std::memory_order_relaxed);

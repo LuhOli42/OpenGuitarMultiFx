@@ -175,14 +175,21 @@ private:
     std::atomic<float> lastOutputLevel { 0.0f };
     PitchDetector pitchDetector;
 
-    // Audio thread only (reset in audioDeviceAboutToStart, before the callback runs): the graph swap's crossfade.
+    // Audio thread only (reset in audioDeviceAboutToStart, before the callback runs): the graph swap's fade.
+    // Rather than running the retired graph a second time per block -- every processor it shares with the
+    // new graph would advance its state twice, violating the "one processor runs once per block" rule --
+    // the engine keeps a rolling ~10 ms recording of graph OUTPUT in outputTailRing and, on a swap, replays
+    // that tail faded out under the new graph's live output. The tail is exactly what the outgoing chain
+    // produced at the moment of the edit, the blend is continuous at sample 0 by construction, and nothing
+    // allocates on the audio thread (the ring is sized in audioDeviceAboutToStart).
     SignalGraph* activeGraph = nullptr;      // the graph the previous block ran
-    SignalGraph* fadingOutGraph = nullptr;   // a retired graph still playing its crossfade leg (kept alive by graphSlot's margin)
+    bool swapFadeActive = false;
     int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0;
+    int tailRingWrite = 0;                   // next write position in outputTailRing (shared by all channels)
+    int tailRingSamples = 0;                 // valid samples recorded, capped at the ring length
+    int tailReadIndex = 0;                   // replay cursor while swapFadeActive
     juce::int64 lastCallbackTicks = 0;
-    // Holds the new graph's output during a crossfade -- sized in audioDeviceAboutToStart (control thread),
-    // never touched for allocation on the audio thread.
-    juce::AudioBuffer<float> crossfadeScratch;
+    juce::AudioBuffer<float> outputTailRing;
 
     std::atomic<bool> tunerActive { false }; // see setTunerActive()
     std::atomic<float> inputGainDb { 0.0f }, inputGainLinear { 1.0f }; // see setInputGainDb()
