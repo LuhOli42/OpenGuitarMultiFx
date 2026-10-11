@@ -42,16 +42,21 @@ CAVEAT = ("Fixed-drive single-point probes can hide real circuit differences: "
 FAMILIES = {
     'ts': [('TS808StyleOverdrive', 'ts808_drive'),
            ('TS9StyleOverdrive', 'ts9_drive'),
-           ('TS10StyleOverdrive', 'ts10_drive')],
+           ('TS10StyleOverdrive', 'ts10_drive'),
+           ('TS9BStyleOverdrive', 'ts9b_drive')],
     'rat': [('RatStyleDistortion', 'rat_distortion'),
             ('RAT2StyleDistortion', 'rat_distortion'),
             ('TurboRatStyleDistortion', 'rat_distortion')],
     'muff': [('BigMuffStyleFuzz', 'bmp_sustain'),
              ('SovtekBigMuffStyleFuzz', 'bmpsv_sustain'),
-             ('RussianBigMuffStyleFuzz', 'bmpru_sustain')],
+             ('RussianBigMuffStyleFuzz', 'bmpru_sustain'),
+             ('BassBigMuffStyleFuzz', 'bbmp_sustain')],
     'boss': [('DS1StyleDistortion', 'ds1_drive'),
              ('MetalZoneStyleDistortion', 'mt2_dist'),
              ('HM2StyleDistortion', 'hm2_dist')],
+    'bassdrive': [('DarkglassB7KStyleOverdrive', 'b7k_drive'),
+                  ('ODB3StyleOverdrive', 'odb3_gain'),
+                  ('SansAmpBDDIStyleOverdrive', 'bddi_drive')],
 }
 
 only = os.environ.get('SWEEP_KEYS')

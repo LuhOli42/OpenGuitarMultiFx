@@ -11,8 +11,9 @@ use it to verify voicing/calibration fixes reproducibly.
   `probe-clicks.wav` (impulse train for echo/reverb tails), `probe-noise.wav`.
 - `ir/cab-4x12.wav` — small synthetic 4x12 cab IR for `*+Cab` chains
   (amps render raw power-amp output without it).
-- `metrics.json` — measured results from the Oct-2026 audit run
-  (`music` = per-effect band deltas vs DI, `probes` = THD/FR/echo metrics).
+- `metrics.json` — measured results, refreshed 2026-10-11 (see
+  `audit-2026-10-11.md` for the delta vs the Oct-2026 baseline;
+  `music` = per-effect band deltas vs DI, `probes` = THD/FR/echo metrics).
 - Guitar DI comes from `Tests/fixtures/di/guitar-di.wav` (override `DI_WAV`).
 
 ## Run
@@ -35,8 +36,15 @@ FX_AUDIT_DIR=/tmp/fx-audit python3 tools/fx-audit/analyze.py   # writes metrics.
 
 # drive-swept probe: variant discrimination (see caveat below)
 FX_AUDIT_DIR=/tmp/fx-audit python3 tools/fx-audit/run_drive_sweep.py \
-    --update-metrics=tools/fx-audit/metrics.json
+    --update-metrics=/tmp/fx-audit/metrics.json
+
+# publish: the fresh run's metrics replace the tracked baseline
+cp /tmp/fx-audit/metrics.json tools/fx-audit/metrics.json
 ```
+
+`analyze.py` writes fresh `music`/`probes` under `FX_AUDIT_DIR`, so merging
+the sweep into the tracked `metrics.json` directly would leave its music and
+probe results stale — merge into the audit-dir file, then copy it over.
 
 Deps: `numpy scipy soundfile` (`pip install` if missing). Env overrides:
 `RENDERFX_BIN`, `FX_AUDIT_DIR` (outputs), `DI_WAV`, `CAB_IR`, `NAM_FIXTURE`,
