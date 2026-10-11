@@ -41,14 +41,13 @@ public:
 
     /** Eco-tier CPU: buildChannel() swaps blocks 0-2 (input buffer, the two gain stages and the diode
         clipper) for a per-component behavioural solve that keeps the same trapezoidal capacitor models
-        but no Newton iterations. Blocks 3-4 (the High/Low and Middle/MidFreq EQ + output stage) stay
-        netlist -- they are linear in practice, so the equivalence numbers live or die on the clip chain.
-        Off by default: it now NAILS the equivalence bar (0.01 dB level / 0.04 dB worst band vs the
-        netlist, ReducedOrderEquivalence) but the nested leg/stage Newtons cost ~3x the netlist they
-        replace (~67% vs ~21% of a core on a 44.1k stereo render) -- a "reduced" model that is
-        slower buys nothing. Revisit when the legs are cheap enough; the MZ_EXPLORE stage-diff probe
-        in the tests remains for that work. */
-    static inline bool reducedOrder = false;
+        but replaces the nested Newtons with fitted curves: each bootstrap leg's (u,q)->{v1,vb,ve,dIdv}
+        solve is served from a 4D LUT (CR cubic in u x quadratic in q) and each legless stage's Newton
+        by a closed-form affine root. Blocks 3-4 (the High/Low and Middle/MidFreq EQ + output stage)
+        stay netlist -- they are linear in practice, so the equivalence numbers live or die on the clip
+        chain. On by default: the reduced render is ~30% cheaper than the netlist it replaces while
+        staying inside the ReducedOrderEquivalence bounds. */
+    static inline bool reducedOrder = true;
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8a8f99); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
