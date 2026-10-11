@@ -700,6 +700,13 @@ void JTM45StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         buildChannel (ch);
         auto bmVoicing = voicings::britishNfb;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
+        // Same double-rolloff as the Bassman: the shared cab LPs plus a 10k OT pole end up ~18 dB under the
+        // full-netlist path at 12 kHz, where the real speaker/OT stays within ~1.5 dB of flat.
+        bmVoicing.cabLpHz = 22000.0;
+        bmVoicing.cabAirHz = 24000.0;
+        bmVoicing.otHz = 22000.0;
+        bmVoicing.presenceHz = 9500.0;
+        bmVoicing.presenceDb = 6.0;
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

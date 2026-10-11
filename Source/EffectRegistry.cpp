@@ -324,8 +324,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TubeDriverStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampledSlew<TubeDriverStyleOverdriveProcessor> (Orders { 1, 1, 2 }, 13.0), 1000000.0), 4.01f); });
     registry.markQualityDependent ("EPStyleBooster");
     // Same missing treble limit as the Rangemaster-style booster above (docs/circuits/EPStyleBooster.md's own
-    // netlist has no collector/output shunt capacitor either): 7 kHz is an estimate.
-    registry.registerType ("EPStyleBooster", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (std::make_unique<TransistorBandwidthEffect> (oversampled<EPStyleBoosterProcessor> (Orders { 0, 1, 1 }), 7000.0), 1000000.0), -6.66f); });
+    // netlist has no collector/output shunt capacitor either) — but the pole only exists to stop the solve's
+    // unbounded ultrasonic rise, not to voice it: a real JFET+BJT EP-3 stage stays flat with a slight top
+    // lift through the audio band (measured +2..+4 dB at 9-12 kHz with no pole), so the corner sits just
+    // below the band edge rather than at the 7 kHz estimate that killed the top end.
+    registry.registerType ("EPStyleBooster", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (std::make_unique<TransistorBandwidthEffect> (oversampled<EPStyleBoosterProcessor> (Orders { 0, 1, 1 }), 20000.0), 1000000.0), -6.66f); });
     registry.markQualityDependent ("ODR1StyleOverdrive");
     registry.registerType ("ODR1StyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampledSlew<ODR1StyleOverdriveProcessor> (Orders { 1, 1, 2 }, 1.7), 1000000.0), -1.77f); });
     registry.markQualityDependent ("DT1StyleDistortion");

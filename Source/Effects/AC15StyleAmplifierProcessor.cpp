@@ -481,7 +481,18 @@ void AC15StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
-        ch.bmTail.prepare (sampleRate, voicings::classAChime, 1.0 / outputScale);
+        auto a15Voicing = voicings::classAChime;
+        // The full netlist's cathode-biased EL84 pair is even-harmonic dominant (measured even:odd ~2.3 at
+        // drive) and stays within ~2 dB of flat at 12 kHz; the saturator alone clips odd-symmetric, so the
+        // tail carries the even content — raise asym toward the full path and relax the cab/OT top rolloff
+        // for the same reason as the Bassman/JTM45 trims.
+        a15Voicing.asym = 0.4;
+        a15Voicing.cabLpHz = 22000.0;
+        a15Voicing.cabAirHz = 24000.0;
+        a15Voicing.otHz = 20000.0;
+        a15Voicing.presenceHz = 9500.0;
+        a15Voicing.presenceDb = 5.0;
+        ch.bmTail.prepare (sampleRate, a15Voicing, 1.0 / outputScale);
     }
 
     auto setup = [&] (juce::SmoothedValue<float>& s, juce::AudioParameterFloat* p, double seconds)

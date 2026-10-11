@@ -63,6 +63,10 @@ struct PowerTailVoicing
 {
     double otHz, resHz, resDb, resQ, lfHz, core, asym, dyn;
     double cabResHz, cabResDb, cabLoHz, cabLpHz, cabAirHz;
+    // Optional band-limited presence bump (the OT/speaker/NFB presence peak the full netlist shows
+    // around ~9-10 kHz). Trailing defaults keep every existing voicing aggregate-init valid and
+    // leave it silent: presenceDb = 0 adds nothing.
+    double presenceHz = 0.0, presenceDb = 0.0, presenceQ = 1.5;
 };
 
 namespace voicings
@@ -192,10 +196,22 @@ struct PowerStageTail
         resB0 = alpha / a0; resB2 = -alpha / a0;      // constant-0 dB-peak bandpass, added on top of dry
         resA1 = -2.0 * std::cos (w) / a0; resA2 = (1.0 - alpha) / a0;
         resAdd = std::pow (10.0, v.resDb / 20.0) - 1.0;
+        if (v.presenceHz > 0.0 && v.presenceDb > 0.0)
+        {
+            const double wp = 2.0 * pi * v.presenceHz / fs;
+            const double ap = std::sin (wp) / (2.0 * v.presenceQ);
+            const double a0p = 1.0 + ap;
+            presB0 = ap / a0p; presB2 = -ap / a0p;   // same constant-0 dB-peak bandpass form as the cone resonance
+            presA1 = -2.0 * std::cos (wp) / a0p; presA2 = (1.0 - ap) / a0p;
+            presAdd = std::pow (10.0, v.presenceDb / 20.0) - 1.0;
+        }
+        else
+            presAdd = 0.0;
         coreAmt = v.core; asymAmt = v.asym; dynAmt = v.dyn;
         invRef = 1.0 / juce::jmax (1.0e-9, refVolts);
         lp1 = lp2 = lfState = env = dc = 0.0;
         resX1 = resX2 = resY1 = resY2 = 0.0;
+        presX1 = presX2 = presY1 = presY2 = 0.0;
         // Prepared unconditionally and run every sample (see process()) so the Settings toggle can flip
         // cabVoicingEnabled mid-session without a re-prepare and without the filters settling from scratch.
         cab.prepare (fs, v.cabResHz, v.cabResDb, v.cabLoHz, v.cabLpHz, v.cabAirHz);
@@ -210,7 +226,13 @@ struct PowerStageTail
         const double rb = resB0 * x + resB2 * resX2 - resA1 * resY1 - resA2 * resY2;
         resX2 = resX1; resX1 = x; resY2 = resY1; resY1 = rb;
         env += envC * (std::abs (x) * invRef - env);
-        const double v0 = x + resAdd * (1.0 + dynAmt * juce::jlimit (0.0, 1.0, env)) * rb;
+        double v0 = x + resAdd * (1.0 + dynAmt * juce::jlimit (0.0, 1.0, env)) * rb;
+        if (presAdd > 0.0)
+        {
+            const double rp = presB0 * x + presB2 * presX2 - presA1 * presY1 - presA2 * presY2;
+            presX2 = presX1; presX1 = x; presY2 = presY1; presY1 = rp;
+            v0 += presAdd * rp;
+        }
         // Even-order content: a push-pull pair is never perfectly balanced. The quadratic leaves a
         // positive mean under drive which a transformer can't pass -- remove it like the real OT does.
         const double v = v0 + asymAmt * v0 * v0 * invRef;
@@ -242,9 +264,11 @@ private:
     double lp1 = 0.0, lp2 = 0.0;
     double lfState = 0.0;
     double resX1 = 0.0, resX2 = 0.0, resY1 = 0.0, resY2 = 0.0;
+    double presX1 = 0.0, presX2 = 0.0, presY1 = 0.0, presY2 = 0.0;
     double env = 0.0, dc = 0.0;
     double lpC = 0.0, lfC = 0.0, envC = 0.0, dcC = 0.0;
     double resB0 = 0.0, resB2 = 0.0, resA1 = 0.0, resA2 = 0.0, resAdd = 0.0;
+    double presB0 = 0.0, presB2 = 0.0, presA1 = 0.0, presA2 = 0.0, presAdd = 0.0;
     double coreAmt = 0.0, asymAmt = 0.0, dynAmt = 0.0, invRef = 1.0;
     double cabMix = 0.0, cabMixC = 0.0;
     CabSim cab; // acoustic cab voicing: always last (TubeAmpCommon.h)
