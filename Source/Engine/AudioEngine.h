@@ -162,13 +162,13 @@ private:
         switching the signal path between two samples. */
     void processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples);
 
-    /** Audio thread, once ever: records whether THIS callback runs on a
-        realtime thread (juce::Thread::isRealtime for JUCE threads,
-        sched_getscheduler for a native backend thread) and stamps the
-        answer onto every graph via setAudioCallerIsRealtime, so
+    /** Audio thread, once per stream (audioDeviceAboutToStart re-arms
+        it): records whether THIS callback runs on a realtime thread
+        (juce::Thread::isRealtime for JUCE threads, sched_getscheduler
+        for a native backend thread) and stamps the answer onto every
+        graph the callback can reach via setAudioCallerIsRealtime, so
         SignalGraph's RT-parity dispatch gate knows what it's serving.
-        A one-time sched_getscheduler syscall -- the only syscall this
-        path ever makes. */
+        A one-time-per-stream sched_getscheduler syscall. */
     void detectCallbackRealtime() noexcept;
 
     juce::AudioDeviceManager deviceManager;

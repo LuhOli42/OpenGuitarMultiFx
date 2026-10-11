@@ -355,12 +355,24 @@ void AudioEngine::detectCallbackRealtime() noexcept
     callbackIsRealtime.store (realtime, std::memory_order_relaxed);
     callbackRealtimeDetected.store (true, std::memory_order_relaxed);
 
+    // Stamp every graph this callback can reach BEFORE any of them
+    // process this block: the published graph, the retired one still
+    // fading out, and every spill (active + the pending hand-off).
     if (auto* g = graphSlot.currentRaw())
         g->setAudioCallerIsRealtime (realtime);
+    if (fadingOutGraph != nullptr)
+        fadingOutGraph->setAudioCallerIsRealtime (realtime);
+    spillover.setAudioCallerIsRealtime (realtime);
 }
 
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
+    // A (re)opened device may invoke the callback from a DIFFERENT
+    // thread or scheduling policy -- the old classification is stale,
+    // re-detect on the new stream's first callback.
+    callbackRealtimeDetected.store (false, std::memory_order_relaxed);
+    callbackIsRealtime.store (false, std::memory_order_relaxed);
+
     activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
     fadingOutGraph = nullptr;
     fadeOutSamplesLeft = fadeInSamplesLeft = 0;
