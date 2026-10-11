@@ -24,7 +24,7 @@ namespace openguitarmultifx
     loop, the series/parallel output wiring and the footswitch relays are not modelled.
 
     Controls, page 1 (mirrors the front panel): Gain I, Gain II, More, Treble, Mid, Bass, Presence,
-    Master. Page 2 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
+    Depth, Master. Page 2 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class FryetteDeliveranceD120StyleAmplifierProcessor : public EffectProcessor
 {
@@ -113,6 +113,8 @@ private:
 
         // reducedOrder behavioural power stage state
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+        double bmDepthLp = 0.0;
+        int rDepth = 0, grpDepthL = 0;
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
         tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
 
@@ -131,6 +133,7 @@ private:
         double gain1, gain2, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
         int speaker;
         int more;
+        double depth = 0.5;
     };
     void updatePots (const Knobs& k);
     void recover (Channel& ch) const;
@@ -160,6 +163,7 @@ private:
     juce::AudioParameterFloat* midParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
     juce::AudioParameterFloat* presenceParam = nullptr;
+    juce::AudioParameterFloat* depthParam = nullptr;
     juce::AudioParameterFloat* masterParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
@@ -168,7 +172,7 @@ private:
     juce::AudioParameterFloat* speakerParam = nullptr;
 
     juce::SmoothedValue<float> smoothedGain1, smoothedGain2, smoothedTreble, smoothedMid, smoothedBass,
-        smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
+        smoothedPresence, smoothedDepth, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
         /** JUCE's reset() must return the circuit to its DC operating point -- an
         empty reset() (the bug this fixes) left stale capacitor state forever.

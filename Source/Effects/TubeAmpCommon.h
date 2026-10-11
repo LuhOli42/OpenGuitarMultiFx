@@ -120,6 +120,19 @@ namespace voicings
                                                      100.0, 2.5, 60.0, 5800.0, 11000.0, 0.0, 0.0, 1.5, 8500.0, -23.0 };
     inline constexpr PowerTailVoicing highGainSLO { 11000.0, 95.0, 0.0, 1.0, 160.0, 0.3, 0.04, 0.4,
                                                     100.0, 2.5, 60.0, 4500.0, 14000.0, 0.0, 0.0, 1.5, 9000.0, -23.0 };
+    // Fryette Deliverance D120: tight and articulate -- the amp's oversized, wide-bandwidth output iron
+    // (extended top, controlled LF) plus a quad of KT88s under firm NFB damping. Controlled cone bloom,
+    // open top through a V30-loaded 4x12 with the usual top-octave notch.
+    inline constexpr PowerTailVoicing highGainDeliverance { 12000.0, 100.0, 0.0, 1.1, 155.0, 0.3, 0.04, 0.4,
+                                                            105.0, 2.0, 60.0, 5600.0, 11000.0, 0.0, 0.0, 1.5, 8500.0, -15.0 };
+    // Bogner Uberschall: aggressive and mid-forward -- the power section saturates deeper and darker
+    // than the Deliverance's hi-fi iron, while the Uber 4x12 keeps a bigger but tighter low-end thump.
+    inline constexpr PowerTailVoicing highGainBogner { 9500.0, 100.0, 0.0, 1.1, 170.0, 0.45, 0.04, 0.5,
+                                                       105.0, 2.8, 60.0, 5000.0, 7200.0, 0.0, 0.0, 1.5, 8000.0, -18.0 };
+    // Sunn Model T: bass-family ultralinear iron like bassAmp, but it is a GUITAR head on 2x15 JBLs --
+    // the loose low end stays while the top extends well past a bass cab's ~4 kHz ceiling.
+    inline constexpr PowerTailVoicing sunnModelT { 7500.0, 65.0, 1.5, 1.0, 140.0, 0.8, 0.06, 0.7,
+                                                   55.0, 3.0, 40.0, 4600.0, 7000.0 };
     // Big bass iron: resonance down in the 60-80 Hz band, earlier top rolloff, deeper core saturation.
     // Cab: 4x10/8x10/1x15 bass box -- resonance in the 50s and the top is gone by ~4 kHz.
     inline constexpr PowerTailVoicing bassAmp { 7500.0, 70.0, 1.5, 1.0, 140.0, 0.8, 0.06, 0.5,

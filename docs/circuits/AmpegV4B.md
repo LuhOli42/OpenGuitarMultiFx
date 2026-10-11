@@ -28,8 +28,10 @@ Ultra-Hi rocker switches. Factory spec: 100 W into 2 / 4 / 8 ohm, input sensitiv
   12DW7's asymmetric halves are likewise approximated with the stock 12AX7 model.
 - Only one channel is modelled — the two input channels are identical apart from input-pad voicing,
   which the 0 dB / -15 dB Input switch covers.
-- OT primary impedance (~4k), the NFB resistor (150k) and the level-shifter's negative rail (-180 V)
+- OT primary impedance (~4k) and the level-shifter's negative rail (-180 V)
   are documented estimates matching the Ampeg topology, not literal part numbers from the scan.
+- The NFB resistor is 1.5M in code (not the SVT's 150k): the 1k half-primary at 15.8:1 puts ~2.6x the
+  SVT's forward gain inside the loop, and at 150k the closed loop motorboats at ~3 Hz on silence.
 - A Master control is kept (synthetic, like the other amp models) because the V4B's only level control
   is the channel Volume.
 
