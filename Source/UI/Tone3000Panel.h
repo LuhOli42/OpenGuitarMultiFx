@@ -4,11 +4,13 @@
 #include "../Tone3000/LoopbackServer.h"
 #include "../EffectRegistry.h"
 #include "../Tone3000/Tone3000Manager.h"
+#include "../Updater/AppUpdater.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace openguitarmultifx
 {
@@ -16,26 +18,29 @@ namespace openguitarmultifx
 /**
     The app's one Settings screen (per AGENT.md's UI/UX Design Philosophy:
     a pedalboard has exactly one settings surface, reached through the "..."
-    button, not a scatter of separate dialogs). Right now it only holds the
+    button, not a scatter of separate dialogs). Right now it holds the
     TONE3000 account section -- paste your publishable client_id, log in --
-    plus the rendering quality (Eco / Normal / High: how much the distortion
-    pedals oversample) -- the reserved home for whatever else needs a settings
-    surface later. Searching/downloading models is NOT here: that stays contextual
-    to whichever block is selected (see ParameterPanel and
-    GearRouting.h::gearFilterForProcessorName).
+    the rendering quality (Eco / Normal / High: how much the distortion
+    pedals oversample), the built-in cab voicing toggle, the sample rate
+    picker and the Software update section (check/download/apply a GitHub
+    release -- see Source/Updater/AppUpdater.h). Searching/downloading
+    models is NOT here: that stays contextual to whichever block is selected
+    (see ParameterPanel and GearRouting.h::gearFilterForProcessorName).
 
     Shown through OverlayHost, not a juce::DialogWindow -- there's no
     window manager to hand a second window to on the final touchscreen
     target, so every "screen" is a card drawn on top of the single app
     window instead.
 */
-class Tone3000Panel : public juce::Component
+class Tone3000Panel : public juce::Component,
+                      private juce::Timer
 {
 public:
-    explicit Tone3000Panel (Tone3000Manager& managerToUse);
+    Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updaterToUse);
 
     void resized() override;
     void paint (juce::Graphics& g) override;
+    void timerCallback() override;
 
     /** Wired by whoever hosts this panel to OverlayHost::pushOverlay/popOverlay. */
     std::function<void (std::unique_ptr<juce::Component>)> onPushOverlay;
@@ -57,7 +62,16 @@ private:
     void finishLogin (const juce::StringPairArray& redirectParams);
 
     Tone3000Manager& manager;
+    AppUpdater& updater;
     LoopbackServer loopback; // system-browser login path; idle unless a login is pending
+
+    // Scrollable surface: the sections below no longer fit the card at its
+    // OverlayHost-clamped height (the Software update controls pushed it
+    // over), so the title/close row stays fixed on the panel and every
+    // section lives in `content`, viewed through a Viewport.
+    juce::Viewport viewport;
+    juce::Component content;
+    int layoutSections (juce::Rectangle<int> bounds);
 
     juce::Label titleLabel { {}, "Settings" };
 
@@ -83,6 +97,24 @@ private:
     juce::TextButton loginButton { "Log in" };
     juce::TextButton logoutButton { "Log out" };
     juce::Label statusLabel;
+
+    juce::Label updateSectionLabel { {}, "Software update" };
+    juce::Label currentVersionLabel;
+    juce::TextButton checkUpdateButton { "Check for update" };
+    juce::TextButton installUpdateButton;
+    juce::TextButton restartAppButton { "Restart now" };
+    juce::Label updateStatusLabel;
+    double updateProgressValue = 0.0;
+    juce::ProgressBar updateProgressBar { updateProgressValue };
+    void doCheckForUpdate();
+    void doInstallUpdate();
+    // Redraws the whole update section from AppUpdater::UiSnapshot, which
+    // outlives this card -- the section survives Settings being closed and
+    // reopened mid-update (status text, pending candidate for retry,
+    // restart prompt), and the Timer keeps a live card polling while an
+    // operation it didn't start is still in flight.
+    void applyUpdateUiState();
+
     juce::TextButton closeButton { "Close" };
 };
 

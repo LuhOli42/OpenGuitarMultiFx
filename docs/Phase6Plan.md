@@ -32,6 +32,8 @@ work that doesn't need the physical board proceeds without it.
 
 - `ogmfx-<version>-<arch>.tar.gz` (+ `.sha256` sidecar), `<arch>` in `{aarch64, x86_64}`.
 - Inside: `bin/OpenGuitarMultiFx`, `systemd/ogmfx.service`, `systemd/ogmfx-updater.{service,timer}`,
+  `sbin/ogmfx-update.sh`, `sudoers/ogmfx-updater` (in-app update privilege),
+  `etc/ogmfx/updater.conf`,
   `install.sh` (idempotent: installs units, reloads systemd), `VERSION` file.
 - Each GitHub Release also carries `latest.json`:
   `{version, tag, tarball_url, sha256, channel, published_at}`.
@@ -39,7 +41,10 @@ work that doesn't need the physical board proceeds without it.
 ### Versioning and services
 
 - Tags `vX.Y.Z` trigger releases; `git describe` produces the `VERSION` string
-  (`0.0.0-dev+<sha>` for untagged builds).
+  (`0.0.0-dev+<sha>` for untagged builds). The same `git describe --tags
+  --match 'v*' --dirty` result is baked into the app binary at configure time
+  (`OGMFX_VERSION` compile define -> `getApplicationVersion()`), so the
+  binary, the tarball, and the GitHub release all carry one version string.
 - `ogmfx.service` — the app, runs as user `ogmfx`, `WantedBy=ogmfx.target`-style autostart.
 - `ogmfx-updater.timer` + `ogmfx-updater.service` — periodic update check.
 
@@ -55,6 +60,17 @@ work that doesn't need the physical board proceeds without it.
 7. Keep the two newest releases; prune the rest.
 
 Manual rollback: `ogmfx-update.sh --rollback` (same symlink swap to `previous`).
+
+In-app apply (Settings -> Software update, implemented in `Source/Updater/`):
+the check runs `GET /repos/<repo>/releases/latest` (stable) or the newest
+non-draft prerelease (beta) straight from the app; applying on a packaged
+install delegates to `sudo -n /usr/local/sbin/ogmfx-update.sh --force`
+(privilege scoped to that script by the shipped sudoers drop-in), so the
+device path above — staging, checksum, symlink swap, health check,
+rollback — is the only install path that ever runs as root. An
+unpackage-managed binary self-applies by renaming the staged,
+checksum-verified binary over its own exe (`.bak` kept). See
+`updater/README.md` "In-app trigger".
 
 ## Workstreams
 

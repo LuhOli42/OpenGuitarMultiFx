@@ -10,6 +10,9 @@
 # What it does (all steps idempotent — safe to re-run):
 #   * installs the systemd units into /etc/systemd/system/
 #   * installs sbin/ogmfx-update.sh to /usr/local/sbin/ogmfx-update.sh
+#   * installs sudoers/ogmfx-updater to /etc/sudoers.d/ogmfx-updater — the
+#     in-app updater's only privilege (ogmfx user may run the update script
+#     as root, nothing else); skipped cleanly when sudo is not installed
 #   * installs etc/ogmfx/updater.conf to /etc/ogmfx/updater.conf — only when
 #     the file does not exist yet, so an update never clobbers the device's
 #     configured channel/repo
@@ -40,6 +43,7 @@ for f in \
     systemd/ogmfx-updater.service \
     systemd/ogmfx-updater.timer \
     sbin/ogmfx-update.sh \
+    sudoers/ogmfx-updater \
     etc/ogmfx/updater.conf \
     bin/OpenGuitarMultiFx \
 ; do
@@ -53,6 +57,20 @@ install -D -m 0644 systemd/ogmfx.service         /etc/systemd/system/ogmfx.servi
 install -D -m 0644 systemd/ogmfx-updater.service /etc/systemd/system/ogmfx-updater.service
 install -D -m 0644 systemd/ogmfx-updater.timer   /etc/systemd/system/ogmfx-updater.timer
 install -D -m 0755 sbin/ogmfx-update.sh          /usr/local/sbin/ogmfx-update.sh
+
+# In-app updater path: the app runs as user ogmfx but the update script
+# needs root. Grant exactly that script via sudoers.d when sudo exists;
+# without sudo the app falls back to `systemctl start ogmfx-updater.service`.
+if command -v sudo >/dev/null 2>&1; then
+    install -D -m 0440 sudoers/ogmfx-updater /etc/sudoers.d/ogmfx-updater
+    if command -v visudo >/dev/null 2>&1 && ! visudo -cf /etc/sudoers.d/ogmfx-updater >/dev/null 2>&1; then
+        rm -f /etc/sudoers.d/ogmfx-updater
+        die "shipped sudoers file failed visudo check; not installing it"
+    fi
+    log "installed /etc/sudoers.d/ogmfx-updater"
+else
+    log "sudo not installed; skipping sudoers drop-in (in-app apply falls back to systemctl)"
+fi
 
 if [ ! -f /etc/ogmfx/updater.conf ]; then
     install -D -m 0644 etc/ogmfx/updater.conf /etc/ogmfx/updater.conf

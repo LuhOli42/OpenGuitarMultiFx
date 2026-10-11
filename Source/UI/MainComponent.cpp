@@ -961,7 +961,7 @@ void MainComponent::showSettingsPanel()
     // contextual to whichever block is selected. See Tone3000Panel.h and
     // AGENT.md's UI/UX Design Philosophy for why this is a card pushed onto
     // overlayHost rather than a separate OS window.
-    auto panel = std::make_unique<Tone3000Panel> (tone3000);
+    auto panel = std::make_unique<Tone3000Panel> (tone3000, appUpdater);
     panel->onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     panel->onPopOverlay  = [this] { overlayHost.popOverlay(); };
     panel->onQualityChanged = [this] (EffectRegistry::OversamplingQuality q) { applyRenderQuality (q); };

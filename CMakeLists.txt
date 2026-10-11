@@ -21,6 +21,34 @@ FetchContent_MakeAvailable(JUCE)
 include(cmake/NAMCore.cmake)
 include(cmake/ChowdspWDF.cmake)
 
+# Version baked into the binary (shown in Settings -> Software update and
+# used by the in-app updater's is-this-newer comparison). Same scheme as
+# scripts/package.sh's VERSION file so a packaged install and the app
+# inside it report the same string: `git describe --tags --match 'v*'
+# --dirty` -> e.g. v1.2.3, v1.2.3-4-gabc123, v1.2.3-dirty; untagged trees
+# get 0.0.0-dev+<sha>. Fallback when git/the repo is unavailable:
+# <project version>-dev.
+set(OGMFX_VERSION "${PROJECT_VERSION}-dev")
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" describe --tags --match "v*" --dirty
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE OGMFX_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(NOT OGMFX_VERSION)
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      OUTPUT_VARIABLE OGMFX_SHORT_SHA
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET)
+    set(OGMFX_VERSION "0.0.0-dev+${OGMFX_SHORT_SHA}")
+  endif()
+endif()
+message(STATUS "OGMFX_VERSION: ${OGMFX_VERSION}")
+
 # Sora (SIL OFL, see Assets/Fonts/SORA-LICENSE.txt), embedded rather than
 # relying on the OS having a decent font installed -- the final target is a
 # from-scratch embedded Linux build with no guaranteed font at all. Static
@@ -239,6 +267,7 @@ set(OGMFX_CORE_SOURCES
   Source/Presets/PresetManager.cpp
   Source/Presets/PresetLibrary.cpp
   Source/UI/SnapshotPresetXml.cpp
+  Source/Updater/UpdaterCore.cpp
 )
 
 add_library(OpenGuitarMultiFx_Core STATIC ${OGMFX_CORE_SOURCES})
@@ -260,6 +289,7 @@ target_link_libraries(OpenGuitarMultiFx_Core PUBLIC
   juce::juce_audio_formats
   juce::juce_audio_processors
   juce::juce_core
+  juce::juce_cryptography
   juce::juce_dsp
   juce::juce_events
   juce::juce_gui_basics
@@ -326,6 +356,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/OAuthLoginDialog.cpp
   Source/Tone3000/LoopbackServer.cpp
   Source/Tone3000/Tone3000Manager.cpp
+  Source/Updater/AppUpdater.cpp
 )
 
 target_include_directories(OpenGuitarMultiFx PRIVATE Source)
@@ -337,6 +368,7 @@ target_include_directories(OpenGuitarMultiFx PRIVATE Source)
 target_compile_definitions(OpenGuitarMultiFx PRIVATE
   JUCE_WEB_BROWSER=1
   JUCE_USE_CURL=1
+  OGMFX_VERSION="${OGMFX_VERSION}"
 )
 
 # JUCE_USE_CURL only makes juce_core.cpp call into libcurl -- it doesn't link
@@ -397,6 +429,7 @@ install(FILES
   DESTINATION systemd)
 install(PROGRAMS packaging/install.sh DESTINATION .)
 install(FILES packaging/updater.conf DESTINATION etc/ogmfx)
+install(FILES packaging/ogmfx-updater.sudoers DESTINATION sudoers)
 # ogmfx-update.sh lives in updater/ (W4's tree) — absent on branches that
 # don't have the merged updater yet, so guard the rule instead of failing
 # configure.
