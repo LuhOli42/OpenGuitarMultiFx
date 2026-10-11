@@ -15,12 +15,15 @@ public:
         beginTest ("with no modulation and no feedback, an impulse's echo lands at the centre delay time");
         {
             FlangerProcessor flanger;
-            flanger.prepare (48000.0, 512, 1);
+            // Params pinned before prepare() snaps them: a post-prepare
+            // setState rides the ~10 ms param ramp, so the impulse's echo
+            // lands while depth and mix are still sweeping.
             auto state = flanger.getState();
             state->setAttribute ("flanger_depth", 0.0);
             state->setAttribute ("flanger_feedback", 0.0);
             state->setAttribute ("flanger_mix", 1.0);
             flanger.setState (*state);
+            flanger.prepare (48000.0, 512, 1);
 
             const int centreSamples = (int) (0.004 * 48000.0); // 4ms centre delay
             juce::AudioBuffer<float> buffer (1, centreSamples + 200);

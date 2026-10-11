@@ -30,14 +30,17 @@ public:
         beginTest ("at LFO phase zero, an impulse's echo lands at the centre delay time");
         {
             VibratoProcessor vibrato;
-            vibrato.prepare (48000.0, 512, 1);
             auto state = vibrato.getState();
             // Depth must be zero here -- the LFO keeps advancing while the
             // impulse propagates through the delay line, so even a phase
             // starting at sin(0)=0 drifts the actual delay time by the
-            // time the echo arrives if depth is nonzero (default 0.5).
+            // time the echo arrives if depth is nonzero (default 0.5). And
+            // it must be pinned before prepare() snaps it: a post-prepare
+            // write rides the ~10 ms param ramp, so the echo lands while
+            // depth is still sweeping and the peak index drifts.
             state->setAttribute ("vibrato_depth", 0.0);
             vibrato.setState (*state);
+            vibrato.prepare (48000.0, 512, 1);
 
             const int centreSamples = (int) (0.006 * 48000.0); // 6ms centre delay
             juce::AudioBuffer<float> buffer (1, centreSamples + 200);

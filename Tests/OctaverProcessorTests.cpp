@@ -15,10 +15,13 @@ public:
         beginTest ("zero level leaves the dry signal intact (just the fixed output headroom scale)");
         {
             OctaverProcessor octaver;
-            octaver.prepare (48000.0, 512, 1);
+            // Level pinned before prepare() snaps it: a post-prepare write
+            // rides the ~10 ms param ramp, so the first samples blend the
+            // sub-octave layer in while level is still falling to zero.
             auto state = octaver.getState();
             state->setAttribute ("octaver_level", 0.0);
             octaver.setState (*state);
+            octaver.prepare (48000.0, 512, 1);
 
             juce::Random random (818283);
             juce::AudioBuffer<float> buffer (1, 2048);

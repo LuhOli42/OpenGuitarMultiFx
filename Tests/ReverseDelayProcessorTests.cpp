@@ -55,11 +55,15 @@ public:
         beginTest ("during the very first chunk there's nothing to play back yet");
         {
             ReverseDelayProcessor reverseDelay;
-            reverseDelay.prepare (48000.0, 512, 1);
 
+            // Same param-ramp caveat as the test above: mix must be pinned
+            // BEFORE prepare() snaps it -- a post-prepare write ramps the
+            // dry blend down over ~10 ms, so early samples leak the input.
             auto state = reverseDelay.getState();
             state->setAttribute ("reversedelay_mix", 1.0); // fully wet -- isolates the (silent) reverse tap
             reverseDelay.setState (*state);
+
+            reverseDelay.prepare (48000.0, 512, 1);
 
             juce::AudioBuffer<float> buffer (1, 256);
             for (int i = 0; i < buffer.getNumSamples(); ++i)

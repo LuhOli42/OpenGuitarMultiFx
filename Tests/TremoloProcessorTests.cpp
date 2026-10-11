@@ -15,10 +15,13 @@ public:
         beginTest ("zero depth leaves a constant signal completely untouched");
         {
             TremoloProcessor tremolo;
-            tremolo.prepare (48000.0, 512, 1);
+            // Params pinned before prepare() snaps them: a post-prepare
+            // setState rides the ~10 ms paramRampSeconds ramp, so the first
+            // samples measure the depth ramping down, not the resting unit.
             auto state = tremolo.getState();
             state->setAttribute ("tremolo_depth", 0.0);
             tremolo.setState (*state);
+            tremolo.prepare (48000.0, 512, 1);
 
             juce::AudioBuffer<float> buffer (1, 4800);
             for (int i = 0; i < buffer.getNumSamples(); ++i)
