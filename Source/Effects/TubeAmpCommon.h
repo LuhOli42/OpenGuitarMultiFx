@@ -121,22 +121,33 @@ struct CabSim
     void prepare (double fs, double resHz, double resDb, double loHz, double lpHz, double airHz) noexcept
     {
         const double pi = juce::MathConstants<double>::pi;
-        loC = 1.0 - std::exp (-2.0 * pi * loHz / fs);
+        // Biquad designs go unstable when their frequency is at/above ~Nyquist (a 32 kHz WAV through
+        // RenderFx is a real case). Same 0.4*fs cap the OT poles use: a corner that high means "no
+        // filter at this rate" -- bypass rather than cram it under the limit.
+        const double cap = 0.4 * fs;
+        loC = 1.0 - std::exp (-2.0 * pi * juce::jmin (loHz, cap) / fs);
         // Cone/cab resonance: RBJ peaking biquad, +cabResDb at cabResHz, back to 0 dB either side.
-        const double w0 = 2.0 * pi * resHz / fs;
+        const double w0 = 2.0 * pi * juce::jmin (resHz, cap) / fs;
         const double A = std::pow (10.0, resDb / 40.0);
         const double alpha = std::sin (w0) / 1.6; // Q ~= 0.8: a broad physical hump, not a resonant peak
         const double a0p = 1.0 + alpha / A;
         pkB0 = (1.0 + alpha * A) / a0p; pkB1 = -2.0 * std::cos (w0) / a0p; pkB2 = (1.0 - alpha * A) / a0p;
         pkA1 = pkB1; pkA2 = (1.0 - alpha / A) / a0p;
-        // Steep top: Butterworth biquad LP at cabLpHz.
-        const double wl = 2.0 * pi * lpHz / fs;
-        const double al = std::sin (wl) / 1.41421356; // Q = sqrt(2)/2
-        const double a0l = 1.0 + al;
-        lpB0 = (1.0 - std::cos (wl)) * 0.5 / a0l; lpB1 = (1.0 - std::cos (wl)) / a0l; lpB2 = lpB0;
-        lpA1 = -2.0 * std::cos (wl) / a0l; lpA2 = (1.0 - al) / a0l;
-        // Gentle continuation into the top octave.
-        airC = 1.0 - std::exp (-2.0 * pi * airHz / fs);
+        // Steep top: Butterworth biquad LP at cabLpHz; above the cap it stays at identity (flat).
+        if (lpHz < cap)
+        {
+            const double wl = 2.0 * pi * lpHz / fs;
+            const double al = std::sin (wl) / 1.41421356; // Q = sqrt(2)/2
+            const double a0l = 1.0 + al;
+            lpB0 = (1.0 - std::cos (wl)) * 0.5 / a0l; lpB1 = (1.0 - std::cos (wl)) / a0l; lpB2 = lpB0;
+            lpA1 = -2.0 * std::cos (wl) / a0l; lpA2 = (1.0 - al) / a0l;
+        }
+        else
+        {
+            lpB0 = 1.0; lpB1 = lpB2 = lpA1 = lpA2 = 0.0;
+        }
+        // Gentle continuation into the top octave; airC = 1.0 tracks the input exactly = flat.
+        airC = airHz < cap ? 1.0 - std::exp (-2.0 * pi * airHz / fs) : 1.0;
         lo = pkX1 = pkX2 = pkY1 = pkY2 = lpX1 = lpX2 = lpY1 = lpY2 = air = 0.0;
     }
 
@@ -190,13 +201,21 @@ struct PowerStageTail
         lfC = 1.0 - std::exp (-2.0 * pi * v.lfHz / fs);
         envC = 1.0 - std::exp (-1.0 / (0.02 * fs)); // ~20 ms: tracks the note level, not individual cycles
         dcC = 1.0 - std::exp (-2.0 * pi * 12.0 / fs); // the OT can't pass DC: ~12 Hz mean subtraction
-        const double w = 2.0 * pi * v.resHz / fs;
-        const double alpha = std::sin (w) / (2.0 * v.resQ);
-        const double a0 = 1.0 + alpha;
-        resB0 = alpha / a0; resB2 = -alpha / a0;      // constant-0 dB-peak bandpass, added on top of dry
-        resA1 = -2.0 * std::cos (w) / a0; resA2 = (1.0 - alpha) / a0;
-        resAdd = std::pow (10.0, v.resDb / 20.0) - 1.0;
-        if (v.presenceHz > 0.0 && v.presenceDb > 0.0)
+        // Same 0.4*fs cap as the OT poles and CabSim: a resonance above ~Nyquist can't be voiced anyway,
+        // and the biquad design diverges there (32 kHz hosts are real), so both bumps drop out cleanly.
+        const double cap = 0.4 * fs;
+        if (v.resHz < cap)
+        {
+            const double w = 2.0 * pi * v.resHz / fs;
+            const double alpha = std::sin (w) / (2.0 * v.resQ);
+            const double a0 = 1.0 + alpha;
+            resB0 = alpha / a0; resB2 = -alpha / a0;  // constant-0 dB-peak bandpass, added on top of dry
+            resA1 = -2.0 * std::cos (w) / a0; resA2 = (1.0 - alpha) / a0;
+            resAdd = std::pow (10.0, v.resDb / 20.0) - 1.0;
+        }
+        else
+            resAdd = 0.0;
+        if (v.presenceHz > 0.0 && v.presenceDb > 0.0 && v.presenceHz < cap)
         {
             const double wp = 2.0 * pi * v.presenceHz / fs;
             const double ap = std::sin (wp) / (2.0 * v.presenceQ);

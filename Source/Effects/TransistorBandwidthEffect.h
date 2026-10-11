@@ -35,8 +35,13 @@ public:
     {
         inner->prepare (sampleRate, maxBlockSize, numChannels);
         filters.assign ((size_t) std::max (1, numChannels), Biquad {});
-        for (auto& f : filters)
-            f.makeLowPass (sampleRate, corner);
+        // A corner at/above ~Nyquist makes the cookbook biquad's poles leave the unit circle (diverges at
+        // low host rates like 32 kHz). A voicing that asks for a corner that high means "no treble limit
+        // at this rate", so the biquad stays at its default-identity (passthrough) instead of being
+        // crammed under the limit. Same 0.4*fs cap PowerStageTail uses for its OT poles.
+        if (corner < 0.4 * sampleRate)
+            for (auto& f : filters)
+                f.makeLowPass (sampleRate, corner);
     }
 
     void process (juce::AudioBuffer<float>& buffer) override
