@@ -66,7 +66,8 @@ public:
     // asymmetrically at centre bias (the odd saturator alone produces zero even harmonics);
     // bmAsym is fitted against this amp's full-order netlist (Tests/PowerStageAsymBench.cpp),
     // bmDcHz models the OT's inability to pass the rectified DC component.
-    static constexpr double bmAsym = 5.74;
+    static constexpr double bmAsym = 0.0;   // coherent-tone refit: with the shipped rail clamp in the sweep,
+                                        // the reference's modest even/odd is best matched without a static offset
     static constexpr double bmDcHz = 8.0;
 
     // ---- diagnostics for tests ----

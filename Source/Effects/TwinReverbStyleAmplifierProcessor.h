@@ -70,8 +70,8 @@ public:
     // fitted against this amp's own full-order netlist (Tests/PowerStageAsymBench.cpp); bmDcHz
     // models the output transformer, which cannot pass the rectified DC component the offset
     // creates. JTM45StyleAmplifierProcessor uses the same recipe.
-    static constexpr double bmAsym = 0.0;   // fitted 0.0: at a moderate crunch the reference's even/odd is fully
-                                        // explained by the preamp's asymmetric drive (PowerStageAsymBench); plumbing stays for the bias control
+    static constexpr double bmAsym = 0.215; // fitted against the full-order netlist (PowerStageAsymBench, coherent-tone sweep);
+                                        // the rest of the reference even/odd is carried by the preamp's asymmetric drive
     static constexpr double bmDcHz = 8.0; // not yet re-measured against PedalUnityLevelTests -- see the doc
 
     // ---- diagnostics for tests ----

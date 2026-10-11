@@ -64,7 +64,7 @@ public:
     // fitted against this amp's own full-order netlist (Tests/PowerStageAsymBench.cpp); bmDcHz
     // models the output transformer, which cannot pass the rectified DC component the offset
     // creates. JTM45StyleAmplifierProcessor uses the same recipe.
-    static constexpr double bmAsym = 0.095;
+    static constexpr double bmAsym = 0.080;
     static constexpr double bmDcHz = 8.0;
 
     // ---- diagnostics for tests ----

@@ -32,6 +32,9 @@ public:
     static constexpr double sr = 48000.0;
     static constexpr double dcHz = 8.0;   // the bmDcHz the behavioural stages get (JTM45's value)
     static constexpr int nWin = 8192;
+    // coherent stimulus: an integer number of cycles inside nWin so the rectangular
+    // DFT puts each harmonic exactly on a bin (a literal 110 Hz leaks into neighbours).
+    static constexpr double toneHz = 19.0 * sr / nWin; // ~111.3 Hz, bin 19
 
     struct H { double evenOdd = 0.0, h2rel = 0.0, thd = 0.0; };
 
@@ -87,7 +90,7 @@ public:
         y.reserve ((size_t) keep);
         for (long long n = 0; n < total; ++n)
         {
-            const float v = (float) (level * std::sin (twoPi * 110.0 * (double) n / sr));
+            const float v = (float) (level * std::sin (twoPi * toneHz * (double) n / sr));
             one.setSample (0, 0, v);
             one.setSample (1, 0, v);
             amp.process (one);
@@ -122,7 +125,9 @@ public:
             double dcState = 0.0, ss = 0.0;
             for (size_t i = 0; i < x.size(); ++i)
             {
-                const double raw = sat (x[i] + s, k, railNom, ymax, kneeN) - sat (s, k, railNom, ymax, kneeN);
+                // same rail clamp the shipped stages apply before DC blocking
+                const double raw = juce::jlimit (-railNom * ymax, railNom * ymax,
+                                                 sat (x[i] + s, k, railNom, ymax, kneeN) - sat (s, k, railNom, ymax, kneeN));
                 dcState += dcCoeff * (raw - dcState);
                 m[i] = raw - dcState;
                 ss += m[i] * m[i];
