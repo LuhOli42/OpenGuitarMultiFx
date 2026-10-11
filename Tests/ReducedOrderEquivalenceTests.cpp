@@ -1,4 +1,5 @@
 #include "Effects/BD2StyleOverdriveProcessor.h"
+#include "Effects/BigMuffStyleFuzzProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
 
 #include <juce_core/juce_core.h>
@@ -128,6 +129,37 @@ public:
 
     struct Comparison { double levelDb, worstBandDb; bool sane; };
 
+    static Comparison verdict (const std::vector<float>& a, const std::vector<float>& b)
+    {
+        const auto full = analyse (a), reduced = analyse (b);
+        Comparison c { reduced.totalDb - full.totalDb, 0.0, true };
+        for (int i = 0; i < 8; ++i)
+            if (full.db[i] > full.totalDb - 30.0) // audible bands only: those holding more than -30 dB of the signal
+                c.worstBandDb = std::max (c.worstBandDb, std::abs ((reduced.db[i] - reduced.totalDb) - (full.db[i] - full.totalDb)));
+        return c;
+    }
+
+    static Comparison compareMuff (BigMuffStyleFuzzProcessor::Model m,
+                                   const std::vector<std::pair<const char*, float>>& knobs, double rms)
+    {
+        std::vector<float> a, b;
+        for (int variant = 0; variant < 2; ++variant)
+        {
+            BigMuffStyleFuzzProcessor::reducedOrder = variant == 1;
+            BigMuffStyleFuzzProcessor pedal (m);
+            setParams (pedal, knobs);
+            pedal.prepare (sr, 256, 1);
+            (variant == 0 ? a : b) = render (pedal, rms, 3.0);
+            if (pedal.getSolveFailureRate() > 0.0005)
+            {
+                BigMuffStyleFuzzProcessor::reducedOrder = false;
+                return { 0.0, 99.0, false };
+            }
+        }
+        BigMuffStyleFuzzProcessor::reducedOrder = false;
+        return verdict (a, b);
+    }
+
     template <typename Pedal>
     Comparison compare (const std::vector<std::pair<const char*, float>>& knobs, double rms)
     {
@@ -180,6 +212,31 @@ public:
                         worstBand = std::max (worstBand, c.worstBandDb);
                     }
             logMessage ("HM-2 worst level " + juce::String (worstLevel, 2) + " dB, worst band " + juce::String (worstBand, 2) + " dB");
+            expect (worstLevel < 2.0, "level within 2 dB");
+            expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");
+        }
+
+        beginTest ("Big Muff: the one-port gain transistors sound like the two-port ones");
+        {
+            struct M { BigMuffStyleFuzzProcessor::Model model; const char* tag; juce::String prefix; };
+            const M models[] = {
+                { BigMuffStyleFuzzProcessor::Model::usV3, "USA", "bmp" },
+                { BigMuffStyleFuzzProcessor::Model::russianGreen, "Russian", "bmpru" },
+                { BigMuffStyleFuzzProcessor::Model::sovtekFirstEdition, "Sovtek", "bmpsv" } };
+            double worstLevel = 0.0, worstBand = 0.0;
+            for (const auto& m : models)
+                for (float sus : { 0.3f, 0.8f })
+                    for (float tone : { 0.2f, 0.8f })
+                        for (double rms : { 0.05, 0.3 })
+                        {
+                            const juce::String susId = m.prefix + "_sustain", toneId = m.prefix + "_tone", volId = m.prefix + "_volume";
+                            const auto c = compareMuff (m.model, { { susId.toRawUTF8(), sus }, { toneId.toRawUTF8(), tone }, { volId.toRawUTF8(), 0.7f } }, rms);
+                            expect (c.sane, "solver trouble on " + juce::String (m.tag));
+                            logMessage ("Big Muff " + juce::String (m.tag) + " sustain " + juce::String (sus) + " tone " + juce::String (tone) + " in " + juce::String (rms) + ": level " + juce::String (c.levelDb, 2) + " dB, worst audible band " + juce::String (c.worstBandDb, 2) + " dB");
+                            worstLevel = std::max (worstLevel, std::abs (c.levelDb));
+                            worstBand = std::max (worstBand, c.worstBandDb);
+                        }
+            logMessage ("Big Muff worst level " + juce::String (worstLevel, 2) + " dB, worst band " + juce::String (worstBand, 2) + " dB");
             expect (worstLevel < 2.0, "level within 2 dB");
             expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");
         }

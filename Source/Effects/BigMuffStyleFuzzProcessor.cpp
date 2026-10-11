@@ -120,6 +120,13 @@ void BigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
     const auto gnd = NodalCircuit::ground;
     const NodalCircuit::BjtParams npn { 1.0e-14, 25.85e-3, spec.beta, 4.0 };
 
+    // reducedOrder: each stage's collector current saturates smoothly at the load line
+    // (rail - Vce(sat)) / (collector + emitter R), per-stage factors fitted against the two-port model.
+    constexpr double vceSat = 0.2;
+    const double satIn = 1.5 * (v9 - vceSat) / (spec.rCollector + spec.rEmitter1);
+    const double satClip = 2.0 * (v9 - vceSat) / (spec.rCollector + spec.rEmitterClip);
+    const double satOut = 1.5 * (v9 - vceSat) / (spec.rOutCollector + spec.rOutEmitter);
+
     const auto vcc = c.addNode(), nIn = c.addNode();
     c.addSource (vcc, v9);
     ch.srcIn = c.addSource (nIn, 0.0);
@@ -133,7 +140,10 @@ void BigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
     c.addCapacitor (b1, c1, spec.cFeedback);
     c.addResistor (c1, vcc, spec.rCollector);
     c.addResistor (e1, gnd, spec.rEmitter1);
-    c.addBjt (c1, b1, e1, false, npn);
+    if (reducedOrder)
+        c.addBjtSaturating (c1, b1, e1, false, npn, satIn);
+    else
+        c.addBjt (c1, b1, e1, false, npn);
     ch.nCollector[0] = c1;
 
     // ---- Sustain pot: the input stage's output feeds the top, R23 sits under the bottom. ----
@@ -160,7 +170,10 @@ void BigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
         c.addDiode (col, dmid, siIs, siNVt, 4.0e-9);
         c.addResistor (col, vcc, spec.rCollector);
         c.addResistor (e, gnd, spec.rEmitterClip);
-        c.addBjt (col, b, e, false, npn);
+        if (reducedOrder)
+            c.addBjtSaturating (col, b, e, false, npn, satClip);
+        else
+            c.addBjt (col, b, e, false, npn);
         ch.nCollector[stage + 1] = col;
         previousOut = col;
     }
@@ -182,7 +195,10 @@ void BigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
     c.addResistor (b4, gnd, rOutBaseBottom);
     c.addResistor (c4, vcc, spec.rOutCollector);
     c.addResistor (e4, gnd, spec.rOutEmitter);
-    c.addBjt (c4, b4, e4, false, npn);
+    if (reducedOrder)
+        c.addBjtSaturating (c4, b4, e4, false, npn, satOut);
+    else
+        c.addBjt (c4, b4, e4, false, npn);
     ch.nCollector[3] = c4;
 
     const auto volTop = c.addNode(), volW = c.addNode();
