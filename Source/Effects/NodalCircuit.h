@@ -888,7 +888,7 @@ private:
     int cleanStreak = 0;
     int iterationsThisSample = 0;                  // cumulative Newton work in the current solveSample (all sat passes)
     static constexpr int stormModeIterations = 24; // mode-0 cap while storming (normal solves take < 15)
-    static constexpr int stormSampleIterations = 64; // total per-sample Newton budget while storming, all passes
+    static constexpr int stormSampleIterations = 320; // total per-sample Newton budget while storming, all passes
     static constexpr int stormStreakLength = 3;    // expensive samples (net of clean ones) that mean "storm"
     static constexpr int stormExitSamples = 512;   // consecutive clean solves before the storm is called over
     double theta = defaultTheta;
@@ -2039,12 +2039,13 @@ private:
             }
         }
 
-        // Storm bookkeeping, common to both branches: a solve under the cap is evidence of ease; anything
-        // else (a rescue, a slow convergence, an outright failure, a deadline-stand at the cap) is one more
-        // expensive sample -- a net streak of them means a sustained hard passage, so the next samples run
-        // bounded. Exit has hysteresis: leaving storm on the FIRST cheap sample thrashes -- every re-entry
-        // costs up to stormStreakLength more full-cascade samples, which is itself the spike. Staying stormed
-        // through a clean patch is nearly free (the cap just doesn't bind), so exit only after a long run.
+        // Storm bookkeeping, common to both branches. Evidence classes: clean = converged under the cap
+        // (decays the streak); expensive = the solve FAILED (failure storms are the pathological case --
+        // hundreds of retry iterations per sample, each retry certain to fail again). A
+        // slow-but-converging sample is NEITHER: it is doing legitimate work (the Super Lead's ~200-iteration
+        // mode-2 samples), and counting it as evidence would cap exactly the solves that must run. Storm
+        // therefore engages only on real failure runs, and exits only after a long clean run -- leaving on
+        // the FIRST cheap sample would thrash, paying full-cascade re-entry samples over and over.
         const bool clean = ok && iterationsThisSample < stormModeIterations;
         if (clean)
         {
@@ -2055,7 +2056,7 @@ private:
                 cleanStreak = 0;
             }
         }
-        else
+        else if (! ok)
         {
             cleanStreak = 0;
             if (++expensiveStreak >= stormStreakLength)
@@ -2138,8 +2139,13 @@ private:
         // checks' worth of room past the first 100, so a genuinely-converging-but-slow sample keeps its evidence-gated
         // chance): past 300, recover()'s now-cheap, now-RECENT known-good restore (see the "known-good" DynamicState comment
         // in each amp's Channel struct) is a better outcome for one rare sample than a block-wide time spike.
+        // Storm bounds the SPECULATIVE modes (a warm-start retry is guesswork that earns a small cap); mode 2
+        // keeps its full evidence-gated ceiling -- its 100-iteration progress checkpoints already drop out the
+        // moment the steps stop shrinking, so a real long rescue still converges and a hopeless one still
+        // stalls out early. Capping mode 2 at 20 failed every sample that legitimately needed it (measured:
+        // 70 recoveries on the Super Lead's hot-pedal input, where mode 2 converges around iteration ~150).
         const int hardIterationCeiling = deadlineIterations > 0 ? (mode == 0 ? deadlineIterations : (mode == 1 ? 10 : 20))
-                                                               : (stormMode ? (mode == 0 ? stormModeIterations : (mode == 1 ? 10 : 20))
+                                                               : (stormMode ? (mode == 0 ? stormModeIterations : (mode == 1 ? 10 : 300))
                                                                             : (mode == 2 ? 300 : 100));
         double progressCheckpoint = 1.0e300;
         double maxStepThisSolve = 0.0; // this iteration's pre-limit Newton step, for the stall check above
@@ -2382,13 +2388,13 @@ private:
             std::swap (Dnow, Dnext);
         }
 
-        const int mode0Cap = deadlineIterations > 0 ? deadlineIterations : stormModeIterations;
-        if (! converged && mode == 0
-            && ((deadlineIterations > 0 || stormMode) && iterationsThisSolve >= mode0Cap
-                || (stormMode && iterationsThisSample >= stormSampleIterations)))
-            converged = true; // deadline/storm: the last iterate stands (see setDeadlineMode()) --
-                              // hitting the shared sample budget mid-pass stands too, so a sat-mode
-                              // transition can never fail the whole sample in storm mode
+        // Deadline mode (external, setDeadlineMode) lets the last iterate stand at the cap. Storm mode
+        // deliberately does NOT: a pretend-converged u feeds the caller's sane-output guard garbage and
+        // turns a bounded failure into a recovery storm (measured on the Super Lead's hot-pedal path).
+        // A storm-capped solve fails honestly into the bounded rescues instead.
+        const int mode0Cap = deadlineIterations;
+        if (! converged && deadlineIterations > 0 && mode == 0 && iterationsThisSolve >= mode0Cap)
+            converged = true; // deadline: the last iterate stands (see setDeadlineMode())
 
         if (! converged)
         {
