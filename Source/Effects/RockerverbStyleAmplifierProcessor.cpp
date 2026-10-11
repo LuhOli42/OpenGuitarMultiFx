@@ -312,6 +312,104 @@ RockerverbStyleAmplifierProcessor::RockerverbStyleAmplifierProcessor()
     parameters = std::move (group);
 }
 
+// Eco tier only: per-channel shrunken preamps. Same wiring as the reference `pre` minus the
+// stages that matter least (dirty: V8a folds into its own c23/gain-A divider; clean keeps both
+// stages). Everything else -- the interstage dividers, both gain pots, the REAL tone stacks --
+// is kept part-for-part so knob response tracks the full model.
+void RockerverbStyleAmplifierProcessor::buildReducedPreamps (Channel& ch)
+{
+    const auto gnd = NodalCircuit::ground;
+
+    // Dirty channel: in -> V9a -> C31 network + gain B -> V9b -> C23 network + gain A -> V8b -> stack.
+    {
+        auto& c = ch.preDirty;
+        const auto vccF = c.addNode(), in = c.addNode();
+        ch.rdSrcF = c.addSource (vccF, 370.0);
+        ch.rdSrcIn = c.addSource (in, 0.0);
+        const auto inNode = c.addNode();
+        c.addCapacitor (in, inNode, 220.0e-9);
+        c.addResistor (inNode, gnd, 1.0e6);
+        // All four dirty stages kept verbatim -- measured vs the full netlist: folding ANY one of
+        // them collapses the reduced path's treble band by 18-40 dB at low drive (each clip point
+        // regenerates the harmonics the next one then soft-clips). The eco saving comes from only
+        // ever solving the selected channel instead of the whole dual-channel netlist.
+        const auto g9a = c.addNode();
+        c.addResistor (inNode, g9a, 68.0e3);                          // R47
+        ch.rdPlateA = triodeStage (c, g9a, vccF, 100.0e3, 1.5e3, 10.0e-6, 200.0);   // R37, R46, C27
+        const auto c31 = c.addNode(), x = c.addNode(), g9b = c.addNode();
+        c.addCapacitor (ch.rdPlateA, c31, 1.0e-9);
+        c.addResistor (c31, x, 220.0e3);
+        c.addResistor (x, gnd, 220.0e3);
+        c.addCapacitor (x, gnd, 470.0e-12);
+        ch.rdGainBTop = c.addResistor (x, g9b, 0.5e6);                  // RV4-B
+        ch.rdGainBBot = c.addResistor (g9b, gnd, 0.5e6);
+        c.addCapacitor (x, g9b, 100.0e-12);
+        ch.rdPlateB = triodeStage (c, g9b, vccF, 100.0e3, 1.0e3, 10.0e-6, 250.0);  // R38, R48, C28
+        c.addCapacitor (ch.rdPlateB, gnd, 100.0e-12);                  // C18
+        const auto c23 = c.addNode(), y = c.addNode(), g8a = c.addNode();
+        c.addCapacitor (ch.rdPlateB, c23, 2.2e-9);
+        c.addResistor (c23, y, 220.0e3);
+        c.addResistor (y, gnd, 470.0e3);
+        ch.rdGainATop = c.addResistor (y, g8a, 0.5e6);                  // RV4-A
+        ch.rdGainABot = c.addResistor (g8a, gnd, 0.5e6);
+        ch.rdPlateB2 = triodeStage (c, g8a, vccF, 100.0e3, 2.2e3, 10.0e-6, 250.0); // R39, R49, C29
+        c.addCapacitor (ch.rdPlateB2, gnd, 100.0e-12);                 // C19
+        const auto c32 = c.addNode(), g8b = c.addNode();
+        c.addCapacitor (ch.rdPlateB2, c32, 4.7e-9);
+        c.addResistor (c32, g8b, 470.0e3);
+        c.addResistor (g8b, gnd, 220.0e3);
+        ch.rdPlateC = triodeStage (c, g8b, vccF, 100.0e3, 1.5e3, 0.0, 250.0);      // R40, R50
+        const auto t = c.addNode(), w = c.addNode(), bt = c.addNode(), sl = c.addNode(), m = c.addNode(), mw = c.addNode();
+        c.addCapacitor (ch.rdPlateC, t, 560.0e-12);
+        ch.rdTrebleTop = c.addResistor (t, w, 125.0e3);
+        ch.rdTrebleBot = c.addResistor (w, bt, 125.0e3);
+        c.addResistor (ch.rdPlateC, sl, 39.0e3);
+        c.addCapacitor (sl, bt, 22.0e-9);
+        ch.rdBass = c.addResistor (bt, m, 250.0e3);
+        ch.rdMidTop = c.addResistor (m, mw, 12.5e3);
+        ch.rdMidBot = c.addResistor (mw, gnd, 12.5e3);
+        c.addCapacitor (sl, mw, 22.0e-9);
+        ch.rdOut = c.addNode();
+        ch.rdVolTop = c.addResistor (w, ch.rdOut, 250.0e3);
+        ch.rdVolBot = c.addResistor (ch.rdOut, gnd, 250.0e3);
+        c.addResistor (ch.rdOut, gnd, relayLoad);                      // RL1 always connects the solved channel
+    }
+
+    // Clean channel: in -> V10a -> C30/vol -> V10b -> stack.
+    {
+        auto& c = ch.preClean;
+        const auto vccF = c.addNode(), in = c.addNode();
+        ch.rcSrcF = c.addSource (vccF, 370.0);
+        ch.rcSrcIn = c.addSource (in, 0.0);
+        const auto inNode = c.addNode();
+        c.addCapacitor (in, inNode, 220.0e-9);
+        c.addResistor (inNode, gnd, 1.0e6);
+        const auto g10a = c.addNode();
+        c.addResistor (inNode, g10a, 68.0e3);                          // R44
+        ch.rcPlateA = triodeStage (c, g10a, vccF, 100.0e3, 1.5e3, 22.0e-6, 200.0); // R35, R43, C25
+        const auto c30 = c.addNode(), wv = c.addNode(), g10b = c.addNode();
+        c.addCapacitor (ch.rcPlateA, c30, 1.0e-9);
+        c.addResistor (c30, wv, 220.0e3);
+        c.addResistor (wv, gnd, 220.0e3);
+        ch.rcVolTop = c.addResistor (wv, g10b, 250.0e3);
+        ch.rcVolBot = c.addResistor (g10b, gnd, 250.0e3);
+        c.addCapacitor (wv, g10b, 150.0e-12);
+        ch.rcPlateB = triodeStage (c, g10b, vccF, 100.0e3, 1.5e3, 22.0e-6, 250.0); // R36, R45, C26
+        const auto t = c.addNode(), bt = c.addNode(), sl = c.addNode(), bw = c.addNode();
+        c.addCapacitor (ch.rcPlateB, t, 56.0e-12);
+        ch.rcOut = c.addNode();
+        ch.rcTrebleTop = c.addResistor (t, ch.rcOut, 125.0e3);
+        ch.rcTrebleBot = c.addResistor (ch.rcOut, bt, 125.0e3);
+        c.addResistor (ch.rcPlateB, sl, 100.0e3);
+        c.addCapacitor (sl, bt, 22.0e-9);
+        c.addCapacitor (sl, bw, 22.0e-9);
+        ch.rcBassTop = c.addResistor (bt, bw, 125.0e3);
+        ch.rcBassBot = c.addResistor (bw, gnd, 125.0e3);
+        c.addResistor (bw, gnd, 6.8e3);
+        c.addResistor (ch.rcOut, gnd, relayLoad);
+    }
+}
+
 void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
 {
     const auto gnd = NodalCircuit::ground;
@@ -356,6 +454,12 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
 
     // ================================================================ preamp: both channels + their tone stacks
     {
+        if (reducedOrder)
+        {
+            buildReducedPreamps (ch);
+        }
+        else
+        {
         auto b = buildPreamp (ch.pre, 370.0, 380.0);
         ch.pSrcF = b.srcF;
         ch.pSrcE = b.srcE;
@@ -370,6 +474,7 @@ void RockerverbStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pPlateV9a = b.plateV9a;  ch.pPlateV9b = b.plateV9b;  ch.pPlateV8a = b.plateV8a;  ch.pPlateV8b = b.plateV8b;
         ch.pPlateV10a = b.plateV10a;  ch.pPlateV10b = b.plateV10b;
         ch.pDirtyOut = b.dirtyOut;  ch.pCleanOut = b.cleanOut;
+        }
     }
 
     // ================================================================ post (always built): after relay RL1 the path is
@@ -576,6 +681,23 @@ void RockerverbStyleAmplifierProcessor::updatePots (const Knobs& k)
 
     for (auto& ch : channels)
     {
+        if (reducedOrder)
+        {
+            auto& d = ch.preDirty;
+            d.setResistance (ch.rdGainBTop, gTop);  d.setResistance (ch.rdGainBBot, gBot);
+            d.setResistance (ch.rdGainATop, gTop);  d.setResistance (ch.rdGainABot, gBot);
+            d.setResistance (ch.rdTrebleTop, dtTop);  d.setResistance (ch.rdTrebleBot, dtBot);
+            d.setResistance (ch.rdBass, dBass);
+            d.setResistance (ch.rdMidTop, dmTop);  d.setResistance (ch.rdMidBot, dmBot);
+            d.setResistance (ch.rdVolTop, dvTop);  d.setResistance (ch.rdVolBot, dvBot);
+            auto& cc = ch.preClean;
+            cc.setResistance (ch.rcVolTop, cvTop);  cc.setResistance (ch.rcVolBot, cvBot);
+            cc.setResistance (ch.rcTrebleTop, ctTop);  cc.setResistance (ch.rcTrebleBot, ctBot);
+            cc.setResistance (ch.rcBassTop, cbTop);  cc.setResistance (ch.rcBassBot, cbBot);
+            ch.reducedPreTrim = k.channel == 1 ? 1.17 : 1.0; // measured-vs-full level trim
+        }
+        else
+        {
         auto& p = ch.pre;
         p.setResistance (ch.rGainBTop, gTop);  p.setResistance (ch.rGainBBot, gBot);
         p.setResistance (ch.rGainATop, gTop);  p.setResistance (ch.rGainABot, gBot);
@@ -589,6 +711,7 @@ void RockerverbStyleAmplifierProcessor::updatePots (const Knobs& k)
         // RL1: only the selected channel's output is connected to (and loaded by) the shared path.
         p.setResistance (ch.rLoadDirty, k.channel == 1 ? relayLoad : relayOpen);
         p.setResistance (ch.rLoadClean, k.channel == 0 ? relayLoad : relayOpen);
+        }
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rFeedback, feedbackR);
@@ -637,7 +760,13 @@ void RockerverbStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 void RockerverbStyleAmplifierProcessor::recover (Channel& ch) const
 {
     ++recoveries;
-    ch.pre.restoreDynamicState (ch.preRest);
+    if (reducedOrder)
+    {
+        ch.preDirty.restoreDynamicState (ch.preDirtyRest);
+        ch.preClean.restoreDynamicState (ch.preCleanRest);
+    }
+    else
+        ch.pre.restoreDynamicState (ch.preRest);
     ch.power.restoreDynamicState (ch.powerRest);
     ch.supply.restoreDynamicState (ch.supplyRest);
     ch.screenDropA = ch.screenDropB = 0.0;
@@ -666,8 +795,16 @@ void RockerverbStyleAmplifierProcessor::updateSupply (Channel& ch) const
         ch.power.setSource (ch.wSrcCt, rail (ch.sA, 500.0));
         ch.power.setSource (ch.wSrcPi, rail (ch.sB, 480.0));
     }
-    ch.pre.setSource (ch.pSrcF, rail (ch.sE, 460.0));    // F: V9 / V10
-    ch.pre.setSource (ch.pSrcE, rail (ch.sD, 460.0));    // E: V8
+    if (reducedOrder)
+    {
+        ch.preDirty.setSource (ch.rdSrcF, rail (ch.sE, 460.0));
+        ch.preClean.setSource (ch.rcSrcF, rail (ch.sE, 460.0));
+    }
+    else
+    {
+        ch.pre.setSource (ch.pSrcF, rail (ch.sE, 460.0));    // F: V9 / V10
+        ch.pre.setSource (ch.pSrcE, rail (ch.sD, 460.0));    // E: V8
+    }
     ch.power.setSource (ch.wSrcD, rail (ch.sC, 460.0));  // D: V7
     ch.power.setSource (ch.wSrcV7Bias, rail (ch.sC, 460.0) * 33.0 / 253.0);
     ch.vScreen = rail (ch.sB, 500.0);
@@ -742,15 +879,18 @@ double RockerverbStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
     const auto& ch = channels[0];
     switch (p)
     {
-        case Probe::v9aPlate: return ch.pre.voltage (ch.pPlateV9a);
-        case Probe::v9bPlate: return ch.pre.voltage (ch.pPlateV9b);
-        case Probe::v8aPlate: return ch.pre.voltage (ch.pPlateV8a);
-        case Probe::v8bPlate: return ch.pre.voltage (ch.pPlateV8b);
-        case Probe::v10aPlate: return ch.pre.voltage (ch.pPlateV10a);
-        case Probe::v10bPlate: return ch.pre.voltage (ch.pPlateV10b);
+        case Probe::v9aPlate: return reducedOrder ? ch.preDirty.voltage (ch.rdPlateA) : ch.pre.voltage (ch.pPlateV9a);
+        case Probe::v9bPlate: return reducedOrder ? ch.preDirty.voltage (ch.rdPlateB) : ch.pre.voltage (ch.pPlateV9b);
+        case Probe::v8aPlate: return reducedOrder ? ch.preDirty.voltage (ch.rdPlateB2) : ch.pre.voltage (ch.pPlateV8a);
+        case Probe::v8bPlate: return reducedOrder ? ch.preDirty.voltage (ch.rdPlateC) : ch.pre.voltage (ch.pPlateV8b);
+        case Probe::v10aPlate: return reducedOrder ? ch.preClean.voltage (ch.rcPlateA) : ch.pre.voltage (ch.pPlateV10a);
+        case Probe::v10bPlate: return reducedOrder ? ch.preClean.voltage (ch.rcPlateB) : ch.pre.voltage (ch.pPlateV10b);
         case Probe::v7aCathode: return ch.power.voltage (ch.wCathodeV7a);
         case Probe::v7bPlate: return ch.power.voltage (ch.wPlateV7b);
-        case Probe::toneStackOut: return ch.pre.voltage (lastKnobs.channel == 0 ? ch.pCleanOut : ch.pDirtyOut);
+        case Probe::toneStackOut:
+            if (reducedOrder)
+                return lastKnobs.channel == 0 ? ch.preClean.voltage (ch.rcOut) : ch.preDirty.voltage (ch.rdOut);
+            return ch.pre.voltage (lastKnobs.channel == 0 ? ch.pCleanOut : ch.pDirtyOut);
         case Probe::phaseInverterGrid: return ch.power.voltage (ch.wGridA);
         case Probe::phaseInverterPlateA: return ch.power.voltage (ch.wPlateA);
         case Probe::phaseInverterPlateB: return ch.power.voltage (ch.wPlateB);
@@ -849,9 +989,19 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         {
             passOk = ch.supply.prepare (supplyRate);
 
-            ch.pre.setSource (ch.pSrcF, ch.supply.voltage (ch.sE));
-            ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sD));
-            passOk = ch.pre.prepare (newSampleRate) && passOk;
+            if (reducedOrder)
+            {
+                ch.preDirty.setSource (ch.rdSrcF, ch.supply.voltage (ch.sE));
+                ch.preClean.setSource (ch.rcSrcF, ch.supply.voltage (ch.sE));
+                passOk = ch.preDirty.prepare (newSampleRate) && passOk;
+                passOk = ch.preClean.prepare (newSampleRate) && passOk;
+            }
+            else
+            {
+                ch.pre.setSource (ch.pSrcF, ch.supply.voltage (ch.sE));
+                ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sD));
+                passOk = ch.pre.prepare (newSampleRate) && passOk;
+            }
 
             ch.power.setSource (ch.wSrcPost, 0.0);
             ch.power.setSource (ch.wSrcD, ch.supply.voltage (ch.sC));
@@ -876,9 +1026,15 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
                 iPi = (vPi - ch.power.voltage (ch.wPlateA)) / 82.0e3 + (vPi - ch.power.voltage (ch.wPlateB)) / 100.0e3;
             }
             const double vF = ch.supply.voltage (ch.sE), vE = ch.supply.voltage (ch.sD), vD = ch.supply.voltage (ch.sC);
-            const double iF = (vF - ch.pre.voltage (ch.pPlateV9a)) / 100.0e3 + (vF - ch.pre.voltage (ch.pPlateV9b)) / 100.0e3
-                            + (vF - ch.pre.voltage (ch.pPlateV10a)) / 100.0e3 + (vF - ch.pre.voltage (ch.pPlateV10b)) / 100.0e3;
-            const double iE = (vE - ch.pre.voltage (ch.pPlateV8a)) / 100.0e3 + (vE - ch.pre.voltage (ch.pPlateV8b)) / 100.0e3;
+            // Under reducedOrder the minis sit entirely on the F rail (V8b folded off E); iE is 0.
+            const double iF = reducedOrder
+                ? (vF - ch.preDirty.voltage (ch.rdPlateA)) / 100.0e3 + (vF - ch.preDirty.voltage (ch.rdPlateB)) / 100.0e3
+                + (vF - ch.preDirty.voltage (ch.rdPlateB2)) / 100.0e3 + (vF - ch.preDirty.voltage (ch.rdPlateC)) / 100.0e3
+                + (vF - ch.preClean.voltage (ch.rcPlateA)) / 100.0e3 + (vF - ch.preClean.voltage (ch.rcPlateB)) / 100.0e3
+                : (vF - ch.pre.voltage (ch.pPlateV9a)) / 100.0e3 + (vF - ch.pre.voltage (ch.pPlateV9b)) / 100.0e3
+                + (vF - ch.pre.voltage (ch.pPlateV10a)) / 100.0e3 + (vF - ch.pre.voltage (ch.pPlateV10b)) / 100.0e3;
+            const double iE = reducedOrder ? 0.0
+                : (vE - ch.pre.voltage (ch.pPlateV8a)) / 100.0e3 + (vE - ch.pre.voltage (ch.pPlateV8b)) / 100.0e3;
             const double iD = ch.power.voltage (ch.wCathodeV7a) / 22.0e3 + (vD - ch.power.voltage (ch.wPlateV7b)) / 56.0e3
                             + vD / 253.0e3;
             ipRun += 0.5 * ((ipA + ipB) - ipRun);
@@ -903,13 +1059,31 @@ void RockerverbStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sB));
         }
-        ch.pre.setSource (ch.pSrcF, ch.supply.voltage (ch.sE));
-        ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sD));
+        if (reducedOrder)
+        {
+            ch.preDirty.setSource (ch.rdSrcF, ch.supply.voltage (ch.sE));
+            ch.preClean.setSource (ch.rcSrcF, ch.supply.voltage (ch.sE));
+        }
+        else
+        {
+            ch.pre.setSource (ch.pSrcF, ch.supply.voltage (ch.sE));
+            ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sD));
+        }
         ch.power.setSource (ch.wSrcD, ch.supply.voltage (ch.sC));
         ch.power.setSource (ch.wSrcV7Bias, ch.supply.voltage (ch.sC) * 33.0 / 253.0);
-        ch.pre.solveSample();
+        if (reducedOrder)
+        {
+            ch.preDirty.solveSample();
+            ch.preClean.solveSample();
+            ch.preDirty.saveDynamicState (ch.preDirtyRest);
+            ch.preClean.saveDynamicState (ch.preCleanRest);
+        }
+        else
+        {
+            ch.pre.solveSample();
+            ch.pre.saveDynamicState (ch.preRest);
+        }
         ch.power.solveSample();
-        ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.failStreak = 0;
@@ -976,12 +1150,33 @@ void RockerverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
             auto* data = buffer.getWritePointer (chIdx);
 
             const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
-            ch.pre.setSource (ch.pSrcIn, x);
-            const bool okPre = ch.pre.solveSample();
+            bool okPre;
+            double selected;
+            if (reducedOrder)
+            {
+                // Only the selected channel's mini is solved; the other just rests at its saved state.
+                if (channelSel == 0)
+                {
+                    ch.preClean.setSource (ch.rcSrcIn, x * Channel::cleanDriveBoost);
+                    okPre = ch.preClean.solveSample();
+                    selected = ch.preClean.voltage (ch.rcOut) * ch.reducedPreTrim;
+                }
+                else
+                {
+                    ch.preDirty.setSource (ch.rdSrcIn, x * Channel::dirtyDriveBoost);
+                    okPre = ch.preDirty.solveSample();
+                    selected = ch.preDirty.voltage (ch.rdOut) * ch.reducedPreTrim;
+                }
+            }
+            else
+            {
+                ch.pre.setSource (ch.pSrcIn, x);
+                okPre = ch.pre.solveSample();
+                selected = ch.pre.voltage (channelSel == 0 ? ch.pCleanOut : ch.pDirtyOut);
+            }
             bool ok = okPre;
 
             // Both tone stacks block DC (their only DC paths end on caps), so the relay's output is pure AC.
-            const double selected = ch.pre.voltage (channelSel == 0 ? ch.pCleanOut : ch.pDirtyOut);
             ch.power.setSource (ch.wSrcPost, masterGain * selected);
             if (! reducedOrder)
             {
@@ -1030,7 +1225,13 @@ void RockerverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
                 if (++ch.restRefreshCounter >= restRefreshInterval)
                 {
                     ch.restRefreshCounter = 0;
-                    ch.pre.saveDynamicState (ch.preRest);
+                    if (reducedOrder)
+                    {
+                        ch.preDirty.saveDynamicState (ch.preDirtyRest);
+                        ch.preClean.saveDynamicState (ch.preCleanRest);
+                    }
+                    else
+                        ch.pre.saveDynamicState (ch.preRest);
                     ch.power.saveDynamicState (ch.powerRest);
                     ch.supply.saveDynamicState (ch.supplyRest);
                 }

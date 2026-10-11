@@ -120,6 +120,35 @@ private:
                            pPlateV5b = 0, pFollower = 0;
         double followerDc = 0.0;
 
+        // Eco tier only: the full `pre` netlist above (~24 nodes, 5 triodes + follower) is what keeps
+        // this amp over the ~10%-of-a-core A7S budget even in reducedOrder -- the power stage went
+        // behavioural but the preamp kept being Newton-solved every sample. `preReduced` keeps the
+        // same topology shrunk to three triode clip stages + follower (~17 nodes): every clip point
+        // in a high-gain cascade regenerates the harmonics the next stage soft-clips, so dropping
+        // stages collapses the treble -- measured -18 to -40 dB relative HF when any one is folded.
+        // Everything downstream is untouched. Only built/solved when reducedOrder is set.
+        NodalCircuit preReduced;
+        NodalCircuit::DynamicState preReducedRest;
+        int prSrcIn = 0, prSrcRail = 0, prGainTop = 0, prGainBot = 0;
+        NodalCircuit::Node prPlateA = 0, prPlateB = 0, prFollower = 0, prRail = 0;
+        double reducedFollowerDc = 0.0;
+        // Copyable biquad (Channels are copied for dual-mono; juce::dsp::IIR::Filter is not).
+        struct ShelfBiquad
+        {
+            double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0, x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0;
+            void setShelf (double sampleRate, double freq, double q, double gainDb, bool high);
+            double process (double x) noexcept
+            {
+                const double y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+                x2 = x1; x1 = x; y2 = y1; y1 = y;
+                return y;
+            }
+        };
+        ShelfBiquad redShelfLow, redShelfHigh; // fitted compensation on the reduced follower delta
+        double reducedPreTrim = 1.0;    // per-channel level trim, set at control rate
+        static constexpr double reducedDriveBoost = 3.5; // extra drive standing in for the two dropped stages
+        static constexpr double reducedOutGain = 2.4;    // +7.6 dB post-saturation, restores noon level
+
         // power section (tone stack + gain recovery + PI + power amp)
         int wSrcCf = 0, wSrcRecovery = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
@@ -157,6 +186,7 @@ private:
         double gain, treble, mid, bass, presence, resonance, post, powerDrive, bias, tubeFeel;
         int speaker;
     };
+    void buildReducedPreamp (Channel& ch, double followerDrop);
     void updatePots (const Knobs& k);
     void recover (Channel& ch) const;
     void applySpeaker (Channel& ch, int index) const;
