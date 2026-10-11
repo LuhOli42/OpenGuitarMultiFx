@@ -80,7 +80,10 @@ private:
         index -- see EffectBlockComponent::gridSlot's comment. < 0 (the
         default) means "no preference, append after the highest occupied
         slot". */
-    void addEffect (const juce::String& registryName, int targetGridSlot = -1);
+    /** `cabSelection` >= 0 writes the processor's `*_cab` page-2 selector before
+        the block goes live (the add-effect browser's 'Amp'/'Amp + Cab' rows);
+        -1 leaves the parameter's own default. */
+    void addEffect (const juce::String& registryName, int targetGridSlot = -1, int cabSelection = -1);
     void removeEffect (EffectProcessor* processor);
     void handleBlockDragEnded (EffectBlockComponent& block);
     void selectBlock (EffectProcessor* processor);
@@ -117,6 +120,13 @@ private:
         `onLoaded` (optional) fires only once the target is actually loaded -- which can be on the ChoiceCard's
         callback, not this call, when the prompt shows. */
     void loadPresetAskingToSave (const juce::String& name, std::function<void()> onLoaded = nullptr);
+
+    /** The 'New' button next to the preset badge: back to a clean board (empty
+        chain, the launch default routing, fresh snapshots, no name) without
+        deleting effects one by one. Asks Save / Discard / Cancel first when
+        the loaded preset has unsaved changes, like loadPresetAskingToSave(). */
+    void newPresetAskingToSave();
+    void newPreset();
 
     /** Recalls snapshot `index` (0-7 = A-H) on the live chain: stores the
         live param/bypass state into the OUTGOING snapshot first (the doc's
@@ -352,6 +362,8 @@ private:
     // Saves the currently loaded preset in place, no dialog -- only visible
     // once one is actually loaded (see updatePresetDisplay()).
     juce::TextButton quickSaveButton { "Save" };
+    // 'New' sits right after the badge: empty chain + unnamed state on tap.
+    juce::TextButton newPresetButton { "New" };
     juce::Label titleLabel { {}, "No preset loaded" };
     juce::Label cpuLabel;
     juce::TextButton settingsButton { juce::String::fromUTF8 ("\xe2\x8b\xae") }; // vertical ellipsis "..."

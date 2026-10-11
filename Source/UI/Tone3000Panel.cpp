@@ -45,28 +45,6 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     qualityHintLabel.setFont (juce::Font (14.0f));
     refreshQualityHint();
 
-    content.addAndMakeVisible (cabSectionLabel);
-    cabSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
-    cabSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-
-    content.addAndMakeVisible (cabVoicingButton);
-    cabVoicingButton.setClickingTogglesState (true);
-    cabVoicingButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5c56));
-    cabVoicingButton.setToggleState (EffectRegistry::getCabVoicingEnabled(), juce::dontSendNotification);
-    cabVoicingButton.onClick = [this]
-    {
-        // One global flag, not a per-amp knob: the tail reads it per sample, so it applies to the live
-        // chain instantly (no pedal rebuild) -- and a per-amp control would secretly switch every amp.
-        EffectRegistry::setCabVoicingEnabled (cabVoicingButton.getToggleState());
-        EffectRegistry::saveCabVoicingEnabled();
-        refreshCabHint();
-    };
-
-    content.addAndMakeVisible (cabHintLabel);
-    cabHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-    cabHintLabel.setFont (juce::Font (14.0f));
-    refreshCabHint();
-
     content.addAndMakeVisible (rateSectionLabel);
     rateSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     rateSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
@@ -194,16 +172,6 @@ void Tone3000Panel::refreshQualityHint()
                                       "BD-2, HM-2; 2x on the Tube Screamers and OD-1). Heaviest on the CPU.", juce::dontSendNotification);
             break;
     }
-}
-
-void Tone3000Panel::refreshCabHint()
-{
-    cabVoicingButton.setButtonText (EffectRegistry::getCabVoicingEnabled() ? "On" : "Off");
-    cabHintLabel.setText (EffectRegistry::getCabVoicingEnabled()
-                              ? "On: the reduced-order amp models end in a built-in speaker/cab voicing. Turn it off if the "
-                                "amp already feeds a Cab/IR block -- the two speaker filters would stack and darken the top."
-                              : "Off: reduced-order amps output the raw power-stage signal. Use a Cab/IR block after the amp "
-                                "for speaker voicing.", juce::dontSendNotification);
 }
 
 void Tone3000Panel::refreshLoginState()
@@ -380,13 +348,6 @@ int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
     highButton.setBounds (qualityRow.removeFromLeft (120));
     area.removeFromTop (6);
     qualityHintLabel.setBounds (area.removeFromTop (50));
-    area.removeFromTop (14);
-
-    cabSectionLabel.setBounds (area.removeFromTop (20));
-    area.removeFromTop (6);
-    cabVoicingButton.setBounds (area.removeFromTop (touch::minTapTarget).removeFromLeft (120));
-    area.removeFromTop (6);
-    cabHintLabel.setBounds (area.removeFromTop (64));
     area.removeFromTop (14);
 
     rateSectionLabel.setBounds (area.removeFromTop (20));

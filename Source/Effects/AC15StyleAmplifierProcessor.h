@@ -13,9 +13,9 @@ namespace openguitarmultifx
 /**
     A Vox AC15-style guitar amplifier (the original 1959/1960 EF86-preamp "Twin" chassis, Channel I only --
     docs/circuits/AC15Twin.md -- read that file to understand this processor). Genuinely different family from every
-    Marshall/Fender amp built so far on this roadmap: an EF86 pentode preamp gain stage (not a triode), a cathodyne
-    (split-load) phase inverter -- a SINGLE triode half with equal plate/cathode load resistors producing two
-    anti-phase outputs, not a long-tailed pair -- and a pair of EL84s in Class A, CATHODE-BIASED (self-bias, no fixed
+    Marshall/Fender amp built so far on this roadmap: an EF86 pentode preamp gain stage (not a triode), a long-tailed
+    pair phase inverter (the doc originally said cathodyne/split-load -- OS/005 itself shows a 12AX7 LTP, fixed
+    2026-10-11) -- and a pair of EL84s in Class A, CATHODE-BIASED (self-bias, no fixed
     bias supply) with NO global negative feedback loop at all. Channel II (the "Vibravox" tremolo channel, its own
     ECF82 triode-pentode and oscillator) is not modelled, matching this project's standing rule against modelling
     built-in vibrato/tremolo oscillators (same call as the Twin Reverb/Deluxe Reverb).
@@ -47,15 +47,15 @@ public:
     // ---- reduced-order power stage, built in from the start ----
     // Same pattern as every amp since the Super Lead: the phase inverter + power tubes + output transformer are
     // replaced by a constant-cost behavioural curve (behavioralPowerStage()) once reducedOrder is set, fitted to
-    // this amp's OWN full reference model (no shared-power-section shortcut available here -- the cathodyne PI and
+    // this amp's OWN full reference model (no shared-power-section shortcut available here -- the LTP PI and
     // cathode-biased EL84 pair are unique to this amp on the roadmap so far). Boundary: everything up to and
     // including the Tone control is unchanged; only what comes after it (phase inverter, power tubes, transformer,
     // the physical speaker load) is replaced.
     static inline bool reducedOrder = false;
     // Fitted (2026-10-05) to the full reference after its plate resistors were rewired in series with the OT (they
     // were a shunt across each half-primary that killed ~35 dB of output; the old constants were fitted to that).
-    static constexpr double bmGain0 = 3.22;
-    static constexpr double bmYmax = 0.1017;
+    static constexpr double bmGain0 = 9.24;
+    static constexpr double bmYmax = 0.055;
     static constexpr double bmKneeN = 1.5;
     static constexpr double bmShelfHz = 120.0;
     static constexpr double bmShelfHfGain = 0.7;
@@ -99,7 +99,7 @@ private:
         double vScreenPre = 220.0;
         double volOutDc = 0.0;
 
-        // power section: cathodyne PI + 2x EL84, cathode-biased, no NFB
+        // power section: 12AX7 LTP PI + 2x EL84, cathode-biased, no NFB
         int wSrcCf = 0, wSrcRail = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rCathodeBias = 0;
@@ -144,6 +144,7 @@ private:
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
 
+    juce::AudioParameterFloat* cabParam = nullptr;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* inputParam = nullptr;
     juce::AudioParameterFloat* volumeParam = nullptr;

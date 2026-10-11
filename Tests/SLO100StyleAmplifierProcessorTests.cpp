@@ -118,7 +118,7 @@ public:
                 if (f->paramID == "slo_speaker")
                     foundSpeaker = true;
             }
-            expect (page2Count == 4, "Bias, Tube Feel, Speaker, Output (Master is on page 1, like the real panel)");
+            expect (page2Count == 5, "Bias, Tube Feel, Speaker, Output, Cab (Master is on page 1, like the real panel)");
             expect (foundSpeaker);
         }
 

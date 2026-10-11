@@ -75,6 +75,13 @@ namespace
     constexpr double powerTheta = 0.9;
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::bass810, &tubeamp::cabs::tweed410, &tubeamp::cabs::greenback412 };
+}
+
 MesaBass400PlusStyleAmplifierProcessor::MesaBass400PlusStyleAmplifierProcessor()
 {
     auto volume = std::make_unique<juce::AudioParameterFloat> (
@@ -146,6 +153,9 @@ MesaBass400PlusStyleAmplifierProcessor::MesaBass400PlusStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("mesabass400_cab", "1x15 Bass", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -653,6 +663,7 @@ void MesaBass400PlusStyleAmplifierProcessor::prepare (double newSampleRate, int,
         bmVoicing.cabLpHz = 5500.0;  // own netlist keeps more top than the shared bass-cab voicing
         bmVoicing.cabAirHz = 8000.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

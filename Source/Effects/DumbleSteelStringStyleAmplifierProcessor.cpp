@@ -271,6 +271,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::v30_412, &tubeamp::cabs::greenback412, &tubeamp::cabs::jensen212 };
+}
+
 DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcessor()
 {
     auto make = [] (const char* id, const char* name, float def)
@@ -354,11 +361,14 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
     page2->addChild (std::move (accent));
     page2->addChild (std::move (voicing));
     group->addChild (std::move (page2));
+    auto cab = tubeamp::makeCabParam ("sss_cab", "1x12 EV", cabAlts);
+    cabParam = cab.get();
     auto page3 = std::make_unique<juce::AudioProcessorParameterGroup> ("sss_page3", "Page 3", "|", std::move (power));
     page3->addChild (std::move (bias));
     page3->addChild (std::move (feel));
     page3->addChild (std::move (speaker));
     page3->addChild (std::move (output));
+    page3->addChild (std::move (cab));
     group->addChild (std::move (page3));
     parameters = std::move (group);
 }
@@ -832,6 +842,7 @@ void DumbleSteelStringStyleAmplifierProcessor::prepare (double newSampleRate, in
         buildChannel (ch);
         auto bmVoicing = voicings::fenderClean;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

@@ -127,6 +127,9 @@ MainComponent::MainComponent()
     addAndMakeVisible (presetBadge);
     presetBadge.onClicked = [this] { showPresetsPanel(); };
 
+    addAndMakeVisible (newPresetButton);
+    newPresetButton.onClick = [this] { newPresetAskingToSave(); };
+
     // The A-H snapshot strip: tap a letter to recall that snapshot (see
     // selectSnapshot()). Shown from the start -- an unsaved chain still has
     // an active snapshot, same as a hardware pedalboard before you save.
@@ -320,13 +323,24 @@ MainComponent::~MainComponent()
     audioEngine.stop(); // must happen before chain's processors are destroyed by the member destructors below
 }
 
-void MainComponent::addEffect (const juce::String& registryName, int targetGridSlot)
+void MainComponent::addEffect (const juce::String& registryName, int targetGridSlot, int cabSelection)
 {
     auto processor = registry.create (registryName);
     if (processor == nullptr)
         return;
 
     auto* raw = processor.get();
+
+    // The browser's two insertion variants for amps ('Amp' / 'Amp + Cab'): a
+    // cabSelection >= 0 writes the page-2 Cab selector before the block goes
+    // live, so the first prepared sample already carries the chosen voicing.
+    // Processors without a `*_cab` param simply find nothing.
+    if (cabSelection >= 0)
+        if (auto* params = raw->getParameters())
+            for (auto* p : params->getParameters (true))
+                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p);
+                    f != nullptr && juce::String (f->paramID).endsWith ("_cab"))
+                    *f = (float) cabSelection;
 
     // < 0 means "no preference" -- append right after the highest occupied
     // slot, same as what clicking the "+" past the current content used to
@@ -909,14 +923,14 @@ void MainComponent::showAddEffectMenu (int targetGridSlot)
     // once the card is dismissed by an outside tap, which invalidates the
     // pending choice), and topLayer() (popOverlay() removes the TOP layer,
     // so it only runs while this browser is still the top card).
-    dialog->onEffectChosen = [this, targetGridSlot, browser, choiceMade] (juce::String key)
+    dialog->onEffectChosen = [this, targetGridSlot, browser, choiceMade] (juce::String key, bool cabOn)
     {
         // The card stays on screen until the deferred pop -- a second tile
         // tap in the same tick must not schedule a second addEffect.
         if (choiceMade->exchange (true))
             return;
 
-        juce::MessageManager::callAsync ([this, key = std::move (key), targetGridSlot,
+        juce::MessageManager::callAsync ([this, key = std::move (key), targetGridSlot, cabOn,
                                         browser, alive = aliveFlag]
         {
             if (! alive->load() || browser == nullptr)
@@ -925,7 +939,7 @@ void MainComponent::showAddEffectMenu (int targetGridSlot)
             if (overlayHost.topLayer() == browser.getComponent())
                 overlayHost.popOverlay();
 
-            addEffect (key, targetGridSlot);
+            addEffect (key, targetGridSlot, cabOn ? 1 : 0);
         });
     };
     dialog->onPopOverlay = [this, browser]
@@ -1297,6 +1311,53 @@ void MainComponent::loadPresetAskingToSave (const juce::String& name, std::funct
             loadPresetByName (name);
             if (onLoaded)
                 onLoaded();
+        }));
+}
+
+void MainComponent::newPreset()
+{
+    // Back to the state the app launches in: an empty <Preset/> runs the same
+    // teardown path a preset load does -- the chain retires through the
+    // graveyard/spillover discipline, snapshots and MIDI bindings reset.
+    applyPresetXml (juce::XmlElement ("Preset"));
+    // ...except routing: applyPresetXml leaves every row unfed (RowRouting{})
+    // when the XML has no <Routing>, while a fresh board wires row 0
+    // device-in -> device-out like the constructor does.
+    rowRouting[0].inputChannel = audioEngine.getInputChannel();
+    rowRouting[0].toDevice = true;
+    rowRouting[0].deviceOutputPair = audioEngine.getOutputChannelPair();
+    refreshRowEndpoints();
+    // applyPresetXml already rebuilt the graph on the empty routing -- rebuild
+    // again or the fresh board's row-0 device in->out link stays UI-only and
+    // the board passes silence until some other action rebuilds it.
+    rebuildSignalGraph();
+    currentPresetName.clear();
+    currentPresetNumber = 0;
+    // Empty name -> capturePresetBaseline() stores nullptr, so an unnamed
+    // chain is never "dirty" -- exactly like the launch state.
+    capturePresetBaseline();
+    updatePresetDisplay();
+}
+
+void MainComponent::newPresetAskingToSave()
+{
+    if (! isPresetDirty())
+    {
+        newPreset();
+        return;
+    }
+
+    overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
+        "Unsaved changes", "\"" + currentPresetName + "\" has changes that aren't saved.",
+        juce::StringArray { "Save", "Discard", "Cancel" },
+        [this] (int choice)
+        {
+            overlayHost.popOverlay();
+            if (choice == 2)
+                return;
+            if (choice == 0)
+                savePresetAs (currentPresetName);
+            newPreset();
         }));
 }
 
@@ -1962,6 +2023,8 @@ void MainComponent::resized()
     // A little wider than it used to be -- the badge draws number+letter
     // ("12B") now, not just a bare number.
     presetBadge.setBounds (top.removeFromLeft (88));
+    top.removeFromLeft (8);
+    newPresetButton.setBounds (top.removeFromLeft (60).withSizeKeepingCentre (60, touch::minTapTarget));
     top.removeFromLeft (8);
     // The A-H snapshot strip, one minTapTarget cell per snapshot.
     snapshotBar.setBounds (top.removeFromLeft (snapshotxml::maxSnapshots * touch::minTapTarget)

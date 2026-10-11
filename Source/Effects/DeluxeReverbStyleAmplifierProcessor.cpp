@@ -132,6 +132,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412, &tubeamp::cabs::alnico212 };
+}
+
 DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
@@ -193,6 +200,9 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("deluxereverb_cab", "1x12 Jensen", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -603,6 +613,7 @@ void DeluxeReverbStyleAmplifierProcessor::prepare (double newSampleRate, int max
         bmVoicing.cabLpHz = 9000.0;  // own netlist keeps more top than the shared open-back voicing
         bmVoicing.cabAirHz = 13000.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's sat(d+shift)-sat(shift) law
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

@@ -109,6 +109,13 @@ namespace
     constexpr double powerTheta = 0.9;
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412, &tubeamp::cabs::alnico212 };
+}
+
 SLO100StyleAmplifierProcessor::SLO100StyleAmplifierProcessor()
 {
     auto onOff = [] (const char* id, const char* name)
@@ -178,6 +185,9 @@ SLO100StyleAmplifierProcessor::SLO100StyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("slo100_cab", "4x12 Soldano", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -780,6 +790,7 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, voicings::highGainSLO, 1.0 / outputScale);
     }
 

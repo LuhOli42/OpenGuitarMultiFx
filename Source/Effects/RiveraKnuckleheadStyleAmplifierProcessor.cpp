@@ -73,6 +73,13 @@ namespace
     }
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412, &tubeamp::cabs::alnico212 };
+}
+
 RiveraKnuckleheadStyleAmplifierProcessor::RiveraKnuckleheadStyleAmplifierProcessor()
 {
     const juce::String px ("knk_");
@@ -132,6 +139,9 @@ RiveraKnuckleheadStyleAmplifierProcessor::RiveraKnuckleheadStyleAmplifierProcess
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("rivera_knucklehead_cab", "4x12 Rivera", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -639,6 +649,7 @@ void RiveraKnuckleheadStyleAmplifierProcessor::prepare (double newSampleRate, in
         buildChannel (ch);
         auto bmVoicing = voicings::highGain;
         bmVoicing.resDb = 1.0; // shelf path carries no fitted LF bump -- a hint of the real resonance back
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
 

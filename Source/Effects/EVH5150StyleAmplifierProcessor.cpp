@@ -304,6 +304,13 @@ void EVH5150StyleAmplifierProcessor::Channel::ShelfBiquad::setShelf (double samp
     x1 = x2 = y1 = y2 = 0.0;
 }
 
+namespace
+{
+// Alternates this amp's page-2 Cab selector offers -- the option ORDER must match
+// between makeCabParam() (names) and the tails' setCabChoices() (profiles).
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tubeamp::cabs::v30_412, &tubeamp::cabs::alnico212 };
+}
+
 EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
 {
     auto make = [] (const char* id, const char* name, float def)
@@ -362,6 +369,9 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
+    auto cab = tubeamp::makeCabParam ("evh_cab", "4x12 EVH", cabAlts);
+    cabParam = cab.get();
+    page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
 
@@ -938,6 +948,7 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
+        ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, voicings::highGainEVH, 1.0 / outputScale);
     }
 

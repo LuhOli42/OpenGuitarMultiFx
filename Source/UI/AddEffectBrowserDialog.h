@@ -39,8 +39,12 @@ public:
 
     // ---- callbacks wired by MainComponent ----
 
-    /** Fires when an effect row is tapped (add this registry key). */
-    std::function<void (juce::String registryKey)> onEffectChosen;
+    /** Fires when an effect row is tapped (add this registry key). `cabOn`
+        is the insertion variant for amps that carry a page-2 Cab selector:
+        every such amp lists twice -- plain name (cab off, head-only glyph)
+        and "name + Cab" (the amp's historic cab on, head+cabinet glyph).
+        Always false for rows without a cab variant. */
+    std::function<void (juce::String registryKey, bool cabOn)> onEffectChosen;
     std::function<void()> onPopOverlay;
 
 private:
@@ -53,6 +57,8 @@ private:
         juce::String key;
         juce::String name;
         juce::String subline;
+        bool cabOn = false;        // '+ Cab' insertion variant -- see onEffectChosen
+        bool headOnlyIcon = false; // the cab-off row draws the head-only glyph, not the probe's
         const EffectProcessor* probe = nullptr; // icon + accent; owned by the dialog's probe cache
 
         std::function<void()> onTap;

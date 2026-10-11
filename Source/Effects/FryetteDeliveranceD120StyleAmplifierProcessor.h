@@ -151,6 +151,7 @@ private:
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
 
+    juce::AudioParameterFloat* cabParam = nullptr;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* gain1Param = nullptr;
     juce::AudioParameterFloat* gain2Param = nullptr;

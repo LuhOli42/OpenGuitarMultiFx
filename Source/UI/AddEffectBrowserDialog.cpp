@@ -1,6 +1,9 @@
 #include "AddEffectBrowserDialog.h"
 
 #include "TouchSizing.h"
+#include "../Effects/IconKit.h"
+
+#include <IconData.h>
 
 namespace openguitarmultifx
 {
@@ -10,6 +13,22 @@ namespace
     const juce::Colour rowBackground { 0xff242424 };
     constexpr int rowGap = 6;
     constexpr int railWidth = 210;
+
+    /** True for the modelled amps that carry a page-2 Cab selector -- detected by
+        the `*_cab` parameter they all register now, so a new amp gets its two
+        browser rows ('name' cab-off + 'name + Cab') for free. */
+    bool cabCapable (const EffectProcessor* p)
+    {
+        // getParameters() is non-const; this is a read-only scan of the probe.
+        auto* params = p != nullptr ? const_cast<EffectProcessor*> (p)->getParameters() : nullptr;
+        if (params == nullptr)
+            return false;
+        for (auto* param : params->getParameters (true))
+            if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param);
+                f != nullptr && juce::String (f->paramID).endsWith ("_cab"))
+                return true;
+        return false;
+    }
 }
 
 //==============================================================================
@@ -31,7 +50,16 @@ void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
     auto area = bounds.reduced (14.0f, 6.0f);
     auto iconArea = area.removeFromLeft (area.getHeight());
     area.removeFromLeft (6.0f);
-    if (probe != nullptr)
+    if (headOnlyIcon)
+    {
+        // 'Amp' (cab off) rows get the head-only glyph; '+ Cab' rows keep the
+        // probe's own icon, which for the modelled amps is already head+cabinet.
+        static const std::unique_ptr<juce::Drawable> headIcon =
+            icon::loadSvg (IconData::amp_head_svg, IconData::amp_head_svgSize);
+        const float glyph = iconArea.getWidth() * 0.92f;
+        icon::drawSvg (g, iconArea.withSizeKeepingCentre (glyph, glyph), headIcon.get());
+    }
+    else if (probe != nullptr)
     {
         const float glyph = iconArea.getWidth() * 0.92f;
         probe->drawIcon (g, iconArea.withSizeKeepingCentre (glyph, glyph));
@@ -135,7 +163,7 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     rowList.onRowTap = [this] (EffectRow& row)
     {
         if (row.key.isNotEmpty() && onEffectChosen)
-            onEffectChosen (row.key);
+            onEffectChosen (row.key, row.cabOn);
     };
 
     addAndMakeVisible (gridViewport);
@@ -251,6 +279,21 @@ void AddEffectBrowserDialog::rebuildRows()
                 + (subcategory.isNotEmpty() ? " · " + subcategory : juce::String())
             : subcategory;
         row.probe = probeForKey (key);
+
+        // Every amp with a page-2 Cab selector lists a second row right after
+        // itself: 'name' inserts with the cab off (head-only glyph), 'name +
+        // Cab' with the amp's historic cab voicing on. cabCapable() keys off
+        // the `*_cab` parameter, so new amps get both rows for free.
+        if (cabCapable (row.probe))
+        {
+            row.headOnlyIcon = true; // cabOn stays false: the plain row is the off variant
+            auto& cabRow = rowList.addRow();
+            cabRow.key = key;
+            cabRow.name = name + " + Cab";
+            cabRow.subline = row.subline;
+            cabRow.probe = row.probe;
+            cabRow.cabOn = true;
+        }
     }
 
     emptyStateLabel.setText (rowList.rows.isEmpty()

@@ -58,6 +58,12 @@ public:
         const int n = juce::jmax (1, options.size());
         const float segmentHeight = bounds.getHeight() / (float) n;
 
+        // A near-black amp accent (JCM800's #2a2a2a) paints a selection nobody
+        // can see against the #232323 stack -- lift dark accents to a readable
+        // grey, and only keep the dark label when the fill stayed bright.
+        const auto lit = accent.getPerceivedBrightness() < 0.35f ? accent.brighter (0.9f) : accent;
+        const bool litIsBright = lit.getPerceivedBrightness() > 0.55f;
+
         g.setColour (juce::Colour (0xff232323));
         g.fillRoundedRectangle (bounds, 8.0f);
 
@@ -68,7 +74,7 @@ public:
 
             if (isSelected)
             {
-                g.setColour (accent);
+                g.setColour (lit);
                 g.fillRoundedRectangle (segment.reduced (2.0f), 6.0f);
             }
 
@@ -78,7 +84,9 @@ public:
                 g.drawLine (segment.getX() + 6.0f, segment.getY(), segment.getRight() - 6.0f, segment.getY(), 1.0f);
             }
 
-            g.setColour (isSelected ? juce::Colours::black.withAlpha (0.85f) : juce::Colours::white.withAlpha (0.75f));
+            g.setColour (isSelected ? (litIsBright ? juce::Colours::black.withAlpha (0.85f)
+                                                   : juce::Colours::white.withAlpha (0.9f))
+                                    : juce::Colours::white.withAlpha (0.75f));
             g.setFont (juce::Font (segmentHeight > 30.0f ? 13.0f : 11.0f, juce::Font::bold));
             g.drawText (options[i], segment.reduced (4.0f, 0.0f), juce::Justification::centred);
         }
