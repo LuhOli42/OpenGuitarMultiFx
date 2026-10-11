@@ -449,12 +449,12 @@ void DumbleSteelStringStyleAmplifierProcessor::buildChannel (Channel& ch)
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
-        const auto cf = c.addNode(), nMst = c.addNode();
+        const auto cf = c.addNode(), nCfO = c.addNode(), nMst = c.addNode();
         ch.wSrcCf = c.addSource (cf, 0.0);
         ch.wToneIn = nMst;
         ch.wTone = c.addNode();
-        c.addResistor (cf, nMst, cathodeFollowerImpedance);
-        c.addCapacitor (cf, nMst, 0.01e-6);                  // C49
+        c.addResistor (cf, nCfO, cathodeFollowerImpedance);
+        c.addCapacitor (nCfO, nMst, 0.01e-6);                // C49, series after the follower impedance
         c.addResistor (nMst, gnd, 470.0e3);
         ch.rMasterTop = c.addResistor (nMst, ch.wTone, 500.0e3);
         ch.rMasterBottom = c.addResistor (ch.wTone, gnd, 500.0e3);
