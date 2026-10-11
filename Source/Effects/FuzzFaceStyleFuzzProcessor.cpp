@@ -210,7 +210,7 @@ void FuzzFaceStyleFuzzProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<fl
 {
     // Placeholder, the same stand-in as the Big Muff: no fuzz glyph exists in the repo and this project never
     // invents one (docs/icons/AGENT-icon-notes.md).
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::distortion_svg, IconData::distortion_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::fuzz_svg, IconData::fuzz_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

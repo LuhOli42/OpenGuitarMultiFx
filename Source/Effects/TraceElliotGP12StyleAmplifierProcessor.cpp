@@ -344,7 +344,7 @@ void TraceElliotGP12StyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
 
 void TraceElliotGP12StyleAmplifierProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::pulse_svg, IconData::pulse_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::amp_svg, IconData::amp_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

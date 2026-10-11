@@ -244,7 +244,7 @@ void ToneBenderStyleFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
 void ToneBenderStyleFuzzProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
     // Placeholder, the same stand-in as the other fuzzes (no fuzz glyph exists in the repo; never invent one).
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::distortion_svg, IconData::distortion_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::fuzz_svg, IconData::fuzz_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

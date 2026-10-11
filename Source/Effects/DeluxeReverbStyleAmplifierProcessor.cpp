@@ -855,7 +855,7 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
 void DeluxeReverbStyleAmplifierProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
     // No dedicated amp glyph exists on the reference sheet yet (same placeholder Bassman/Super Lead use).
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::overdrive_svg, IconData::overdrive_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::amp_svg, IconData::amp_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

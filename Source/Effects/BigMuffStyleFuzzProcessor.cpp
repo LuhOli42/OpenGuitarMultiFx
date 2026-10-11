@@ -320,7 +320,7 @@ void BigMuffStyleFuzzProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<flo
     // Placeholder: the reference sheet lists Fuzz as its own Drive-category glyph, but that sheet still is not in
     // the repo (see docs/icons/AGENT-icon-notes.md), and this project never invents a glyph. The distortion wave is
     // the closest existing same-category icon -- the same stand-in precedent the DS-1 and the IR Reverb role set.
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::distortion_svg, IconData::distortion_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::fuzz_svg, IconData::fuzz_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 
