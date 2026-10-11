@@ -110,6 +110,18 @@ void ChainContainer::paint (juce::Graphics& g)
         g.drawLine (0.0f, y, (float) getWidth(), y, 2.0f);
     }
 
+    // Empty chain: on a touch device there is no hover, so the "+" affordance
+    // below never appears and a first-run screen reads as four lines and
+    // nothing to do. A one-line hint on row 0 (the only row that's wired) says
+    // how to start; it disappears as soon as the first block lands.
+    if (blockBounds.empty() && usedRows > 0)
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.5f));
+        g.setFont (17.0f);
+        g.drawText ("Tap a line to add an effect", 0, 0, getWidth(), gridBlockHeight,
+                    juce::Justification::centred);
+    }
+
     // The ONE "+" -- exactly under the cursor's grid cell, only while
     // hovering, instead of a permanent dashed-box tile at every open slot.
     // Per user request 2026-09-10 ("tire todo esses + com caixinha

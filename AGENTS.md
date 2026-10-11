@@ -81,7 +81,7 @@ Final target is a ~10" touchscreen operated with a fingertip — this governs si
 
 ## Global Pitfalls
 
-- This dev machine is a 16-core/~7.5GB-RAM box on an immutable distro (Bazzite/Fedora Atomic) — an unbounded `cmake --build --parallel` once hard-crashed it building the NAM engine. `scripts/build.sh` caps jobs at 2 by default (`BUILD_JOBS` env var to override); don't drop that cap casually.
+- This dev machine is a 16-core/~7.5GB-RAM box on an immutable distro (Bazzite/Fedora Atomic) — an unbounded `cmake --build --parallel` once hard-crashed it building the NAM engine. `scripts/build.sh` and `scripts/cross-build.sh` default jobs to `min(nproc, MemAvailable/2GB)` (~1 GB RSS per heavy TU, so ~2-3 on this box; `BUILD_JOBS` env var overrides); don't drop that cap casually.
 - JUCE dev headers (ALSA, X11, FreeType, curl, webkit2gtk) come from a `distrobox` container (`juce-dev`) on this immutable host, not the host package manager — `scripts/build.sh` auto-detects and uses it if present.
 - `nam_core` requires `OBJECT` (never `STATIC`) library linkage and an exact pinned Eigen commit (not the `3.4.1` tag) — see `Source/Effects/AGENTS.md` for why; both are easy to "clean up" incorrectly by someone who didn't hit the original bugs.
 

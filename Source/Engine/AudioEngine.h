@@ -158,8 +158,9 @@ private:
     void processGraph (juce::AudioBuffer<float>& buffer, int numSamples);
 
     /** Audio thread. The graph itself: when a new one has just been published (a block was moved, added, removed, a
-        row re-routed) the old graph plays one more moment with a short fade-out and the new one fades in, instead of
-        switching the signal path between two samples. */
+        row re-routed) the retired graph and the new one run on the same input for ~10 ms and are mixed with an
+        equal-power crossfade -- the outgoing lane keeps driving sound while the new one takes over, so there is no
+        gap and no step between the two unrelated outputs. */
     void processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples);
 
     /** Audio thread, once per stream (audioDeviceAboutToStart re-arms
@@ -184,10 +185,23 @@ private:
     PitchDetector pitchDetector;
 
     // Audio thread only (reset in audioDeviceAboutToStart, before the callback runs): the graph swap's fade.
+    // Rather than running the retired graph a second time per block -- every processor it shares with the
+    // new graph would advance its state twice, violating the "one processor runs once per block" rule --
+    // the engine keeps a rolling ~10 ms recording of graph OUTPUT in outputTailRing and, on a swap, replays
+    // that tail faded out under the new graph's live output. The tail is exactly what the outgoing chain
+    // produced at the moment of the edit, the blend is continuous at sample 0 by construction, and nothing
+    // allocates on the audio thread (the ring is sized in audioDeviceAboutToStart).
     SignalGraph* activeGraph = nullptr;      // the graph the previous block ran
-    SignalGraph* fadingOutGraph = nullptr;   // a retired graph still playing its fade-out (kept alive by graphSlot's margin)
-    int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0, fadeInSamplesLeft = 0, fadeInSamplesTotal = 0;
+    bool swapFadeActive = false;
+    bool swapFadeRanThisBlock = false;       // set whenever the fade mixed any part of the current block
+    int swapFadeSamplesThisBlock = 0;        // how many leading samples of this block the fade covered
+    float* spillSlicePtrs[32] = {};          // scratch for the post-fade spillover view (no alloc)
+    int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0;
+    int tailRingWrite = 0;                   // next write position in outputTailRing (shared by all channels)
+    int tailRingSamples = 0;                 // valid samples recorded, capped at the ring length
+    int tailReadIndex = 0;                   // replay cursor while swapFadeActive
     juce::int64 lastCallbackTicks = 0;
+    juce::AudioBuffer<float> outputTailRing;
 
     std::atomic<bool> callbackIsRealtime { false };
     std::atomic<bool> callbackRealtimeDetected { false }; // detectCallbackRealtime ran once

@@ -185,6 +185,16 @@ void GuvnorStyleDistortionProcessor::updatePots (double gainKnob, double bassKno
     }
 }
 
+void GuvnorStyleDistortionProcessor::recover (Channel& ch)
+{
+    ++recoveries;
+    ch.a.restoreDynamicState (ch.aRest);
+    ch.b.restoreDynamicState (ch.bRest);
+    ch.failStreak = 0;
+    ch.restRefreshCounter = 0;
+    ch.alignOutput = true;
+}
+
 void GuvnorStyleDistortionProcessor::prepare (double newSampleRate, int, int)
 {
     // Same-rate re-prepare is a no-op (see the Centaur/DS-1 processors for why).
@@ -217,6 +227,8 @@ void GuvnorStyleDistortionProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.a.prepare (newSampleRate) && dcOk;
         ch.b.setSource (ch.srcOp1, ch.a.voltage (ch.nOp1));
         dcOk = ch.b.prepare (newSampleRate) && dcOk;
+        ch.a.saveDynamicState (ch.aRest);
+        ch.b.saveDynamicState (ch.bRest);
     }
 
     controlCounter = 0;
@@ -264,7 +276,42 @@ void GuvnorStyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             ch.b.setSource (ch.srcOp1, ch.a.voltage (ch.nOp1));
             ok = ch.b.solveSample() && ok;
 
-            data[i] = (float) ch.b.voltage (ch.nOut);
+            const double out2 = ch.b.voltage (ch.nOut);
+            const bool sane = std::isfinite (out2) && std::abs (out2) < saneLimit;
+            ok = ok && sane;
+
+            bool recoveredThisSample = false;
+            if (ok)
+            {
+                ch.failStreak = 0;
+                if (++ch.restRefreshCounter >= restRefreshInterval)
+                {
+                    ch.restRefreshCounter = 0;
+                    ch.a.saveDynamicState (ch.aRest);
+                    ch.b.saveDynamicState (ch.bRest);
+                }
+            }
+            else if (++ch.failStreak >= 4)
+            {
+                recover (ch);
+                recoveredThisSample = true; // don't let the stale pre-restore out2 consume alignOutput:
+                                            // the restored circuit's first output lands NEXT sample
+            }
+
+            double out = ch.lastEmitted;
+            if (sane && ! recoveredThisSample)
+            {
+                out = out2;
+                if (ch.alignOutput)
+                {
+                    ch.declick = ch.lastEmitted - out;
+                    ch.alignOutput = false;
+                }
+                out += ch.declick;
+                ch.declick *= declickDecay;
+            }
+            ch.lastEmitted = out;
+            data[i] = (float) out;
 
             if (chIdx == 0)
             {

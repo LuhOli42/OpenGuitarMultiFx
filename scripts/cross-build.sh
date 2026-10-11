@@ -32,8 +32,16 @@ IMAGE="ogmfx-toolchain:latest"
 BUILD_DIR="build-${ARCH}"
 
 # Same job cap as scripts/build.sh — see that file for the incident that
-# motivated it. Override with BUILD_JOBS=N on beefier machines/runners.
-BUILD_JOBS="${BUILD_JOBS:-2}"
+# motivated it and for the memory-aware default formula (~1 GB RSS per
+# heavy TU → min(nproc, MemAvailable/2GB)). Override with BUILD_JOBS=N on
+# beefier machines/runners.
+if [ -z "${BUILD_JOBS:-}" ]; then
+  _cores=$(nproc 2>/dev/null || echo 2)
+  _mem_mb=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
+  BUILD_JOBS=$(( ${_mem_mb:-2048} / 2048 ))
+  [ "$BUILD_JOBS" -lt 1 ] && BUILD_JOBS=1
+  [ "$BUILD_JOBS" -gt "$_cores" ] && BUILD_JOBS="$_cores"
+fi
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   docker build -t "$IMAGE" tools/toolchain

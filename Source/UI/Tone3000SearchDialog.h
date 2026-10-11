@@ -58,7 +58,7 @@ private:
     juce::ComboBox architectureBox;
     juce::TextButton searchButton { "Search" };
     juce::ListBox resultsList { "tone3000results", this };
-    juce::TextButton downloadButton { "Download && load" };
+    juce::TextButton downloadButton { "Download & load" };
     juce::TextButton closeButton { "Close" };
     juce::Label statusLabel;
 

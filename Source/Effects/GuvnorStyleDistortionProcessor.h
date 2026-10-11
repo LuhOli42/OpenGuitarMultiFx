@@ -46,6 +46,9 @@ public:
 
     bool dcConverged() const noexcept { return dcOk; }
 
+    /** How often the rest-state snapshot has been restored mid-stream (channel 0). */
+    long long debugRecoveryCount() const noexcept { return recoveries; }
+
     double getSolveFailureRate() const noexcept
     {
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
@@ -66,10 +69,21 @@ private:
         int rMidTop = 0, rMidBottom = 0;                 // b: Middle pot segments
         int rTrebleTop = 0, rTrebleBottom = 0;           // b: Treble pot segments
         int rLevelTop = 0, rLevelBottom = 0;             // b: Level pot segments
+
+        // Recovery bookkeeping -- the same fail-streak -> rest-snapshot pattern the amp models carry (see
+        // AC15StyleAmplifierProcessor). A failed solve leaves the capacitors frozen at their last good state, so
+        // without this the pedal holds a stale DC and retries the full Newton every sample: the "Guv'nor dies and
+        // CPU pegs" failure. aRest/bRest are refreshed periodically while solves are healthy and restored after
+        // 4 consecutive bad samples; lastEmitted/declick carry the anti-click ramp over the restore's output jump.
+        NodalCircuit::DynamicState aRest, bRest;
+        int failStreak = 0, restRefreshCounter = 0;
+        double lastEmitted = 0.0, declick = 0.0;
+        bool alignOutput = false;
     };
 
     void buildChannel (Channel& ch);
     void updatePots (double gainKnob, double bassKnob, double midKnob, double trebleKnob, double levelKnob);
+    void recover (Channel& ch);
 
     std::array<Channel, 2> channels;
 
@@ -98,11 +112,14 @@ private:
 
     double sampleRate = 0.0;
     int controlCounter = 0;
-    long long sampleCount = 0, failureCount = 0;
+    long long sampleCount = 0, failureCount = 0, recoveries = 0;
     bool dcOk = false;
     DualMonoShortcut shortcut;
 
-    static constexpr int controlInterval = 16; // samples between pot -> resistance updates
+    static constexpr int controlInterval = 16;   // samples between pot -> resistance updates
+    static constexpr int restRefreshInterval = 512; // samples between rest-snapshot refreshes while healthy
+    static constexpr double saneLimit = 40.0;    // the pedal runs off a 9 V rail; beyond this the operating point is broken
+    static constexpr double declickDecay = 0.996; // per-sample decay of the restore offset (~5 ms)
 };
 
 } // namespace openguitarmultifx

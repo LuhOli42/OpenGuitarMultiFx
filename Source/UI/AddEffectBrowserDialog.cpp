@@ -220,11 +220,11 @@ void AddEffectBrowserDialog::resized()
 
     auto header = area.removeFromTop (touch::minTapTarget);
     titleLabel.setBounds (header.removeFromLeft (240));
-    searchField.setBounds (header.removeFromRight (320).withSizeKeepingCentre (320, 40));
+    searchField.setBounds (header.removeFromRight (320).withSizeKeepingCentre (320, touch::minTapTarget));
 
     area.removeFromTop (10);
     auto footer = area.removeFromBottom (touch::minTapTarget);
-    closeButton.setBounds (footer.removeFromRight (120).withSizeKeepingCentre (120, 44));
+    closeButton.setBounds (footer.removeFromRight (120).withSizeKeepingCentre (120, touch::minTapTarget));
     area.removeFromBottom (8);
 
     railViewport.setBounds (area.removeFromLeft (railWidth));
