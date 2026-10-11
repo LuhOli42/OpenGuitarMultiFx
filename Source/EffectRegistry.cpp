@@ -516,7 +516,8 @@ void registerBuiltInEffects (EffectRegistry& registry)
 
     // The Ampeg SVT-CL bass head, modelled from its service schematic (docs/circuits/AmpegSVT.md): four 12AX7
     // in the preamp, Baxandall + tapped-inductor mid section, a 12AX7 phase splitter, two 12AU7 drivers and
-    // six 6550s. No reducedOrder yet: the full reference netlist always runs (trim measured by PedalUnityLevelTests).
+    // six 6550s. Full netlist, behavioural power stage in reducedOrder.
+    SVTStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SVTStyleAmplifier");
     // Measured +0.15 dB at noon for the PedalUnityLevel reference. The ~20 dB the kg1-softened PI
     // took out of the power block is restored inside the model by piInputSensitivity at the PI's
@@ -525,9 +526,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // its ~0.9 full-scale headroom instead of needing a >0 dB trim that would clip it.
     registry.registerType ("SVTStyleAmplifier", EffectRegistry::Category::bassAmps, [] { return trimmedLimited (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.15f); });
     // Trainwreck Express (docs/circuits/TrainwreckExpress.md) and the Trainwreck-descended Komet Concorde
-    // (docs/circuits/KometConcorde.md): three-12AX7 anode-driven preamps, LTP, 2x EL34, no global feedback. Full netlist.
+    // (docs/circuits/KometConcorde.md): three-12AX7 anode-driven preamps, LTP, 2x EL34, no global feedback. Full
+    // netlist; one reducedOrder flag on the shared base class serves both models (each has its own fitted constants).
+    TrainwreckExpressStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("TrainwreckExpressStyleAmplifier");
     registry.registerType ("TrainwreckExpressStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<TrainwreckExpressStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.03f); });
+    KometConcordeStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("KometConcordeStyleAmplifier");
     registry.registerType ("KometConcordeStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<KometConcordeStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.31f); });
     // Gibson EH-150 Style 4 (docs/circuits/GibsonEH150.md): 6SQ7 octal preamp, 6N7 paraphase PI, 2x 6L6

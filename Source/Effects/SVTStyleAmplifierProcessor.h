@@ -2,6 +2,7 @@
 
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
 #include <array>
 
@@ -45,13 +46,31 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     /** Amplifier output (speaker-terminal volts) is scaled by this to get a signal level. */
-    static constexpr double outputScale = 1.0 / 55.0; // 300 W into 4 ohm is ~49 Vrms at the terminal
+    static constexpr double outputScale = 1.0 / 55.0;   // reducedOrder speaker-level mapping (below)
+    static constexpr double fullOutputScale = 1.0 / 55.0; // 300 W into 4 ohm is ~49 Vrms at the terminal
+
+    /** Ships reducedOrder in the app (the full LTP + drivers + 6x6550 + OT + NFB netlist is the
+        calibration reference -- same pattern as AmpegB15StyleAmplifierProcessor). EffectRegistry.cpp
+        flips this on centrally; the unit tests reset it to false so they keep probing the reference
+        model. Calibrated (SVT_POWERCAL) against this amp's own stabilised reference. */
+    static inline bool reducedOrder = false;
+    static constexpr double bmGain0 = 1.1;       // closed-loop gain, cin -> speaker volts, at the nominal rail (SVT_POWERCAL)
+    static constexpr double bmYmax = 0.052;      // peak output as a fraction of the (possibly sagged) rail at full drive
+    static constexpr double bmKneeN = 6.0;
+    static constexpr double bmShelfHz = 70.0;    // speaker-magnetics low-shelf pole
+    static constexpr double bmShelfHfGain = 1.0;
+    static constexpr double bmAsym = 0.0;       // push-pull clip asymmetry, envelope-scaled (PowerStageAsymBench fit)
+    static constexpr double bmSoftS = 15.0;     // scale of the gated low-level cubic bloom (speaker volts)
+    static constexpr double bmSoftOdd = 1.45;    // odd-order bloom weight (fades as the knee engages)
+    static constexpr double bmSoftEven = 0.015; // even-order bloom weight, per volt of swing
+    static constexpr double bmDcHz = 8.0;        // OT low-frequency saturation rolloff
+    static constexpr double bmLevelTrim = 1.0;   // post-stage level trim fitted against this amp's own netlist
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
     enum class Probe { firstPlate, secondPlate, toneStackOut, recoveryPlate, midNode, followerOut,
                        phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB, phaseInverterTail,
-                       driverPlateA, powerGridA, powerPlateA, powerPlateB, speaker };
+                       driverPlateA, powerGridA, powerPlateA, powerPlateB, speaker, powerInput };
     double debugVoltage (Probe p) const noexcept;
     double getSolveFailureRate() const noexcept
     {
@@ -109,6 +128,17 @@ private:
         double sumPlate = 0.0, sumScreen = 0.0;
         int sumCount = 0;
         int supplyCounter = 0;
+
+        // reducedOrder behavioural-stage state (EffectRegistry.cpp flips reducedOrder on for the
+        // shipping build): the fitted power-stage envelope/rail, the latest sample output and the
+        // tone/dc filters that shape it.
+        NodalCircuit::Node wTone = 0; ///< survives in the reduced path -- the PI coupling cap's input node.
+        double bmRail = 0.0;      // latest sag-managed plate-rail estimate, volts
+        double bmEnvelope = 0.0;  // |input| follower, volts
+        double bmOutput = 0.0;
+        double bmToneState = 0.0;
+        double bmDcState = 0.0;
+        tubeamp::PowerStageTail bmTail;
     };
 
     void buildChannel (Channel& ch);
@@ -132,6 +162,12 @@ private:
     bool resistiveLoadForced = false;
     double feedbackOverride = 0.0;
     void updateSupply (Channel& ch) const;
+
+    /** reducedOrder: sag-managed plate-rail estimate from the envelope follower (fitted, SVT_POWERCAL). */
+    double sagRail (double envelope) const noexcept;
+    /** reducedOrder: fitted power-stage surrogate -- the envelope-scaled knee + the OT/speaker shaping
+        all the removed blocks used to provide. process() calls it with the follower/tone-stack output. */
+    double behavioralPowerStage (Channel& ch, double toneVoltage, double bias, double feel) const noexcept;
 
     std::array<Channel, 2> channels;
 

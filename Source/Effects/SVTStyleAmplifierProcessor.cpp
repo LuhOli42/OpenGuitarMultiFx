@@ -414,8 +414,14 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
         const auto cin = c.addNode();
-        const auto vpi = c.addNode(), vdr = c.addNode(), ct = c.addNode(), neg = c.addNode();
         ch.wSrcPre = c.addSource (cin, 0.0);
+        // The behavioural path probes the drive right at this node (Probe::powerInput), so it
+        // survives in reducedOrder too; the 1M leak gives it a DC path the coupling cap used to.
+        ch.wTone = cin;
+        c.addResistor (cin, gnd, 1.0e6);
+        if (! reducedOrder)
+        {
+        const auto vpi = c.addNode(), vdr = c.addNode(), ct = c.addNode(), neg = c.addNode();
         ch.wSrcPi = c.addSource (vpi, railPreampNominal);
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcNeg = c.addSource (neg, railDriverReturn);
@@ -573,6 +579,7 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (g4, -45.0);
         c.setInitialGuess (nab, -45.0);
         c.setInitialGuess (nbb, -45.0);
+        }
     }
 }
 
@@ -633,13 +640,16 @@ void SVTStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rUltraLoA, ulA);
         ch.pre.setResistance (ch.rUltraLoB, ulB);
         ch.pre.setCapacitance (ch.capUltraHi, uhC);
-        ch.power.setResistance (ch.rBiasTapA, biasR);
-        ch.power.setResistance (ch.rBiasTapB, biasR);
-        ch.power.setResistance (ch.rFeedback, feedbackR);
+        if (! reducedOrder)
+        {
+            ch.power.setResistance (ch.rBiasTapA, biasR);
+            ch.power.setResistance (ch.rBiasTapB, biasR);
+            ch.power.setResistance (ch.rFeedback, feedbackR);
+        }
         ch.supply.setResistance (ch.rRect, rectifier);
         ch.supply.setResistance (ch.rRect2, rectifier2);
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
-        if (! resistiveLoadForced && k.speaker != appliedSpeaker)
+        if (! reducedOrder && ! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
         if (k.midFreq != appliedMidFreq)
             applyMidFreq (ch, k.midFreq);
@@ -666,6 +676,18 @@ void SVTStyleAmplifierProcessor::recover (Channel& ch) const
 
 void SVTStyleAmplifierProcessor::updateSupply (Channel& ch) const
 {
+    if (reducedOrder)
+    {
+        // No output-stage currents are probed in the behavioural path -- hold the supply at its
+        // idle loading so the preamp rail still sits where the reference runs it.
+        ch.supply.setCurrentSource (ch.iA, -idlePlateCurrent);
+        ch.supply.setCurrentSource (ch.iB, -(idleScreenCurrent + idleDriverCurrent));
+        ch.supply.solveSample();
+        ch.sumPlate = ch.sumScreen = 0.0;
+        ch.sumCount = 0;
+        ch.pre.setSource (ch.pSrcVcc, juce::jlimit (0.0, 420.0, ch.supply.voltage (ch.sC)));
+        return;
+    }
     const double n = (double) juce::jmax (1, ch.sumCount);
     // Six 6550s can draw over an amp at full drive; a solver excursion must not wreck the shared rails.
     ch.supply.setCurrentSource (ch.iA, -juce::jlimit (0.0, 2.0, ch.sumPlate / n));
@@ -680,6 +702,54 @@ void SVTStyleAmplifierProcessor::updateSupply (Channel& ch) const
     ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 420.0));
     ch.pre.setSource (ch.pSrcVcc, rail (ch.sC, 420.0));
     ch.vScreen = rail (ch.sB, 420.0);
+}
+
+double SVTStyleAmplifierProcessor::sagRail (double envelope) const noexcept
+{
+    // SVT_POWERCAL: plates droop 693 -> ~614 V as the drive envelope climbs to ~80 V.
+    return railPlatesNominal * juce::jlimit (0.89, 1.0, 1.0 - 0.0045 * envelope);
+}
+
+double SVTStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage, double bias, double feel) const noexcept
+{
+    constexpr double attackMs = 8.0, releaseMs = 45.0;
+    const double absDrive = std::abs (toneVoltage);
+    const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
+    const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
+    ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
+    ch.bmRail = railPlatesNominal - feel * (railPlatesNominal - sagRail (ch.bmEnvelope));
+
+    const double k = ch.bmRail * bmYmax / bmGain0;
+    // The fitted offset rides the drive envelope: pair imbalance grows with swing (the stage
+    // is ~linear below the knee, where a static shift would crush clean small-signal gain).
+    const double envScale = juce::jlimit (0.0, 1.0, ch.bmEnvelope / juce::jmax (1.0e-9, k));
+    const double shift = (bmAsym * envScale + 0.6 * (bias - 0.5)) * k;
+    const auto sat = [k, rail = ch.bmRail] (double xx)
+    {
+        const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
+        const double yx = bmYmax * ux / std::pow (1.0 + std::pow (ux, bmKneeN), 1.0 / bmKneeN);
+        return std::copysign (yx * rail, xx);
+    };
+    const double raw = juce::jlimit (-ch.bmRail * bmYmax, ch.bmRail * bmYmax,
+                                     sat (toneVoltage + shift) - sat (shift));
+
+    // OT DC-block: the offset clip rectifies part of the signal into a moving DC
+    // level a real output transformer cannot pass.
+    const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / juce::jmax (1.0, sampleRate));
+    ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
+    const double blocked = raw - ch.bmDcState;
+
+    // Low-level bloom the flat-bottomed knee cannot make: gated cubic (odd) + quadratic (even)
+    // terms that supply the reference's ~4% THD floor at clean levels and bow out as the drive
+    // envelope reaches the knee, where the stage's own clip takes over.
+    const double gate = 1.0 - envScale;
+    const double shaped = blocked + gate * (bmSoftOdd * (bmSoftS * std::tanh (blocked / bmSoftS) - blocked)
+                                           + bmSoftEven * blocked * blocked);
+
+    const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
+    ch.bmToneState += shelfCoeff * (shaped - ch.bmToneState);
+    ch.bmOutput = ch.bmTail.process ((ch.bmToneState + bmShelfHfGain * (shaped - ch.bmToneState)) * bmLevelTrim);
+    return ch.bmOutput;
 }
 
 double SVTStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
@@ -701,7 +771,8 @@ double SVTStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
         case Probe::powerGridA: return ch.power.voltage (ch.wPowerGridA);
         case Probe::powerPlateA: return ch.power.voltage (ch.wPP1);
         case Probe::powerPlateB: return ch.power.voltage (ch.wPP2);
-        case Probe::speaker: return ch.power.voltage (ch.wOut);
+        case Probe::speaker: return reducedOrder ? ch.bmOutput : ch.power.voltage (ch.wOut);
+        case Probe::powerInput: return ch.power.voltage (ch.wTone);
     }
     return 0.0;
 }
@@ -713,6 +784,8 @@ double SVTStyleAmplifierProcessor::debugIterations (int block) const noexcept
 
 void SVTStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 {
+    if (reducedOrder)
+        return;
     for (auto& ch : channels)
     {
         ch.power.setResistance (ch.rSpkRe, ohms);
@@ -727,6 +800,8 @@ void SVTStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 
 void SVTStyleAmplifierProcessor::debugSetFeedbackResistance (double ohms)
 {
+    if (reducedOrder)
+        return;
     feedbackOverride = ohms;
     for (auto& ch : channels)
         ch.power.setResistance (ch.rFeedback, ohms);
@@ -734,6 +809,8 @@ void SVTStyleAmplifierProcessor::debugSetFeedbackResistance (double ohms)
 
 double SVTStyleAmplifierProcessor::plateCurrentTotal() const noexcept
 {
+    if (reducedOrder)
+        return idlePlateCurrent;
     double a = 0.0, b = 0.0, sa = 0.0, sb = 0.0;
     channels[0].power.pentodeCurrents (channels[0].penA, a, sa);
     channels[0].power.pentodeCurrents (channels[0].penB, b, sb);
@@ -742,6 +819,8 @@ double SVTStyleAmplifierProcessor::plateCurrentTotal() const noexcept
 
 double SVTStyleAmplifierProcessor::screenCurrentTotal() const noexcept
 {
+    if (reducedOrder)
+        return idleScreenCurrent;
     double a = 0.0, b = 0.0, sa = 0.0, sb = 0.0;
     channels[0].power.pentodeCurrents (channels[0].penA, a, sa);
     channels[0].power.pentodeCurrents (channels[0].penB, b, sb);
@@ -799,30 +878,52 @@ void SVTStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sC));
         dcOk = ch.pre.prepare (newSampleRate) && dcOk;
 
-        ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-        ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
         ch.vScreen = ch.supply.voltage (ch.sB);
-        ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
-        ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+            ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
+            ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
+        }
         dcOk = ch.power.prepare (newSampleRate) && dcOk;
-        ch.power.solveSample();
 
-        double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
-        ch.power.pentodeCurrents (ch.penA, ipA, isA);
-        ch.power.pentodeCurrents (ch.penB, ipB, isB);
-        ch.supply.setCurrentSource (ch.iA, -(ipA + ipB));
-        ch.supply.setCurrentSource (ch.iB, -(isA + isB + idleDriverCurrent));
-        idleSupplyCurrent = ipA + ipB + isA + isB + idleDriverCurrent + idlePreampCurrent;
-        ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifierResistance * (0.05 + 0.95 * (double) tubeFeelParam->get()) * idleSupplyCurrent);
-        dcOk = ch.supply.prepare (supplyRate) && dcOk;
-        ch.screenDropA = screenResistor * isA;
-        ch.screenDropB = screenResistor * isB;
-        ch.vScreen = ch.supply.voltage (ch.sB);
-        ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
-        ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-        ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+        if (! reducedOrder)
+        {
+            ch.power.solveSample();
+            double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
+            ch.power.pentodeCurrents (ch.penA, ipA, isA);
+            ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            ch.supply.setCurrentSource (ch.iA, -(ipA + ipB));
+            ch.supply.setCurrentSource (ch.iB, -(isA + isB + idleDriverCurrent));
+            idleSupplyCurrent = ipA + ipB + isA + isB + idleDriverCurrent + idlePreampCurrent;
+            ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifierResistance * (0.05 + 0.95 * (double) tubeFeelParam->get()) * idleSupplyCurrent);
+            dcOk = ch.supply.prepare (supplyRate) && dcOk;
+            ch.screenDropA = screenResistor * isA;
+            ch.screenDropB = screenResistor * isB;
+            ch.vScreen = ch.supply.voltage (ch.sB);
+            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+        }
         ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sC));
+
+        // The behavioural tail (OT/speaker resonances, cab voicing) runs in both modes so the flag
+        // can flip on an already-prepared amp without a click.
+        auto voicing = tubeamp::voicings::bassAmp;
+        voicing.asym = 0.0;
+        // The SVT's iron is very wide-band and the reference netlist carries no speaker rolloff,
+        // so the shared bass-cab curve reads ~17 dB dark in the treble band; open both corners
+        // and let a broad presence bump restore the treble the polynomial knee under-generates
+        // (the behavioural stage clips softer than the real 6550 pair, ~-9 dB treb without it).
+        voicing.otHz = 18000.0;
+        voicing.presenceHz = 5500.0;
+        voicing.presenceDb = 10.0;
+        voicing.presenceQ = 0.7;
+        voicing.cabLpHz = 14000.0;
+        voicing.cabAirHz = 18000.0;
+        ch.bmTail.prepare (newSampleRate, voicing, 1.0 / outputScale);
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
@@ -922,8 +1023,11 @@ void SVTStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             bool ok = okPre;
 
             ch.power.setSource (ch.wSrcPre, masterGain * piInputSensitivity * ch.pre.voltage (ch.pFollower));
-            ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
-            ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            if (! reducedOrder)
+            {
+                ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
+                ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            }
             const bool ok2 = ch.power.solveSample();
             ok = ok && ok2;
             if (chIdx == 0)
@@ -932,14 +1036,17 @@ void SVTStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 failuresPower += ok2 ? 0 : 1;
             }
 
-            double ipA, ipB, isA, isB;
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
-            ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
-            ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
-            ch.sumPlate += ipA + ipB;
-            ch.sumScreen += isA + isB;
-            ++ch.sumCount;
+            if (! reducedOrder)
+            {
+                double ipA, ipB, isA, isB;
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+                ch.screenDropA += 0.3 * (screenResistor * isA - ch.screenDropA);
+                ch.screenDropB += 0.3 * (screenResistor * isB - ch.screenDropB);
+                ch.sumPlate += ipA + ipB;
+                ch.sumScreen += isA + isB;
+                ++ch.sumCount;
+            }
 
             if (++ch.supplyCounter >= supplyInterval)
             {
@@ -950,7 +1057,8 @@ void SVTStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             // Same sanity gate as the other amps: a converged solve can still land on a state no amplifier
             // reaches (a speaker terminal at hundreds of volts); such a sample is a failure and the output
             // holds its last value instead of printing the excursion.
-            const double speakerVolts = ch.power.voltage (ch.wOut);
+            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, ch.power.voltage (ch.wTone), bi, fe)
+                                                     : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 250.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;
@@ -983,7 +1091,7 @@ void SVTStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;
