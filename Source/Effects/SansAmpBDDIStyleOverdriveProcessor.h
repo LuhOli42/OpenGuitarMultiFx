@@ -36,6 +36,9 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     // ---- diagnostics for tests ----
+    enum class Probe { buf, notch, presence, drive, cab, out };
+    double debugVoltage (Probe p) const noexcept;
+
     bool dcConverged() const noexcept { return dcOk; }
     double getSolveFailureRate() const noexcept
     {

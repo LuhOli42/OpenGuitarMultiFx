@@ -394,7 +394,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("DarkglassB7KStyleOverdrive");
     registry.registerType ("DarkglassB7KStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<DarkglassB7KStyleOverdriveProcessor> (Orders { 1, 2, 3 }), 500000.0), 4.13f); });
     registry.markQualityDependent ("SansAmpBDDIStyleOverdrive");
-    registry.registerType ("SansAmpBDDIStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<SansAmpBDDIStyleOverdriveProcessor> (Orders { 1, 2, 3 }), 470000.0), 18.44f); });
+    registry.registerType ("SansAmpBDDIStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<SansAmpBDDIStyleOverdriveProcessor> (Orders { 1, 2, 3 }), 470000.0), 3.91f); });
     registry.registerType ("CentaurStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (std::make_unique<CentaurStyleOverdriveProcessor>(), 1000000.0), -12.09f); });
     registry.markQualityDependent ("TS10StyleOverdrive");
     registry.registerType ("TS10StyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<TubeScreamerStyleOverdriveProcessor> (Orders { 0, 0, 1 }, TSModel::ts10), 500000.0), 11.34f); });
