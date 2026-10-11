@@ -27,7 +27,7 @@ void PitchShiftProcessor::prepare (double sampleRate, int, int)
 {
     currentSampleRate = sampleRate;
     for (auto& shifter : shifters)
-        shifter.prepare (sampleRate);
+        shifter.prepare (sampleRate, defaultGrainSeconds, maxGrainSeconds);
 
     smoothedSemitones.reset (sampleRate, paramRampSeconds);
     smoothedSemitones.setCurrentAndTargetValue (semitones->get());

@@ -32,7 +32,7 @@ void HoldProcessor::prepare (double sampleRate, int, int numChannels)
     currentSampleRate = sampleRate;
 
     const int bufferLength = (int) std::ceil (maxCaptureMs * 0.001 * sampleRate) + 4;
-    circularBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
+    line.prepare (numChannels, bufferLength);
 
     smoothedMix.reset (sampleRate, paramRampSeconds);
     smoothedMix.setCurrentAndTargetValue (mix->get());
@@ -42,8 +42,7 @@ void HoldProcessor::prepare (double sampleRate, int, int numChannels)
 
 void HoldProcessor::reset()
 {
-    circularBuffer.clear();
-    writePos = 0;
+    line.clear();
     wasHeld = false;
     loopStartPos = 0;
     loopOffset = 0;
@@ -52,12 +51,12 @@ void HoldProcessor::reset()
 
 void HoldProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    if (currentSampleRate <= 0.0 || circularBuffer.getNumSamples() == 0)
+    if (currentSampleRate <= 0.0 || line.getLength() == 0)
         return;
 
-    const int numChannels = juce::jmin (buffer.getNumChannels(), circularBuffer.getNumChannels());
+    const int numChannels = juce::jmin (buffer.getNumChannels(), line.buffer.getNumChannels());
     const int numSamples = buffer.getNumSamples();
-    const int bufferLength = circularBuffer.getNumSamples();
+    const int bufferLength = line.getLength();
     const bool isHeld = hold->get() >= 0.5f;
     smoothedMix.setTargetValue (mix->get());
 
@@ -68,7 +67,7 @@ void HoldProcessor::process (juce::AudioBuffer<float>& buffer)
         // continues in the same order it was recorded, not backwards.
         frozenLoopLengthSamples = juce::jlimit (1, bufferLength,
             (int) (captureMs->get() * 0.001f * (float) currentSampleRate));
-        loopStartPos = ((writePos - frozenLoopLengthSamples) % bufferLength + bufferLength) % bufferLength;
+        loopStartPos = ((line.writePos - frozenLoopLengthSamples) % bufferLength + bufferLength) % bufferLength;
         loopOffset = 0;
     }
     wasHeld = isHeld;
@@ -78,7 +77,7 @@ void HoldProcessor::process (juce::AudioBuffer<float>& buffer)
     for (int ch = 0; ch < numChannels; ++ch)
     {
         ioData[(size_t) ch] = buffer.getWritePointer (ch);
-        loopData[(size_t) ch] = circularBuffer.getWritePointer (ch);
+        loopData[(size_t) ch] = line.getChannelData (ch);
     }
 
     for (int i = 0; i < numSamples; ++i)
@@ -106,9 +105,8 @@ void HoldProcessor::process (juce::AudioBuffer<float>& buffer)
             // untouched), just continuously recording what a rising edge
             // would capture (see class doc comment).
             for (int ch = 0; ch < numChannels; ++ch)
-                loopData[(size_t) ch][writePos] = ioData[(size_t) ch][i];
-            if (++writePos >= bufferLength)
-                writePos = 0;
+                loopData[(size_t) ch][line.writePos] = ioData[(size_t) ch][i];
+            line.advance();
         }
     }
 }

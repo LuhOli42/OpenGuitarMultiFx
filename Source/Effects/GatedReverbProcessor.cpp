@@ -51,7 +51,12 @@ void GatedReverbProcessor::prepare (double sampleRate, int, int)
         const float spread = ch == 0 ? 0.0f : stereoSpreadMs;
 
         for (int i = 0; i < numCombs; ++i)
-            combs[(size_t) ch][(size_t) i].prepare (sampleRate, combTuningsMs[i] + spread);
+        {
+            auto& c = combs[(size_t) ch][(size_t) i];
+            c.prepare (sampleRate, combTuningsMs[i] + spread);
+            c.damp1 = 0.3f; // darker in-loop damping than the shared 0.5/0.5 default
+            c.damp2 = 0.7f;
+        }
 
         for (int i = 0; i < numAllpassStages; ++i)
         {

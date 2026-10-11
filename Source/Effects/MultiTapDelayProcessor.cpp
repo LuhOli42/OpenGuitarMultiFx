@@ -35,7 +35,7 @@ void MultiTapDelayProcessor::prepare (double sampleRate, int, int numChannels)
     currentSampleRate = sampleRate;
 
     const int bufferLength = (int) std::ceil (maxDelayMs * 0.001 * sampleRate) + 4;
-    delayBuffer.setSize (juce::jmax (1, numChannels), bufferLength, false, true, true);
+    line.prepare (numChannels, bufferLength);
 
     smoothedDelaySamples.reset (sampleRate, 0.03);
     smoothedFeedback.reset (sampleRate, 0.03);
@@ -50,22 +50,20 @@ void MultiTapDelayProcessor::prepare (double sampleRate, int, int numChannels)
 
 void MultiTapDelayProcessor::reset()
 {
-    delayBuffer.clear();
-    writePos = 0;
+    line.clear();
 }
 
 void MultiTapDelayProcessor::process (juce::AudioBuffer<float>& buffer)
 {
-    if (currentSampleRate <= 0.0 || delayBuffer.getNumSamples() == 0)
+    if (currentSampleRate <= 0.0 || line.getLength() == 0)
         return;
 
     smoothedDelaySamples.setTargetValue ((float) (timeMs->get() * 0.001 * currentSampleRate));
     smoothedFeedback.setTargetValue (feedback->get());
     smoothedMix.setTargetValue (mix->get());
 
-    const int numChannels = juce::jmin (buffer.getNumChannels(), delayBuffer.getNumChannels());
+    const int numChannels = juce::jmin (buffer.getNumChannels(), line.buffer.getNumChannels());
     const int numSamples = buffer.getNumSamples();
-    const int bufferLength = delayBuffer.getNumSamples();
 
     // Normalised so the taps' combined level never exceeds unity even
     // though all 4 are audible together -- otherwise a hot input would
@@ -90,22 +88,13 @@ void MultiTapDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         for (int t = 0; t < numTaps; ++t)
         {
             const float delaySamples = baseDelaySamples * tapRatios[(size_t) t];
-
-            float readPos = (float) writePos - delaySamples;
-            while (readPos < 0.0f)
-                readPos += (float) bufferLength;
-
-            readIndex0[(size_t) t] = (int) readPos;
-            readIndex1[(size_t) t] = readIndex0[(size_t) t] + 1;
-            if (readIndex1[(size_t) t] >= bufferLength)
-                readIndex1[(size_t) t] = 0;
-            frac[(size_t) t] = readPos - (float) readIndex0[(size_t) t];
+            line.getReadIndices (delaySamples, readIndex0[(size_t) t], readIndex1[(size_t) t], frac[(size_t) t]);
         }
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* data = buffer.getWritePointer (ch);
-            auto* delayData = delayBuffer.getWritePointer (ch);
+            auto* delayData = line.getChannelData (ch);
             const float input = data[i];
 
             float tapSum = 0.0f;
@@ -114,20 +103,18 @@ void MultiTapDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             for (int t = 0; t < numTaps; ++t)
             {
                 const size_t st = (size_t) t;
-                const float delayed = delayData[readIndex0[st]]
-                    + frac[st] * (delayData[readIndex1[st]] - delayData[readIndex0[st]]);
+                const float delayed = FractionalDelayLine::interpolate (delayData, readIndex0[st], readIndex1[st], frac[st]);
                 tapSum += delayed * tapLevels[st];
 
                 if (t == numTaps - 1)
                     longestTapDelayed = delayed;
             }
 
-            delayData[writePos] = input + fb * longestTapDelayed;
+            delayData[line.writePos] = input + fb * longestTapDelayed;
             data[i] = input * (1.0f - wet) + (tapSum / totalTapLevel) * wet;
         }
 
-        if (++writePos >= bufferLength)
-            writePos = 0;
+        line.advance();
     }
 }
 

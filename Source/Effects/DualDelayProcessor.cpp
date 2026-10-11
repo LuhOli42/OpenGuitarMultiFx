@@ -93,17 +93,7 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         std::array<float, 2> frac {};
 
         for (size_t t = 0; t < taps.size(); ++t)
-        {
-            float readPos = (float) taps[t].writePos - delaySamples[t];
-            while (readPos < 0.0f)
-                readPos += (float) bufferLength;
-
-            readIndex0[t] = (int) readPos;
-            readIndex1[t] = readIndex0[t] + 1;
-            if (readIndex1[t] >= bufferLength)
-                readIndex1[t] = 0;
-            frac[t] = readPos - (float) readIndex0[t];
-        }
+            taps[t].getReadIndices (delaySamples[t], readIndex0[t], readIndex1[t], frac[t]);
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -116,7 +106,7 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
                 auto& tap = taps[t];
                 auto* tapData = tap.buffer.getWritePointer (ch);
 
-                const float delayed = tapData[readIndex0[t]] + frac[t] * (tapData[readIndex1[t]] - tapData[readIndex0[t]]);
+                const float delayed = FractionalDelayLine::interpolate (tapData, readIndex0[t], readIndex1[t], frac[t]);
                 tapData[tap.writePos] = input + fb * delayed;
                 wetSum += delayed;
             }
@@ -126,8 +116,7 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         }
 
         for (auto& tap : taps)
-            if (++tap.writePos >= bufferLength)
-                tap.writePos = 0;
+            tap.advance();
     }
 }
 

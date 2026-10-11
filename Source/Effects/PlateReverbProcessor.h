@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EffectProcessor.h"
+#include "DelayLine.h"
 #include "WetLevelMatcher.h"
 
 #include <array>
@@ -37,31 +38,6 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
 private:
-    struct AllpassFilter
-    {
-        std::vector<float> buffer;
-        int pos = 0;
-        float feedback = 0.7f;
-
-        void prepare (double sampleRate, float delayMs)
-        {
-            buffer.assign ((size_t) juce::jmax (1, (int) (delayMs * 0.001f * (float) sampleRate)), 0.0f);
-            pos = 0;
-        }
-
-        void clear() { std::fill (buffer.begin(), buffer.end(), 0.0f); pos = 0; }
-
-        float process (float input) noexcept
-        {
-            const float bufOut = buffer[(size_t) pos];
-            const float output = -input + bufOut;
-            buffer[(size_t) pos] = input + bufOut * feedback;
-            if (++pos >= (int) buffer.size())
-                pos = 0;
-            return output;
-        }
-    };
-
     struct TankLine
     {
         std::vector<float> buffer;
