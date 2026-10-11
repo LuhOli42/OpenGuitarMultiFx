@@ -132,6 +132,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
     refreshLoginState();
+    applyUpdateUiState();
     setSize (720, 700); // clamped by OverlayHost to fit the app window -- this is the "whole screen" settings surface
 }
 
@@ -337,6 +338,37 @@ int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
     auto area = bounds.reduced (6, 0);
     const int startY = area.getY();
 
+    // Software update leads the card: it is the surface the user reaches
+    // for "is there a new build", so it must be visible without scrolling.
+    updateSectionLabel.setBounds (area.removeFromTop (20));
+    area.removeFromTop (6);
+    auto updateRow = area.removeFromTop (touch::minTapTarget);
+    checkUpdateButton.setBounds (updateRow.removeFromLeft (160));
+    updateRow.removeFromLeft (8);
+    installUpdateButton.setBounds (updateRow.removeFromLeft (170));
+    // 3 buttons + version label need ~600px; narrower cards wrap Restart
+    // and the version onto a second row instead of clipping to 0px (the
+    // viewport only scrolls vertically).
+    if (updateRow.getWidth() > 130 + 8 + 60)
+    {
+        updateRow.removeFromLeft (8);
+        restartAppButton.setBounds (updateRow.removeFromLeft (130));
+        updateRow.removeFromLeft (8);
+        currentVersionLabel.setBounds (updateRow);
+    }
+    else
+    {
+        area.removeFromTop (4);
+        auto row2 = area.removeFromTop (touch::minTapTarget);
+        restartAppButton.setBounds (row2.removeFromLeft (130));
+        row2.removeFromLeft (8);
+        currentVersionLabel.setBounds (row2);
+    }
+    area.removeFromTop (6);
+    updateStatusLabel.setBounds (area.removeFromTop (44));
+    updateProgressBar.setBounds (area.removeFromTop (12));
+    area.removeFromTop (14);
+
     qualitySectionLabel.setBounds (area.removeFromTop (20));
     area.removeFromTop (6);
     auto qualityRow = area.removeFromTop (touch::minTapTarget);
@@ -384,93 +416,86 @@ int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
 
     area.removeFromTop (10);
     statusLabel.setBounds (area.removeFromTop (44));
-    area.removeFromTop (14);
-
-    updateSectionLabel.setBounds (area.removeFromTop (20));
-    area.removeFromTop (6);
-    auto updateRow = area.removeFromTop (touch::minTapTarget);
-    checkUpdateButton.setBounds (updateRow.removeFromLeft (160));
-    updateRow.removeFromLeft (8);
-    installUpdateButton.setBounds (updateRow.removeFromLeft (170));
-    updateRow.removeFromLeft (8);
-    restartAppButton.setBounds (updateRow.removeFromLeft (130));
-    updateRow.removeFromLeft (8);
-    currentVersionLabel.setBounds (updateRow);
-    area.removeFromTop (6);
-    updateStatusLabel.setBounds (area.removeFromTop (44));
-    updateProgressBar.setBounds (area.removeFromTop (12));
     area.removeFromTop (10);
 
     return area.getY() - startY;
 }
 
+void Tone3000Panel::applyUpdateUiState()
+{
+    const auto snap = updater.getUiSnapshot();
+
+    checkUpdateButton.setEnabled (! snap.checkInFlight && ! snap.installInFlight);
+    installUpdateButton.setEnabled (! snap.checkInFlight && ! snap.installInFlight);
+
+    installUpdateButton.setVisible (snap.candidate.has_value() && ! snap.restartRequired);
+    if (snap.candidate.has_value())
+        installUpdateButton.setButtonText ("Update to " + snap.candidate->version);
+
+    restartAppButton.setVisible (snap.restartRequired);
+
+    if (snap.statusText.isNotEmpty())
+        updateStatusLabel.setText (snap.statusText, juce::dontSendNotification);
+
+    const bool busyNow = snap.checkInFlight || snap.installInFlight;
+    // Checks have no measurable progress; packaged installs delegate to
+    // the root script (ditto). Only dev-binary downloads report 0..1 via
+    // onProgress, and it owns the value while it runs.
+    if (snap.checkInFlight || (snap.installInFlight && updater.isPackagedInstall()))
+        updateProgressValue = -1.0;
+    updateProgressBar.setVisible (busyNow);
+
+    if (busyNow)
+        startTimer (300);
+    else
+        stopTimer();
+}
+
+void Tone3000Panel::timerCallback()
+{
+    applyUpdateUiState();
+}
+
 void Tone3000Panel::doCheckForUpdate()
 {
-    checkUpdateButton.setEnabled (false);
-    installUpdateButton.setVisible (false);
-    restartAppButton.setVisible (false);
-    pendingUpdate.reset();
-    updateStatusLabel.setText ("checking for updates...", juce::dontSendNotification);
-    updateProgressValue = -1.0;
-    updateProgressBar.setVisible (true);
-
     updater.checkForUpdate ([safeThis = juce::Component::SafePointer<Tone3000Panel> (this)]
-                            (const AppUpdater::CheckResult& res)
+                            (const AppUpdater::CheckResult&)
     {
-        if (safeThis == nullptr)
-            return;
-        safeThis->updateProgressBar.setVisible (false);
-        safeThis->checkUpdateButton.setEnabled (true);
-        safeThis->updateStatusLabel.setText (res.message, juce::dontSendNotification);
-
-        if (res.status == AppUpdater::CheckResult::Status::updateAvailable)
-        {
-            safeThis->pendingUpdate = res.candidate;
-            safeThis->installUpdateButton.setButtonText ("Update to " + res.candidate.version);
-            safeThis->installUpdateButton.setVisible (true);
-        }
+        if (safeThis != nullptr)
+            safeThis->applyUpdateUiState();
     });
+    applyUpdateUiState();
 }
 
 void Tone3000Panel::doInstallUpdate()
 {
-    if (! pendingUpdate.has_value())
+    const auto candidate = updater.getUiSnapshot().candidate;
+    if (! candidate.has_value())
         return;
-    const auto candidate = *pendingUpdate;
-    pendingUpdate.reset();
 
-    checkUpdateButton.setEnabled (false);
-    installUpdateButton.setEnabled (false);
-    // Packaged installs delegate to the root updater script -- no
-    // measurable progress there, so the bar runs indeterminate.
-    updateProgressValue = updater.isPackagedInstall() ? -1.0 : 0.0;
-    updateProgressBar.setVisible (true);
-    updateStatusLabel.setText ("starting update to " + candidate.version + "...",
-                               juce::dontSendNotification);
-
-    updater.downloadAndInstall (candidate,
-        [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)] (const juce::String& line)
+    updater.downloadAndInstall (*candidate,
+        [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)] (const juce::String&)
         {
             if (safeThis != nullptr)
-                safeThis->updateStatusLabel.setText (line, juce::dontSendNotification);
+                safeThis->applyUpdateUiState();
         },
         [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)] (double p)
         {
             if (safeThis != nullptr)
+            {
                 safeThis->updateProgressValue = p;
+                safeThis->updateProgressBar.setVisible (true);
+            }
         },
         [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)]
-            (bool ok, juce::String message, bool restartRequired)
+            (bool, juce::String, bool)
         {
-            if (safeThis == nullptr)
-                return;
-            safeThis->updateProgressBar.setVisible (false);
-            safeThis->updateStatusLabel.setText (message, juce::dontSendNotification);
-            safeThis->checkUpdateButton.setEnabled (! ok);
-            safeThis->installUpdateButton.setEnabled (true);
-            if (ok && restartRequired)
-                safeThis->restartAppButton.setVisible (true);
+            if (safeThis != nullptr)
+                safeThis->applyUpdateUiState();
         });
+    if (! updater.isPackagedInstall())
+        updateProgressValue = 0.0;
+    applyUpdateUiState();
 }
 
 void Tone3000Panel::paint (juce::Graphics& g)

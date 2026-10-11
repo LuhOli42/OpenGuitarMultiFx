@@ -32,13 +32,15 @@ namespace openguitarmultifx
     target, so every "screen" is a card drawn on top of the single app
     window instead.
 */
-class Tone3000Panel : public juce::Component
+class Tone3000Panel : public juce::Component,
+                      private juce::Timer
 {
 public:
     Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updaterToUse);
 
     void resized() override;
     void paint (juce::Graphics& g) override;
+    void timerCallback() override;
 
     /** Wired by whoever hosts this panel to OverlayHost::pushOverlay/popOverlay. */
     std::function<void (std::unique_ptr<juce::Component>)> onPushOverlay;
@@ -104,9 +106,14 @@ private:
     juce::Label updateStatusLabel;
     double updateProgressValue = 0.0;
     juce::ProgressBar updateProgressBar { updateProgressValue };
-    std::optional<updatecore::UpdateCandidate> pendingUpdate;
     void doCheckForUpdate();
     void doInstallUpdate();
+    // Redraws the whole update section from AppUpdater::UiSnapshot, which
+    // outlives this card -- the section survives Settings being closed and
+    // reopened mid-update (status text, pending candidate for retry,
+    // restart prompt), and the Timer keeps a live card polling while an
+    // operation it didn't start is still in flight.
+    void applyUpdateUiState();
 
     juce::TextButton closeButton { "Close" };
 };

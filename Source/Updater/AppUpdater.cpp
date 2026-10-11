@@ -124,6 +124,18 @@ juce::File AppUpdater::getStagingDir() const
                .getChildFile ("update-staging");
 }
 
+AppUpdater::UiSnapshot AppUpdater::getUiSnapshot() const
+{
+    const juce::ScopedLock sl (snapshotLock);
+    return snapshot;
+}
+
+void AppUpdater::updateSnapshot (const std::function<void (UiSnapshot&)>& fn)
+{
+    const juce::ScopedLock sl (snapshotLock);
+    fn (snapshot);
+}
+
 void AppUpdater::checkForUpdate (std::function<void (const CheckResult&)> onDone)
 {
     if (busy.exchange (true))
@@ -133,6 +145,12 @@ void AppUpdater::checkForUpdate (std::function<void (const CheckResult&)> onDone
         onDone (res);
         return;
     }
+
+    updateSnapshot ([] (UiSnapshot& s)
+    {
+        s.checkInFlight = true;
+        s.statusText = "checking for updates...";
+    });
 
     const auto fetch = makeFetcher();
     const auto apiBase = "https://api.github.com/repos/" + repo;
@@ -164,6 +182,13 @@ void AppUpdater::checkForUpdate (std::function<void (const CheckResult&)> onDone
             res.message = "up to date (latest is " + candidate->version + ")";
         }
 
+        updateSnapshot ([&] (UiSnapshot& s)
+        {
+            s.checkInFlight = false;
+            s.statusText = res.message;
+            if (res.status == CheckResult::Status::updateAvailable)
+                s.candidate = res.candidate;
+        });
         busy.store (false);
         juce::MessageManager::callAsync ([alive, res = std::move (res),
                                         onDone = std::move (onDone)]() mutable
@@ -192,11 +217,28 @@ void AppUpdater::downloadAndInstall (
     const auto alive = aliveFlag;
     const bool packaged = isPackagedInstall();
 
+    updateSnapshot ([&] (UiSnapshot& s)
+    {
+        s.installInFlight = true;
+        s.restartRequired = false;
+        s.candidate = candidate;
+        s.statusText = "starting update to " + candidate.version + "...";
+    });
+
+    // Every status line also lands in the snapshot so a rebuilt Settings
+    // card shows the same text; the caller's callback still runs.
+    std::function<void (const juce::String&)> onStatusRecorded = [this, onStatus] (const juce::String& line)
+    {
+        updateSnapshot ([&] (UiSnapshot& s) { s.statusText = line; });
+        if (onStatus)
+            onStatus (line);
+    };
+
     if (packaged)
     {
         std::thread ([=, this]() mutable
         {
-            runPackagedApply (onStatus, onDone);
+            runPackagedApply (onStatusRecorded, onDone);
             busy.store (false);
         }).detach();
         return;
@@ -216,8 +258,7 @@ void AppUpdater::downloadAndInstall (
             });
         };
 
-        if (onStatus)
-            post (onStatus, juce::String ("downloading " + candidate.version + "..."));
+        post (onStatusRecorded, juce::String ("downloading " + candidate.version + "..."));
 
         juce::String error;
         auto binary = updatecore::stageFromUrls (fetch, candidate, staging,
@@ -226,18 +267,29 @@ void AppUpdater::downloadAndInstall (
 
         if (binary == juce::File())
         {
+            updateSnapshot ([&] (UiSnapshot& s)
+            {
+                s.installInFlight = false;
+                s.statusText = "update failed: " + error; // candidate kept for retry
+            });
             busy.store (false);
             if (onDone)
                 post (onDone, false, "update failed: " + error, false);
             return;
         }
 
-        if (onStatus)
-            post (onStatus, juce::String ("installing..."));
+        post (onStatusRecorded, juce::String ("installing..."));
 
         const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
         const bool ok = updatecore::stageBinarySwap (binary, exe, error);
 
+        updateSnapshot ([&] (UiSnapshot& s)
+        {
+            s.installInFlight = false;
+            s.restartRequired = ok;
+            s.statusText = ok ? candidate.version + " staged -- restart to finish the update"
+                              : "update failed: " + error; // candidate kept for retry
+        });
         busy.store (false);
         if (onDone)
         {
@@ -262,6 +314,16 @@ void AppUpdater::runPackagedApply (std::function<void (const juce::String&)> onS
                 cb (std::move (capturedArgs)...);
         });
     };
+    auto finish = [&] (bool ok, juce::String msg)
+    {
+        updateSnapshot ([&] (UiSnapshot& s)
+        {
+            s.installInFlight = false;
+            s.statusText = msg;
+        });
+        if (onDone)
+            post (onDone, ok, std::move (msg), false);
+    };
 
     // The root-side updater owns the whole swap/health-check/rollback
     // flow. It needs root, which the ogmfx user reaches through the
@@ -284,8 +346,7 @@ void AppUpdater::runPackagedApply (std::function<void (const juce::String&)> onS
     juce::ChildProcess proc;
     if (! proc.start (cmd))
     {
-        if (onDone)
-            post (onDone, false, juce::String ("could not start the system updater"), false);
+        finish (false, juce::String ("could not start the system updater"));
         return;
     }
 
@@ -318,24 +379,21 @@ void AppUpdater::runPackagedApply (std::function<void (const juce::String&)> onS
         // On success the script restarts ogmfx.service -- usually killing
         // this app before this callback lands. If we are still here (e.g.
         // throttled check), say so plainly.
-        if (onDone)
-            post (onDone, true,
-                  juce::String ("system updater finished -- the app will restart on the new version"),
-                  false);
+        finish (true,
+                juce::String ("system updater finished -- the app will restart on the new version"));
         return;
     }
 
     auto lines = juce::StringArray::fromLines (output);
     while (lines.size() > 3)
         lines.remove (0);
-    if (onDone)
-        post (onDone, false,
-              "update failed (the previous version stays live): " + lines.joinIntoString (" / "),
-              false);
+    finish (false,
+            "update failed (the previous version stays live): " + lines.joinIntoString (" / "));
 }
 
 void AppUpdater::restartNow()
 {
+    updateSnapshot ([] (UiSnapshot& s) { s.restartRequired = false; });
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     if (exe.startAsProcess())
         if (auto* app = juce::JUCEApplicationBase::getInstance())

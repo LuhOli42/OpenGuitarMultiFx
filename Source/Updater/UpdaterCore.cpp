@@ -93,6 +93,42 @@ int compareBase (const ParsedVersion& a, const ParsedVersion& b)
     return 0;
 }
 
+// Prerelease suffixes (-beta.1, -rc.2) compare identifier-by-identifier,
+// semver-style: numeric identifiers order numerically (beta.10 > beta.9)
+// and below alphanumeric ones; a shorter identifier list sorts earlier.
+int compareSuffixes (juce::String a, juce::String b)
+{
+    a = a.trimCharactersAtStart ("-+.");
+    b = b.trimCharactersAtStart ("-+.");
+    const auto ta = juce::StringArray::fromTokens (a, ".-", "");
+    const auto tb = juce::StringArray::fromTokens (b, ".-", "");
+
+    for (int i = 0; i < juce::jmax (ta.size(), tb.size()); ++i)
+    {
+        if (i >= ta.size()) return -1;
+        if (i >= tb.size()) return 1;
+
+        const bool an = ta[i].containsOnly ("0123456789");
+        const bool bn = tb[i].containsOnly ("0123456789");
+        if (an && bn)
+        {
+            const auto x = ta[i].getLargeIntValue();
+            const auto y = tb[i].getLargeIntValue();
+            if (x != y)
+                return x < y ? -1 : 1;
+        }
+        else if (an != bn)
+        {
+            return an ? -1 : 1;
+        }
+        else if (const int c = ta[i].compareNatural (tb[i]); c != 0)
+        {
+            return c;
+        }
+    }
+    return 0;
+}
+
 // Extract {name, url, size} from a release's assets array for the asset
 // whose name ends with `suffix` ("-aarch64.tar.gz" etc).
 struct FoundAsset
@@ -136,7 +172,7 @@ int compareVersions (const juce::String& a, const juce::String& b)
     {
         case 3:  return va.aheadCount == vb.aheadCount ? 0
                      : (va.aheadCount < vb.aheadCount ? -1 : 1);
-        case 1:  return va.suffix.compare (vb.suffix);
+        case 1:  return compareSuffixes (va.suffix, vb.suffix);
         default: return 0;
     }
 }
@@ -292,20 +328,24 @@ juce::File extractAppBinary (const juce::File& tarGz, const juce::File& destDir,
 
 #if JUCE_LINUX
     // Plain `tar` subprocess, same as ogmfx-update.sh: JUCE has a ZipFile
-    // but no tar reader, and the release artifact is a .tar.gz.
+    // but no tar reader, and the release artifact is a .tar.gz. Only the
+    // one member we actually need is extracted (wrapped or root layout) --
+    // a hostile archive can then carry nothing else that writes into or
+    // past destDir.
     juce::ChildProcess proc;
     if (! proc.start ({ "tar", "-xzf", tarGz.getFullPathName(),
-                        "-C", destDir.getFullPathName(), "--no-same-owner" }))
+                        "-C", destDir.getFullPathName(), "--no-same-owner",
+                        "--wildcards",
+                        "*/bin/OpenGuitarMultiFx", "bin/OpenGuitarMultiFx" }))
     {
         error = "could not run tar to extract the update package";
         return {};
     }
     proc.waitForProcessToFinish (60000);
-    if (proc.getExitCode() != 0)
-    {
-        error = "tar failed extracting the update package";
-        return {};
-    }
+    // tar exits nonzero when a member pattern matches nothing, and one of
+    // the two layout patterns always misses -- so judge by what landed,
+    // not the exit code (a genuinely unreadable archive still produces no
+    // binary below, and the sha256 gate already verified integrity).
 #else
     error = "update extraction is only supported on Linux builds";
     return {};
@@ -322,9 +362,9 @@ juce::File extractAppBinary (const juce::File& tarGz, const juce::File& destDir,
         if (subs.size() == 1)
             bin = subs[0].getChildFile ("bin/OpenGuitarMultiFx");
     }
-    if (! bin.existsAsFile())
+    if (! bin.existsAsFile() || bin.isSymbolicLink())
     {
-        error = "package has no bin/OpenGuitarMultiFx";
+        error = "package has no usable bin/OpenGuitarMultiFx";
         return {};
     }
     return bin;

@@ -8,6 +8,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace openguitarmultifx
 {
@@ -87,7 +88,24 @@ public:
         at its path) and quit. */
     void restartNow();
 
+    /** Everything the Settings card needs to redraw the update section.
+        Lives here (not in the panel) because the card is rebuilt every
+        time Settings opens while the update keeps running -- a new card
+        reads this to recover status text, the pending candidate (retry
+        after a failed install) and the restart prompt instead of
+        starting blank. */
+    struct UiSnapshot
+    {
+        bool checkInFlight = false;
+        bool installInFlight = false;
+        bool restartRequired = false;
+        std::optional<updatecore::UpdateCandidate> candidate;
+        juce::String statusText;
+    };
+    UiSnapshot getUiSnapshot() const;
+
 private:
+    void updateSnapshot (const std::function<void (UiSnapshot&)>&);
     updatecore::Fetcher makeFetcher() const;
     void loadUpdaterConf();
     void runPackagedApply (std::function<void (const juce::String&)> onStatus,
@@ -99,6 +117,11 @@ private:
 
     std::atomic<bool> busy { false };
     std::shared_ptr<std::atomic<bool>> aliveFlag = std::make_shared<std::atomic<bool>> (true);
+
+    // Written from the worker thread and read on the message thread --
+    // always under snapshotLock (a lock the audio path never touches).
+    mutable juce::CriticalSection snapshotLock;
+    UiSnapshot snapshot;
 };
 
 } // namespace openguitarmultifx

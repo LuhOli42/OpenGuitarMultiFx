@@ -28,6 +28,11 @@ public:
         {
             expect (compareVersions ("v1.2.3-beta.1", "v1.2.3") < 0);
             expect (compareVersions ("v1.2.3-beta.2", "v1.2.3-beta.1") > 0);
+            // Semver-style suffix ordering: numeric identifiers compare
+            // numerically (not lexically), more identifiers = later.
+            expect (compareVersions ("v1.2.3-beta.10", "v1.2.3-beta.9") > 0);
+            expect (compareVersions ("v1.2.3-beta", "v1.2.3-beta.1") < 0);
+            expect (compareVersions ("v1.2.3-alpha", "v1.2.3-beta") < 0);
             // git describe "-N-g<sha>" already contains the tag -> newer.
             expect (compareVersions ("v1.2.3-4-gdeadbeef", "v1.2.3") > 0);
             expect (compareVersions ("v1.2.3-dirty", "v1.2.3") > 0);
@@ -160,6 +165,8 @@ public:
             const auto appBin = tarDir.getChildFile ("bin/OpenGuitarMultiFx");
             appBin.replaceWithData ("#!/bin/fake-binary\n", 18);
             tarDir.getChildFile ("VERSION").replaceWithText ("v9.9.9-test\n");
+            // Decoy member: extraction must pull ONLY bin/OpenGuitarMultiFx.
+            tarDir.getChildFile ("bin/evil.sh").replaceWithText ("#!/bin/sh\n");
 
             const auto tarball = tempDir.getChildFile ("ogmfx-v9.9.9-test-x86_64.tar.gz");
             juce::ChildProcess tar;
@@ -201,6 +208,10 @@ public:
             expect (binary.getFullPathName().contains ("bin/OpenGuitarMultiFx"));
             expect (binary.loadFileAsString().startsWith ("#!/bin/fake-binary"));
             expect (lastProgress > 0.0);
+            // Nothing else from the archive may land in the staging dir.
+            const auto extracted = tempDir.getChildFile ("staging/extracted");
+            expect (! extracted.getChildFile ("VERSION").exists());
+            expect (! extracted.getChildFile ("bin/evil.sh").exists());
 
             // Corrupt the sidecar -> checksum gate must refuse the install.
             tempDir.getChildFile (tarball.getFileName() + ".sha256")
