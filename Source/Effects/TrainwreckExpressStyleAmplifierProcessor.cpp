@@ -447,7 +447,9 @@ void TrainwreckExpressStyleAmplifierProcessor::updatePots (const Knobs& k)
         appliedSpeaker = k.speaker;
     }
 
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
+    // reducedOrder: the load is whatever PowerStageTail voices, not the knob -- leave the
+    // compensation at unity rather than turning Speaker into a level control.
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
 }
 
 void TrainwreckExpressStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -708,8 +710,8 @@ void TrainwreckExpressStyleAmplifierProcessor::prepare (double newSampleRate, in
         }
         dcOk = passOk && dcOk;
         ch.outDc = ch.pre.voltage (ch.pOut);
-        // The behavioural tail (OT/speaker resonances, cab voicing) runs in both modes so the flag
-        // can flip on an already-prepared amp without a click.
+        // The behavioural tail (OT/speaker resonances, cab voicing) is prepared in both modes so
+        // tests can flip the static reducedOrder flag on an already-prepared amp without re-preparing.
         auto voicing = tubeamp::voicings::britishNfb;
         voicing.asym = 0.0;                // the fitted asymmetry lives in the knee's offset instead
         voicing.presenceHz = 4500.0;       // the 'wreck's presence region -- the R+C shunt across the primary

@@ -657,7 +657,9 @@ void SVTStyleAmplifierProcessor::updatePots (const Knobs& k)
     appliedSpeaker = k.speaker;
     appliedMidFreq = k.midFreq;
     // Heavier loads take fewer volts; compensate so 2 / 4 / 8 ohm changes the sound, not the loudness.
-    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 4.0, -0.8);
+    // reducedOrder: the load is whatever PowerStageTail voices, not the knob -- leave the
+    // compensation at unity rather than turning Speaker into a level control.
+    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / 4.0, -0.8);
 }
 
 void SVTStyleAmplifierProcessor::recover (Channel& ch) const
@@ -712,8 +714,16 @@ double SVTStyleAmplifierProcessor::sagRail (double envelope) const noexcept
 
 double SVTStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage, double bias, double feel) const noexcept
 {
+    // The full circuit AC-couples the follower into the PI through 0.047uF; the wTone probe sits
+    // on the follower's mid-tap-dependent DC offset (up to ~-20V at full Power Drive), so the
+    // behavioural stage blocks it itself -- otherwise the envelope rides the offset instead of
+    // the signal and every quiet note is treated as a hot swing.
+    const double inHp = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 10.0 / juce::jmax (1.0, sampleRate));
+    ch.bmInState += inHp * (toneVoltage - ch.bmInState);
+    const double drive = toneVoltage - ch.bmInState;
+
     constexpr double attackMs = 8.0, releaseMs = 45.0;
-    const double absDrive = std::abs (toneVoltage);
+    const double absDrive = std::abs (drive);
     const double tauMs = absDrive > ch.bmEnvelope ? attackMs : releaseMs;
     const double coeff = 1.0 - std::exp (-1.0 / (0.001 * tauMs * juce::jmax (1.0, sampleRate)));
     ch.bmEnvelope += coeff * (absDrive - ch.bmEnvelope);
@@ -731,7 +741,7 @@ double SVTStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double ton
         return std::copysign (yx * rail, xx);
     };
     const double raw = juce::jlimit (-ch.bmRail * bmYmax, ch.bmRail * bmYmax,
-                                     sat (toneVoltage + shift) - sat (shift));
+                                     sat (drive + shift) - sat (shift));
 
     // OT DC-block: the offset clip rectifies part of the signal into a moving DC
     // level a real output transformer cannot pass.

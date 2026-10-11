@@ -285,8 +285,8 @@ public:
                    [&] (auto& a) { setById (a, "twx_volume", 0.8f); setById (a, "twx_power", 1.0f); },
                    TrainwreckExpressStyleAmplifierProcessor::Probe::powerInput,
                    TrainwreckExpressStyleAmplifierProcessor::Probe::speaker,
-                   lv, 15.0 /* Spec::bmGain0 */, 0.10 /* Spec::bmYmax */,
-                   TrainwreckExpressStyleAmplifierProcessor::bmKneeN, 395.0, true);
+                   lv, 94.0 /* Spec::bmGain0 (express) */, 0.108 /* Spec::bmYmax */,
+                   3.0 /* Spec::bmKneeN (express) */, 395.0, true);
         }
         if (wanted ("komet"))
         {
@@ -295,8 +295,8 @@ public:
                    [&] (auto& a) { setById (a, "kcd_volume", 0.8f); setById (a, "kcd_power", 1.0f); },
                    KometConcordeStyleAmplifierProcessor::Probe::powerInput,
                    KometConcordeStyleAmplifierProcessor::Probe::speaker,
-                   lv, 15.0 /* Spec::bmGain0 */, 0.10 /* Spec::bmYmax */,
-                   KometConcordeStyleAmplifierProcessor::bmKneeN, 460.0, true);
+                   lv, 29.0 /* Spec::bmGain0 (concorde) */, 0.112 /* Spec::bmYmax */,
+                   2.0 /* Spec::bmKneeN (concorde) */, 460.0, true);
         }
     }
 };

@@ -135,6 +135,7 @@ private:
         NodalCircuit::Node wTone = 0; ///< survives in the reduced path -- the PI coupling cap's input node.
         double bmRail = 0.0;      // latest sag-managed plate-rail estimate, volts
         double bmEnvelope = 0.0;  // |input| follower, volts
+        double bmInState = 0.0;   // input coupling-cap (DC blocker on the drive) state
         double bmOutput = 0.0;
         double bmToneState = 0.0;
         double bmDcState = 0.0;
