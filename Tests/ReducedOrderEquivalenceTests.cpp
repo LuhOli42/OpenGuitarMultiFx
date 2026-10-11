@@ -162,6 +162,35 @@ public:
         return verdict (a, b);
     }
 
+    Comparison compareBender (ToneBenderStyleFuzzProcessor::Model m,
+                              const std::vector<std::pair<const char*, float>>& knobs, double rms)
+    {
+        std::vector<float> a, b;
+        for (int variant = 0; variant < 2; ++variant)
+        {
+            ToneBenderStyleFuzzProcessor::reducedOrder = variant == 1;
+            ToneBenderStyleFuzzProcessor pedal (m);
+            setParams (pedal, knobs);
+            pedal.prepare (sr, 256, 1);
+            (variant == 0 ? a : b) = render (pedal, rms, 3.0);
+            if (pedal.getSolveFailureRate() > 0.0005)
+            {
+                ToneBenderStyleFuzzProcessor::reducedOrder = false;
+                return { 0.0, 99.0, false };
+            }
+        }
+        ToneBenderStyleFuzzProcessor::reducedOrder = false;
+        const auto full = analyse (a), reduced = analyse (b);
+        if (juce::SystemStats::getEnvironmentVariable ("BANDS", {}).isNotEmpty())
+        {
+            juce::String line = "   bands re total, full/reduced:";
+            for (int i = 0; i < 8; ++i)
+                line += " " + juce::String (full.db[i] - full.totalDb, 1) + "/" + juce::String (reduced.db[i] - reduced.totalDb, 1);
+            logMessage (line);
+        }
+        return verdict (a, b);
+    }
+
     template <typename Pedal>
     Comparison compare (const std::vector<std::pair<const char*, float>>& knobs, double rms)
     {
@@ -264,12 +293,59 @@ public:
             expect (worst < 0.8, "small-signal response within 0.8 dB");
         }
 
-        // MetalZone has no suite here: the companion-model front-end misses the bar (worst band
-        // ~8 dB at hot inputs, level ~5 dB at mid-boost) -- the leg BJTs want a real nonlinear
-        // device the affine follower can't fake. reducedOrder stays off; the numbers and the
-        // abandoned real-BJT attempt are in docs/circuits/MetalZoneStyleDistortion.md, and
-        // MZ_EXPLORE's per-stage diff probe in MetalZoneStyleDistortionProcessorTests.cpp still
-        // measures full-vs-reduced for the next attempt.
+        beginTest ("MetalZone: the real-BJT bootstrap legs sound like the netlist ones");
+        {
+            double worstLevel = 0.0, worstBand = 0.0;
+            for (float dist : { 0.2f, 0.5f, 0.9f })
+                for (float mid : { 0.2f, 0.8f })
+                    for (double rms : { 0.02, 0.1, 0.3 })
+                    {
+                        const auto c = compare<MetalZoneStyleDistortionProcessor> (
+                            { { "mt2_dist", dist }, { "mt2_high", 0.5f }, { "mt2_middle", mid },
+                              { "mt2_midfreq", 0.5f }, { "mt2_low", 0.5f }, { "mt2_level", 0.5f } }, rms);
+                        expect (c.sane, "solver trouble at dist " + juce::String (dist));
+                        logMessage ("MetalZone dist " + juce::String (dist) + " mid " + juce::String (mid) + " in " + juce::String (rms)
+                                    + ": level " + juce::String (c.levelDb, 2) + " dB, worst audible band " + juce::String (c.worstBandDb, 2) + " dB");
+                        worstLevel = std::max (worstLevel, std::abs (c.levelDb));
+                        worstBand = std::max (worstBand, c.worstBandDb);
+                    }
+            logMessage ("MetalZone worst level " + juce::String (worstLevel, 2) + " dB, worst band " + juce::String (worstBand, 2) + " dB");
+            // Bounds asserted only when the reduced model actually ships: while it stays
+            // disabled the numbers above are documentation, not a gate (see the registry
+            // comment and docs/circuits/MetalZoneStyleDistortion.md).
+            if (MetalZoneStyleDistortionProcessor::reducedOrder)
+            {
+                expect (worstLevel < 2.0, "level within 2 dB");
+                expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");
+            }
+        }
+
+        beginTest ("Tone Bender: the one-port Q1/Q3 + two-port Q2 sound like the full pair");
+        {
+            struct M { ToneBenderStyleFuzzProcessor::Model model; const char* tag; juce::String prefix; };
+            const M models[] = {
+                { ToneBenderStyleFuzzProcessor::Model::germanium, "Ge", "tb" },
+                { ToneBenderStyleFuzzProcessor::Model::silicon, "Si", "tbsi" } };
+            double worstLevel = 0.0, worstBand = 0.0;
+            for (const auto& m : models)
+                for (float attack : { 0.2f, 0.6f, 0.9f })
+                    for (double rms : { 0.02, 0.1, 0.3 })
+                    {
+                        const juce::String atkId = m.prefix + "_attack", volId = m.prefix + "_volume";
+                        const auto c = compareBender (m.model, { { atkId.toRawUTF8(), attack }, { volId.toRawUTF8(), 0.7f } }, rms);
+                        expect (c.sane, "solver trouble on " + juce::String (m.tag));
+                        logMessage ("Tone Bender " + juce::String (m.tag) + " attack " + juce::String (attack) + " in " + juce::String (rms)
+                                    + ": level " + juce::String (c.levelDb, 2) + " dB, worst audible band " + juce::String (c.worstBandDb, 2) + " dB");
+                        worstLevel = std::max (worstLevel, std::abs (c.levelDb));
+                        worstBand = std::max (worstBand, c.worstBandDb);
+                    }
+            logMessage ("Tone Bender worst level " + juce::String (worstLevel, 2) + " dB, worst band " + juce::String (worstBand, 2) + " dB");
+            if (ToneBenderStyleFuzzProcessor::reducedOrder)
+            {
+                expect (worstLevel < 2.0, "level within 2 dB");
+                expect (worstBand < 1.2, "timbre within 1.2 dB per audible octave band");
+            }
+        }
 
         beginTest ("BD-2: the macro-model gain stages sound like the transistor-level ones");
         {

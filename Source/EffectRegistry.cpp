@@ -323,16 +323,22 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("SiliconFuzzFaceStyleFuzz");
     registry.registerType ("SiliconFuzzFaceStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<FuzzFaceStyleFuzzProcessor> (Orders { 1, 1, 2 }, FFModel::silicon), 15000.0), 19.93f); });
     using TBModel = ToneBenderStyleFuzzProcessor::Model;
+    // reducedOrder stays OFF: Q1/Q3 one-ports + real two-port Q2 + satExcessToBase improved
+    // the fit (worst level 1.68 dB, worst band 2.26 dB) but it still
+    // misses the 1.2 dB band bar -- the top octaves stay ~2-4 dB hot on the germanium model.
+    // Measured eco cost if it shipped: 29.2% -> 20.2% Ge, 17.9% -> 11.9% Si.
+    // See docs/circuits/ToneBenderStyleFuzz.md.
     registry.markQualityDependent ("ToneBenderStyleFuzz");
     registry.registerType ("ToneBenderStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<ToneBenderStyleFuzzProcessor> (Orders { 1, 2, 3 }, TBModel::germanium), 8000.0), 5.91f); });
     registry.markQualityDependent ("SiliconToneBenderStyleFuzz");
     registry.registerType ("SiliconToneBenderStyleFuzz", EffectRegistry::Category::fuzz, [] { return trimmed (pickupLoaded (oversampled<ToneBenderStyleFuzzProcessor> (Orders { 1, 2, 3 }, TBModel::silicon), 8000.0), 1.14f); });
     registry.markQualityDependent ("OverdriverStyleOverdrive");
     registry.registerType ("OverdriverStyleOverdrive", EffectRegistry::Category::overdriveBoost, [] { return trimmed (pickupLoaded (oversampled<OverdriverStyleOverdriveProcessor> (Orders { 0, 1, 2 }), 1000000.0), -12.73f); });
-    // reducedOrder stays OFF: the companion-model implementation in
-    // MetalZoneStyleDistortionProcessor.cpp misses the equivalence bar (worst band ~8 dB at hot
-    // inputs -- the legs' 2SC3378 needs a real BJT, and every iteration scheme tried to put one
-    // in lost the m-node's closed-form solve). See docs/circuits/MetalZoneStyleDistortion.md.
+    // reducedOrder stays OFF: the real-BJT bootstrap legs + bracketed stage Newton in
+    // MetalZoneStyleDistortionProcessor.cpp fixed the rail-cycling/NaN outright and cut the
+    // miss from ~8 dB to 5.68 dB worst band (level <= 1.02 dB), but the 1.6-12 kHz octaves
+    // still run ~3-6 dB hot at dist>=0.5/in>=0.1 -- over the 1.2 dB bar. Measured eco cost
+    // if it shipped: 48.4% -> 27.7%. See docs/circuits/MetalZoneStyleDistortion.md.
     registry.markQualityDependent ("MetalZoneStyleDistortion");
     registry.registerType ("MetalZoneStyleDistortion", EffectRegistry::Category::distortion, [] { return trimmed (pickupLoaded (oversampledSlew<MetalZoneStyleDistortionProcessor> (Orders { 1, 1, 2 }, 2.0), 470000.0), 2.23f); });
     registry.markQualityDependent ("TubeDriverStyleOverdrive");

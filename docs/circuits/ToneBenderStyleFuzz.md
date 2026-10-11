@@ -127,3 +127,16 @@ collector, so Q2's load line is not resistive and its saturation point is input-
 what the one-port's fixed `saturationCurrent` cannot express. The likely fix is a two-port device on Q2
 (or a one-port whose saturation current tracks the measured Q3 base voltage), gated on the
 ReducedOrderEquivalence harness with both Ge and Si parameter sets.
+
+## reducedOrder attempt (2026-10-11, second) -- implemented, still misses the bar
+One-port `addBjtSaturating` Q1 and Q3 (Q3's `saturationCurrent` re-stamped by updatePots with the
+signal-frequency emitter degeneration `attackPot*top`), Q2 kept as the REAL two-port, plus a new
+opt-in `setBjtSatExcessToBase`: when the smooth limit clamps iC, the deficit (ic_unsat - ic_limited)
+exits through the base instead of vanishing -- the one-port version of the two-port's beta collapse,
+which is exactly the load a saturating Q3 puts on Q2's collector through the direct coupling. Enabled for germanium only (rLeakage > 0): on the silicon part the excess-base term over-loads c2 and costs ~2 dB -- a fraction-of-deficit fit would be needed there.
+
+Measured (ReducedOrderEquivalence, Ge+Si, attack {0.2,0.6,0.9} x in {0.02,0.1,0.3}):
+worst level 1.68 dB, worst band **2.26 dB** (Ge attack 0.2 in 0.3, top octaves ~2-4 dB hot); Si worst 1.94.
+Bar is band <1.2, so the flag stays off. Also measured: stamping iSat with the full-1K DC path
+instead of `top` is worse (Si level -3.6 dB, band 3.9). Measured eco cost if it shipped:
+**29.2% -> 20.2% Ge, 17.9% -> 11.9% Si**.

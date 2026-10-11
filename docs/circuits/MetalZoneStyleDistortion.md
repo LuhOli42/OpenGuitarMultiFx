@@ -80,3 +80,27 @@ solver, not a scalar trick) -- at which point it stops being cheaper than the bl
 Kept for reuse: `ReducedFrontEnd`/`ReducedAmp`/`BootstrapLeg`, the MZ_EXPLORE per-stage diff probe in the
 tests (measures reduced-vs-netlist error at ic3b/ic3a/ic4b/ic4a), and the equivalence harness pattern.
 The pedal stays at eco 2x.
+
+## Reduced-order front-end, second attempt (2026-10-11 -- works, still misses the bar)
+The same companion model, but the legs now carry the REAL one-port 2SC3378 (vbe exponential,
+base current, no collector side -- the collector sits on a stiff 9 V rail so the reverse junction
+never conducts and the one-port is exact while vbc stays deeply reverse). `BootstrapLeg::eval`
+solves a warm-started, junction-limited 2x2 Newton on (vb, ve) with v1 eliminated analytically,
+and `stageNewton` solves the m-node KCL on vm.
+
+Two fixes that mattered:
+- **Bracketed stage Newton.** F(vm) = kFb*vo(vm) - gSum*vm + hm - iLegs(vm) is continuous and
+  monotone decreasing, but the integrator makes vo swing ~196 V/V inside a ~30 mV linear window,
+  so an unbracketed Newton slam-cycles between the railed equilibria (the failure the first
+  attempt documented). Keeping a sign bracket on vm (Newton inside, bisection when the step
+  would leave it) converges unconditionally and quadratically in the window.
+- **solvePx iterate bound.** Without it, a wild vAmp throws the integrator node volts past the
+  rails, the clamp-diode exp()s dwarf every other term, and px latches at ~1e5 with the output
+  pinned high forever -- that was the -nan render.
+
+Measured (ReducedOrderEquivalence, same harness): worst level 1.02 dB (was ~5-24), worst band
+**5.68 dB** (was ~8-14) at dist 0.9 / mid 0.8 / in 0.3 -- the 1.6-12 kHz octaves run 3-6 dB hot at
+dist>=0.5, in>=0.1. Per-stage probe: ic3b error down to 3.95 mV rms (was >3 V), ic3a ~20-45 mV,
+ic4b up to 213 mV at dist 0.9. Still over the 1.2 dB band bar, so the flag stays off; measured
+eco cost if it shipped: **48.4% -> 27.7%** of a core. Solver failure rate 0.000000.
+The remaining HF excess suggests the last miss is in the IC3a/IC4b clip region, not the legs.

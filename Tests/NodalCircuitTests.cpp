@@ -260,6 +260,41 @@ public:
             expectWithinAbsoluteError (pnp.voltage (pe), 9.0 - ve, 1.0e-3);
         }
 
+        beginTest ("a settled saturating BJT re-solves when its limit changes");
+        {
+            // Hard-driven NPN whose collector current is clipped by iSat: the collector
+            // node sits at rail - iSat*Rc, so moving the limit MUST move the output even
+            // though the excitation vector (constant sources, no capacitors) is unchanged.
+            const NodalCircuit::BjtParams p { 1.0e-14, 25.85e-3, 300.0, 4.0 };
+            NodalCircuit c;
+            const auto vcc = c.addNode(), bias = c.addNode(), col = c.addNode(), b = c.addNode();
+            c.addSource (vcc, 9.0);
+            c.addSource (bias, 4.5);
+            c.addResistor (vcc, col, 2.2e3);
+            c.addResistor (bias, b, 10.0e3);
+            const int dev = c.addBjtSaturating (col, b, NodalCircuit::ground, false, p, 1.0e-3);
+            expect (c.prepare (sr));
+
+            for (int i = 0; i < 96; ++i)            // well past the 32-sample settle count
+                expect (c.solveSample());
+            expectWithinAbsoluteError (c.voltage (col), 9.0 - 1.0e-3 * 2.2e3, 0.2);
+
+            // Re-stamping the SAME limit (what a per-block updatePots does) must not starve
+            // the fixed-point skip: the settled circuit should keep returning early.
+            const auto skippedBefore = c.getSkippedSamples();
+            for (int i = 0; i < 64; ++i)
+            {
+                c.setBjtSaturationCurrent (dev, 1.0e-3);
+                expect (c.solveSample());
+            }
+            expect (c.getSkippedSamples() > skippedBefore);
+            expectWithinAbsoluteError (c.voltage (col), 9.0 - 1.0e-3 * 2.2e3, 0.2);
+
+            c.setBjtSaturationCurrent (dev, 0.5e-3); // halves the limit: must not stay settled
+            expect (c.solveSample());
+            expectWithinAbsoluteError (c.voltage (col), 9.0 - 0.5e-3 * 2.2e3, 0.2);
+        }
+
         beginTest ("JFET source follower: MNA matches ShichmanHodgesJFET's own solve");
         {
             NodalCircuit c;
