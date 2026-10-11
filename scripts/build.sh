@@ -36,20 +36,18 @@ fi
 # only passed on a fresh configure -- an existing build dir keeps whatever
 # generator it was created with. The launcher env vars are picked up at
 # configure time and also propagate into the nested juceaide build.
-CMAKE_GEN_ARGS=()
-CMAKE_GEN_STR=""
-if [ ! -f build/CMakeCache.txt ] && command -v ninja >/dev/null 2>&1; then
-  CMAKE_GEN_ARGS=(-G Ninja)
-  CMAKE_GEN_STR="-G Ninja"
-fi
-if command -v ccache >/dev/null 2>&1; then
-  export CMAKE_C_COMPILER_LAUNCHER=ccache
-  export CMAKE_CXX_COMPILER_LAUNCHER=ccache
-fi
+# Detection must run in the SAME environment that runs cmake: on immutable
+# hosts the tools may exist only inside the juce-dev distrobox.
+_configure_cmd="\
+_gen=\"\"; \
+if [ ! -f build/CMakeCache.txt ] && command -v ninja >/dev/null 2>&1; then _gen=\"-G Ninja\"; fi; \
+if command -v ccache >/dev/null 2>&1; then \
+  export CMAKE_C_COMPILER_LAUNCHER=ccache CMAKE_CXX_COMPILER_LAUNCHER=ccache; \
+fi; \
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \$_gen && cmake --build build --parallel $BUILD_JOBS"
 
 if command -v distrobox >/dev/null 2>&1 && distrobox list 2>/dev/null | grep -q juce-dev; then
-  distrobox enter juce-dev -- bash -c "cd '$(pwd)' && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $CMAKE_GEN_STR && cmake --build build --parallel $BUILD_JOBS"
+  distrobox enter juce-dev -- bash -c "cd '$(pwd)' && $_configure_cmd"
 else
-  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${CMAKE_GEN_ARGS[@]+"${CMAKE_GEN_ARGS[@]}"}
-  cmake --build build --parallel "$BUILD_JOBS"
+  bash -c "$_configure_cmd"
 fi
