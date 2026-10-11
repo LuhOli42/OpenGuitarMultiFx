@@ -1,9 +1,13 @@
 #include "Effects/HM2StyleDistortionProcessor.h"
 
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
+#include <juce_dsp/juce_dsp.h>
 
 #include <chrono>
 #include <cmath>
+#include <functional>
+#include <vector>
 
 namespace openguitarmultifx
 {
@@ -214,6 +218,319 @@ public:
             const double us = std::chrono::duration<double, std::micro> (t1 - t0).count() / (double) (blocks * 512);
             logMessage ("HM-2: " + juce::String (us, 2) + " us/sample = " + juce::String (100.0 * us * sr * 1.0e-6, 1) + "% of one core at 48 kHz (mono)");
         }
+
+        if (juce::SystemStats::getEnvironmentVariable ("HM2_COST", {}).isNotEmpty())
+        {
+            auto cost = [&] (bool reduced, double bc6, double bc7)
+            {
+                HM2StyleDistortionProcessor::reducedOrder = reduced;
+                HM2StyleDistortionProcessor::satBcDiode6 = bc6;
+                HM2StyleDistortionProcessor::satBcDiode7 = bc7;
+                HM2StyleDistortionProcessor p;
+                p.prepare (sr, 512, 1);
+                setKnobs (p, 0.7f, 0.5f, 0.5f, 0.5f);
+                juce::AudioBuffer<float> buf (1, 512);
+                const int blocks = 60;
+                const auto t0 = std::chrono::steady_clock::now();
+                for (int b = 0; b < blocks; ++b)
+                {
+                    for (int i = 0; i < 512; ++i)
+                        buf.setSample (0, i, (float) (0.01 * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * (double) (b * 512 + i) / sr)));
+                    p.process (buf);
+                }
+                const auto t1 = std::chrono::steady_clock::now();
+                return std::chrono::duration<double, std::micro> (t1 - t0).count() / (double) (blocks * 512);
+            };
+            const double full = cost (false, 0.0, 0.0), red = cost (true, 0.0, 0.0),
+                red6 = cost (true, 0.25, 0.0), red7 = cost (true, 0.0, 0.25),
+                redd = cost (true, 0.25, 0.25);
+            logMessage ("HM-2 cost full=" + juce::String (full, 2) + " reduced=" + juce::String (red, 2)
+                        + " +bc6=" + juce::String (red6, 2) + " +bc7=" + juce::String (red7, 2)
+                        + " +bc67=" + juce::String (redd, 2) + " us/sample");
+            HM2StyleDistortionProcessor::reducedOrder = false;
+            HM2StyleDistortionProcessor::satBcDiode6 = 0.25;
+            HM2StyleDistortionProcessor::satBcDiode7 = 0.0;
+        }
+
+        if (juce::SystemStats::getEnvironmentVariable ("HM2_SWEEP", {}).isNotEmpty())
+        {
+            beginTest ("HM2_SWEEP: bc-diode coefficient sweep (dev only)");
+            sweepBaseDrain();
+        }
+    }
+
+    /** Dev bench (HM2_SWEEP=1): sweeps the bc-junction diode's Is multiplier
+        (HM2StyleDistortionProcessor::satBcDiode6/7) and scores each value on three axes:
+
+          - pop: the #79 complaint. A hard edge through the self-biased saturating stages
+            used to make reduced-vs-full windowed peaks disagree by ~8-10 dB. Metric: worst
+            |dB| windowed-peak difference between the two models on a 2 Hz square and a
+            gated 220 Hz sine, 4 ms windows.
+          - equivalence: same decaying-chord analysis as ReducedOrderEquivalenceTests
+            (level < 2 dB, worst audible octave band < 1.2 dB) at its HM-2 grid.
+          - THD: |difference| vs the full model on a driven 220 Hz sine.
+
+        The full-order references are rendered once per stimulus/setting; only the
+        reduced renders repeat per coefficient. */
+    void sweepBaseDrain()
+    {
+        auto render = [&] (bool reduced, double bc6, double bc7, float dist, float high,
+                           const std::function<float (double)>& in, double seconds)
+        {
+            HM2StyleDistortionProcessor::reducedOrder = reduced;
+            HM2StyleDistortionProcessor::satBcDiode6 = bc6;
+            HM2StyleDistortionProcessor::satBcDiode7 = bc7;
+            HM2StyleDistortionProcessor p;
+            setKnobs (p, dist, 0.5f, high, 0.5f);
+            p.prepare (sr, 256, 1);
+            const int block = 256, total = (int) (seconds * sr);
+            std::vector<float> out;
+            out.reserve ((size_t) total);
+            juce::AudioBuffer<float> buf (1, block);
+            for (int n0 = 0; n0 < total; n0 += block)
+            {
+                for (int i = 0; i < block; ++i)
+                    buf.setSample (0, i, in ((double) (n0 + i) / sr));
+                p.process (buf);
+                for (int i = 0; i < block; ++i)
+                    out.push_back (buf.getSample (0, i));
+            }
+            return out;
+        };
+
+        // --- stimuli -------------------------------------------------
+        // decaying three-note chord, same as ReducedOrderEquivalenceTests::render's.
+        auto chord = [&] (double rms)
+        {
+            double norm = 0.0;
+            for (int k = 1; k <= 8; ++k)
+                norm += 0.5 / (double) (k * k);
+            norm *= 3.0;
+            const double scale = rms / std::sqrt (norm);
+            return [scale] (double t)
+            {
+                double v = 0.0;
+                for (double f0 : { 82.41, 123.47, 164.81 })
+                    for (int k = 1; k <= 8; ++k)
+                        v += std::sin (juce::MathConstants<double>::twoPi * f0 * k * t + 0.3 * k) / (double) k * std::exp (-t * (0.6 + 0.15 * k));
+                return (float) (scale * v * 1.6);
+            };
+        };
+        auto square = [] (double amp, double hz)
+        {
+            return [amp, hz] (double t) { return (float) (amp * (std::sin (juce::MathConstants<double>::twoPi * hz * t) >= 0.0 ? 1.0 : -1.0)); };
+        };
+        auto gated = [] (double amp, double hz)
+        {
+            return [amp, hz] (double t) { return (float) (std::fmod (t, 0.5) < 0.25 ? amp * std::sin (juce::MathConstants<double>::twoPi * hz * t) : 0.0); };
+        };
+        auto sine = [] (double amp, double hz)
+        {
+            return [amp, hz] (double t) { return (float) (amp * std::sin (juce::MathConstants<double>::twoPi * hz * t)); };
+        };
+
+        // --- metrics -------------------------------------------------
+        // octave-band fingerprint, same as ReducedOrderEquivalenceTests::analyse.
+        struct Bands { double db[8]; double totalDb; };
+        auto analyse = [&] (const std::vector<float>& x)
+        {
+            constexpr int order = 15, n = 1 << order;
+            juce::dsp::FFT fft (order);
+            std::vector<float> data ((size_t) n * 2, 0.0f);
+            const size_t start = 12000;
+            for (int i = 0; i < n && start + (size_t) i < x.size(); ++i)
+                data[(size_t) i] = x[start + (size_t) i] * (0.5f - 0.5f * std::cos (6.2831853f * (float) i / (float) n));
+            fft.performFrequencyOnlyForwardTransform (data.data());
+            Bands b {};
+            double total = 0.0;
+            const double edges[9] = { 100, 200, 400, 800, 1600, 3200, 6400, 12800, 20000 };
+            for (int band = 0; band < 8; ++band)
+            {
+                double e = 0.0;
+                for (int k = (int) (edges[band] / sr * n); k < (int) (edges[band + 1] / sr * n); ++k)
+                    e += (double) data[(size_t) k] * data[(size_t) k];
+                b.db[band] = 10.0 * std::log10 (e + 1.0e-30);
+                total += e;
+            }
+            b.totalDb = 10.0 * std::log10 (total + 1.0e-30);
+            return b;
+        };
+
+        // worst |dB| between windowed peaks of two renders: the pop metric. Windows where
+        // either side has real signal count; the epsilon keeps silence/silence from exploding.
+        auto popDb = [&] (const std::vector<float>& ref, const std::vector<float>& dut, int winSamples)
+        {
+            double peak = 0.0;
+            for (float v : ref)
+                peak = std::max (peak, (double) std::abs (v));
+            const double floor = peak * 0.01, eps = peak * 0.001;
+            double worst = 0.0;
+            for (size_t i = 0; i + (size_t) winSamples <= ref.size(); i += (size_t) winSamples)
+            {
+                double pa = 0.0, pb = 0.0;
+                for (int j = 0; j < winSamples; ++j)
+                {
+                    pa = std::max (pa, (double) std::abs (ref[i + (size_t) j]));
+                    pb = std::max (pb, (double) std::abs (dut[i + (size_t) j]));
+                }
+                if (pa > floor || pb > floor)
+                    worst = std::max (worst, std::abs (20.0 * std::log10 ((pb + eps) / (pa + eps))));
+            }
+            return worst;
+        };
+
+        auto thd = [&] (const std::vector<float>& x, double hz, size_t from)
+        {
+            // integer number of cycles, rectangular window: harmonics 2-8 over fundamental.
+            const long long len = (long long) std::llround (std::floor ((double) (x.size() - from) * hz / sr) * sr / hz);
+            double ss[9] = {}, cc[9] = {};
+            for (int h = 1; h <= 8; ++h)
+                for (long long i = 0; i < len; ++i)
+                {
+                    const double ph = juce::MathConstants<double>::twoPi * h * hz * (double) i / sr;
+                    ss[h] += x[from + (size_t) i] * std::sin (ph);
+                    cc[h] += x[from + (size_t) i] * std::cos (ph);
+                }
+            double num = 0.0;
+            for (int h = 2; h <= 8; ++h)
+                num += ss[h] * ss[h] + cc[h] * cc[h];
+            return std::sqrt (num) / std::sqrt (ss[1] * ss[1] + cc[1] * cc[1]);
+        };
+
+        // --- references (coefficient-independent, rendered once) ------
+        struct Ref { float dist, high; double rms; std::vector<float> out; };
+        std::vector<Ref> refs;
+        for (float dist : { 0.1f, 0.5f, 0.9f })
+            for (float high : { 0.2f, 0.8f })
+                for (double rms : { 0.1, 0.3 })
+                    refs.push_back ({ dist, high, rms, render (false, 0.0, 0.0, dist, high, chord (rms), 1.5) });
+
+        const auto sqRef = render (false, 0.0, 0.0, 0.9f, 0.5f, square (0.3, 2.0), 2.0);
+        const auto sqHRef = render (false, 0.0, 0.0, 0.9f, 0.8f, square (0.5, 2.0), 2.0);
+        const auto gtRef9 = render (false, 0.0, 0.0, 0.9f, 0.5f, gated (0.3, 220.0), 2.0);
+        const auto gtHRef = render (false, 0.0, 0.0, 0.9f, 0.8f, gated (0.5, 220.0), 2.0);
+        const auto gtRef5 = render (false, 0.0, 0.0, 0.5f, 0.5f, gated (0.3, 220.0), 2.0);
+        const auto snRef = render (false, 0.0, 0.0, 0.7f, 0.5f, sine (0.05, 220.0), 1.0);
+        const double thdRef = thd (snRef, 220.0, (size_t) (0.6 * sr));
+
+        if (juce::SystemStats::getEnvironmentVariable ("HM2_DUMP", {}).isNotEmpty())
+        {
+            auto dump = [] (const std::vector<float>& x, const juce::String& name)
+            {
+                juce::FileOutputStream os (juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (name));
+                os.write (x.data(), x.size() * sizeof (float));
+            };
+            dump (sqRef, "hm2_sq_ref.f32");
+            dump (gtRef9, "hm2_gt_ref.f32");
+            const auto sq0 = render (true, 0.0, 0.0, 0.9f, 0.5f, square (0.3, 2.0), 2.0);
+            const auto gt0 = render (true, 0.0, 0.0, 0.9f, 0.5f, gated (0.3, 220.0), 2.0);
+            dump (sq0, "hm2_sq_red0.f32");
+            dump (gt0, "hm2_gt_red0.f32");
+            // hotter stimuli hunt the documented ~8-10 dB edge case
+            const auto sqHRed = render (true, 0.0, 0.0, 0.9f, 0.8f, square (0.5, 2.0), 2.0);
+            const auto gtHRed = render (true, 0.0, 0.0, 0.9f, 0.8f, gated (0.5, 220.0), 2.0);
+            dump (sqHRef, "hm2_sqh_ref.f32");
+            dump (sqHRed, "hm2_sqh_red.f32");
+            dump (gtHRef, "hm2_gth_ref.f32");
+            dump (gtHRed, "hm2_gth_red.f32");
+            const int w0 = (int) (0.004 * sr);
+            logMessage ("hot stimuli at k=0: pop_sqh=" + juce::String (popDb (sqHRef, sqHRed, w0), 2)
+                        + " pop_gth=" + juce::String (popDb (gtHRef, gtHRed, w0), 2));
+        }
+
+        // --- sweep ---------------------------------------------------
+        // One row per bc-diode Is multiplier. Pop columns use the documented worst case -- the
+        // hot square and hot gated sine -- plus the mild gated 0.5-dist control.
+        const int win = (int) (0.004 * sr); // 4 ms windows: the pop lives inside a few ms
+        auto row = [&] (const char* tag, double bc6, double bc7)
+        {
+            const auto sqHRed = render (true, bc6, bc7, 0.9f, 0.8f, square (0.5, 2.0), 2.0);
+            const auto gtHRed = render (true, bc6, bc7, 0.9f, 0.8f, gated (0.5, 220.0), 2.0);
+            const auto gtRed5 = render (true, bc6, bc7, 0.5f, 0.5f, gated (0.3, 220.0), 2.0);
+            const auto snRed = render (true, bc6, bc7, 0.7f, 0.5f, sine (0.05, 220.0), 1.0);
+
+            double worstLevel = 0.0, worstBand = 0.0;
+            for (const auto& r : refs)
+            {
+                const auto red = render (true, bc6, bc7, r.dist, r.high, chord (r.rms), 1.5);
+                const auto full = analyse (r.out), reduced = analyse (red);
+                worstLevel = std::max (worstLevel, std::abs (reduced.totalDb - full.totalDb));
+                for (int b = 0; b < 8; ++b)
+                    if (full.db[b] > full.totalDb - 30.0)
+                        worstBand = std::max (worstBand, std::abs ((reduced.db[b] - reduced.totalDb) - (full.db[b] - full.totalDb)));
+            }
+
+            const double pSq = popDb (sqHRef, sqHRed, win);
+            const double pG9 = popDb (gtHRef, gtHRed, win);
+            const double pG5 = popDb (gtRef5, gtRed5, win);
+            const double tRed = thd (snRed, 220.0, (size_t) (0.6 * sr));
+            const bool pass = pSq < 1.0 && pG9 < 1.0 && pG5 < 1.0 && worstLevel < 2.0 && worstBand < 1.2;
+            logMessage (juce::String (tag).paddedRight (' ', 8)
+                        + juce::String (pSq, 2).paddedRight (' ', 9)
+                        + juce::String (pG9, 2).paddedRight (' ', 9)
+                        + juce::String (pG5, 2).paddedRight (' ', 9)
+                        + juce::String (worstLevel, 2).paddedRight (' ', 9)
+                        + juce::String (worstBand, 2).paddedRight (' ', 9)
+                        + juce::String (100.0 * tRed, 1).paddedRight (' ', 9)
+                        + juce::String (100.0 * thdRef, 1).paddedRight (' ', 9)
+                        + (pass ? "PASS" : ""));
+        };
+
+        logMessage ("bc     pop_sqh  pop_gth  pop_gt5  level    band     thd_red  thd_ref  verdict");
+        for (int i = 0; i <= 10; ++i)
+        {
+            const double k = i == 0 ? 0.0 : 0.05 * std::exp ((double) (i - 1) / 9.0 * std::log (40.0)); // 0.05 .. 2.0
+            row (juce::String (k, 3).toRawUTF8(), k, k);
+        }
+        // single-diode isolation rows: which transistor's bc junction kills the pop
+        row ("q6.25", 0.25, 0.0);
+        row ("q7.25", 0.0, 0.25);
+        row ("q6.5", 0.5, 0.0);
+        row ("q7.5", 0.0, 0.5);
+
+        // real DI through both models: pop metric at real drive boundaries
+        {
+            juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+            const juce::File diFile = juce::File (OGMFX_TEST_FIXTURES_DIR)
+                .getChildFile ("fixtures").getChildFile ("di").getChildFile ("guitar-di.wav");
+            if (auto* rd = fm.createReaderFor (diFile))
+            {
+                juce::AudioBuffer<float> di (1, (int) rd->lengthInSamples);
+                rd->read (&di, 0, (int) rd->lengthInSamples, 0, true, false);
+                delete rd;
+                const double diSr = 44100.0;
+                auto diRender = [&] (bool reduced)
+                {
+                    HM2StyleDistortionProcessor::reducedOrder = reduced;
+                    HM2StyleDistortionProcessor::satBcDiode6 = 0.25; // shipped config
+                    HM2StyleDistortionProcessor::satBcDiode7 = 0.0;
+                    HM2StyleDistortionProcessor p;
+                    setKnobs (p, 0.9f, 0.5f, 0.8f, 0.5f);
+                    p.prepare (diSr, 256, 1);
+                    juce::AudioBuffer<float> buf (1, 256);
+                    std::vector<float> out;
+                    out.reserve ((size_t) di.getNumSamples());
+                    for (int n0 = 0; n0 < di.getNumSamples(); n0 += 256)
+                    {
+                        buf.clear();
+                        buf.copyFrom (0, 0, di, 0, n0, juce::jmin (256, di.getNumSamples() - n0));
+                        p.process (buf);
+                        for (int i = 0; i < 256 && n0 + i < di.getNumSamples(); ++i)
+                            out.push_back (buf.getSample (0, i));
+                    }
+                    return out;
+                };
+                const auto diFull = diRender (false), diRed = diRender (true);
+                logMessage ("DI dist0.9/high0.8 pop=" + juce::String (popDb (diFull, diRed, (int) (0.004 * diSr)), 2) + " dB");
+            }
+            else
+                logMessage ("DI fixture not readable -- skipped");
+        }
+
+        HM2StyleDistortionProcessor::reducedOrder = false;
+        HM2StyleDistortionProcessor::satBcDiode6 = 0.25;
+        HM2StyleDistortionProcessor::satBcDiode7 = 0.0;
     }
 };
 

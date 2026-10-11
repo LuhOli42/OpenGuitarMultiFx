@@ -39,12 +39,19 @@ namespace openguitarmultifx
 class HM2StyleDistortionProcessor : public EffectProcessor
 {
 public:
-    /** Q6 and Q7 as one-port transistors with a smooth collector-current limit instead of two-port Ebers-Moll (see
-        NodalCircuit::addBjtSaturating). **Default false**: it measures 18% cheaper and matches level (0.86 dB) and octave-band
-        shape (1.15 dB) on chords and a real DI, but the user heard a volume "pop" at high gain, and the only place the two
-        differ is hard edges (peaks up to +1 dB on a square wave / gated input), so the full netlist stays the default.
-        Kept for the equivalence tests. */
+    /** Q6 and Q7 as one-port transistors with a smooth collector-current limit instead of two-port Ebers-Moll
+        (NodalCircuit::addBjtSaturating), each with its bc junction restored as a diode (satBcDiode -- the missing
+        port that made the un-drained one-port pop on hard edges; docs/circuits/HM2StyleDistortion.md). */
     static inline bool reducedOrder = false;
+
+    /** Multiplier on the physical bc-junction diode (Is = Is/betaR, nVt) added base-to-collector on each
+        saturating transistor in the reduced model -- the port the one-port lacks. 0 reproduces the original
+        under-drained one-port (edge pop); the harness sweep (HM2_SWEEP) is flat from ~0.05 up on every
+        metric, 0.25 sits mid-plateau. Per-transistor so the harness can isolate which stage needs it:
+        Q6 alone causes the pop (q6 row passes, q7 row identical to no diode), so the shipped model adds
+        the junction on Q6 only -- one solver port cheaper than a diode on both. */
+    static inline double satBcDiode6 = 0.25;
+    static inline double satBcDiode7 = 0.0;
 
     HM2StyleDistortionProcessor();
 

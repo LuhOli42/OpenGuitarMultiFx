@@ -62,7 +62,7 @@ The two series diodes of the "2 in series the other way" branch are one
 `addDiode` with twice the thermal voltage (identical diodes in series with nothing
 on the middle node are exactly that), which drops a node and a Newton port.
 
-## Cost simplification, second pass (2026-09-21, revisited 2026-10-11) -- NOT the default: rejected after the user heard a pop
+## Cost simplification, second pass (2026-09-21, revisited 2026-10-11) -- shipped with the bc-junction diode (see last section)
 Q6 and Q7 are one-port transistors with a smooth collector-current limit (`NodalCircuit::addBjtSaturating`,
 `HM2StyleDistortionProcessor::reducedOrder`; `false` = the two-port Ebers-Moll netlist, kept as the reference): the collector
 junction, which needs a second Newton port, only matters as the point where a stage runs out of collector current, and
@@ -70,12 +70,13 @@ for a stage with a resistive load that is known. Limit = the load line, fitted (
 at 3 Dist x 2 High x 3 input levels keeps its level within ~1.2 dB and its octave-band shape (bands above -30 dB) within
 ~1.1 dB. That is the limit of this idea: a macro-model like the BD-2's does not exist here because the two stages are
 self-biased common-emitter stages that saturate as part of the sound, not op-amps with a feedback loop. Block 1 went from
-5 ports to 3 (6.6% -> 5.4% of a core). **It is not the default (`reducedOrder = false`).** The user heard a volume "pop" at high gain
+5 ports to 3 (6.6% -> 5.4% of a core). The user heard a volume "pop" at high gain
 right after it went in. It could not be reproduced with chords, a real DI, gated input, note on/off, knob moves and silence (envelopes
 within 0.5 dB), but the two variants differ on hard edges: windowed peaks up to ~8-10 dB apart on a 2 Hz square wave and on a
-gated sine. The 1.2% of a core is not worth an audible risk; the option stays for the equivalence tests.
+gated sine. The fix is in the last section: the bc junction restored as a diode on Q6 (`satBcDiode6`), and `reducedOrder`
+now ships.
 
-2026-10-11 investigation (pop mechanism, found but not shipped): the one-port device never draws the saturation base
+2026-10-11 investigation (pop mechanism): the one-port device never draws the saturation base
 current the two-port Ebers-Moll does -- in saturation the reverse junction's current exits through the base,
 iB += (iF - iC)/(betaR + 1) -- so a saturating stage under-drew base current and recovered differently on edges. A gated
 version of that current in `NodalCircuit` (gate r^16/(1+r^16), ~0 at DC bias, ~1 in hard saturation) did halve the edge
@@ -119,11 +120,32 @@ Q8/Q9 = 2SC945-P; D1/D3/D5/D8-D12 = 1S2473 (Si switching), D6/D7 = 1S188FM (Ge).
 Output transistors, LED, bypass; op-amp rail clipping (the M5216/M5616 on 9 V);
 the 4.5 V divider's source impedance.
 
-## reducedOrder re-attempt (2026-10-11 -- still off)
-The #79 pop mechanism was re-tested as `iB += iC_unsat - iC_sat` in the kind-4 saturating one-port
-(`NodalCircuit::addBjtSaturating`), i.e. dumping the clipped collector current into the base. It overshot:
-equivalence vs the two-port model went from (worst band 1.07 dB / level 1.14 dB, passing) to 9.31 dB on HM-2
-and 2.86 dB on the Big Muff, so it was reverted and `reducedOrder` stays off. The real saturation base
-current is apparently much smaller than the full clipped difference -- likely scaled by a fraction related
-to betaR, or belonging in the emitter path rather than the base. Next attempt should sweep the drain
-coefficient on the equivalence harness instead of committing to the conservation-maximum.
+## reducedOrder SHIPPED (2026-10-11): the missing port was the bc junction itself, not a drain coefficient
+The #79 pop mechanism was re-tested twice before this:
+
+1. `iB += iC_unsat - iC_sat` in the kind-4 saturating one-port -- overshot badly (worst band 9.31 dB on
+   HM-2, 2.86 dB on the Big Muff; reverted).
+2. A harness sweep (HM2_SWEEP in Tests/HM2StyleDistortionProcessorTests.cpp) of a proportional drain
+   coefficient `iB += k*(iC_unsat - iC_sat)`, k in 0.001..0.3, in both injection directions (base->emitter
+   and base->collector). No k satisfies the bounds: the pop floor sits ~2.4-3 dB and every nonzero k
+   pushes the chord band error past 1.2 dB by k ~= 0.015. Any drain term active during sustained clip
+   moves the DC bias corner -- the feedback-bias corner is what breaks, not the transient.
+
+What actually works: restore the junction the one-port lacks. The two-port Ebers-Moll's bc junction clamps
+vbc and conducts the saturation current; the one-port has no port for it at all. Adding it back as a real
+diode -- `addDiode(b, c, Is/betaR * satBcDiode6, nVt)` (mirrored for the PNP) -- only conducts while the
+stage is in saturation, so it is invisible to the DC/band fingerprint yet provides exactly the drain path
+the self-bias network needs on edges. Measured on the sweep harness (hot square 0.5 amp / dist 0.9 /
+high 0.8, the documented worst case): windowed-peak edge error 6.11 -> 0.30 dB, gated-sine error
+3.31 -> ~1.1 dB, chord equivalence level 1.14 / worst band 1.04 dB -- flat across satBcDiode = 0.05..2.0
+(a diode is on once its Is matters at all; only the knee moves). Per-transistor isolation rows in the same
+sweep show Q6's junction is the entire pop: satBcDiode6 = 0.25 alone scores identically to a diode on both
+stages, while satBcDiode7 alone is indistinguishable from no diode -- so the shipped model restores Q6's
+junction only (satBcDiode6 = 0.25, satBcDiode7 = 0), one Newton port cheaper. `reducedOrder` is enabled
+in EffectRegistry.
+
+Residual: a smaller ~2.4 dB windowed-peak difference remains on the mild gated-0.5-dist control and is
+identical at every coefficient including 0 -- a separate reduced-model difference, not the edge pop.
+CPU (RenderFx --bench, 48k mono 256-block): the wrapped eco path stays ~27% of a core either way -- the
+2x oversampling and wrappers dominate, so enabling reducedOrder never was a <10% route; the remaining
+lever is Orders{0,...} at eco, a measured-aliasing tradeoff documented in cpu-bench-2026-10-11.md.
