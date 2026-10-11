@@ -754,11 +754,6 @@ void EVH5150StyleAmplifierProcessor::updateSupply (Channel& ch) const
     ch.supply.solveSample();
     ch.sumPlate = ch.sumScreen = 0.0;
     ch.sumCount = 0;
-    // The mini's follower output rides the live rail: when the supply ticks (sag under load), the
-    // stale prepare-time DC would read as a false signal delta. Re-baseline it so silence stays
-    // silent (the full netlist's follower DC doesn't drift this way because its rail source is fixed).
-    if (reducedOrder) ch.reducedFollowerDc = ch.preReduced.voltage (ch.prFollower);
-
     const auto rail = [&] (NodalCircuit::Node node, double maxVolts) { return juce::jlimit (0.0, maxVolts, ch.supply.voltage (node)); };
     if (! reducedOrder)
     {
@@ -766,7 +761,16 @@ void EVH5150StyleAmplifierProcessor::updateSupply (Channel& ch) const
         ch.power.setSource (ch.wSrcPi, rail (ch.sC, 520.0));
     }
     if (! reducedOrder) ch.power.setSource (ch.wSrcRecovery, rail (ch.sC, 520.0)); // V3B recovery from PI rail
-    if (reducedOrder) ch.preReduced.setSource (ch.prSrcRail, rail (ch.sE, 480.0));
+    if (reducedOrder)
+    {
+        // Stamp the rail first, then re-baseline the follower DC. The read still reflects the
+        // pre-stamp solve (one supply tick of lag): a zero-input probe solve per tick measured
+        // worse -- it kicked the consistency band delta from 2.06 dB to a marginal 3.0 dB fail
+        // and dropped PedalUnityLevel by ~1.2 dB. The rail moves slowly, so one tick of stale
+        // baseline is a bounded, sub-audible transient; probe-free is the better trade.
+        ch.preReduced.setSource (ch.prSrcRail, rail (ch.sE, 480.0));
+        ch.reducedFollowerDc = ch.preReduced.voltage (ch.prFollower);
+    }
     else
     {
         ch.pre.setSource (ch.pSrcV2, rail (ch.sD, 480.0));   // V2B/V5B/V5A from D
@@ -889,7 +893,8 @@ double EVH5150StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
 
 double EVH5150StyleAmplifierProcessor::debugIterations (int block) const noexcept
 {
-    return block == 0 ? channels[0].pre.averageIterations() : channels[0].power.averageIterations();
+    if (block != 0) return channels[0].power.averageIterations();
+    return reducedOrder ? channels[0].preReduced.averageIterations() : channels[0].pre.averageIterations();
 }
 
 int EVH5150StyleAmplifierProcessor::debugLastPowerIterations() const noexcept { return channels[0].power.lastIterations(); }
@@ -1136,9 +1141,12 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             for (auto& ch : channels)
             {
                 if (reducedOrder)
+                {
                     // measured-vs-full: raise the reduced output to match the reference at BOTH
                     // the consistency calib (power=1) and PedalUnityLevel noon (power=0.5).
                     ch.reducedPreTrim = chSel == 0 ? 0.9 : 0.65;
+                    ch.reducedDrive = chSel == 0 ? Channel::reducedDriveBoostRhythm : Channel::reducedDriveBoost;
+                }
                 else
                 {
                     ch.pre.setResistance (ch.rV2aSeries, chSel == 0 ? 100.0e6 : 39.0e3);
@@ -1171,7 +1179,7 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 // compressed flat vs input level; two stages alone leave the second clip idle at
                 // low drive (measured: -56 dB relative treble at rms 0.03). The drive boost stands
                 // in for the missing inter-stage gain; reducedPreTrim restores output level.
-                ch.preReduced.setSource (ch.prSrcIn, x * Channel::reducedDriveBoost);
+                ch.preReduced.setSource (ch.prSrcIn, x * ch.reducedDrive);
                 okPre = ch.preReduced.solveSample();
                 followerDelta = ch.redShelfHigh.process (ch.redShelfLow.process ((ch.preReduced.voltage (ch.prFollower) - ch.reducedFollowerDc) * ch.reducedPreTrim));
             }

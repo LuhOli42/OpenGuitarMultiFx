@@ -128,7 +128,7 @@ private:
         // stages collapses the treble -- measured -18 to -40 dB relative HF when any one is folded.
         // Everything downstream is untouched. Only built/solved when reducedOrder is set.
         NodalCircuit preReduced;
-        NodalCircuit::DynamicState preReducedRest;
+        NodalCircuit::DynamicState preReducedRest, preReducedTmp;
         int prSrcIn = 0, prSrcRail = 0, prGainTop = 0, prGainBot = 0;
         NodalCircuit::Node prPlateA = 0, prPlateB = 0, prFollower = 0, prRail = 0;
         double reducedFollowerDc = 0.0;
@@ -146,7 +146,11 @@ private:
         };
         ShelfBiquad redShelfLow, redShelfHigh; // fitted compensation on the reduced follower delta
         double reducedPreTrim = 1.0;    // per-channel level trim, set at control rate
-        static constexpr double reducedDriveBoost = 3.5; // extra drive standing in for the two dropped stages
+        double reducedDrive = 3.5;      // per-channel input drive, set at control rate
+        static constexpr double reducedDriveBoost = 3.5;        // Lead: extra drive for the dropped stages
+        static constexpr double reducedDriveBoostRhythm = 1.2;  // Rhythm: V2A/V2B are bypassed in the real amp --
+                                                                // a lighter drive keeps the mini's mid stage mostly
+                                                                // linear instead of clipping like Lead
         static constexpr double reducedOutGain = 2.4;    // +7.6 dB post-saturation, restores noon level
 
         // power section (tone stack + gain recovery + PI + power amp)

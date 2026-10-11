@@ -133,6 +133,7 @@ private:
         // Measured-vs-full trims applied to the selected mini's (AC-only) stack output, plus the
         // extra input drive that stands in for the folded stages' gain.
         double reducedPreTrim = 1.0;
+        int reducedSel = -1; // last solved eco channel -- a selection change restores the mini's rest state
         static constexpr double dirtyDriveBoost = 1.0;
         static constexpr double cleanDriveBoost = 1.0;
 

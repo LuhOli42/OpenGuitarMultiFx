@@ -907,7 +907,11 @@ double RockerverbStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
 
 double RockerverbStyleAmplifierProcessor::debugIterations (int block) const noexcept
 {
-    return block == 0 ? channels[0].pre.averageIterations() : channels[0].power.averageIterations();
+    if (block != 0) return channels[0].power.averageIterations();
+    if (! reducedOrder) return channels[0].pre.averageIterations();
+    // eco: the active channel's mini -- the other is not being solved at all
+    return juce::roundToInt (channelParam->get()) >= 1 ? channels[0].preDirty.averageIterations()
+                                                     : channels[0].preClean.averageIterations();
 }
 
 int RockerverbStyleAmplifierProcessor::debugLastPowerIterations() const noexcept { return channels[0].power.lastIterations(); }
@@ -1155,6 +1159,15 @@ void RockerverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
             if (reducedOrder)
             {
                 // Only the selected channel's mini is solved; the other just rests at its saved state.
+                // On a selection change the incoming mini would resume from stale playing history
+                // (its caps froze mid-charge while deselected) -- restart it from the refreshed rest
+                // state instead, the same transition a real relay sees into a discharged channel.
+                if (channelSel != ch.reducedSel)
+                {
+                    ch.reducedSel = channelSel;
+                    if (channelSel == 0) ch.preClean.restoreDynamicState (ch.preCleanRest);
+                    else ch.preDirty.restoreDynamicState (ch.preDirtyRest);
+                }
                 if (channelSel == 0)
                 {
                     ch.preClean.setSource (ch.rcSrcIn, x * Channel::cleanDriveBoost);
