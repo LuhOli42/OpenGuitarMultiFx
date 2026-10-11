@@ -135,18 +135,21 @@ nested solves are now replaced by fitted curves:
   `buildLegLut` sweeps (u, q) over the runtime-measured domain (`legLutDomains`, scaled by
   fs/48k) once per sample rate under a mutex, warm-starting each cell from its neighbour
   and the DC point -- and tabulates {v1, vb, ve} on a 1024 u-grid x 5 q-slices.
-  `eval()` serves it with a Catmull-Rom cubic in u and a nearest-triplet quadratic in q;
-  dIdv is recomputed by the closed form at the interpolated (vb, ve). Out-of-domain (u, q)
-  falls back to the real solveU.
+  `eval()` serves it with a Catmull-Rom cubic in u and a quartic (Lagrange) through all
+  5 q-slices; dIdv is recomputed by the closed form at the interpolated (vb, ve).
+  Out-of-domain (u, q) falls back to the real solveU.
 - **Legless stage Newton -> closed form.** With no bootstrap legs the stage F is affine in
   vm per operating region, so `affineRoot` solves it directly and commits when the root
   lands inside its region (linear band, or >0.5 V past a rail); only the rail-transition
-  band still runs the bracketed Newton. stageNewton tol relaxed 1e-10 -> 1e-6.
+  band still runs the bracketed Newton (tol stays 1e-10 -- 1e-6 left the iterate
+  under-resolved and showed up as ~-69 dB of non-periodic chatter on the steady-state
+  test, vs -144 dB at 1e-10; the LUT evals are cheap enough that the extra Newton
+  iterations cost almost nothing).
 
-Result: `RenderFx --bench` reduced 29.8% vs high 56.9% (eco render ~26%), and
-ReducedOrderEquivalence measures 0.25 dB worst level / 0.69 dB worst band vs the full
+Result: `RenderFx --bench` reduced ~30-36% vs high ~57-75% (eco render ~26%), and
+ReducedOrderEquivalence measures 0.46 dB worst level / 0.51 dB worst band vs the full
 netlist -- inside the #71 bounds (2.0/1.2). The LUT-induced delta vs the exact Newton is
-the whole of that 0.69 (the LUT-less build still measures 0.01/0.04).
+the whole of that residual (the LUT-less build still measures 0.01/0.04).
 
 **Watch out:** the leg is multi-valued at u < ~0 (the degenerate region where the bootstrap
 emitter can't source) -- uLo bounds were chosen to exclude it; extending the domain into it

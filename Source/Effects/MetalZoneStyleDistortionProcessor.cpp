@@ -181,7 +181,7 @@ namespace
     {
         // outputs {v1, vb, ve} x 5 q-slices over +-h -> quadratic in q on the
         // nearest triplet, CR cubic in u
-        static constexpr int NU = 1024, NS = 15;
+        static constexpr int NU = 2048, NS = 15;
         std::array<std::array<double, NU>, NS> s;
         double u0 = 0.0, invDu = 1.0, q0 = 0.0, invH = 1.0;
     };
@@ -308,20 +308,27 @@ namespace
                     const double w1 = t * t * (1.5 * t - 2.5) + 1.0;
                     const double w2 = t * (t * (2.0 - 1.5 * t) + 0.5);
                     const double w3 = t * t * (0.5 * t - 0.5);
-                    // nearest 3 of the 5 q-slices: j is the centre slice index offset
-                    const int j = juce::jlimit (-1, 1, (int) std::lround (tq));
-                    const double x = tq - (double) j; // within +-0.5 of a slice
-                    double out[LegLut::NS];
+                    // all 5 q-slices through one quartic (Lagrange on {-2,-1,0,1,2}) --
+                    // smooth across the whole q range, no kinks at triplet boundaries
+                    const double x = tq, x2 = x * x;
+                    const double qw[5] = {
+                        x * (x2 - 1.0) * (x - 2.0) / 24.0,
+                        -x * (x2 - 4.0) * (x - 1.0) / 6.0,
+                        (x2 - 4.0) * (x2 - 1.0) / 4.0,
+                        -x * (x2 - 4.0) * (x + 1.0) / 6.0,
+                        x * (x2 - 1.0) * (x + 2.0) / 24.0 };
+                    double uq[LegLut::NS];
                     for (int k = 0; k < LegLut::NS; ++k)
                     {
                         const double* p = lut->s[k].data() + (iu - 1);
-                        out[k] = w0 * p[0] + w1 * p[1] + w2 * p[2] + w3 * p[3];
+                        uq[k] = w0 * p[0] + w1 * p[1] + w2 * p[2] + w3 * p[3];
                     }
+                    double out[3];
                     for (int o = 0; o < 3; ++o)
                     {
-                        const int base = o * 5 + j + 2;
-                        const double fm = out[base - 1], f0 = out[base], fp = out[base + 1];
-                        out[o] = f0 + x * (0.5 * (fp - fm) + x * 0.5 * (fp + fm - 2.0 * f0));
+                        const int base = o * 5;
+                        out[o] = qw[0] * uq[base] + qw[1] * uq[base + 1] + qw[2] * uq[base + 2]
+                               + qw[3] * uq[base + 3] + qw[4] * uq[base + 4];
                     }
                     v1 = out[0]; vb = out[1]; ve = out[2];
                     dIdv = dIdvAtSolved(); // closed form is exact and cheap; no need for a surface
@@ -640,7 +647,7 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
             double next = vm - f / df;
             if (! (next > lo && next < hi))
                 next = 0.5 * (lo + hi);
-            if (std::abs (next - vm) < 1.0e-6)
+            if (std::abs (next - vm) < 1.0e-10)
             {
                 vm = next;
                 break;
