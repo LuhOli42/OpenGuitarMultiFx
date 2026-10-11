@@ -24,7 +24,7 @@ namespace
     constexpr double bleeder = 150.0e3;
     constexpr double screenResistor = 500.0;  // 1K per tube / 2 per pair
 
-    // ---- reduced-order power stage sag table (Twin Reverb's 6L6GC data scaled 497V -> 470V) ----
+    // ---- reduced-order power stage sag table (Twin Reverb-derived sag shape, rebased to this amp's 520V rail) ----
     constexpr int bmSagPoints = 20;
     constexpr double bmSagDrive[bmSagPoints] = { 0.010814, 0.026337, 0.052278, 0.104273, 0.208386, 0.364564, 0.520879, 0.781423,
                                                   1.041984, 1.563152, 2.084242, 2.865622, 3.646097, 4.685028, 6.238472, 8.290907,
@@ -237,6 +237,7 @@ FryetteDeliveranceD120StyleAmplifierProcessor::FryetteDeliveranceD120StyleAmplif
     auto mid = make ("del_mid", "Middle", 0.5f);
     auto bass = make ("del_bass", "Bass", 0.5f);
     auto presence = make ("del_presence", "Presence", 0.3f);
+    auto depth = make ("del_depth", "Depth", 0.5f);
     auto master = make ("del_master", "Master", 0.5f);
     auto output = make ("del_output", "Output", 0.5f);
     auto power = make ("del_power", "Power Drive", 0.5f);
@@ -256,6 +257,7 @@ FryetteDeliveranceD120StyleAmplifierProcessor::FryetteDeliveranceD120StyleAmplif
     midParam = mid.get();
     bassParam = bass.get();
     presenceParam = presence.get();
+    depthParam = depth.get();
     masterParam = master.get();
     outputParam = output.get();
     powerParam = power.get();
@@ -271,6 +273,7 @@ FryetteDeliveranceD120StyleAmplifierProcessor::FryetteDeliveranceD120StyleAmplif
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
+    group->addChild (std::move (depth));
     group->addChild (std::move (master));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("del_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
@@ -293,7 +296,7 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::buildChannel (Channel& ch)
         auto& c = ch.supply;
         c.setIntegrationTheta (0.5);
         const auto vo = c.addNode();
-        ch.sA = c.addNode();                           // plates rail (~470V)
+        ch.sA = c.addNode();                           // plates rail (~520V)
         const auto nl = c.addNode();
         ch.sB = c.addNode();                           // screens rail (~464V)
         ch.sC = c.addNode();                           // PI supply (~435V)
@@ -475,6 +478,14 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
         c.addCapacitor (fp, wp, 0.1e-6);
         c.addCapacitor (fp, gnd, 1.5e-9);
+        // DEPTH: the amp's variable LF damping control -- an R+L branch shunting the feedback node's
+        // low-frequency content to ground. Depth up = less LF feedback = the low end blooms around the
+        // speaker resonance instead of staying damped; depth down = tighter. (Fryette publishes no
+        // schematic; the R+L LF shunt is the standard resonance implementation and the solver already
+        // supports inductors -- same element the V4B mid trap uses.)
+        const auto dNode = c.addNode();
+        ch.rDepth = c.addResistor (fp, dNode, 220.0e3);
+        ch.grpDepthL = c.addCoupledInductors ({ { dNode, gnd } }, { 1.0 });
 
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
@@ -522,6 +533,7 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::updatePots (const Knobs& k)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
             ch.power.setResistance (ch.rPresBottom, presBottom);
+            ch.power.setResistance (ch.rDepth, 470.0 + 220.0e3 * (1.0 - juce::jlimit (0.0, 1.0, k.depth)));
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
         }
@@ -618,6 +630,7 @@ double FryetteDeliveranceD120StyleAmplifierProcessor::behavioralPowerStage (Chan
     const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
     const double biasTrim = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
     const double presence = juce::jlimit (0.0, 1.0, (double) lastKnobs.presence);
+    const double depth = juce::jlimit (0.0, 1.0, (double) lastKnobs.depth);
     ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double asym = 0.3 * (biasTrim - 0.5) * bmYmax;
@@ -632,7 +645,12 @@ double FryetteDeliveranceD120StyleAmplifierProcessor::behavioralPowerStage (Chan
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (0.4 + 1.2 * presence) * (raw - ch.bmToneState));
+    // DEPTH at reduced order: the extra (or missing) low-band drive the netlist's LF-shunted feedback
+    // node produces -- centred on the noon default so the calibrated response is unchanged there.
+    const double depthCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 110.0 / juce::jmax (1.0, sampleRate));
+    ch.bmDepthLp += depthCoeff * (raw - ch.bmDepthLp);
+    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (0.4 + 1.2 * presence) * (raw - ch.bmToneState)
+                                     + (depth - 0.5) * 0.9 * ch.bmDepthLp);
     return ch.bmOutput;
 }
 
@@ -707,7 +725,7 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::prepare (double newSampleRat
     {
         ch = Channel {};
         buildChannel (ch);
-        auto bmVoicing = voicings::highGain;
+        auto bmVoicing = voicings::highGainDeliverance;
         bmVoicing.resDb = 1.0; // shelf path carries no fitted LF bump -- a hint of the real resonance back
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
         ch.bmTail.setCabChoices (cabParam, cabAlts);
@@ -725,6 +743,7 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::prepare (double newSampleRat
     setup (smoothedMid, midParam, 0.02);
     setup (smoothedBass, bassParam, 0.02);
     setup (smoothedPresence, presenceParam, 0.02);
+    setup (smoothedDepth, depthParam, 0.02);
     setup (smoothedMaster, masterParam, 0.02);
     setup (smoothedOutput, outputParam, 0.02);
     setup (smoothedPower, powerParam, 0.02);
@@ -735,7 +754,7 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::prepare (double newSampleRat
     appliedSpeaker = matchedSpeaker;
     updatePots ({ gain1Param->get(), gain2Param->get(), trebleParam->get(), midParam->get(), bassParam->get(),
                   presenceParam->get(), masterParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
-                  juce::roundToInt (speakerParam->get()), juce::roundToInt (moreParam->get()) });
+                  juce::roundToInt (speakerParam->get()), juce::roundToInt (moreParam->get()), depthParam->get() });
 
     dcOk = true;
     for (auto& ch : channels)
@@ -842,6 +861,7 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::process (juce::AudioBuffer<f
     smoothedMid.setTargetValue (midParam->get());
     smoothedBass.setTargetValue (bassParam->get());
     smoothedPresence.setTargetValue (presenceParam->get());
+    smoothedDepth.setTargetValue (depthParam->get());
     smoothedMaster.setTargetValue (masterParam->get());
     smoothedOutput.setTargetValue (outputParam->get());
     smoothedPower.setTargetValue (powerParam->get());
@@ -857,6 +877,7 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::process (juce::AudioBuffer<f
         const float mi = smoothedMid.getNextValue();
         const float ba = smoothedBass.getNextValue();
         const float pr = smoothedPresence.getNextValue();
+        const float dp = smoothedDepth.getNextValue();
         const float ms = smoothedMaster.getNextValue();
         const float ou = smoothedOutput.getNextValue();
         const float pw = smoothedPower.getNextValue();
@@ -867,7 +888,7 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::process (juce::AudioBuffer<f
         {
             controlCounter = 0;
             updatePots ({ g1v, g2v, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice,
-                          juce::roundToInt (moreParam->get()) });
+                          juce::roundToInt (moreParam->get()), (double) dp });
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));

@@ -17,11 +17,12 @@ where a pentode-wired amp turns to mush. Stoner/doom's reference amp for a reaso
 ## What is modelled
 
 - Both input channels (driven together like the "both" jack): V1A Brite (R6 100K plate, R5 680Ω + C1
-  250µF) → C2 .022µF → 250K Volume → 100K mix resistor; V1B Normal (R7 100K, unbypassed cathode —
-  estimated 2.7K) → C3 .022µF → 250K Volume → 100K mix resistor → V2A shared stage (100K, 820Ω R13,
+  250µF) → C2 .022µF → 1M Volume → 100K mix resistor; V1B Normal (R7 100K, unbypassed cathode —
+  estimated 2.7K) → C3 .022µF → 1M Volume → 100K mix resistor → V2A shared stage (100K, 820Ω R13,
   unbypassed) → cathode follower.
 - Tone stack per ECN441: C5 **270pF** treble cap, R17 56K slope, C8/C7 .022µF, Treble 250K (R15),
-  Bass rheostat (R16), Mid 25K (R18), 1M Master.
+  Bass rheostat (R16), Mid 25K (R18). The channel Volumes are the 1M pots the Model T family
+  uses (reissue service manual: R6/R15 "1Mn10A"; the earlier 250K was wrong).
 - PI: 12AX7A LTP, R27 82K / R28 120K plates, R22 4.7K + R23 470Ω tail, .025µF couplings (C12/C13),
   .022µF input cap, grid-2 NFB through R24 1M.
 - NFB: R26 10K from the secondary + presence network (R25 25K REV-LOG shunt, C9 .022µF).
@@ -43,7 +44,8 @@ where a pentode-wired amp turns to mush. Stoner/doom's reference amp for a reaso
 
 ## Controls
 
-Page 1 mirrors the front panel: Volume Brite, Volume Normal, Treble, Mid, Bass, Presence, Master.
+Page 1 mirrors the front panel: Volume Brite, Volume Normal, Treble, Mid, Bass, Presence, plus a
+synthetic Master (the ECN441 front panel has none -- kept for consistency with the other amp models).
 Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
 
 ## Stability / verification

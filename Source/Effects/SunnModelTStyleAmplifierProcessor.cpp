@@ -27,7 +27,7 @@ namespace
     constexpr double bleeder = 150.0e3;
     constexpr double screenResistor = 500.0;  // 1K per tube / 2 per pair
 
-    // ---- reduced-order power stage sag table (Twin Reverb's 6L6GC data scaled 497V -> 470V) ----
+    // ---- reduced-order power stage sag table (Twin Reverb-derived sag shape, rebased to this amp's 505V rail) ----
     constexpr int bmSagPoints = 20;
     constexpr double bmSagDrive[bmSagPoints] = { 0.010814, 0.026337, 0.052278, 0.104273, 0.208386, 0.364564, 0.520879, 0.781423,
                                                   1.041984, 1.563152, 2.084242, 2.865622, 3.646097, 4.685028, 6.238472, 8.290907,
@@ -127,7 +127,7 @@ namespace
 
     /** The Model T preamp (ECN441): two independent first stages -- V1A BRITE (680R cathode + 250uF
         bypass, the hot input) and V1B NORMAL (unbypassed cathode, the tame input) -- each followed by
-        its own 250K Volume pot, mixed through 100K resistors into the shared V2A second stage, then a
+        its own 1M Volume pot, mixed through 100K resistors into the shared V2A second stage, then a
         cathode follower into the tone stack. */
     PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double eGuess, double dGuess, double cGuess)
     {
@@ -156,11 +156,11 @@ namespace
         c.setInitialGuess (b.plateV1a, 190.0);
         c.setInitialGuess (k1, 1.5);
 
-        // BRITE VOLUME: V1A plate -> .022uF (C2) -> 250K volume pot -> mix node.
+        // BRITE VOLUME: V1A plate -> .022uF (C2) -> 1M volume pot -> mix node.
         const auto briteIn = c.addNode(), briteWiper = c.addNode(), mix = c.addNode();
         c.addCapacitor (b.plateV1a, briteIn, 0.022e-6);  // C2
-        b.rVolBriteTop = c.addResistor (briteIn, briteWiper, 250.0e3);
-        b.rVolBriteBot = c.addResistor (briteWiper, gnd, 250.0e3);
+        b.rVolBriteTop = c.addResistor (briteIn, briteWiper, 500.0e3);
+        b.rVolBriteBot = c.addResistor (briteWiper, gnd, 500.0e3);
         c.addResistor (briteWiper, mix, 100.0e3);
 
         // V1B NORMAL: 100K plate (E rail), own 68K stopper + 1M leak, 2.7K unbypassed cathode
@@ -176,11 +176,11 @@ namespace
         c.setInitialGuess (b.plateV1b, 250.0);
         c.setInitialGuess (k1n, 2.2);
 
-        // NORMAL VOLUME: V1B plate -> .022uF (C3) -> 250K volume pot -> same mix node.
+        // NORMAL VOLUME: V1B plate -> .022uF (C3) -> 1M volume pot -> same mix node.
         const auto normIn = c.addNode(), normWiper = c.addNode();
         c.addCapacitor (b.plateV1b, normIn, 0.022e-6);   // C3
-        b.rVolNormTop = c.addResistor (normIn, normWiper, 250.0e3);
-        b.rVolNormBot = c.addResistor (normWiper, gnd, 250.0e3);
+        b.rVolNormTop = c.addResistor (normIn, normWiper, 1.0e6);
+        b.rVolNormBot = c.addResistor (normWiper, gnd, 1.0e6);
         c.addResistor (normWiper, mix, 100.0e3);
 
         // V2A shared second stage: 100K plate (D rail), 820R unbypassed cathode (R13), 470K leak.
@@ -275,7 +275,7 @@ void SunnModelTStyleAmplifierProcessor::buildChannel (Channel& ch)
         auto& c = ch.supply;
         c.setIntegrationTheta (0.5);
         const auto vo = c.addNode();
-        ch.sA = c.addNode();                           // plates rail (~470V)
+        ch.sA = c.addNode();                           // plates rail (~505V)
         const auto nl = c.addNode();
         ch.sB = c.addNode();                           // screens rail (~464V)
         ch.sC = c.addNode();                           // PI supply (~435V)
@@ -487,12 +487,12 @@ void SunnModelTStyleAmplifierProcessor::updatePots (const Knobs& k)
 
     for (auto& ch : channels)
     {
-        const double briteBottom = juce::jmax (1.0, 250.0e3 * pots::audio (k.volBrite));
+        const double briteBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volBrite));
         ch.pre.setResistance (ch.rVolBriteBot, briteBottom);
-        ch.pre.setResistance (ch.rVolBriteTop, juce::jmax (1.0, 250.0e3 - briteBottom));
-        const double normBottom = juce::jmax (1.0, 250.0e3 * pots::audio (k.volNormal));
+        ch.pre.setResistance (ch.rVolBriteTop, juce::jmax (1.0, 1.0e6 - briteBottom));
+        const double normBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volNormal));
         ch.pre.setResistance (ch.rVolNormBot, normBottom);
-        ch.pre.setResistance (ch.rVolNormTop, juce::jmax (1.0, 250.0e3 - normBottom));
+        ch.pre.setResistance (ch.rVolNormTop, juce::jmax (1.0, 1.0e6 - normBottom));
         ch.power.setResistance (ch.rTrebleTop, trebleTop);
         ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
         ch.power.setResistance (ch.rBass, bassR);
@@ -688,7 +688,7 @@ void SunnModelTStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         ch = Channel {};
         buildChannel (ch);
-        auto bmVoicing = voicings::bassAmp;
+        auto bmVoicing = voicings::sunnModelT;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
         ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);

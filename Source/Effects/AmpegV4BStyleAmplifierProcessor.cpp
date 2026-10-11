@@ -401,7 +401,7 @@ void AmpegV4BStyleAmplifierProcessor::buildChannel (Channel& ch)
     }
 
     // ================================================================ power amp: phase splitter, drivers,
-    // six 6550s as two triples, output transformer, speaker, global negative feedback.
+    // four 7027As as two pairs, output transformer, speaker, global negative feedback.
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
@@ -691,7 +691,7 @@ void AmpegV4BStyleAmplifierProcessor::recover (Channel& ch) const
 void AmpegV4BStyleAmplifierProcessor::updateSupply (Channel& ch) const
 {
     const double n = (double) juce::jmax (1, ch.sumCount);
-    // Six 6550s can draw over an amp at full drive; a solver excursion must not wreck the shared rails.
+    // Four 7027As can draw over an amp at full drive; a solver excursion must not wreck the shared rails.
     ch.supply.setCurrentSource (ch.iA, -juce::jlimit (0.0, 2.0, ch.sumPlate / n));
     ch.supply.setCurrentSource (ch.iB, -juce::jlimit (0.0, 0.4, ch.sumScreen / n + idleDriverCurrent));
     ch.supply.solveSample();

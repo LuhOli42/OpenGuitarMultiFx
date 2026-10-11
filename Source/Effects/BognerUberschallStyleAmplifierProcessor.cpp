@@ -24,7 +24,7 @@ namespace
     constexpr double bleeder = 150.0e3;
     constexpr double screenResistor = 500.0;  // 1K per tube / 2 per pair
 
-    // ---- reduced-order power stage sag table (Twin Reverb's 6L6GC data scaled 497V -> 470V) ----
+    // ---- reduced-order power stage sag table (Twin Reverb-derived sag shape, rebased to this amp's 460V rail) ----
     constexpr int bmSagPoints = 20;
     constexpr double bmSagDrive[bmSagPoints] = { 0.010814, 0.026337, 0.052278, 0.104273, 0.208386, 0.364564, 0.520879, 0.781423,
                                                   1.041984, 1.563152, 2.084242, 2.865622, 3.646097, 4.685028, 6.238472, 8.290907,
@@ -89,7 +89,7 @@ namespace
 
     constexpr double cgp = 1.7e-12;
 
-    // Output transformer: 4x6L6GC, ~100 W. Same class as the SLO-100 / Dual Rectifier.
+    // Output transformer: 4x EL34, ~120 W (the Uberschall's stock bottle). Same class as the SLO-100 / Dual Rectifier.
     constexpr double primaryHalfInductance = 3.0;
     constexpr double halfToSecondaryTurns = 6.25;
     constexpr double couplingHalves = 0.9997;
@@ -277,7 +277,7 @@ void BognerUberschallStyleAmplifierProcessor::buildChannel (Channel& ch)
         auto& c = ch.supply;
         c.setIntegrationTheta (0.5);
         const auto vo = c.addNode();
-        ch.sA = c.addNode();                           // plates rail (~470V)
+        ch.sA = c.addNode();                           // plates rail (~460V)
         const auto nl = c.addNode();
         ch.sB = c.addNode();                           // screens rail (~464V)
         ch.sC = c.addNode();                           // PI supply (~435V)
@@ -682,8 +682,8 @@ void BognerUberschallStyleAmplifierProcessor::prepare (double newSampleRate, int
     {
         ch = Channel {};
         buildChannel (ch);
-        auto bmVoicing = voicings::highGain;
-        bmVoicing.resDb = 1.0; // shelf path carries no fitted LF bump -- a hint of the real resonance back
+        auto bmVoicing = voicings::highGainBogner;
+        bmVoicing.resDb = 1.5; // shelf path carries no fitted LF bump -- the Uber's signature deep thump back
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
         ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);

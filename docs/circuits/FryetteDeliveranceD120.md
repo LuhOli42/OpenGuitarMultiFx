@@ -20,7 +20,7 @@ four KT88s at ~520V for tight, authoritative saturation.
   2.7K unbypassed) → .022µF → **Gain II** (1MA) → **[V2A "More" stage: 100K, 1.8K + 22µF — switched
   in/out by the front-panel More control]** → V2B (100K, 1.8K + 4.7µF) → cathode follower.
 - TMB stack (470pF treble cap, 56K slope, .022 bass/mid, 250K treble / 1M bass / 25K mid) + 1M Master.
-- 12AX7 LTP PI (82K/100K plates, NFB + 25K presence) → .047µF couplings → 220K leaks → 4xKT88 pairs,
+- 12AX7 LTP PI (82K/100K plates, NFB + 25K presence + Depth LF shunt) → .047µF couplings → 220K leaks → 4xKT88 pairs,
   fixed bias −55V, ~520V plates.
 - KT88 Koren set estimated (kg1 950, kg2 2900, mu 8.6 — no published Koren fit; tuned to idle near the
   real ~40 mA/tube at −55V), supply sag, resonant speaker, `reducedOrder` behavioural stage.
@@ -35,7 +35,10 @@ four KT88s at ~520V for tight, authoritative saturation.
 
 ## Controls
 
-Page 1 mirrors the front panel: Gain I, Gain II, More (switch), Treble, Mid, Bass, Presence, Master.
+Page 1 mirrors the front panel: Gain I, Gain II, More (switch), Treble, Mid, Bass, Presence, Depth, Master.
+The Depth control (variable LF damping) was missing in the first model; it is an R+L low-frequency shunt
+on the NFB node in the full netlist and an LF-drive term on the fitted tail at reduced order -- Fryette
+publishes no schematic, so the standard resonance implementation is used and documented.
 Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
 
 ## Stability / verification
