@@ -280,6 +280,7 @@ void GuvnorStyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             const bool sane = std::isfinite (out2) && std::abs (out2) < saneLimit;
             ok = ok && sane;
 
+            bool recoveredThisSample = false;
             if (ok)
             {
                 ch.failStreak = 0;
@@ -291,10 +292,14 @@ void GuvnorStyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
                 }
             }
             else if (++ch.failStreak >= 4)
+            {
                 recover (ch);
+                recoveredThisSample = true; // don't let the stale pre-restore out2 consume alignOutput:
+                                            // the restored circuit's first output lands NEXT sample
+            }
 
             double out = ch.lastEmitted;
-            if (sane)
+            if (sane && ! recoveredThisSample)
             {
                 out = out2;
                 if (ch.alignOutput)

@@ -91,6 +91,7 @@ public:
     void setDeadlineMode (int maxIterations) noexcept { deadlineIterations = maxIterations; }
     bool isDeadlineMode() const noexcept { return deadlineIterations > 0; }
     long long getDeadlineSamples() const noexcept { return deadlineSamples; }
+    long long getStormSamples() const noexcept { return stormSamples; } // samples solved under storm mode
     long long getSkippedSamples() const noexcept { return skippedSamples; }  // fixed-point skips, see solveSample()
     /** The circuit's memory and nothing else: capacitor and inductor state, the Newton warm-start history, the last excitation. Saving and restoring it
         is a few hundred bytes and touches no parameter, so it does NOT invalidate the reduced model (a full copy of the circuit from a "rest" snapshot
@@ -874,6 +875,7 @@ private:
     int iterationsThisSolve = 0;
     int deadlineIterations = 0;                  // see setDeadlineMode()
     long long deadlineSamples = 0;               // samples solved in deadline mode
+    long long stormSamples = 0;                  // samples solved in storm mode (kept out of deadlineSamples)
     int consecutiveFailures = 0;                 // see newtonPorts(): stops the fallback modes burning time in a runaway
     static constexpr int failureStreakBeforeGivingUp = 2;
     // Storm mode: a sustained passage of expensive samples (needing rescues, or dozens of mode-0 iterations,
@@ -2006,7 +2008,10 @@ private:
         bool ok;
         if (deadlineIterations > 0 || stormMode)
         {
-            ++deadlineSamples;
+            if (stormMode)
+                ++stormSamples; // kept separate: getDeadlineSamples() must mean explicit deadline solves
+            else
+                ++deadlineSamples;
             ok = newtonPortsFrom (u0, Wm, Km, curOut, 0)
                  || newtonPortsFrom (u0, Wm, Km, curOut, 1)
                  || newtonPortsFrom (u0, Wm, Km, curOut, 2);
@@ -2056,10 +2061,10 @@ private:
                 cleanStreak = 0;
             }
         }
-        else if (! ok)
+        else
         {
-            cleanStreak = 0;
-            if (++expensiveStreak >= stormStreakLength)
+            cleanStreak = 0; // slow-but-converging is not storm evidence, but it does break the clean run
+            if (! ok && ++expensiveStreak >= stormStreakLength)
                 stormMode = true;
         }
         return ok;
