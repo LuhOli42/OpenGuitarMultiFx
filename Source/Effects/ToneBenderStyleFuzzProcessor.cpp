@@ -94,7 +94,13 @@ void ToneBenderStyleFuzzProcessor::buildChannel (Channel& ch)
     if (spec.rQ1CollectorBase > 0.0)
         c.addResistor (c1, b1, spec.rQ1CollectorBase);   // R10: the bias a silicon part needs
     const auto e1 = emitterVia (spec.rE1, gnd);
-    c.addBjt (c1, b1, e1, spec.pnp, bjt (spec.betaQ1));
+    if (reducedOrder)
+        // One-port: Q1's collector junction matters only as the point the stage runs out of
+        // collector current -- the (rail - Vce(sat)) / (Rc + Re) load-line limit.
+        c.addBjtSaturating (c1, b1, e1, spec.pnp, bjt (spec.betaQ1),
+                            (std::abs (spec.railVolts) - 0.2) / (rCollectorQ1 + spec.rE1));
+    else
+        c.addBjt (c1, b1, e1, spec.pnp, bjt (spec.betaQ1));
 
     // ---- Q2 + Q3: the Fuzz Face pair ----
     const auto b2 = c.addNode(), c2 = c.addNode(), c3 = c.addNode(), x = c.addNode();
@@ -104,7 +110,22 @@ void ToneBenderStyleFuzzProcessor::buildChannel (Channel& ch)
     c.addBjt (c2, b2, e2, spec.pnp, bjt (spec.betaQ2));
     // Q3's base IS Q2's collector (direct coupling).
     const auto e3 = c.addNode();
-    c.addBjt (c3, c2, e3, spec.pnp, bjt (spec.betaQ3));
+    if (reducedOrder)
+    {
+        // Q3 as a one-port too; its load-line limit moves with the Attack pot (the emitter
+        // degeneration is part of the denominator) so updatePots() re-stamps it -- Q2 stays
+        // the real two-port, its saturation input-dependent by construction. satExcessToBase
+        // makes Q3's saturation current flow back through its base -- the direct coupling to
+        // Q2's collector is exactly where the two-port pushes that current. Germanium only:
+        // it lives in deep saturation where the beta-collapse approximation holds; on the
+        // silicon part the same term over-loads c2 (measured ~2 dB worse fit).
+        ch.q3Device = c.addBjtSaturating (c3, c2, e3, spec.pnp, bjt (spec.betaQ3),
+                                          (std::abs (spec.railVolts) - 0.2)
+                                              / (rSupplySeries + spec.rQ3Collector + spec.rE3 + attackPot));
+        c.setBjtSatExcessToBase (ch.q3Device, spec.rLeakage > 0.0);
+    }
+    else
+        c.addBjt (c3, c2, e3, spec.pnp, bjt (spec.betaQ3));
     const auto n = emitterVia (spec.rE3, e3); // R13 sits between Q3's emitter and the node R4 and the pot hang from
     c.addResistor (n, b2, rFeedback);         // R4: Q3's emitter back to Q2's base -- bias AND AC feedback
 
@@ -166,6 +187,13 @@ void ToneBenderStyleFuzzProcessor::updatePots (double attack, double volume)
         ch.c.setResistance (ch.rAttackBottom, attackPot * juce::jmax (0.001, 1.0 - top));
         ch.c.setResistance (ch.rVolumeTop, volumePot * juce::jmax (0.001, 1.0 - vol));
         ch.c.setResistance (ch.rVolumeBottom, volumePot * juce::jmax (0.001, vol));
+        if (ch.q3Device >= 0)
+            // The reduced Q3's load line: (rail - Vce(sat)) over the collector chain plus the
+            // emitter degeneration this knob sets (the wiper's 4.7 uF bypass makes `top` the
+            // signal-frequency emitter resistance -- the full-1K DC path measured 3.9 dB
+            // worse than tracking `top`, so the signal-frequency value is the better model).
+            ch.c.setBjtSaturationCurrent (ch.q3Device, (std::abs (spec.railVolts) - 0.2)
+                                                         / (rSupplySeries + spec.rQ3Collector + spec.rE3 + attackPot * top));
     }
 }
 

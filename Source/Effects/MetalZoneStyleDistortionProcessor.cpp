@@ -100,9 +100,11 @@ namespace
                 const double el = std::exp (std::min ((m5218.lowRail - v) / railClampNVt, 40.0));
                 const double f = 1.0e-6 * (vAmp - v) - cpx.g * v + cpx.ieq - railClampIs * (eh - el);
                 const double d = -1.0e-6 - cpx.g - railClampIs / railClampNVt * (eh + el);
-                const double dv = f / d;
-                v -= dv;
-                if (std::abs (dv) < 1.0e-10)
+                // The clamp diodes hold the integrator node ~0.7 V past whichever rail it
+                // presses against; without this bound a wild vAmp throws v so far out that
+                // the exp()'s dwarf every other term and the Newton stalls off-rail forever.
+                v = juce::jlimit (m5218.lowRail - 1.0, m5218.highRail + 1.0, v - f / d);
+                if (std::abs (f / d) < 1.0e-10)
                     break;
             }
             return v;
@@ -118,18 +120,29 @@ namespace
         }
     };
 
-    /** IC3b/IC4b's inverting-leg branch: series cap C1 into node n1; n1 -> rE -> the emitter
-        (an ideal follower of the base, drop 0.65); n1 -> C2 -> the base; base -> rBase -> vBias.
-        Idealising the emitter follower misses the 2SC3378's Vbe knee, its can't-sink cut-off and
-        its base current -- measured vs the netlist that's worth ~8 dB of worst-band error at hot
-        inputs (the real-BJT replacement was tried and abandoned: the m-node's solve loses its
-        closed form and every iteration scheme tried either latched the amp's parasitic rail
-        state or 2-cycled across the rails). */
+    /** IC3b/IC4b's inverting-leg branch: series cap C1 into node n1; n1 -> rE -> the emitter;
+        n1 -> C2 -> the base; base -> rBase -> vBias; collector pinned to the rail (a ONE-port
+        2SC3378 on vbe -- see addBootstrapBranch in the netlist for the topology this mirrors).
+        The leg is one nonlinear admittance i_leg(v_m): the follower's real Vbe knee, its
+        can't-sink cut-off and its base current are worth ~8 dB of worst-band error when
+        idealised (the earlier affine version). The m-node stays solvable because the stage's
+        scalar Newton on v_m -- stageNewton() -- just calls eval() per iteration: the leg's own
+        2x2 Newton on (v_b, v_e) is warm-started, bounded, and monotonic, so it converges in a
+        handful of iterations where every scheme that coupled the BJT into the output iterate
+        cycled across the rails (docs/circuits/MetalZoneStyleDistortion.md). */
     struct BootstrapLeg
     {
         ReducedCap c1, c2;
         double f1, f2, rE, rBase;
-        double gE = 0.0, gB = 0.0, v1 = vBias, vb2 = vBias, ve = vBias;
+        double gE = 0.0, gB = 0.0, v1 = vBias, vb = vBias, ve = vBias - followerDrop;
+
+        // npn2SC3378 as a one-port (collector on the fixed 9 V rail): iE_out = isEff*(e^vbe-1),
+        // iB = isB*(e^vbe-1), both ~exact while vbc stays deeply reverse (base can reach at
+        // most ~7.5 V, still 1.5 V under the rail). Constants mirror npn2SC3378 {Is, Vt, betaF}.
+        static constexpr double isEff = 1.0e-14 * (1.0 + 1.0 / 300.0);
+        static constexpr double isB = 1.0e-14 / 300.0;
+        static constexpr double invVt = 1.0 / 25.85e-3;
+        static constexpr double gE10k = 1.0e-4; // the emitter's 10K to ground
 
         BootstrapLeg (double c1F, double c2F, double emitterOhms, double baseOhms)
             : f1 (c1F), f2 (c2F), rE (emitterOhms), rBase (baseOhms) {}
@@ -140,37 +153,71 @@ namespace
             c2.prepare (f2, fs);
             gE = 1.0 / rE;
             gB = 1.0 / rBase;
-            v1 = vb2 = vBias;
+            v1 = vBias - followerDrop;
+            vb = vBias;
             ve = vBias - followerDrop;
         }
 
-        /** v1 as an affine function of v_m: v1 = aL*v_m + bL -- what the m-node KCL needs to
-            express the whole leg as one admittance (i_leg = c1.g*(1-aL)*v_m - c1.g*bL - c1.ieq). */
-        double aL() const noexcept
+        /** The leg current out of the m node at terminal voltage vm, with the interior nodes
+            (v1, v_b, v_e) solved to KCL for this sample's capacitor state. Writes the solved
+            v1/vb/ve for commit() and returns the differential conductance through dIdv. */
+        double eval (double vm, double& dIdv) noexcept
         {
-            const double dvb = c2.g + gB;
-            return c1.g / (c1.g + gE + c2.g - (gE + c2.g) * c2.g / dvb);
-        }
-        double bL() const noexcept
-        {
-            const double dvb = c2.g + gB;
-            const double rhs = -c1.ieq + c2.ieq + (gE + c2.g) * (gB * vBias - c2.ieq) / dvb - gE * followerDrop;
-            return rhs / (c1.g + gE + c2.g - (gE + c2.g) * c2.g / dvb);
-        }
-        double kLeg() const noexcept { return c1.g * (1.0 - aL()); }          // d i_leg / d v_m
-        double cLeg() const noexcept { return -c1.g * bL() - c1.ieq; }        // i_leg at v_m = 0
-
-        void solveNodes (double vm) noexcept
-        {
-            v1 = aL() * vm + bL();
-            vb2 = (c2.g * v1 - c2.ieq + gB * vBias) / (c2.g + gB);
-            ve = vb2 - followerDrop;
+            double b = vb, e = ve;
+            for (int i = 0; i < 10; ++i)
+            {
+                const double ex = std::exp (std::min ((b - e) * invVt, 40.0));
+                const double iEo = isEff * (ex - 1.0), iB = isB * (ex - 1.0);
+                const double gT = isEff * invVt * ex, gBi = isB * invVt * ex;
+                // emitter KCL solved for v1: iEo is the current the device pushes INTO node e,
+                // so gE*(v1 - e) = gE10k*e - iEo (at DC: v1 = e, iEo = gE10k*e).
+                const double n1 = e + (gE10k * e - iEo) / gE;
+                const double dv1de = 1.0 + (gE10k + gT) / gE, dv1db = -gT / gE;
+                // base KCL: c2*(b - v1) - c2.ieq... current b->v1 through C2 plus rBase plus iB = 0
+                const double fb = c2.g * (b - n1) + c2.ieq + gB * (b - vBias) + iB;
+                // n1 KCL: c1*(v1 - vm) - c1.ieq + rE*(v1 - e) + c2*(v1 - b) + c2.ieq = 0
+                const double fn = (c1.g + gE + c2.g) * n1 - c1.g * vm - gE * e - c2.g * b
+                                  + c1.ieq - c2.ieq;
+                const double j11 = c2.g * (1.0 - dv1db) + gB + gBi;
+                const double j12 = -c2.g * dv1de - gBi;
+                const double j21 = (c1.g + gE + c2.g) * dv1db - c2.g;
+                const double j22 = (c1.g + gE + c2.g) * dv1de - gE - c2.g;
+                const double det = j11 * j22 - j12 * j21;
+                double db = (j22 * fb - j12 * fn) / det;
+                double de = (j11 * fn - j21 * fb) / det;
+                // Junction limiting (pnjlim-lite): the vbe move is capped per iteration.
+                const double dvbe = (b - db) - (e - de) - (b - e);
+                if (std::abs (dvbe) > 0.5)
+                {
+                    const double s = 0.5 / std::abs (dvbe);
+                    db *= s;
+                    de *= s;
+                }
+                db = juce::jlimit (-1.0, 1.0, db);
+                de = juce::jlimit (-1.0, 1.0, de);
+                b -= db;
+                e -= de;
+                if (std::abs (db) + std::abs (de) < 1.0e-9)
+                    break;
+            }
+            vb = b;
+            ve = e;
+            const double ex = std::exp (std::min ((b - e) * invVt, 40.0));
+            const double gT = isEff * invVt * ex, gBi = isB * invVt * ex;
+            v1 = e + (gE10k * e - isEff * (ex - 1.0)) / gE;
+            // dv1/dvm at the solved point: differentiate the three KCLs with dvm = 1.
+            const double d = gE + gE10k + gT;
+            const double r1 = (c2.g + gBi * gE / d) / (c2.g + gB + gBi - gBi * gT / d);
+            const double r2 = (gE + gT * r1) / d;
+            const double dv1 = c1.g / (c1.g + gE + c2.g - gE * r2 - c2.g * r1);
+            dIdv = c1.g * (1.0 - dv1);
+            return c1.g * (vm - v1) - c1.ieq;
         }
 
         void commit (double vm) noexcept
         {
             c1.commit (vm - v1);
-            c2.commit (v1 - vb2);
+            c2.commit (v1 - vb);
         }
     };
 }
@@ -260,29 +307,72 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
             step (0.0); // settle whatever the analytic seed missed
     }
 
-    /** One feedback-amp macro stage: solves {v_m, px} exactly while the integrator node sits inside
-        the rails; past them it re-solves m with the loop broken (v_out held at the rail) and runs
-        the clamp-diode Newton -- the netlist's two satMode passes. K = feedback conductance sum,
-        G = K + sum of leg admittances, Hm = the m-node history terms. */
-    static double stage (double vPlus, double kFb, double gSum, double hm, ReducedAmp& amp) noexcept
+    /** One feedback-amp macro stage: the m-node KCL solved by a scalar Newton on v_m, so each
+        BJT leg is evaluated EXACTLY at the trial voltage (BootstrapLeg::eval) instead of being
+        folded into a fixed admittance. v_out is a function of v_m through the integrator node:
+        linear inside the rails, the clamp-diode solve outside -- same two cases the old closed
+        form split on. F(v_m) is monotonically decreasing (feedback + leg conductances all pull
+        down), which is why the Newton is safe here where the output-iterate loop was not.
+        kFb = feedback conductance sum; gSum = kFb + the AFFINE leg admittances only (any real
+        legs come through `legs`); hm = the m-node history/drive terms. */
+    static double stageNewton (double vPlus, double kFb, double gSum, double hm, ReducedAmp& amp,
+                               BootstrapLeg* const* legs, int numLegs) noexcept
     {
         const double gRc = 1.0e-6, gain = m5218.dcGain;
-        const double pxLin = (gRc * gain * (vPlus - hm / gSum) + amp.cpx.ieq) / (gRc * gain * kFb / gSum + gRc + amp.cpx.g);
-        double vo;
-        if (pxLin > m5218.lowRail && pxLin < m5218.highRail)
+        // F(vm) = kFb*vo(vm) - gSum*vm + hm - iLegs(vm) is continuous and monotone decreasing
+        // (vo falls with vm through the ~196x integrator slope, then pins at a rail). An
+        // unbracketed Newton never sees the razor-thin linear window: the iterate slams between
+        // the two railed equilibria forever (the documented "Newton rails cycle"). Keep a sign
+        // bracket on vm; Newton inside it, bisection when Newton would leave it — converges
+        // unconditionally, and quadratically once the iterate lands in the linear window.
+        double lo = -100.0, hi = 100.0;
+        double vm = juce::jlimit (lo, hi, amp.vm); // warm start on last sample's inverting node
+        double vo = amp.out, px = amp.px;
+        for (int it = 0; it < 40; ++it)
         {
-            amp.px = pxLin;
-            vo = pxLin;
+            const double pxLin = (gRc * gain * (vPlus - vm) + amp.cpx.ieq) / (gRc + amp.cpx.g);
+            double dVo;
+            if (pxLin > m5218.lowRail && pxLin < m5218.highRail)
+            {
+                vo = pxLin;
+                px = pxLin;
+                dVo = -gRc * gain / (gRc + amp.cpx.g);
+            }
+            else
+            {
+                px = amp.solvePx (gain * (vPlus - vm));
+                vo = juce::jlimit (m5218.lowRail, m5218.highRail, px);
+                dVo = 0.0; // output pinned: only the legs move F from here
+            }
+            // m-node KCL: kFb*(vo - vm) + (history/drive) - (affine-leg currents) - (real-leg currents) = 0,
+            // i.e. kFb*vo - gSum*vm + hm - iLegs, where gSum = kFb + affine legs and hm folds their offsets.
+            double f = kFb * vo - gSum * vm + hm;
+            double df = kFb * dVo - gSum;
+            for (int l = 0; l < numLegs; ++l)
+            {
+                double di = 0.0;
+                f -= legs[l]->eval (vm, di);
+                df -= di;
+            }
+            // F decreasing: f > 0 means the root is right of vm, f < 0 means left.
+            if (f > 0.0)
+                lo = juce::jmax (lo, vm);
+            else
+                hi = juce::jmin (hi, vm);
+            double next = vm - f / df;
+            if (! (next > lo && next < hi))
+                next = 0.5 * (lo + hi);
+            if (std::abs (next - vm) < 1.0e-10)
+            {
+                vm = next;
+                break;
+            }
+            vm = next;
         }
-        else
-        {
-            vo = juce::jlimit (m5218.lowRail, m5218.highRail, pxLin);
-            const double vm = (kFb * vo + hm) / gSum;
-            amp.px = amp.solvePx (gain * (vPlus - vm));
-            vo = juce::jlimit (m5218.lowRail, m5218.highRail, amp.px);
-        }
+        amp.vm = vm;
+        amp.px = px;
         amp.out = vo;
-        amp.cpx.commit (amp.px);
+        amp.cpx.commit (px);
         return vo;
     }
 
@@ -326,10 +416,9 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
 
         // ---- IC3b ----
         const double kFb3b = 1.0 / 220.0e3 + c032.g;
-        const double g3b = kFb3b + leg3b.kLeg();
-        const double hm3b = c032.ieq - leg3b.cLeg();
-        const double vo3b = stage (vnC, kFb3b, g3b, hm3b, amp3b);
-        const double vm3b = (kFb3b * vo3b + hm3b) / g3b;
+        BootstrapLeg* const legs3b[] = { &leg3b };
+        const double vo3b = stageNewton (vnC, kFb3b, kFb3b, c032.ieq, amp3b, legs3b, 1);
+        const double vm3b = amp3b.vm;
         ic3b = vo3b;
 
         // ---- interstage + IC3a ----
@@ -342,8 +431,8 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         const double kFb3a = gDist + c028.g;
         const double g3a = kFb3a + kLeg3a;
         const double hm3a = c028.ieq - cLeg3a;
-        const double vo3a = stage (vq, kFb3a, g3a, hm3a, amp3a);
-        const double vm3a = (kFb3a * vo3a + hm3a) / g3a;
+        const double vo3a = stageNewton (vq, kFb3a, g3a, hm3a, amp3a, nullptr, 0);
+        const double vm3a = amp3a.vm;
         const double vnR3a = (g41 * vm3a + c030.ieq) / (g41 + c030.g);
         ic3a = vo3a;
         ic3aPrev = vo3b;
@@ -376,18 +465,17 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
 
         // ---- IC4b ----
         const double kFb4b = 1.0 / 3.3e3 + c022.g;
-        const double g4b = kFb4b + legA4b.kLeg() + legB4b.kLeg();
-        const double hm4b = c022.ieq - legA4b.cLeg() - legB4b.cLeg();
-        const double vo4b = stage (vm2, kFb4b, g4b, hm4b, amp4b);
-        const double vm4b = (kFb4b * vo4b + hm4b) / g4b;
+        BootstrapLeg* const legs4b[] = { &legA4b, &legB4b };
+        const double vo4b = stageNewton (vm2, kFb4b, kFb4b, c022.ieq, amp4b, legs4b, 2);
+        const double vm4b = amp4b.vm;
         ic4b = vo4b;
 
         // ---- IC4a inverter: m sees g22->vo4b and (g22||C018)->out; same stage() solve, the
         // input conductance folded into the history term. An iterate-the-output loop period-2
         // oscillates between the rails here, so it cannot be used. ----
         const double g22 = 1.0 / 22.0e3;
-        const double vo4a = stage (vBias, g22 + c018.g, g22 + g22 + c018.g, g22 * vo4b + c018.ieq, amp4a);
-        const double vm4a = (g22 * vo4b + (g22 + c018.g) * vo4a + c018.ieq) / (g22 + g22 + c018.g);
+        const double vo4a = stageNewton (vBias, g22 + c018.g, g22 + g22 + c018.g, g22 * vo4b + c018.ieq, amp4a, nullptr, 0);
+        const double vm4a = amp4a.vm;
         ic4a = vo4a;
 
         // ---- commit every capacitor's terminal voltage ----
@@ -396,7 +484,6 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         c039.commit (vs - vnA);
         c033.commit (vnB - vnC);
         c032.commit (vm3b - vo3b);
-        leg3b.solveNodes (vm3b);
         leg3b.commit (vm3b);
         c031.commit (vp - vBias);
         c029.commit (vp - vq);
@@ -407,8 +494,6 @@ struct MetalZoneStyleDistortionProcessor::ReducedFrontEnd
         c023.commit (vn31);
         c021.commit (vl - vm2);
         c022.commit (vm4b - vo4b);
-        legA4b.solveNodes (vm4b);
-        legB4b.solveNodes (vm4b);
         legA4b.commit (vm4b);
         legB4b.commit (vm4b);
         c018.commit (vm4a - vo4a);

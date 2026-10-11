@@ -330,13 +330,36 @@ public:
         would take a second Newton port, only ever matters as the point where a stage runs out of collector current, and
         for a stage with a resistive load that point is known. Base current stays iC/beta of the unsaturated current;
         the bc junction the one-port lacks can be restored separately with addDiode where the circuit needs it (HM-2's
-        self-biased stages -- see docs/circuits/HM2StyleDistortion.md). */
-    void addBjtSaturating (Node collector, Node base, Node emitter, bool pnp, const BjtParams& p,
-                           double saturationCurrent)
+        self-biased stages -- see docs/circuits/HM2StyleDistortion.md).
+        Returns the bjt index for setBjtSaturationCurrent()/setBjtSatExcessToBase() (a saturation limit that
+        tracks a knob, or a drive node that must feel the deficit). */
+    int addBjtSaturating (Node collector, Node base, Node emitter, bool pnp, const BjtParams& p,
+                          double saturationCurrent)
     {
         Bjt q { collector, base, emitter, pnp, {}, saturationCurrent };
         q.model.setParameters (p.Is, p.Vt, p.betaF, p.betaR);
         bjts.push_back (q);
+        if (p.tauF > 0.0 || p.cje > 0.0)
+            bjtDynamics.push_back ({ (int) bjts.size() - 1, addCapacitor (base, emitter, p.cje + 1.0e-12), p.tauF, p.cje });
+        if (p.cjc > 0.0)
+            addCapacitor (base, collector, p.cjc);
+        return (int) bjts.size() - 1;
+    }
+
+    /** Updates a saturating one-port's collector-current limit while running (allocation-free; the limit only
+        enters the device evaluation, never the factorisation). For a stage whose effective load line moves with
+        a knob -- e.g. an emitter degeneration pot ahead of the collector resistor. */
+    void setBjtSaturationCurrent (int bjtIndex, double amps) noexcept
+    {
+        bjts[(size_t) bjtIndex].iSat = amps;
+    }
+
+    /** Opt-in for one-port BJTs whose drive node must feel saturation: returns the collector
+        deficit (ic_unsat - ic_limited) through the base instead of dropping it -- the same
+        loading the real two-port puts on the stage feeding a saturating transistor. */
+    void setBjtSatExcessToBase (int bjtIndex, bool on) noexcept
+    {
+        bjts[(size_t) bjtIndex].satExcessToBase = on;
     }
 
     /** N-channel JFET. Gate current is taken as zero. `assumedVds` > 0 marks a JFET that stays in saturation (a
@@ -828,7 +851,7 @@ private:
     struct Op { Node plus, minus, out; double offset; double invGain = 0.0, cm = 0.0; }; // (1+cm) V(plus) - (1-cm) V(minus) - invGain V(out) = offset
     struct RailDevice { Node out; double lo, hi; }; // a rail-limited op-amp's output bounds (see addRailLimitedOpAmp)
     struct Dio { Node a, k; double Is, nVt; };
-    struct Bjt { Node c, b, e; bool pnp; EbersMollBJT model; double iSat = 0.0; };
+    struct Bjt { Node c, b, e; bool pnp; EbersMollBJT model; double iSat = 0.0; bool satExcessToBase = false; };
     struct Jfet { Node d, g, s; ShichmanHodgesJFET model; double assumedVds = 0.0; };
     struct Triode { Node p, g, k; KorenTriode model; };
     struct Pentode { Node p, g, k; KorenPentode model; double vg2 = 0.0, vg2Pow = 0.0; double lastVgk = 0.0, lastVpk = 0.0; int portI0 = 0; };
@@ -2515,9 +2538,21 @@ private:
                     ic /= root;
                 }
                 cur[m.i0] = ic;
-                cur[m.i0 + 1] = op.iB;
                 D[m.i0][m.v0] = dic;
-                D[m.i0 + 1][m.v0] = op.diB_dvbe;
+                if (q.satExcessToBase)
+                {
+                    // the junction current that can no longer leave through the collector exits
+                    // through the base (the two-port's beta collapse), so the driving stage
+                    // feels the transistor saturating instead of losing the excess current.
+                    // Signed both ways: for a PNP the deficit is negative and sinks base current.
+                    cur[m.i0 + 1] = op.iB + (op.iC - ic);
+                    D[m.i0 + 1][m.v0] = op.diB_dvbe + (op.diC_dvbe - dic);
+                }
+                else
+                {
+                    cur[m.i0 + 1] = op.iB;
+                    D[m.i0 + 1][m.v0] = op.diB_dvbe;
+                }
             }
             else if (m.kind == 6)
             {

@@ -43,6 +43,14 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
 
+    /** Eco-tier CPU: Q1 and Q3 become one-port saturating devices (addBjtSaturating -- the
+        collector junction matters only as the load-line limit) while the directly-coupled
+        Q2 keeps its two-port solve: its saturation depends on the input, which a one-port
+        cannot express (docs/circuits/ToneBenderStyleFuzz.md). Q3's saturation current tracks
+        the Attack pot's emitter degeneration in updatePots(). Measured vs the full netlist
+        in ReducedOrderEquivalenceTests.cpp. */
+    static inline bool reducedOrder = false;
+
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return spec.displayName; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffd0a04a); }
@@ -85,6 +93,7 @@ private:
         NodalCircuit::Node nC1 = 0, nC2 = 0, nC3 = 0, nE3 = 0, nOut = 0;
         int rAttackTop = 0, rAttackBottom = 0;
         int rVolumeTop = 0, rVolumeBottom = 0;
+        int q3Device = -1; // bjt index of the reduced model's saturating Q3 (-1: full model)
     };
 
     void buildChannel (Channel& ch);
