@@ -65,6 +65,10 @@ private:
     juce::TextButton ecoButton { "Eco" }, normalButton { "Normal" }, highButton { "High" };
     juce::Label qualityHintLabel;
     void refreshQualityHint();
+    juce::Label cabSectionLabel { {}, "Built-in cab voicing" };
+    juce::TextButton cabVoicingButton { "On" };
+    juce::Label cabHintLabel;
+    void refreshCabHint();
     juce::Label rateSectionLabel { {}, "Sample rate" };
     juce::OwnedArray<juce::TextButton> rateButtons;
     juce::Array<double> rateValues;
