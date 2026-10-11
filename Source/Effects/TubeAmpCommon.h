@@ -2,6 +2,7 @@
 
 #include "NodalCircuit.h"
 #include "TubeModels.h"
+#include "../Engine/SoftCeiling.h"
 
 #include <atomic>
 #include <cmath>
@@ -41,14 +42,11 @@ constexpr double declickDecay = 0.996; // per sample: the offset left by a resto
 
 /** The emitted float's full scale: an amp's output stage cannot swing past its rails, so a hot Output/Level
     knob pushing the model toward the host's 0 dBFS clip should saturate, not emit an unbounded float that
-    hard-clips downstream. Linear under outKnee, soft-limited to outCeil (the audit's clip meter counts
-    |x| > 0.98, so the ceiling sits under it -- 0.88, not 0.93, because the oversampling wrapper's
-    decimation filter rings a few percent past the emit bound on clipped edges). */
-constexpr double outKnee = 0.6, outCeil = 0.88;
+    hard-clips downstream. Same limiter the device boundary applies (see Engine/SoftCeiling.h). */
+constexpr double outKnee = ceilKnee, outCeil = ceilCeiling;
 inline double outputCeiling (double x) noexcept
 {
-    const double a = std::abs (x);
-    return a <= outKnee ? x : std::copysign (outKnee + (outCeil - outKnee) * std::tanh ((a - outKnee) / (outCeil - outKnee)), x);
+    return softCeiling (x);
 }
 
 /** Kill switch for the CabSim inside PowerStageTail (settings: "..." -> Settings -> Built-in cab voicing; the

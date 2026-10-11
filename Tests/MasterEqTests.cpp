@@ -1,5 +1,6 @@
 #include "Engine/MasterEq.h"
 #include "Engine/MasterBusSettings.h"
+#include "Engine/SoftCeiling.h"
 
 #include "SineProbe.h"
 
@@ -135,6 +136,25 @@ public:
                 eq.process (buf);
             }
             expectLessThan ((double) buf.getMagnitude (0, 0, 512), 1.0e-3);
+        }
+
+        beginTest ("the output ceiling passes clean levels and saturates a hot last-in-chain pedal");
+        {
+            // Below the knee the bus limiter is a no-op -- unity-level chains are untouched.
+            for (double x : { -0.6, -0.3, 0.0, 0.3, 0.6 })
+                expectWithinAbsoluteError (softCeiling (x), x, 1.0e-12);
+            // A boosted pedal hitting peaks of 1.4+ saturates under the ceiling instead of
+            // hard-clipping at the DAC -- bounded, monotonic, odd-symmetric.
+            double prev = 0.0;
+            for (double x = 0.6; x <= 8.0; x += 0.05)
+            {
+                const double y = softCeiling (x);
+                expect (y >= prev && y <= ceilCeiling + 1.0e-9);
+                expectWithinAbsoluteError (softCeiling (-x), -y, 1.0e-12);
+                prev = y;
+            }
+            expectWithinAbsoluteError (softCeiling (1.4), 0.878, 0.01);
+            expectWithinAbsoluteError (softCeiling (100.0), ceilCeiling, 1.0e-9);
         }
 
         beginTest ("the maxBands cap holds");

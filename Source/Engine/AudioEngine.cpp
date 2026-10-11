@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "SoftCeiling.h"
 
 #include <cmath>
 
@@ -436,6 +437,17 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         const float g = masterGainLinear.load (std::memory_order_relaxed);
         if (! juce::approximatelyEqual (g, 1.0f))
             buffer.applyGain (g);
+    }
+
+    // Final device boundary: whatever the chain or the master section emits, the DAC hard-clips
+    // past full scale -- a boosted last-in-chain pedal would hit that as harsh digital clip, so the
+    // bus saturates into the shared soft ceiling instead. Post master EQ + gain, so the OUT meter
+    // below still reads the level actually about to reach the device.
+    for (int ch = 0; ch < numOutputChannels; ++ch)
+    {
+        auto* out = outputChannelData[ch];
+        for (int i = 0; i < numSamples; ++i)
+            out[i] = (float) softCeiling (out[i]);
     }
 
     // Peak across every channel the graph actually produced -- what's
