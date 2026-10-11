@@ -115,7 +115,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     installUpdateButton.onClick = [this] { doInstallUpdate(); };
 
     content.addChildComponent (restartAppButton);
-    restartAppButton.onClick = [this] { updater.restartNow(); };
+    restartAppButton.onClick = [this] { updater.restartNow(); applyUpdateUiState(); };
 
     content.addAndMakeVisible (updateStatusLabel);
     updateStatusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
