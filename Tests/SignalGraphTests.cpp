@@ -31,6 +31,27 @@ namespace
         float gain;
         int prepareCalls = 0, processCalls = 0, resetCalls = 0;
     };
+
+    /** Gain processor that burns a fixed amount of CPU per block, so a
+        worker thread reliably gets to its job before the audio thread
+        could ever finish the other lane and claim it back. */
+    class SlowGainProcessor : public TestGainProcessor
+    {
+    public:
+        SlowGainProcessor (float gainToApply, double busyMs) : TestGainProcessor (gainToApply), ms (busyMs) {}
+
+        void process (juce::AudioBuffer<float>& buffer) override
+        {
+            const auto deadline = juce::Time::getMillisecondCounterHiRes() + ms;
+            volatile float sink = 0.0f; // NOLINT -- deliberate busy work, this is a test double
+            while (juce::Time::getMillisecondCounterHiRes() < deadline)
+                sink += 1.0e-7f;
+            (void) sink;
+            TestGainProcessor::process (buffer);
+        }
+
+        double ms;
+    };
 }
 
 class SignalGraphTests : public juce::UnitTest
@@ -177,6 +198,86 @@ public:
 
             expectEquals (a.resetCalls, 1);
             expectEquals (b.resetCalls, 1);
+        }
+
+        beginTest ("two independent lanes run in parallel and produce the serial result");
+        {
+            // Lane 0 is deliberately slow so the worker wakes and claims
+            // lane 1 long before the audio thread could take it back. Several
+            // blocks, not one: a worker's own thread startup can outlast a
+            // single block under load -- claim-back covers it (that's its
+            // job), later blocks are still run by the worker.
+            SlowGainProcessor a (0.5f, 20.0);
+            TestGainProcessor b (0.25f);
+            SignalGraph graph;
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneReadsDeviceInput (1, true);
+            graph.setLaneProcessors (0, { &a });
+            graph.setLaneProcessors (1, { &b });
+            graph.setLaneWritesDeviceOutput (0, true);
+            graph.setLaneWritesDeviceOutput (1, true);
+            graph.prepare (48000.0, 128, 1);
+
+            juce::AudioBuffer<float> buffer (1, 4);
+            for (int block = 0; block < 32; ++block)
+            {
+                buffer.clear();
+                buffer.setSample (0, 0, 1.0f);
+                graph.process (buffer);
+
+                // 1.0 * 0.5 + 1.0 * 0.25 -- identical to the serial order.
+                expectWithinAbsoluteError (buffer.getSample (0, 0), 0.75f, 1.0e-6f);
+            }
+            expect (graph.getJobsRunByWorkers() > 0, "expected a worker to have run a lane");
+        }
+
+        beginTest ("parallel stages: a 2-lane merge feeding a downstream lane matches the serial result");
+        {
+            SlowGainProcessor quarterA (0.25f, 20.0);
+            TestGainProcessor quarterB (0.25f);
+            SignalGraph graph;
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneReadsDeviceInput (1, true);
+            graph.setLaneProcessors (0, { &quarterA });
+            graph.setLaneProcessors (1, { &quarterB });
+            graph.addLaneConnection (0, 2);
+            graph.addLaneConnection (1, 2);
+            graph.setLaneWritesDeviceOutput (2, true);
+            graph.prepare (48000.0, 128, 1);
+
+            juce::AudioBuffer<float> buffer (1, 4);
+            for (int block = 0; block < 32; ++block)
+            {
+                buffer.clear();
+                buffer.setSample (0, 0, 1.0f);
+                graph.process (buffer);
+
+                // Same merge math as the serial test above: 0.25 + 0.25 = 0.5.
+                expectWithinAbsoluteError (buffer.getSample (0, 0), 0.5f, 1.0e-6f);
+            }
+            expect (graph.getJobsRunByWorkers() > 0, "expected a worker to have run a lane");
+        }
+
+        beginTest ("a processor instance shared across a stage's lanes forces that stage serial");
+        {
+            TestGainProcessor shared (0.5f);
+            SignalGraph graph;
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneReadsDeviceInput (1, true);
+            graph.setLaneProcessors (0, { &shared });
+            graph.setLaneProcessors (1, { &shared });
+            graph.setLaneWritesDeviceOutput (0, true);
+            graph.setLaneWritesDeviceOutput (1, true);
+            graph.prepare (48000.0, 128, 1);
+
+            juce::AudioBuffer<float> buffer (1, 4);
+            buffer.clear();
+            buffer.setSample (0, 0, 1.0f);
+
+            graph.process (buffer);
+
+            expectEquals (shared.processCalls, 2); // both lanes ran it, serially
+            expectEquals (graph.getJobsRunByWorkers(), 0); // never dispatched to a worker
         }
     }
 };
