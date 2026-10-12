@@ -45,7 +45,7 @@ private:
 
     double sampleRate = 48000.0;
     bool gateOpen = false;
-    int holdSamplesLeft = 0;
+    int samplesBelowClose = 0;
 };
 
 } // namespace openguitarmultifx

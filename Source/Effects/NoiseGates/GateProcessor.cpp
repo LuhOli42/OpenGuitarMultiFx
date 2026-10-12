@@ -66,7 +66,7 @@ void GateProcessor::reset()
     levelDetector.reset();
     gainSmoother.reset(); // gate starts closed -- silent until the first transient opens it
     gateOpen = false;
-    holdSamplesLeft = 0;
+    samplesBelowClose = 0;
 }
 
 void GateProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -108,21 +108,24 @@ void GateProcessor::process (juce::AudioBuffer<float>& buffer)
         // Two-threshold state machine: once open, the gate only starts its
         // hold countdown when the level drops below the (lower) close
         // threshold, so a signal wobbling around the threshold can't
-        // chatter the gate. targetGain still runs through gainSmoother, so
-        // the 0<->1 transitions themselves stay click-free.
+        // chatter the gate. Counting elapsed below-threshold samples (not a
+        // preloaded remaining counter) makes a Hold change apply to an
+        // active countdown; the gate still closes on the (H+1)-th sample.
+        // targetGain still runs through gainSmoother, so the 0<->1
+        // transitions themselves stay click-free.
         if (! gateOpen)
         {
             if (detectedLevel >= openThreshold)
             {
                 gateOpen = true;
-                holdSamplesLeft = holdSamples;
+                samplesBelowClose = 0;
             }
         }
         else if (detectedLevel >= closeThreshold)
         {
-            holdSamplesLeft = holdSamples;
+            samplesBelowClose = 0;
         }
-        else if (--holdSamplesLeft < 0)
+        else if (++samplesBelowClose > holdSamples)
         {
             gateOpen = false;
         }

@@ -163,6 +163,41 @@ public:
             feed (immediate, 0.0f, 60.0);      // hold 0: 60 ms >> 10 ms release, already closed
             expectLessThan (probeGain (immediate), 0.01);
         }
+
+        beginTest ("changing Hold during the countdown takes effect");
+        {
+            auto feed = [] (GateProcessor& g, float level, double ms)
+            {
+                const int n = (int) (ms * 0.001 * sr);
+                juce::AudioBuffer<float> buf (1, n);
+                for (int i = 0; i < n; ++i)
+                    buf.setSample (0, i, level);
+                g.process (buf);
+            };
+            auto probeGain = [] (GateProcessor& g)
+            {
+                const int n = (int) (0.010 * sr);
+                juce::AudioBuffer<float> buf (1, n);
+                const float level = juce::Decibels::decibelsToGain (-60.0f);
+                for (int i = 0; i < n; ++i)
+                    buf.setSample (0, i, level);
+                g.process (buf);
+                double eOut = 0.0;
+                for (int i = 0; i < n; ++i)
+                    eOut += (double) buf.getSample (0, i) * buf.getSample (0, i);
+                return std::sqrt (eOut / ((double) n * level * level));
+            };
+
+            GateProcessor gate;
+            gate.prepare (sr, 512, 1);
+            setParams (gate, { -50.0f, 1.0f, 10.0f, 0.0f, 500.0f });
+            feed (gate, 0.5f, 300.0);          // open, hold = 500 ms
+            feed (gate, 0.0f, 20.0);           // 20 ms into the countdown
+            setParams (gate, { -50.0f, 1.0f, 10.0f, 0.0f, 0.0f }); // Hold -> 0 mid-countdown
+            // 10 ms param ramp (paramRampSeconds) + 10 ms release + margin
+            feed (gate, 0.0f, 60.0);
+            expectLessThan (probeGain (gate), 0.01); // < -40 dB: closed, not still held for ~460 ms
+        }
     }
 };
 
