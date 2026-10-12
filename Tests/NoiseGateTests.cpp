@@ -1,5 +1,5 @@
-#include "Effects/DS201StyleNoiseGateProcessor.h"
-#include "Effects/NS2StyleNoiseSuppressorProcessor.h"
+#include "Effects/NoiseGates/DS201StyleNoiseGateProcessor.h"
+#include "Effects/NoiseGates/NS2StyleNoiseSuppressorProcessor.h"
 
 #include "SineProbe.h"
 

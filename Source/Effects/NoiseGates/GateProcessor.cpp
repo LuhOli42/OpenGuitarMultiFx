@@ -1,5 +1,5 @@
 #include "GateProcessor.h"
-#include "IconKit.h"
+#include "../IconKit.h"
 
 #include <IconData.h>
 
@@ -19,18 +19,28 @@ GateProcessor::GateProcessor()
     auto release = std::make_unique<juce::AudioParameterFloat> (
         "gate_release", "Release",
         juce::NormalisableRange<float> (10.0f, 1000.0f, 0.0f, 0.4f), 100.0f);
+    auto hysteresis = std::make_unique<juce::AudioParameterFloat> (
+        "gate_hysteresis", "Hysteresis",
+        juce::NormalisableRange<float> (0.0f, 20.0f), 6.0f);
+    auto hold = std::make_unique<juce::AudioParameterFloat> (
+        "gate_hold", "Hold",
+        juce::NormalisableRange<float> (0.0f, 500.0f, 0.0f, 0.4f), 10.0f);
 
     thresholdDb = threshold.get();
     attackMs = attack.get();
     releaseMs = release.get();
+    hysteresisDb = hysteresis.get();
+    holdMs = hold.get();
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "gate", "Noise Gate", "|",
-        std::move (threshold), std::move (attack), std::move (release));
+        std::move (threshold), std::move (attack), std::move (release),
+        std::move (hysteresis), std::move (hold));
 }
 
-void GateProcessor::prepare (double sampleRate, int, int)
+void GateProcessor::prepare (double sr, int, int)
 {
+    sampleRate = sr;
     levelDetector.prepare (sampleRate);
     levelDetector.setAttackTime (2.0f);
     levelDetector.setReleaseTime (2.0f);
@@ -43,6 +53,10 @@ void GateProcessor::prepare (double sampleRate, int, int)
     smoothedAttackMs.setCurrentAndTargetValue (attackMs->get());
     smoothedReleaseMs.reset (sampleRate, paramRampSeconds);
     smoothedReleaseMs.setCurrentAndTargetValue (releaseMs->get());
+    smoothedHysteresisDb.reset (sampleRate, paramRampSeconds);
+    smoothedHysteresisDb.setCurrentAndTargetValue (hysteresisDb->get());
+    smoothedHoldMs.reset (sampleRate, paramRampSeconds);
+    smoothedHoldMs.setCurrentAndTargetValue (holdMs->get());
 
     reset();
 }
@@ -51,6 +65,8 @@ void GateProcessor::reset()
 {
     levelDetector.reset();
     gainSmoother.reset(); // gate starts closed -- silent until the first transient opens it
+    gateOpen = false;
+    holdSamplesLeft = 0;
 }
 
 void GateProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -66,7 +82,11 @@ void GateProcessor::process (juce::AudioBuffer<float>& buffer)
     gainSmoother.setAttackTime (smoothedAttackMs.skip (numSamples));
     gainSmoother.setReleaseTime (smoothedReleaseMs.skip (numSamples));
     smoothedThresholdDb.setTargetValue (thresholdDb->get());
-    const float thresholdLinear = juce::Decibels::decibelsToGain (smoothedThresholdDb.skip (numSamples));
+    const float openThreshold = juce::Decibels::decibelsToGain (smoothedThresholdDb.skip (numSamples));
+    smoothedHysteresisDb.setTargetValue (hysteresisDb->get());
+    const float closeThreshold = openThreshold * juce::Decibels::decibelsToGain (-smoothedHysteresisDb.skip (numSamples));
+    smoothedHoldMs.setTargetValue (holdMs->get());
+    const int holdSamples = (int) (smoothedHoldMs.skip (numSamples) * 0.001 * sampleRate);
 
     // Caching the write pointer once per channel avoids the bounds-checked
     // indirection getSample()/setSample() would otherwise do on every one of
@@ -84,8 +104,30 @@ void GateProcessor::process (juce::AudioBuffer<float>& buffer)
             peak = juce::jmax (peak, std::abs (channelData[(size_t) ch][i]));
 
         const float detectedLevel = levelDetector.processSample (peak);
-        const float targetGain = (detectedLevel >= thresholdLinear) ? 1.0f : 0.0f;
-        const float gateGain = gainSmoother.processSample (targetGain);
+
+        // Two-threshold state machine: once open, the gate only starts its
+        // hold countdown when the level drops below the (lower) close
+        // threshold, so a signal wobbling around the threshold can't
+        // chatter the gate. targetGain still runs through gainSmoother, so
+        // the 0<->1 transitions themselves stay click-free.
+        if (! gateOpen)
+        {
+            if (detectedLevel >= openThreshold)
+            {
+                gateOpen = true;
+                holdSamplesLeft = holdSamples;
+            }
+        }
+        else if (detectedLevel >= closeThreshold)
+        {
+            holdSamplesLeft = holdSamples;
+        }
+        else if (--holdSamplesLeft < 0)
+        {
+            gateOpen = false;
+        }
+
+        const float gateGain = gainSmoother.processSample (gateOpen ? 1.0f : 0.0f);
 
         for (int ch = 0; ch < cachedChannels; ++ch)
             channelData[(size_t) ch][i] *= gateGain;

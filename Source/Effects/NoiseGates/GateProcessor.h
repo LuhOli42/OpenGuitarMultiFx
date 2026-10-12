@@ -1,7 +1,7 @@
 #pragma once
 
-#include "EffectProcessor.h"
-#include "EnvelopeFollower.h"
+#include "../EffectProcessor.h"
+#include "../EnvelopeFollower.h"
 
 namespace openguitarmultifx
 {
@@ -31,6 +31,8 @@ private:
     juce::AudioParameterFloat* thresholdDb = nullptr;
     juce::AudioParameterFloat* attackMs = nullptr;
     juce::AudioParameterFloat* releaseMs = nullptr;
+    juce::AudioParameterFloat* hysteresisDb = nullptr;
+    juce::AudioParameterFloat* holdMs = nullptr;
 
     EnvelopeFollower levelDetector; // fixed, fast timing -- not user-exposed
     EnvelopeFollower gainSmoother;  // timing == the Attack/Release parameters above
@@ -38,6 +40,12 @@ private:
     juce::SmoothedValue<float> smoothedThresholdDb;
     juce::SmoothedValue<float> smoothedAttackMs;
     juce::SmoothedValue<float> smoothedReleaseMs;
+    juce::SmoothedValue<float> smoothedHysteresisDb;
+    juce::SmoothedValue<float> smoothedHoldMs;
+
+    double sampleRate = 48000.0;
+    bool gateOpen = false;
+    int holdSamplesLeft = 0;
 };
 
 } // namespace openguitarmultifx

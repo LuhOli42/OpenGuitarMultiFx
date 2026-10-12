@@ -1,5 +1,5 @@
 #include "NS2StyleNoiseSuppressorProcessor.h"
-#include "IconKit.h"
+#include "../IconKit.h"
 
 #include <IconData.h>
 

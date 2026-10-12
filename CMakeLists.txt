@@ -154,7 +154,7 @@ set(OGMFX_CORE_SOURCES
   Source/Engine/SignalGraph.cpp
   Source/Engine/Spillover.cpp
   Source/Engine/ParameterManager.cpp
-  Source/Effects/GateProcessor.cpp
+  Source/Effects/NoiseGates/GateProcessor.cpp
   Source/Effects/CompressorProcessor.cpp
   Source/Effects/PositiveGroundBoosterProcessor.cpp
   Source/Effects/DS1StyleDistortionProcessor.cpp
@@ -187,8 +187,8 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/GEB7StyleEqualizerProcessor.cpp
   Source/Effects/ParametricEQProcessor.cpp
   Source/Effects/RingModProcessor.cpp
-  Source/Effects/DS201StyleNoiseGateProcessor.cpp
-  Source/Effects/NS2StyleNoiseSuppressorProcessor.cpp
+  Source/Effects/NoiseGates/DS201StyleNoiseGateProcessor.cpp
+  Source/Effects/NoiseGates/NS2StyleNoiseSuppressorProcessor.cpp
   Source/Effects/DynaCompStyleCompressorProcessor.cpp
   Source/Effects/SqueezerStyleCompressorProcessor.cpp
   Source/Effects/Dbx160StyleCompressorProcessor.cpp

@@ -63,18 +63,31 @@ so the Add Effect browser groups them under Dynamics → the "Gate" chip.
 
 ## Planned (not implemented yet)
 
-- **Decimator-style adaptive release** — release time tracks the decay
-  slope of the note instead of being fixed.
-- **Rocktron Hush-style** — downward expansion tuned for guitar noise
-  reduction rather than gating.
-- **MXR Smart Gate-style** — simple gate with a few fixed speed modes.
-- **Fortin Zuul-style key gate** — gate driven by a separate key/side-chain
-  input.
-- **Multiband gate** — independent gates per frequency band.
-- **Hum remover** — narrow notches at mains frequency and harmonics.
-- **Boss NF-1-style** — single-threshold vintage-style noise gate.
-- **Spectral gate** — per-FFT-bin attenuation below a spectral floor.
-- **Neural gate** — learned noise suppression.
+- **Decimator-style adaptive release** (ISP Decimator II/X) — fast release on
+  staccato, slow on sustained notes, via the "integration release window"
+  described in US patent 11,641,183. Also the base of a reusable adaptive
+  release block for the other gates.
+- **Rocktron Hush-style** — downward expander (SA572) plus a dynamic low-pass
+  VCF (LM13600) with Variable Integrated Release: removes hiss while playing,
+  not only in silence. Circuit model from the traced Hush The Pedal schematic.
+- **MXR Smart Gate-style** (M135) — closing filters instead of muting, with
+  Hiss / Mid / Full noise bands, Hi Trigger Range and adaptive release;
+  match the manual's gate-closed response (e.g. Hiss −3 dB @ 1 kHz, −22 dB @ 20 kHz).
+- **Fortin Zuul-style key gate** — hard gate detected from the clean guitar
+  (key) while attenuating the noisy post-drive/amp signal (4-cable method).
+  Needs a key/side-chain routing design first.
+- **Multiband gate** (TC Sentry-style) — Linkwitz-Riley crossover, one
+  gate/expander per band, plus a hard-gate mode.
+- **Hum remover** (EHX Hum Debugger-style) — notch comb at 50/60 Hz and
+  harmonics that tracks the mains frequency; Normal = odd harmonics,
+  Strong = odd + even.
+- **Boss NF-1** — 1979 vintage gate (Sens/Decay), circuit model from the
+  public schematic (uPC741C, 2SK30A as a variable resistor).
+- **Spectral gate** — learns a noise profile in silence and attenuates per
+  FFT bin with time/frequency smoothing.
+- **Neural noise reduction** — RNNoise-style network retrained on guitar
+  (DI + hiss/hum/buzz/amp-noise mixes, 5 ms frames); only registered if a DI
+  render shows no audible loss of harmonics or attack.
 
 ## Conventions for adding a gate here
 
