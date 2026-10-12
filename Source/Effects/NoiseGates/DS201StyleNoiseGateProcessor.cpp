@@ -1,5 +1,5 @@
 #include "DS201StyleNoiseGateProcessor.h"
-#include "IconKit.h"
+#include "../IconKit.h"
 
 #include <IconData.h>
 

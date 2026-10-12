@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EffectProcessor.h"
+#include "../EffectProcessor.h"
 
 namespace openguitarmultifx
 {

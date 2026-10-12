@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../Engine/Biquad.h"
-#include "EffectProcessor.h"
+#include "../../Engine/Biquad.h"
+#include "../EffectProcessor.h"
 
 #include <array>
 
