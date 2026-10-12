@@ -14,7 +14,8 @@ namespace
     using namespace tubeamp;
 
     // ---- supply (docs/circuits/DualRectifier.md). Factory Mesa Boogie Dual Rectifier (2-channel, 6-93 GEO. M.).
-    // Solid-state rectification only (the tube/diode select is not modelled).
+    // Solid-state rectification is the Bold default; the drec_spongy param models the
+    // tube-rectifier mode (more B+ drop, deeper sag, ~6% lower plate rail).
     // Rails: A=460V plates, B=454V screens, C=422V (PI), D=406V (V3A), E=402V (V1A/V2).
     // Chain: Rect → A (220µF, 150K bleeder) → CHOKE → B (220µF) → 2.7K → C (30µF) → 22K → D (30µF) → 15K → E (30µF). ----
     constexpr double railPlatesNominal = 460.0;
