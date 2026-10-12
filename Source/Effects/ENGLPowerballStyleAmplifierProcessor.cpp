@@ -917,7 +917,8 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
 
             for (auto& ch : channels)
             {
-                ch.pre.setResistance (ch.rU5bSeries, channelSel == 0 ? 100.0e6 : 10.0e3);
+                // 2 preamps x Lo/Hi boost, not a per-channel stage count: Ch I (Clean/Crunch) is U5A+U5B,
+                // Ch II (Lo/Hi Lead) adds U6A. U5B is in-circuit for every channel (built at 10K).
                 ch.pre.setResistance (ch.rU6aSeries, channelSel <= 1 ? 100.0e6 : 100.0e3);
             }
         }
@@ -933,11 +934,11 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
             auto* data = buffer.getWritePointer (chIdx);
 
             const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
-            ch.pre.setSource (ch.pSrcIn, x);
+            ch.pre.setSource (ch.pSrcIn, x * chanSens[channelSel]);
             const bool okPre = ch.pre.solveSample();
 
-            // AC-coupled from preamp to tone block, tap depends on channel
-            const int preTap = juce::jmin (channelSel, 2);
+            // AC-coupled from preamp to tone block, tap depends on channel pair: Ch I taps U5B, Ch II taps U6A.
+            const int preTap = channelSel <= 1 ? 1 : 2;
             const NodalCircuit::Node preampNodes[] = { ch.pGainWiper, ch.pPlateU5b, ch.pPlateU6a };
             const double acPre = ch.pre.voltage (preampNodes[preTap]) - ch.preampTapDc[preTap];
             ch.tone.setSource (ch.tSrcPre, masterGain * acPre);
@@ -957,11 +958,13 @@ void ENGLPowerballStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
                 ch.mwDcPrev = mw;
             }
             {
-                const NodalCircuit::Node tapNodes[] = { ch.tTone, ch.tPlateU6b, ch.tPlateU7a, ch.tPlateU7b };
+                // The post-EQ recovery path (U6B->U7A->U7B) is common to every channel in the real amp;
+                // all four taps read after U7B so per-channel differences come only from the preamp.
+                const NodalCircuit::Node tapNodes[] = { ch.tPlateU7b, ch.tPlateU7b, ch.tPlateU7b, ch.tPlateU7b };
                 for (int t = 0; t < 4; ++t)
                 {
                     // under reducedOrder the post-tonestack triodes are gone: every channel taps the tone
-                    // stack and bmTapGain reproduces how deep into the removed stages that channel used to tap
+                    // stack and bmTapGain reproduces the removed recovery chain's gain for that channel
                     const double raw = (reducedOrder ? ch.tone.voltage (ch.tTone) : ch.tone.voltage (tapNodes[t]))
                                      - ch.toneTapDc[t];
                     ch.tapDcOut[t] = dcR * ch.tapDcOut[t] + raw - ch.tapDcPrev[t];

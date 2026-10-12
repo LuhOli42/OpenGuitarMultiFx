@@ -139,7 +139,7 @@ private:
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0;
+            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rDepthPot = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wOut = 0, wPlateA = 0, wPlateB = 0, wGridA = 0, wTail = 0,
                            wTone = 0, wPP1 = 0, wPP2 = 0, wPowerGridA = 0, wBias = 0, wFeedback = 0;
@@ -205,6 +205,7 @@ private:
     juce::AudioParameterFloat* midParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
     juce::AudioParameterFloat* presenceParam = nullptr;
+    juce::AudioParameterFloat* depthParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;

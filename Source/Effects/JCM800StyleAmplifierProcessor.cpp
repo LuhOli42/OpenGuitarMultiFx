@@ -212,8 +212,9 @@ namespace
         b.srcIn = c.addSource (in, 0.0); // High/Low sensitivity is a plain gain factor applied in process(), not a
                                           // separate resistor network -- see the header's own note on this simplification
 
-        // V1a: R3 68k grid stopper, R4 100k plate (vcc1), R1 2k7 cathode with a 68 uF bypass (full bass, no local
-        // negative feedback here -- unlike every stage after it).
+        // V1a: R3 68k grid stopper, R4 100k plate (vcc1), R1 2k7 cathode with a 0.68 uF bypass -- the real 2203
+        // value: against 2.7k it only bypasses above ~90 Hz, so bass gets less gain than mids/treble (full bass
+        // gain needs a far bigger cap; 68 uF was a misread).
         const auto g1 = c.addNode(), k1 = c.addNode();
         b.plateV1a = c.addNode();
         c.addResistor (in, g1, 68.0e3);
@@ -221,7 +222,7 @@ namespace
         c.addCapacitor (g1, b.plateV1a, cgp);
         c.addResistor (vcc1, b.plateV1a, 100.0e3);
         c.addResistor (k1, gnd, 2.7e3);
-        c.addCapacitor (k1, gnd, 68.0e-6);
+        c.addCapacitor (k1, gnd, 0.68e-6);
         c.setInitialGuess (b.plateV1a, 230.0);
         c.setInitialGuess (k1, 1.0);
 
@@ -239,9 +240,11 @@ namespace
 
         // V1b: R7 100k plate (vcc1), R6 10k cathode -- UNBYPASSED (no cap), a real local negative-feedback stage that
         // gives this preamp its harder, more compressed character than the earlier bypassed-cathode amps.
-        const auto g2 = c.addNode(), k2 = c.addNode();
+        // The gain-pot wiper drives V1b's grid DIRECTLY on the 2203 -- the pot itself is the grid leak. A series
+        // 1M here would lowpass the stage into its own Miller capacitance (~1-2 kHz), darkening the whole amp.
+        const auto g2 = gainWiper;
+        const auto k2 = c.addNode();
         b.plateV1b = c.addNode();
-        c.addResistor (gainWiper, g2, 1.0e6); // the pot's own load into V1b's grid
         c.addTriode (b.plateV1b, g2, k2, triode12AX7());
         c.addCapacitor (g2, b.plateV1b, cgp);
         c.addResistor (vcc1, b.plateV1b, 100.0e3);

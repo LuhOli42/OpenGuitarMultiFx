@@ -143,6 +143,7 @@ SLO100StyleAmplifierProcessor::SLO100StyleAmplifierProcessor()
     auto nMaster = make ("slo_n_master", "Normal Master", 0.5f);
     auto power = make ("slo_power", "Overdrive Master", 0.5f);
     auto presence = make ("slo_presence", "Presence", 0.3f);
+    auto depth = make ("slo_depth", "Depth", 0.3f); // real SLO-100 front panel: Presence + Depth
     auto output = make ("slo_output", "Output", 0.5f);
     auto bias = make ("slo_bias", "Bias", 0.5f);
     auto feel = make ("slo_tube_feel", "Tube Feel", 1.0f);
@@ -164,6 +165,7 @@ SLO100StyleAmplifierProcessor::SLO100StyleAmplifierProcessor()
     nMasterParam = nMaster.get();
     powerParam = power.get();
     presenceParam = presence.get();
+    depthParam = depth.get();
     outputParam = output.get();
     biasParam = bias.get();
     tubeFeelParam = feel.get();
@@ -181,6 +183,7 @@ SLO100StyleAmplifierProcessor::SLO100StyleAmplifierProcessor()
     group->addChild (std::move (nMaster));
     group->addChild (std::move (power));
     group->addChild (std::move (presence));
+    group->addChild (std::move (depth));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("slo100_page2", "Page 2", "|", std::move (bias));
     page2->addChild (std::move (feel));
     page2->addChild (std::move (speaker));
@@ -494,6 +497,12 @@ void SLO100StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
         ch.rPresTop = c.addResistor (fp, wp, 12.5e3);
         ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
+        // Depth: the real SLO's DEPTH leg -- a 1M pot in series with 0.0047 uF fed from the OT tap into
+        // the feedback node (added to the SLO-100 as a standard control; Soldano docs). More depth opens
+        // the leg, feeding extra highs back so the low end reads deeper by contrast.
+        const auto dn = c.addNode();
+        ch.rDepthPot = c.addResistor (ch.wOut, dn, 1.0e6);
+        c.addCapacitor (dn, fp, 4.7e-9);
         c.addCapacitor (fp, wp, 0.1e-6);                  // .1uF in the Presence network
         c.addCapacitor (fp, gnd, 1.5e-9);                 // stray capacitance for HF stability
 
@@ -517,6 +526,8 @@ void SLO100StyleAmplifierProcessor::updatePots (const Knobs& k)
     const double midTop = juce::jmax (1.0, 25.0e3 - midBottom);
     const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
     const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
+    const double depth = depthParam != nullptr ? (double) depthParam->get() : 0.3;
+    const double depthR = juce::jmax (1.0, 1.0e6 * (1.0 - pots::audio (depth)));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
@@ -550,6 +561,7 @@ void SLO100StyleAmplifierProcessor::updatePots (const Knobs& k)
         {
             ch.power.setResistance (ch.rPresTop, presTop);
             ch.power.setResistance (ch.rPresBottom, presBottom);
+            ch.power.setResistance (ch.rDepthPot, depthR);
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
         }
@@ -679,7 +691,11 @@ double SLO100StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double 
                      - bmBA1 * ch.bmBY1 - bmBA2 * ch.bmBY2;
     ch.bmBX2 = ch.bmBX1; ch.bmBX1 = lf;
     ch.bmBY2 = ch.bmBY1; ch.bmBY1 = top;
-    ch.bmOutput = ch.bmTail.process (top * bmLevelTrim);
+    // Depth's NFB leg exists only in the full power block: lean the output toward the pre-top-section
+    // LF bump the way the series-RC feedback leg shapes the low end (flat at the 0.3 default).
+    const double depth = depthParam != nullptr ? (double) depthParam->get() : 0.3;
+    const double effTop = top + (depth - 0.3) * 0.9 * (lf - raw);
+    ch.bmOutput = ch.bmTail.process (effTop * bmLevelTrim);
     return ch.bmOutput;
 }
 

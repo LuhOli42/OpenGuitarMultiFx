@@ -39,7 +39,8 @@ public:
     // LF bump ~+9 dB at ~80-90 Hz whose level stays flat below it (bell, not a high-pass -- ENGL's depth/resonance
     // voicing), flat-ish mids, +1.5 dB ridge at ~4-5 kHz, rolloff ~-9 dB @ 10.8 kHz. reducedOrder also removes
     // the three post-tonestack triodes (U6B/U7A/U7B); their cumulative gain is folded into the knee and the
-    // per-channel drive scales bmTapGain (each channel taps progressively later in the real amp).
+    // shared drive scale bmTapGain -- the post-EQ path is COMMON to every channel in the real amp (channels
+    // differ only in the preamp), so the removed-chain compensation is the same for all four.
     // The reference's presence/depth pots sit in the dead NFB loop and measure 0.0 dB at every setting.
     static constexpr double bmBumpHz = 80.0, bmBumpQp = 2.0, bmBumpQz = 0.9;
     static constexpr double bmCutHz = 50.0;
@@ -47,7 +48,13 @@ public:
     // physical ceiling: the stages this replaces clip at the rail; caps resonant overshoot inside the sanity bound.
     static constexpr double bmOutMax = 64.0;
     static constexpr double bmLevelTrim = 0.60;
-    static constexpr double bmTapGain[4] = { 1.0, 40.0, 1200.0, 36000.0 };
+    // Ch I (Clean/Crunch) taps the 2-stage preamp: modest gain keeps the knob in the
+// knee region. Ch II (Lead/HiLead) taps after U6A and is meant to saturate.
+static constexpr double bmTapGain[4] = { 400.0, 400.0, 36000.0, 36000.0 };
+    // Real Powerball = 2 preamps x a Lo/Hi input-sensitivity boost: Ch I (Clean/Crunch) is U5A+U5B,
+    // Ch II (Lo/Hi Lead) adds U6A; Hi adds roughly +4 dB of sensitivity over Lo, and Clean runs ~-9 dB
+    // under Crunch on the same Ch I sensitivity knob.
+    static constexpr double chanSens[4] = { 0.35, 1.0, 1.0, 1.6 };
 
     bool dcConverged() const noexcept { return dcOk; }
     enum class Probe { u5aPlate, u5bPlate, u6aPlate, u6bPlate, u7aPlate, u7bPlate,
