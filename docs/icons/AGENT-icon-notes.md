@@ -50,8 +50,32 @@ worse than the HTML prototype the user approved, despite the shapes being
 "keep it simple to avoid bitmap loading" was never a real constraint, just
 an overcautious assumption.
 
+**2026-10-12 standardization pass (revamp approved by the user via a
+before/after sheet before merge):** every existing glyph was re-drawn onto
+one spec, keeping each glyph's silhouette/semantics but normalizing the
+geometry that had drifted between icons added months apart. The spec:
+
+- Root element, always in this order: `xmlns`, `viewBox="0 0 48 48"`,
+  `fill="none"`, `stroke="#FFFFFF"`, `stroke-width="3"`,
+  `stroke-linecap="round"`, `stroke-linejoin="round"`.
+- Keyline: primary geometry lives inside a 6–42 px window (stroke edges
+  stay inside the 48-px box); small accents (arrowheads, the shimmer
+  sparkle) may extend to 4–44.
+- Corner radius: `rx="3"` on every rounded rect (was 1.5/2/3/4 mixed).
+- Filled detail dots (knob dots, chip eyes, speaker centres): `r=1.6`
+  (`r=1.0` only inside the shrunken `neura_chip_cab` chip module).
+- Filled node dots (echoes, taps, note heads): `r` from {2, 3, 4} on the
+  integer grid — decaying sequences step down (digital delay 4→3→2).
+- Secondary "copy/echo" stroke: `stroke-dasharray="1 6"`; a duplicate
+  signal at `opacity="0.5"`, a baseline/guide at `opacity="0.35"`.
+- Family conventions: amps share one head module (rect + 3 knob dots) and
+  one cab module; drives share one 1.5-cycle wave skeleton at three clip
+  levels (overdrive soft sine → distortion flat tops → fuzz square);
+  modulation waves centre on y=24; delay echoes decay left→right.
+
 **To add a new icon:**
-1. Write an SVG matching the reference sheet: `viewBox="0 0 48 48"`,
+1. Write an SVG matching the reference sheet AND the spec above:
+   `viewBox="0 0 48 48"`,
    `stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"
    stroke-linejoin="round" fill="none"` on the root (override `fill`/
    `stroke="none"` per-shape only for genuinely filled elements, e.g. a
@@ -158,8 +182,8 @@ palette now for effects that don't exist yet.
 | ZendriveStyleOverdriveProcessor ("Zendrive-Style Overdrive") / OCDStyleOverdriveProcessor ("OCD-Style Overdrive") | Drive → Overdrive | `Assets/Icons/overdrive.svg` | `Source/Effects/ZendriveStyleOverdriveProcessor.cpp`, `OCDStyleOverdriveProcessor.cpp` |
 | Dyna Comp / Ross / Orange Squeezer / dbx 160 / G-Series bus / 1176 / LA-2A "-Style Compressor" processors | Dinamica → Compressor | `Assets/Icons/pulse.svg` reused (placeholder until distinct glyphs exist) | `Source/Effects/*StyleCompressorProcessor.cpp` |
 | DS201StyleNoiseGateProcessor / NS2StyleNoiseSuppressorProcessor | Dinamica → Noise Gate | `Assets/Icons/gate.svg` | `Source/Effects/DS201StyleNoiseGateProcessor.cpp`, `NS2StyleNoiseSuppressorProcessor.cpp` |
-| GE7StyleEqualizerProcessor / ParametricEQProcessor | Filtro/FX (no EQ glyph on the sheet) | `Assets/Icons/pulse.svg` placeholder | `Source/Effects/GE7StyleEqualizerProcessor.cpp`, `ParametricEQProcessor.cpp` |
-| RingModProcessor | Filtro/FX → Ring Mod | `Assets/Icons/tremolo.svg` placeholder | `Source/Effects/RingModProcessor.cpp` |
+| GE7StyleEqualizerProcessor / GEB7StyleEqualizerProcessor / ParametricEQProcessor | Filtro/FX → EQ | `Assets/Icons/eq.svg` (added 2026-10-12: three vertical sliders at varied heights; the sheet never had an EQ glyph, so this was designed in the set's own style — was `pulse.svg` as a placeholder) | `Source/Effects/GE7StyleEqualizerProcessor.cpp`, `GEB7StyleEqualizerProcessor.cpp`, `ParametricEQProcessor.cpp` |
+| RingModProcessor | Filtro/FX → Ring Mod | `Assets/Icons/ring_mod.svg` (added 2026-10-12: two interlocked rings — literal "ring" modulator — was `tremolo.svg` as a placeholder) | `Source/Effects/RingModProcessor.cpp` |
 | BassmanStyleAmplifierProcessor ("Bassman-Style Amplifier") | Amplifiers | `Assets/Icons/amp.svg` (added 2026-10-11: amp-head-with-knob-dots over a speaker cab, the set's first tube-amp glyph -- the sheet never had one, so this was designed in the set's own style rather than transcribed. Shared by EVERY modelled amp, guitar and bass) | `Source/Effects/BassmanStyleAmplifierProcessor.cpp` |
 | SuperLeadStyleAmplifierProcessor ("Super Lead-Style Amplifier") | Amplifiers | Same `amp.svg` glyph as the Bassman | `Source/Effects/SuperLeadStyleAmplifierProcessor.cpp` |
 | TwinReverbStyleAmplifierProcessor ("Twin Reverb-Style Amplifier") | Amplifiers | Same `amp.svg` glyph as the other modelled amps | `Source/Effects/TwinReverbStyleAmplifierProcessor.cpp` |
