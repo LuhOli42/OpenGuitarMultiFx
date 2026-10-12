@@ -244,6 +244,30 @@ op-amps clip at their rails. Algorithmic ensembles (no circuit) share `EnsembleD
 `TriangleLfo` from its Schmitt/integrator parts, and derive the clock from the timing R/C with `rcChargePeriod` before
 reaching for a calibrated law. The JC-120's built-in chorus predates this and still has its own BBD approximation.
 
+## BBD flangers (`BbdFlangerProcessor` — one engine, one spec per pedal)
+
+Same building blocks as the BBD choruses above (BucketBrigadeDelay, `analog::` filter design, TriangleLfo), plus
+`Modulation/Flanger/DiodeLimiters.h`: the diode limiters these pedals put in the regeneration path, solved exactly
+(Newton on the diode voltage) — `FeedbackLimiter` (Rf || (Rs + anti-parallel pair) in an inverting summer: MXR, BF-2)
+and `ShuntClipper` (Rs into a pair to ground: FX75, Tycobrahe's germanium pair). Each pedal is a `case` in
+`BbdFlangerProcessor::prepare()` with its schematic's values.
+
+| Pedal | Doc | BBD | Delay window (source) |
+|---|---|---|---|
+| MXR M117 | [MXR117Flanger.md](MXR117Flanger.md) | SAD1024 | 0.35–7 ms (calibrated) |
+| Electric Mistress | [ElectricMistressFlanger.md](ElectricMistressFlanger.md) | SAD1024A, almost unfiltered | 0.4–8 ms (calibrated) |
+| BF-2 | [BF2Flanger.md](BF2Flanger.md) | MN3207 | 1–13 ms (calibrated) |
+| A/DA | [ADAFlanger.md](ADAFlanger.md) | (spec only) | 0.4–15 ms (published) |
+| Pedalflanger (Tycobrahe) | [TycobraheFlanger.md](TycobraheFlanger.md) | MN3001 | 0.5–5 ms (**drawing's clock annotation**) |
+| Echo Flanger | [EchoFlanger.md](EchoFlanger.md) | 2–3 × SAD1024A + NE570 | 0.5–10 ms; Slapback ×8.4 |
+| FX75 | [FX75Flanger.md](FX75Flanger.md) | MN3007 | 0.8–10 ms (calibrated) |
+| FL-301 | [FL301Flanger.md](FL301Flanger.md) | MN3007 | 1–13 ms (calibrated) |
+
+Algorithms: [AlgorithmicFlangers.md](AlgorithmicFlangers.md) (through-zero, barberpole, Instant, envelope).
+
+**Known gap for this family:** none of the clock VCOs is modelled from parts (their transistor current sources are not
+legible enough on these drawings); the window is mapped exponentially across Manual + Width × LFO.
+
 ## Cross-cutting: oversampling
 Every clipping pedal that measured audibly aliased at 1x runs through `OversampledEffect`
 (2x, DS-1 4x); the table, the method and the CPU trade-off are in
