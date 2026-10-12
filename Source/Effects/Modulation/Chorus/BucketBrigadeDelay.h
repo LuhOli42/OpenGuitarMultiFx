@@ -20,9 +20,9 @@ namespace openguitarmultifx
     between two audio samples. So there is no interpolator of our own, the sample-and-hold "sinc" droop and the BBD's
     own aliasing are reproduced, and a clock change bends the pitch smoothly the way the chip does.
 
-    Filters are given as their poles (analog, rad/s) and DC gain; the partial-fraction residues are derived here, so a
-    pedal only has to describe its filter sections (Sallen-Key / RC stages are all-pole). Poles must be simple, and
-    come in conjugate pairs or be real. Not modelled (as in the paper): the chip's noise, its gain error and its
+    Filters are given as their poles and zeros (analog, rad/s) and DC gain -- analog::ladderTransfer() derives them
+    from a schematic's part values -- and the partial-fraction residues are derived here. Poles must be simple and come
+    in conjugate pairs or be real; zeros must be fewer than the poles. Not modelled (as in the paper): the chip's noise, its gain error and its
     soft clipping near the rails; a pedal adds those around this class where its circuit needs them.
 */
 class BucketBrigadeDelay
@@ -34,6 +34,7 @@ public:
     {
         std::vector<Complex> poles; // analog, rad/s, all in the left half-plane
         double dcGain = 1.0;
+        std::vector<Complex> zeros {}; // fewer than the poles (strictly proper) -- e.g. a cap across a series resistor
     };
 
     /** stages = the chip's stage count (1024 for an MN3007/MN3207, 512 for an MN3002). */
@@ -69,7 +70,7 @@ public:
         // Clock edges inside (k-1, k] -- nextEdge is kept relative to sample k-1, so d = nextEdge. The exponentials
         // exp(p Ts d) and exp(p Ts (1-d)) are stepped edge to edge by a fixed ratio instead of evaluated per edge:
         // a chorus clock puts several edges in every audio sample and std::exp dominated the cost.
-        if (nextEdge < 1.0 || ((edgeIndex & 1) != 0 && nextEdge == 1.0))
+        if (nextEdge < 1.0 || ((edgeIndex & 1) != 0 && nextEdge <= 1.0))
         {
             for (auto& s : in)
             {
@@ -82,7 +83,7 @@ public:
                 s.step = std::exp (-s.pTs * edgeStep);
             }
 
-            while (nextEdge < 1.0 || ((edgeIndex & 1) != 0 && nextEdge == 1.0))
+            while (nextEdge < 1.0 || ((edgeIndex & 1) != 0 && nextEdge <= 1.0))
             {
                 if ((edgeIndex & 1) == 0)
                 {
@@ -142,14 +143,18 @@ private:
     {
         sections.clear();
         const size_t m = f.poles.size();
-        // All-pole H(s) = K / prod(s - p_i), K chosen for the requested DC gain: H(0) = K / prod(-p_i).
-        Complex prodNeg = 1.0;
+        // H(s) = K prod(s - z) / prod(s - p_i), K chosen for the requested DC gain: H(0) = K prod(-z) / prod(-p_i).
+        Complex prodNeg = 1.0, zeroNeg = 1.0;
         for (const auto& p : f.poles)
             prodNeg *= -p;
-        const Complex k = f.dcGain * prodNeg;
+        for (const auto& z : f.zeros)
+            zeroNeg *= -z;
+        const Complex k = f.dcGain * prodNeg / zeroNeg;
         for (size_t i = 0; i < m; ++i)
         {
             Complex denom = 1.0;
+            for (const auto& z : f.zeros)
+                denom /= f.poles[i] - z;
             for (size_t j = 0; j < m; ++j)
                 if (j != i)
                     denom *= f.poles[i] - f.poles[j];

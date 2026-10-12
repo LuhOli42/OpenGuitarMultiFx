@@ -220,6 +220,30 @@ Not a "circuit" in the SPICE-topology sense (no schematic, no active device) —
 * **Signal processors from the literature**: Ring Mod (Parker diode model, `RingMod.md`), Parametric EQ (RBJ biquads), DS201 gate and NS-2 suppressor (manual specs).
 * Mix knob level-matching of the reverbs and delays: `MixLaw.md`.
 
+## BBD choruses (`BucketBrigadeDelay` + `analog::` filter design)
+
+Analog choruses built around a bucket-brigade chip. Shared parts, all in `Source/Effects/Modulation/Chorus/`:
+`BucketBrigadeDelay` (Holters & Parker DAFx-18: the chip at its own variable clock, with its anti-alias/reconstruction
+filters as the resampler), `analog::ladderTransfer` / `networkTransfer` (`Source/Effects/AnalogFilterDesign.h`: a
+schematic's R/C values → exact poles/zeros; the CE-2's Sallen-Key comes out at ElectroSmash's 6.6 / 6.9 kHz),
+`bbdchorus::TriangleLfo` (the Schmitt + integrator LFO every one of them uses), `rcChargePeriod` (MN3101/MN3102/CD4047
+relaxation clocks set by the LFO) and `Ne570` (compander). Linear stages run as bilinear-transformed exact transfers;
+op-amps clip at their rails. Algorithmic ensembles (no circuit) share `EnsembleDelay`.
+
+| Circuit | Processor | BBD / clock | Notes |
+|---|---|---|---|
+| [CE-2](CE2Chorus.md) | `CE2StyleChorusProcessor` | MN3007 / MN3101 | the reference: inverting pre/de-emphasis, 3rd-order SK both sides, 50/50 mix; clock law derived from parts; 1.8 % |
+| [Small Clone](SmallCloneChorus.md) | `SmallCloneStyleChorusProcessor` | MN3007 / CD4047 | non-inverting pre-emphasis, asymmetric SK, 4047 relaxation clock from C16; depth switch values assumed |
+| [CE-1](CE1Chorus.md) | `CE1StyleChorusProcessor` | MN3002 / discrete | the ×48 TA7136 preamp is the character; clock law calibrated from the service notes' waveforms |
+| [DC-2](DC2Dimension.md) | `DC2StyleChorusProcessor` | 2 × MN3207 / MN3102 | antiphase pair + NE570 compander, stereo A/B; mode speeds/depths calibrated |
+| [SCH-1](SCH1Chorus.md) | `SCH1StyleChorusProcessor` | MN3207 / MN3102 | CE-2 front end + passive Tone on the dry, phase splitter → A = dry + wet, B = dry − wet |
+| [Tri-Chorus](TriChorus.md) | `TriChorusProcessor` | algorithm | three taps, LFOs 120° apart |
+| [String Ensemble](StringEnsemble.md) | `StringEnsembleProcessor` | algorithm | three taps, slow + fast LFO sum (Solina) |
+
+**For a new BBD chorus/flanger/delay:** describe each filter as `LadderNode`s straight off the schematic, write the LFO with
+`TriangleLfo` from its Schmitt/integrator parts, and derive the clock from the timing R/C with `rcChargePeriod` before
+reaching for a calibrated law. The JC-120's built-in chorus predates this and still has its own BBD approximation.
+
 ## Cross-cutting: oversampling
 Every clipping pedal that measured audibly aliased at 1x runs through `OversampledEffect`
 (2x, DS-1 4x); the table, the method and the CPU trade-off are in

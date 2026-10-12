@@ -77,6 +77,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   Acoustic360StyleAmplifierProcessorTests.cpp
   ChannelKnobMemoryTests.cpp
   BucketBrigadeDelayTests.cpp
+  ChorusPedalTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp

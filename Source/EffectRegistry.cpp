@@ -104,6 +104,13 @@
 #include "Effects/MultiTapDelayProcessor.h"
 #include "Effects/TremoloProcessor.h"
 #include "Effects/Modulation/Chorus/ChorusProcessor.h"
+#include "Effects/Modulation/Chorus/CE2StyleChorusProcessor.h"
+#include "Effects/Modulation/Chorus/SmallCloneStyleChorusProcessor.h"
+#include "Effects/Modulation/Chorus/CE1StyleChorusProcessor.h"
+#include "Effects/Modulation/Chorus/DC2StyleChorusProcessor.h"
+#include "Effects/Modulation/Chorus/SCH1StyleChorusProcessor.h"
+#include "Effects/Modulation/Chorus/TriChorusProcessor.h"
+#include "Effects/Modulation/Chorus/StringEnsembleProcessor.h"
 #include "Effects/VibratoProcessor.h"
 #include "Effects/FlangerProcessor.h"
 #include "Effects/PhaserProcessor.h"
@@ -655,6 +662,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // Phase 3: Modulation.
     registry.registerType ("Tremolo", EffectRegistry::Category::modulation, [] { return std::make_unique<TremoloProcessor>(); }, "Tremolo");
     registry.registerType ("Chorus", EffectRegistry::Category::modulation, [] { return std::make_unique<ChorusProcessor>(); }, "Chorus");
+    registry.registerType ("CE2StyleChorus", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<CE2StyleChorusProcessor>(), 407000.0), 1.29f); }, "Chorus");
+    registry.registerType ("SmallCloneStyleChorus", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<SmallCloneStyleChorusProcessor>(), 220000.0), -1.74f); }, "Chorus");
+    registry.registerType ("CE1StyleChorus", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<CE1StyleChorusProcessor>(), 50000.0), 6.12f); }, "Chorus");
+    registry.registerType ("DC2StyleChorus", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<DC2StyleChorusProcessor>(), 1000000.0), -0.22f); }, "Chorus");
+    registry.registerType ("SCH1StyleChorus", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<SCH1StyleChorusProcessor>(), 470000.0), 1.76f); }, "Chorus");
+    registry.registerType ("TriChorus", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<TriChorusProcessor>(), 0.45f); }, "Chorus");
+    registry.registerType ("StringEnsemble", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<StringEnsembleProcessor>(), 0.18f); }, "Chorus");
     registry.registerType ("Vibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<VibratoProcessor>(); }, "Flanger/Vibrato");
     registry.registerType ("Flanger", EffectRegistry::Category::modulation, [] { return std::make_unique<FlangerProcessor>(); }, "Flanger/Vibrato");
     registry.registerType ("Phaser", EffectRegistry::Category::modulation, [] { return std::make_unique<PhaserProcessor>(); }, "Phase/Vibe");

@@ -256,6 +256,13 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/MultiTapDelayProcessor.cpp
   Source/Effects/TremoloProcessor.cpp
   Source/Effects/Modulation/Chorus/ChorusProcessor.cpp
+  Source/Effects/Modulation/Chorus/CE2StyleChorusProcessor.cpp
+  Source/Effects/Modulation/Chorus/SmallCloneStyleChorusProcessor.cpp
+  Source/Effects/Modulation/Chorus/CE1StyleChorusProcessor.cpp
+  Source/Effects/Modulation/Chorus/DC2StyleChorusProcessor.cpp
+  Source/Effects/Modulation/Chorus/SCH1StyleChorusProcessor.cpp
+  Source/Effects/Modulation/Chorus/TriChorusProcessor.cpp
+  Source/Effects/Modulation/Chorus/StringEnsembleProcessor.cpp
   Source/Effects/VibratoProcessor.cpp
   Source/Effects/FlangerProcessor.cpp
   Source/Effects/PhaserProcessor.cpp
