@@ -70,10 +70,22 @@ EL84BoutiqueAmpCore::EL84BoutiqueAmpCore (Model ampModel, TubeFits fits, bool& r
     }
     else if (model == Model::hotCat30)
     {
+        // Real front panel (Bad Cat Hot Cat 30 schematic): Gain ch has Gain/Edge/Bass/
+        // Treble/Level/Master/Brilliance; Clean ch has its own Volume. There is no
+        // Middle control and no shared EF86 -- both channels are 12AX7.
+        auto channel = std::make_unique<juce::AudioParameterFloat> (
+            "hotcat30_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+            { return juce::roundToInt (v) == 0 ? juce::String ("Gain") : juce::String ("Clean"); }));
+        channelParam = channel.get();
+        group->addChild (std::move (channel));
         gainParam = add ("hotcat30_gain", "Gain", (float) pots::audioInverse (0.5));
+        edgeParam = add ("hotcat30_edge", "Edge", 1.0f);
         bassParam = add ("hotcat30_bass", "Bass", 0.5f);
-        midParam = add ("hotcat30_mid", "Middle", 0.5f);
         trebleParam = add ("hotcat30_treble", "Treble", 0.5f);
+        levelParam = add ("hotcat30_level", "Level", 0.7f);
+        volume1Param = add ("hotcat30_volume", "Clean Volume", (float) pots::audioInverse (0.5));
+        brillianceParam = add ("hotcat30_brilliance", "Brilliance", 0.7f);
         masterParam = add ("hotcat30_master", "Master", (float) pots::audioInverse (0.7));
     }
     else if (model == Model::carmenGhia)
@@ -221,73 +233,194 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         return out;
     };
 
+    // Matchless-family interactive Bass/Treble pair: each leg gets its own
+    // coupling cap into a divider pot whose wiper lands on the shared output
+    // node (DC-30 ch1: 56pF/.022uF with 220k/1MA; Hot Cat 30: 22nF/22nF with
+    // 1M/1M5 plus the 50pF bright cap and 10k ground leg).
+    const auto matchlessTone = [&] (NodalCircuit::Node input, double cTreble, double cBass,
+                                  double pTreble, double pBass, double rLoad, double cBright)
+    {
+        const auto trebleIn = c.addNode(), bassIn = c.addNode(), out = c.addNode();
+        c.addCapacitor (input, trebleIn, cTreble);
+        c.addCapacitor (input, bassIn, cBass);
+        ch.rTrebleTop = c.addResistor (trebleIn, out, pTreble);
+        ch.rTrebleBottom = c.addResistor (out, gnd, pTreble);
+        ch.rBassTop = c.addResistor (bassIn, out, pBass);
+        ch.rBassBottom = c.addResistor (out, gnd, pBass);
+        if (rLoad > 0.0)
+            c.addResistor (out, gnd, rLoad);
+        if (cBright > 0.0)
+            c.addCapacitor (input, out, cBright);
+        return out;
+    };
+
     if (model == Model::matchlessHC30 && ! channelTwo)
     {
-        const auto grid = c.addNode(), cathode = c.addNode(), plate = c.addNode(), coupling = c.addNode();
+        // DC-30/HC-30 channel 1 (factory schematic): parallel 12AX7 pair (shared 220k
+        // plate, 820R + 25uF cathode) -> 560pF -> VOL 500kA -> 180pF -> V2a
+        // (100k plate, 1k2 + 25uF) -> V2b cathode follower (47k) -> 56pF -> T/B.
+        const auto grid = c.addNode(), cathode = c.addNode(), plate = c.addNode(), wiper = c.addNode();
         c.addResistor (in, grid, 68.0e3);
         c.addResistor (grid, gnd, 1.0e6);
         c.addTriode (plate, grid, cathode, tubes.triode);
         c.addTriode (plate, grid, cathode, tubes.triode);
-        c.addResistor (rail, plate, 100.0e3);
+        c.addResistor (rail, plate, 220.0e3);
         c.addResistor (cathode, gnd, 820.0);
         c.addCapacitor (cathode, gnd, 25.0e-6);
         c.setInitialGuess (plate, 200.0);
         c.setInitialGuess (cathode, 1.0);
-
-        const auto a = c.addNode(), b = c.addNode(), d = c.addNode(), e = c.addNode(), f = c.addNode();
-        const auto toneOut = c.addNode();
-        c.addCapacitor (plate, a, 220.0e-12);
-        c.addResistor (a, b, 100.0e3);
-        c.addCapacitor (b, d, 0.022e-6);
-        ch.rTrebleTop = c.addResistor (a, toneOut, 1.0e6);
-        ch.rTrebleBottom = c.addResistor (toneOut, d, 1.0e6);
-        ch.rBassTop = c.addResistor (d, e, 1.0e6);
-        ch.rBassBottom = c.addResistor (e, f, 1.0e6);
-        c.addResistor (f, gnd, 100.0e3);
-        c.addCapacitor (b, toneOut, 0.022e-6);
         ch.prePlate = plate;
-        ch.toneOut = toneOut;
-        ch.preVolumeTop = c.addResistor (toneOut, coupling, 1.0e6);
-        ch.preVolumeBottom = c.addResistor (coupling, gnd, 1.0e6);
-        // Full-range input cap feeding the tone network (in parallel with the 220pF bright
-        // path) -- it must land on the stack's input node, NOT the volume wiper: wired to
-        // 'coupling' it bypassed Bass/Treble/Volume entirely.
-        c.addCapacitor (plate, a, 0.022e-6);
-        const auto second = addTriode (coupling, 100.0e3, 1.5e3, 0.0, 0.022e-6, false);
-        ch.preOut = second.second;
+
+        const auto volTop = c.addNode();
+        c.addCapacitor (plate, volTop, 560.0e-12);
+        ch.preVolumeTop = c.addResistor (volTop, wiper, 500.0e3);
+        ch.preVolumeBottom = c.addResistor (wiper, gnd, 500.0e3);
+
+        const auto v2aGrid = c.addNode(), v2aCath = c.addNode(), v2aPlate = c.addNode();
+        c.addCapacitor (wiper, v2aGrid, 180.0e-12);
+        c.addResistor (v2aGrid, gnd, 1.0e6);
+        c.addTriode (v2aPlate, v2aGrid, v2aCath, tubes.triode);
+        c.addResistor (rail, v2aPlate, 100.0e3);
+        c.addResistor (v2aCath, gnd, 1.2e3);
+        c.addCapacitor (v2aCath, gnd, 25.0e-6);
+        c.setInitialGuess (v2aPlate, 200.0);
+        c.setInitialGuess (v2aCath, 1.2);
+
+        const auto follower = c.addNode();
+        c.addFollower (v2aPlate, follower, 1.5);
+        c.addResistor (follower, gnd, 47.0e3);
+        ch.toneOut = matchlessTone (follower, 56.0e-12, 0.022e-6, 220.0e3, 1.0e6, 180.0e3, 0.0);
+        ch.preOut = ch.toneOut;
         return;
     }
 
     if (model == Model::matchlessHC30)
     {
+        // Channel 2 (factory schematic): EF86 -> coupling -> TONE rotary cap selector
+        // -> VOL 1MA with 180pF bright -> 470k -> out. The tone cap sits BEFORE the
+        // volume on the real amp (the model previously had them swapped).
         auto output = addEF86 (in);
-        const auto volumeOut = c.addNode();
-        ch.preVolume2Top = c.addResistor (output, volumeOut, 1.0e6);
-        ch.preVolume2Bottom = c.addResistor (volumeOut, gnd, 1.0e6);
-        const auto toneNode = c.addNode(), toneOut = c.addNode();
-        c.addResistor (volumeOut, toneNode, 100.0e3);
-        ch.toneCap = c.addCapacitor (toneNode, gnd, 1.0e-12);
-        c.addResistor (toneNode, toneOut, 47.0e3);
+        const auto toneNode = c.addNode();
+        c.addCapacitor (output, toneNode, 3.6e-9); // schematic marks this leg "360" (~.0036uF)
+        ch.toneCap = c.addCapacitor (toneNode, gnd, 56.0e-12);
+        const auto volTop = c.addNode(), volWiper = c.addNode();
+        c.addResistor (toneNode, volTop, 1.0);
+        ch.preVolume2Top = c.addResistor (volTop, volWiper, 1.0e6);
+        ch.preVolume2Bottom = c.addResistor (volWiper, gnd, 1.0e6);
+        c.addCapacitor (volTop, volWiper, 180.0e-12);
+        const auto toneOut = c.addNode();
+        c.addResistor (volWiper, toneOut, 470.0e3);
         c.addResistor (toneOut, gnd, 1.0e6);
         ch.preOut2 = toneOut;
         return;
     }
 
+    if (model == Model::hotCat30 && channelTwo)
+    {
+        // Clean channel (Bad Cat schematic): 68k -> V1b -> VOLUME 1M log + 180pF
+        // bright -> G (the V4b side of the PI). 220k plate, 1k5 + 22uF, 1n5
+        // bright cap across the plate load.
+        const auto grid = c.addNode(), cathode = c.addNode(), plate = c.addNode();
+        c.addResistor (in, grid, 68.0e3);
+        c.addResistor (grid, gnd, 1.0e6);
+        c.addTriode (plate, grid, cathode, tubes.triode);
+        c.addResistor (rail, plate, 220.0e3);
+        c.addCapacitor (plate, rail, 1.5e-9);
+        c.addResistor (cathode, gnd, 1.5e3);
+        c.addCapacitor (cathode, gnd, 22.0e-6);
+        c.setInitialGuess (plate, 150.0);
+        c.setInitialGuess (cathode, 1.1);
+        ch.prePlate = plate;
+
+        const auto volWiper = c.addNode(), out = c.addNode();
+        ch.preVolumeTop = c.addResistor (plate, volWiper, 1.0e6);
+        ch.preVolumeBottom = c.addResistor (volWiper, gnd, 1.0e6);
+        c.addCapacitor (plate, volWiper, 180.0e-12);
+        c.addResistor (volWiper, out, 1.0);
+        c.addResistor (out, gnd, 1.0e6);
+        ch.preOut2 = out;
+        return;
+    }
+
     if (model == Model::hotCat30)
     {
-        auto output = addEF86 (in);
-        const auto gainOut = c.addNode();
-        ch.preVolumeTop = c.addResistor (output, gainOut, 1.0e6);
-        ch.preVolumeBottom = c.addResistor (gainOut, gnd, 1.0e6);
-        auto first = addTriode (gainOut, 100.0e3, 1.5e3, 1.0e-6, 0.022e-6, true);
-        auto second = addTriode (first.second, 100.0e3, 2.7e3, 0.0, 0.022e-6, false);
+        // Gain channel (Bad Cat schematic): V1a (220k plate + 1n5 bright) ->
+        // 470k -> node [1n5 to gnd; GAIN = 250k log shunt leg to ground] -> 470k
+        // -> V2b (220k, 1k5 + 100n) -> 22n -> node (10n + 470k to gnd) -> EDGE
+        // (1M log series rheostat) -> 150k + 360p to gnd -> V2a (100k, 1k5 +
+        // 1uF) -> 10n -> LEVEL 1M lin -> 470k -> V3b (100k, 1k; 270k leak) ->
+        // DC-coupled V3a follower (56k) -> T/B -> 220k -> MASTER.
+        const auto grid = c.addNode(), cathode = c.addNode(), plate = c.addNode();
+        c.addResistor (in, grid, 68.0e3);
+        c.addResistor (grid, gnd, 1.0e6);
+        c.addTriode (plate, grid, cathode, tubes.triode);
+        c.addResistor (rail, plate, 220.0e3);
+        c.addCapacitor (plate, rail, 1.5e-9);
+        c.addResistor (cathode, gnd, 1.0e3);
+        c.setInitialGuess (plate, 99.0);
+        c.setInitialGuess (cathode, 1.0);
+        ch.prePlate = plate;
+
+        const auto gainNode = c.addNode(), v2bGrid = c.addNode();
+        const auto v2bCath = c.addNode(), v2bPlate = c.addNode();
+        c.addResistor (plate, gainNode, 470.0e3);
+        c.addCapacitor (gainNode, gnd, 1.5e-9);
+        ch.rGainShunt = c.addResistor (gainNode, gnd, 250.0e3);
+        c.addResistor (gainNode, v2bGrid, 470.0e3);
+        c.addTriode (v2bPlate, v2bGrid, v2bCath, tubes.triode);
+        c.addResistor (rail, v2bPlate, 220.0e3);
+        c.addResistor (v2bCath, gnd, 1.5e3);
+        c.addCapacitor (v2bCath, gnd, 0.1e-6);
+        c.setInitialGuess (v2bPlate, 145.0);
+        c.setInitialGuess (v2bCath, 1.15);
+
+        const auto nodeN = c.addNode(), nodeE = c.addNode();
+        const auto v2aGrid = c.addNode(), v2aCath = c.addNode(), v2aPlate = c.addNode();
+        c.addCapacitor (v2bPlate, nodeN, 22.0e-9);
+        c.addCapacitor (nodeN, gnd, 10.0e-9);
+        c.addResistor (nodeN, gnd, 470.0e3);
+        ch.rEdge = c.addResistor (nodeN, nodeE, 1.0e6);
+        c.addResistor (nodeE, gnd, 150.0e3);
+        c.addCapacitor (nodeE, gnd, 360.0e-12);
+        c.addResistor (nodeE, v2aGrid, 1.0);
+        c.addTriode (v2aPlate, v2aGrid, v2aCath, tubes.triode);
+        c.addResistor (rail, v2aPlate, 100.0e3);
+        c.addResistor (v2aCath, gnd, 1.5e3);
+        c.addCapacitor (v2aCath, gnd, 1.0e-6);
+        c.setInitialGuess (v2aPlate, 225.0);
+        c.setInitialGuess (v2aCath, 1.7);
+
+        // LEVEL pot: 1M linear divider after the 10nF coupling (470k leak on
+        // the top); wiper feeds V3b's grid through 470k (270k grid leak).
+        const auto levelTop = c.addNode(), levelWiper = c.addNode();
+        const auto v3bGrid = c.addNode(), v3bCath = c.addNode(), v3bPlate = c.addNode();
+        c.addCapacitor (v2aPlate, levelTop, 10.0e-9);
+        c.addResistor (levelTop, gnd, 470.0e3);
+        ch.preVolume2Top = c.addResistor (levelTop, levelWiper, 1.0e6);
+        ch.preVolume2Bottom = c.addResistor (levelWiper, gnd, 1.0e6);
+        c.addResistor (levelWiper, v3bGrid, 470.0e3);
+        c.addResistor (v3bGrid, gnd, 270.0e3);
+        c.addTriode (v3bPlate, v3bGrid, v3bCath, tubes.triode);
+        c.addResistor (rail, v3bPlate, 100.0e3);
+        c.addResistor (v3bCath, gnd, 1.0e3);
+        c.setInitialGuess (v3bPlate, 193.0);
+        c.setInitialGuess (v3bCath, 1.2);
+
+        // V3a: DC-coupled cathode follower -- grid sits on V3b's plate, plate
+        // straight at the rail, cathode drives the T/B stack through 56k.
         const auto follower = c.addNode();
-        c.addFollower (second.first, follower, 1.5);
-        output = follower;
-        ch.prePlate = first.first;
-        ch.preOut = output;
+        c.addTriode (rail, v3bPlate, follower, tubes.triode);
+        c.addResistor (follower, gnd, 56.0e3);
+        c.setInitialGuess (follower, 194.0);
+        ch.toneOut = matchlessTone (follower, 22.0e-9, 22.0e-9, 1.0e6, 1.5e6, 10.0e3, 50.0e-12);
+        const auto out = c.addNode();
+        c.addResistor (ch.toneOut, out, 220.0e3);
+        c.addResistor (out, gnd, 1.0e6);
+        ch.preOut = out;
+        return;
     }
-    else if (model == Model::carmenGhia)
+
+    if (model == Model::carmenGhia)
     {
         auto first = addTriode (in, 100.0e3, 1.5e3, 25.0e-6, 0.022e-6, true);
         const auto volumeOut = c.addNode();
@@ -300,44 +433,49 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         c.addResistor (tone, gnd, 1.0e6);
         ch.prePlate = first.first;
         ch.preOut = tone;
+        return;
     }
-    else
+
+    // Soldano Astroverb 16 (factory schematic): V1a -> V1b -> V2a -> V2b -> V3a
+    // (all 220k plates) -> V3b DC-coupled follower -> TMB -> 10k -> VOLUME.
+    // Cathodes: 820R + 1uF on V1/V2a's input stages, V2b is the cold clipper
+    // (10k + 100uF), V3a 10k + 1uF. The 1M PREAMP pot sits after V1b.
     {
-        auto first = addTriode (in, 220.0e3, 1.8e3, 1.0e-6, 0.022e-6, true);
+        auto first = addTriode (in, 220.0e3, 820.0, 1.0e-6, 0.022e-6, true);
+        auto second = addTriode (first.second, 220.0e3, 820.0, 1.0e-6, 0.022e-6, true);
         const auto preampOut = c.addNode();
-        ch.preVolumeTop = c.addResistor (first.second, preampOut, 1.0e6);
+        ch.preVolumeTop = c.addResistor (second.second, preampOut, 1.0e6);
         ch.preVolumeBottom = c.addResistor (preampOut, gnd, 1.0e6);
-        auto second = addTriode (preampOut, 100.0e3, 2.7e3, 0.0, 0.022e-6, false);
-        auto third = addTriode (second.second, 100.0e3, 1.5e3, 1.0e-6, 0.022e-6, true);
+        auto third = addTriode (preampOut, 220.0e3, 820.0, 1.0e-6, 0.022e-6, true);
+        auto fourth = addTriode (third.second, 220.0e3, 10.0e3, 100.0e-6, 0.022e-6, true);
+        auto fifth = addTriode (fourth.second, 220.0e3, 10.0e3, 1.0e-6, 0.022e-6, true);
         const auto follower = c.addNode();
-        c.addFollower (third.first, follower, 1.5);
+        c.addFollower (fifth.first, follower, 1.5);
+        c.addResistor (follower, gnd, 100.0e3);
         ch.prePlate = first.first;
         ch.preOut = follower;
     }
 
-    const bool hasTmb = model == Model::hotCat30 || model == Model::astroverb16 || model == Model::matchlessHC30;
-    if (hasTmb)
     {
+        // TMB: Soldano values (470pF treble cap, 220k treble, 1M bass, 25k mid,
+        // 22nF legs) then the series 10k and VOLUME 1M of the real amp.
         const auto inStack = ch.preOut;
         const auto a = c.addNode(), b = c.addNode(), d = c.addNode(), e = c.addNode(), f = c.addNode();
-        c.addCapacitor (inStack, a, model == Model::matchlessHC30 ? 220.0e-12 : 470.0e-12);
-        c.addResistor (inStack, b, model == Model::matchlessHC30 ? 100.0e3 : 33.0e3);
+        c.addCapacitor (inStack, a, 470.0e-12);
+        c.addResistor (inStack, b, 33.0e3);
         c.addCapacitor (b, d, 0.022e-6);
         c.addCapacitor (b, e, 0.022e-6);
         ch.toneOut = c.addNode();
-        ch.rTrebleTop = c.addResistor (a, ch.toneOut, 250.0e3);
-        ch.rTrebleBottom = c.addResistor (ch.toneOut, d, 250.0e3);
+        ch.rTrebleTop = c.addResistor (a, ch.toneOut, 220.0e3);
+        ch.rTrebleBottom = c.addResistor (ch.toneOut, d, 220.0e3);
         ch.rBassTop = c.addResistor (d, e, 1.0e6);
         ch.rBassBottom = c.addResistor (e, f, 1.0e6);
         c.addResistor (f, gnd, 10.0e3);
         ch.rMid = c.addResistor (ch.toneOut, gnd, 25.0e3);
-        ch.preOut = ch.toneOut;
-    }
 
-    if (model == Model::astroverb16)
-    {
-        const auto volumeOut = c.addNode();
-        ch.preVolume2Top = c.addResistor (ch.preOut, volumeOut, 1.0e6);
+        const auto seriesNode = c.addNode(), volumeOut = c.addNode();
+        c.addResistor (ch.toneOut, seriesNode, 10.0e3);
+        ch.preVolume2Top = c.addResistor (seriesNode, volumeOut, 1.0e6);
         ch.preVolume2Bottom = c.addResistor (volumeOut, gnd, 1.0e6);
         ch.preOut = volumeOut;
     }
@@ -381,9 +519,32 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     ch.piTail = tail;
     ch.piPlateA = c.addNode();
     ch.piPlateB = c.addNode();
-    c.addCapacitor (input, ch.piGridA, 0.02e-6);
-    c.addResistor (ch.piGridA, gnd, 1.0e6);
-    c.addResistor (ch.piGridB, gnd, 1.0e6);
+    // Per-schematic LTP values: HC-30/CG use the legacy estimates; Hot Cat runs
+    // Elevated-grid-reference LTP on the Matchless/Bad Cat/Soldano circuits:
+    // the 1M grid leaks return to a node held a volt or two BELOW the common
+    // cathodes (cathodes -> small R -> ref node -> large R to gnd), so the
+    // pair idles at ~1 mA per side instead of being starved by a grounded tail.
+    // Hot Cat/DC-30: cathodes -> 1k2 -> ref -> 47k -> gnd (~69 V cathodes);
+    // Astroverb: cathodes -> 470R -> ref -> 10k -> gnd (~29 V cathodes,
+    // 1M/820k leaks). The Carmen Ghia keeps the plain grounded-grid pair.
+    const bool isHotCat = model == Model::hotCat30;
+    const bool isAstro = model == Model::astroverb16;
+    const bool elevatedRef = model == Model::matchlessHC30 || isHotCat;
+    const auto piRef = c.addNode();
+    c.addCapacitor (input, ch.piGridA, isAstro ? 0.02e-6 : 0.01e-6);
+    c.addResistor (ch.piGridA, elevatedRef ? piRef : gnd, 1.0e6);
+    c.addResistor (ch.piGridB, elevatedRef ? piRef : gnd, 1.0e6);
+    // Channel 2 feeds the PI's second grid on the interactive two-channel
+    // circuits: Hot Cat clean -> 10n -> V4b grid; DC-30 CH2 -> .01/400V -> V7b.
+    if (model == Model::matchlessHC30 || isHotCat)
+    {
+        const auto inputB = c.addNode();
+        ch.powerInput2 = c.addSource (inputB, 0.0);
+        if (isHotCat)
+            c.addCapacitor (inputB, ch.piGridB, 0.01e-6);
+        else
+            c.addCapacitor (inputB, ch.piGridB, 0.01e-6); // DC-30 CH2 -> .01/400V -> V7b grid
+    }
     auto pi = tubes.triode;
     pi.kg1 *= 6.0;
     c.addTriode (ch.piPlateA, ch.piGridA, tail, pi);
@@ -392,40 +553,59 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     c.addCapacitor (ch.piGridB, ch.piPlateB, 1.7e-12);
     c.addResistor (rail, ch.piPlateA, 100.0e3);
     c.addResistor (rail, ch.piPlateB, 100.0e3);
-    c.addResistor (tail, gnd, 1.2e3);
+    if (elevatedRef)
+    {
+        c.addResistor (tail, piRef, isAstro ? 470.0 : 1.2e3);
+        c.addResistor (piRef, gnd, isAstro ? 10.0e3 : 47.0e3);
+        c.setInitialGuess (piRef, isAstro ? 27.0 : 67.0);
+    }
+    else
+        c.addResistor (tail, gnd, 1.2e3);
     c.setInitialGuess (ch.piPlateA, 260.0);
     c.setInitialGuess (ch.piPlateB, 260.0);
-    c.setInitialGuess (tail, 1.0);
-    if (model == Model::matchlessHC30)
-    {
-        const auto cutNode = c.addNode();
-        c.addCapacitor (ch.piPlateA, cutNode, 4.7e-9);
-        ch.rCut = c.addResistor (cutNode, ch.piPlateB, 100.0e3);
-    }
+    c.setInitialGuess (tail, isHotCat ? 69.0 : 1.0);
 
     const auto gridCouplingA = c.addNode(), gridCouplingB = c.addNode();
     const auto gridA = c.addNode(), gridB = c.addNode();
     ch.powerPlateA = c.addNode();
     ch.powerPlateB = c.addNode();
-    c.addCapacitor (ch.piPlateA, gridCouplingA, 0.047e-6);
-    c.addCapacitor (ch.piPlateB, gridCouplingB, 0.047e-6);
-    c.addResistor (gridCouplingA, gnd, 220.0e3);
-    c.addResistor (gridCouplingB, gnd, 220.0e3);
-    ch.rMasterTopA = c.addResistor (gridCouplingA, gridA, 1.0);
-    ch.rMasterTopB = c.addResistor (gridCouplingB, gridB, 1.0);
-    c.addResistor (gridA, gnd, 220.0e3);
-    c.addResistor (gridB, gnd, 220.0e3);
+    const double powerCoupling = isHotCat ? 0.033e-6 : 0.047e-6;
+    c.addCapacitor (ch.piPlateA, gridCouplingA, powerCoupling);
+    c.addCapacitor (ch.piPlateB, gridCouplingB, powerCoupling);
+    if (model == Model::matchlessHC30 || isHotCat)
+    {
+        // Cross-line cap + pot between the two power-grid nodes: the DC-30 CUT
+        // (4n7 + 500k) and the Hot Cat BRILLIANCE (4n7 + 1M log) are the same
+        // network; only the pot taper/value differs (handled in updatePots).
+        const auto cutNode = c.addNode();
+        c.addCapacitor (gridCouplingA, cutNode, 4.7e-9);
+        ch.rCut = c.addResistor (cutNode, gridCouplingB, 500.0e3);
+    }
+    // Astroverb runs fixed bias: the 220k grid leaks return to the -16 V bias
+    // rail (via the 50k bias pot from B- = -20.5 V) instead of ground.
+    // REVERTED: the true fixed-bias rail (-16 V through the 50k bias pot)
+    // Newton-storms in this solver under the audit's hard pluck; the shared
+    // cathode-bias topology stays for now. See PR notes.
+    const NodalCircuit::Node biasRef = gnd;
+    c.addResistor (gridCouplingA, biasRef, 220.0e3);
+    c.addResistor (gridCouplingB, biasRef, 220.0e3);
+    // Grid stoppers: 1k5 (DC-30), 10k/2W (Hot Cat), 2k2 (Astroverb); CG reuses
+    // these handles for its ganged PPIMV, so it starts at 1 ohm.
+    const double gridStopper = model == Model::carmenGhia ? 1.0
+                             : isHotCat ? 10.0e3 : 1.5e3;
+    ch.rMasterTopA = c.addResistor (gridCouplingA, gridA, gridStopper);
+    ch.rMasterTopB = c.addResistor (gridCouplingB, gridB, gridStopper);
     ch.cathodeBias = c.addNode();
-    const bool fourTubes = model == Model::matchlessHC30 || model == Model::hotCat30;
-    const double cathodeR = fourTubes ? 50.0 : 130.0;
+    const bool fourTubes = model == Model::matchlessHC30;
+    const double cathodeR = model == Model::matchlessHC30 ? 68.0 : isHotCat ? 135.0 : 130.0;
     ch.rCathodeBias = c.addResistor (ch.cathodeBias, gnd, cathodeR);
     c.addCapacitor (ch.cathodeBias, gnd, 250.0e-6);
     const auto& powerTube = fourTubes ? tubes.el84Pair : tubes.el84;
-    const double screen = fourTubes ? 300.0 : 290.0;
+    const double screen = isHotCat ? 367.0 : fourTubes ? 300.0 : 290.0;
     ch.penA = c.addPentode (ch.powerPlateA, gridA, ch.cathodeBias, powerTube, screen);
     ch.penB = c.addPentode (ch.powerPlateB, gridB, ch.cathodeBias, powerTube, screen);
-    c.setInitialGuess (ch.powerPlateA, 350.0);
-    c.setInitialGuess (ch.powerPlateB, 345.0);
+    c.setInitialGuess (ch.powerPlateA, isHotCat ? 376.0 : 350.0);
+    c.setInitialGuess (ch.powerPlateB, isHotCat ? 372.0 : 345.0);
     c.setInitialGuess (ch.cathodeBias, fourTubes ? 10.0 : 11.0);
     c.addCapacitor (ch.powerPlateA, ch.powerPlateB, 400.0e-12);
     c.addResistor (ch.powerPlateA, ch.powerPlateB, 20.0e3);
@@ -437,8 +617,10 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     c.addResistor (t2, ch.powerPlateB, fourTubes ? 40.0 : 60.0);
     c.addResistor (rail, a1, primaryHalfResistance);
     c.addResistor (rail, a2, primaryHalfResistance);
-    const double turns = fourTubes ? halfToSecondaryTurns : 11.18;
-    const double lh = fourTubes ? primaryHalfInductance : 5.0;
+    // OT half-primary -> 16R turns: 4xEL84 ~4k p-p (DC-30), 2xEL34 ~4.5k p-p
+    // (Hot Cat), 2xEL84 ~8k p-p (CG/Astroverb).
+    const double turns = fourTubes ? halfToSecondaryTurns : isHotCat ? 8.4 : 11.18;
+    const double lh = fourTubes ? primaryHalfInductance : isHotCat ? 4.0 : 5.0;
     const double ls = lh / (turns * turns);
     const double m12 = -couplingHalves * lh;
     const double mps = couplingSecondary * std::sqrt (lh * ls);
@@ -474,7 +656,7 @@ void EL84BoutiqueAmpCore::buildChannel (Channel& ch)
 {
     buildSupply (ch);
     buildPreamp (ch, ch.pre, false);
-    if (model == Model::matchlessHC30)
+    if (hasSecondPreamp())
         buildPreamp (ch, ch.pre2, true);
     if (! reducedOrder)
         buildPower (ch);
@@ -495,21 +677,21 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
 
     if (model == Model::matchlessHC30)
     {
-        // Channel volumes: 1M audio taper (the real part family).
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 3, volume1Param, 0.4)));
+        // Ch1 VOL is the real 500kA pot; Ch2 VOL is 1MA (factory schematic).
+        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 500.0e3, pots::audio (smoothedParam (ch, 3, volume1Param, 0.4)));
         setPot (ch.pre2, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, pots::audio (smoothedParam (ch, 4, volume2Param, 0.4)));
         const double bass = smoothedParam (ch, 5, bass1Param, 0.5), treble = smoothedParam (ch, 6, treble1Param, 0.5);
-        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 1.0e6));
-        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 1.0e6));
-        ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
-        ch.pre.setResistance (ch.rBassBottom, boundedPot (bass, 1.0e6));
+        setPot (ch.pre, ch.rTrebleTop, ch.rTrebleBottom, 220.0e3, treble);
+        setPot (ch.pre, ch.rBassTop, ch.rBassBottom, 1.0e6, pots::audio (bass));
         if (! reducedOrder)
-            ch.power.setResistance (ch.rCut, boundedPot (1.0 - smoothedParam (ch, 7, cutParam, 0.5), 100.0e3));
+            ch.power.setResistance (ch.rCut, boundedPot (1.0 - smoothedParam (ch, 7, cutParam, 0.5), 500.0e3));
         const int tonePosition = juce::jlimit (0, 5, juce::roundToInt ((float) param (tone2Param, 0.0)));
         if (tonePosition != ch.lastTonePosition)
         {
             ch.lastTonePosition = tonePosition;
-            constexpr double toneCaps[6] { 1.0e-12, 470.0e-12, 1.0e-9, 2.2e-9, 4.7e-9, 10.0e-9 };
+            // Rotary TONE caps from the factory schematic (position 5 is the
+            // factory-added 180pF on top of the .01uF).
+            constexpr double toneCaps[6] { 56.0e-12, 1.2e-9, 2.2e-9, 4.7e-9, 10.0e-9, 10.18e-9 };
             ch.pre2.setCapacitance (ch.toneCap, toneCaps[tonePosition]);
         }
     }
@@ -517,13 +699,19 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     {
         const double treble = smoothedParam (ch, 9, trebleParam, 0.5);
         const double bass = smoothedParam (ch, 10, bassParam, 0.5);
-        // Gain: 1M audio taper.
-        setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 8, gainParam, 0.5)));
-        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 250.0e3));
-        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 250.0e3));
-        ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
-        ch.pre.setResistance (ch.rBassBottom, boundedPot (bass, 1.0e6));
-        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - smoothedParam (ch, 11, midParam, 0.5), 25.0e3));
+        // GAIN: 250k log pot as the shunt leg of the 470k divider after V1a
+        // (0 = node grounded = silent, 1 = full 250k leg = max signal).
+        ch.pre.setResistance (ch.rGainShunt, boundedPot (pots::audio (smoothedParam (ch, 8, gainParam, 0.5)), 250.0e3));
+        // EDGE: 1M log series rheostat between V2b and V2a.
+        ch.pre.setResistance (ch.rEdge, boundedPot (1.0 - smoothedParam (ch, 13, edgeParam, 1.0), 1.0e6));
+        // LEVEL: 1M linear interstage divider before V3b.
+        setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, smoothedParam (ch, 11, levelParam, 0.7));
+        // Clean channel VOLUME: 1M log.
+        setPot (ch.pre2, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 12, volume1Param, 0.5)));
+        setPot (ch.pre, ch.rTrebleTop, ch.rTrebleBottom, 1.0e6, treble);
+        setPot (ch.pre, ch.rBassTop, ch.rBassBottom, 1.5e6, bass);
+        if (! reducedOrder)
+            ch.power.setResistance (ch.rCut, boundedPot (smoothedParam (ch, 7, brillianceParam, 0.7), 1.0e6));
     }
     else if (model == Model::carmenGhia)
     {
@@ -539,10 +727,8 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         // Preamp and Volume: audio taper like the other gain/volume controls in the project.
         setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 13, preampParam, 0.5)));
         setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, pots::audio (smoothedParam (ch, 3, volume1Param, 0.5)));
-        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 250.0e3));
-        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 250.0e3));
-        ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
-        ch.pre.setResistance (ch.rBassBottom, boundedPot (bass, 1.0e6));
+        setPot (ch.pre, ch.rTrebleTop, ch.rTrebleBottom, 220.0e3, treble);
+        setPot (ch.pre, ch.rBassTop, ch.rBassBottom, 1.0e6, bass);
         if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - smoothedParam (ch, 11, midParam, 0.5), 25.0e3));
         if (! reducedOrder)
             ch.power.setResistance (ch.rPresence, boundedPot (1.0 - smoothedParam (ch, 14, presenceParam, 0.5), 25.0e3));
@@ -550,8 +736,11 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
 
     if (! reducedOrder)
     {
-        const double cathodeNominal = model == Model::matchlessHC30 || model == Model::hotCat30 ? 50.0 : 130.0;
-        ch.power.setResistance (ch.rCathodeBias, cathodeNominal * (0.7 + 0.6 * bias));
+        {
+            const double cathodeNominal = model == Model::matchlessHC30 ? 68.0
+                                        : model == Model::hotCat30 ? 135.0 : 130.0;
+            ch.power.setResistance (ch.rCathodeBias, cathodeNominal * (0.7 + 0.6 * bias));
+        }
         ch.supply.setResistance (ch.rectifierResistance,
             (model == Model::carmenGhia ? 400.0 : 130.0) * (0.05 + 0.95 * feel));
         if (model == Model::carmenGhia)
@@ -584,7 +773,12 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         ch.bmDriveScale = pots::audio (smoothedParam (ch, 15, masterParam, 1.0));
         ch.bmBias = bias;
         ch.bmFeel = feel;
-        const double cutHz = 20000.0 * std::pow (0.15, smoothedParam (ch, 7, cutParam, 0.5));
+        // Hot Cat's page-2 control is Brilliance (more = brighter = less cut);
+        // map it to the same one-pole as Cut with the direction flipped.
+        const double cutControl = model == Model::hotCat30
+                                ? 1.0 - smoothedParam (ch, 7, brillianceParam, 0.7)
+                                : smoothedParam (ch, 7, cutParam, 0.5);
+        const double cutHz = 20000.0 * std::pow (0.15, cutControl);
         ch.bmCutAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cutHz / juce::jmax (1.0, sampleRate));
         ch.bmShelf = (smoothedParam (ch, 14, presenceParam, 0.5) - 0.5) * 4.0;
         ch.bmPresAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 3500.0 / juce::jmax (1.0, sampleRate));
@@ -611,7 +805,7 @@ void EL84BoutiqueAmpCore::updateSupply (Channel& ch)
     const double tau = 22.0e3 * 16.0e-6;
     ch.preRailFiltered += (1.0 - std::exp (-dt / tau)) * (rail * 0.725 - ch.preRailFiltered);
     ch.pre.setSource (ch.preRail, ch.preRailFiltered);
-    if (model == Model::matchlessHC30)
+    if (hasSecondPreamp())
         ch.pre2.setSource (ch.preRail2, ch.preRailFiltered);
 }
 
@@ -629,8 +823,8 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     // level re-fit 2026-10-11: matchless/hotCat defaults now restore the pre-audio-taper wiper
     // fractions, which moved the stage's calibration point; scaled so the reduced path re-tracks
     // the reference at the new defaults (was 1.17 / 14.0).
-    const double level = model == Model::matchlessHC30 ? 2.47 :
-                         model == Model::hotCat30 ? 9.6 :
+    const double level = model == Model::matchlessHC30 ? 2.02 :
+                         model == Model::hotCat30 ? 34.0 :
                          model == Model::carmenGhia ? 18.5 : 21.4;
     const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
     const double sag = reducedOrder ? 0.03 * ch.bmFeel : 0.025;
@@ -661,13 +855,13 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
         bool ok = ch.supply.prepare (sampleRate / (double) supplyInterval);
         ok = ch.pre.prepare (sampleRate) && ok;
-        if (model == Model::matchlessHC30)
+        if (hasSecondPreamp())
             ok = ch.pre2.prepare (sampleRate) && ok;
         if (! reducedOrder)
             ok = ch.power.prepare (sampleRate) && ok;
         dcOk = dcOk && ok;
         ch.pre.saveDynamicState (ch.preRest);
-        if (model == Model::matchlessHC30)
+        if (hasSecondPreamp())
             ch.pre2.saveDynamicState (ch.pre2Rest);
         if (! reducedOrder)
         {
@@ -680,7 +874,7 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.preRailFiltered = ch.supply.voltage (ch.supplyB) * 0.725;
         ch.preDc = ch.pre.voltage (ch.preOut);
-        if (model == Model::matchlessHC30)
+        if (hasSecondPreamp())
             ch.pre2Dc = ch.pre2.voltage (ch.preOut2);
         for (auto& s : ch.smoothedParams)
             s.reset (sampleRate, EffectProcessor::paramRampSeconds);
@@ -729,7 +923,7 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
     smoothedPowerDrive.setTargetValue ((float) powerDriveTarget);
     smoothedOutputGain.setTargetValue ((float) outputTarget);
     const int speakerIndex = juce::jlimit (0, 2, juce::roundToInt ((float) param (speakerParam, 2.0)));
-    const bool useSecondChannel = model == Model::matchlessHC30 && param (channelParam, 1.0) >= 0.5;
+    const bool useSecondChannel = hasSecondPreamp() && param (channelParam, 1.0) >= 0.5;
 
     for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
@@ -773,7 +967,11 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
             else
             {
                 const double master = model == Model::carmenGhia ? 1.0 : volume;
-                ch.power.setSource (ch.powerCf, preOut * master * powerDrive);
+                // Channel 2 injects at the PI's second grid (the interactive
+                // two-channel wiring); channel 1 drives the first grid.
+                ch.power.setSource (ch.powerCf, useSecondChannel ? 0.0 : preOut * master * powerDrive);
+                if (ch.powerInput2 >= 0)
+                    ch.power.setSource (ch.powerInput2, useSecondChannel ? preOut * master * powerDrive : 0.0);
                 const bool okPower = ch.power.solveSample();
                 ok = ok && okPower;
                 speakerVolts = ch.power.voltage (ch.speaker);
@@ -816,7 +1014,8 @@ double EL84BoutiqueAmpCore::debugVoltage (Probe probe) const noexcept
         case Probe::powerPlateB: return reducedOrder ? 0.0 : ch.power.voltage (ch.powerPlateB);
         case Probe::cathodeBias: return reducedOrder ? 0.0 : ch.power.voltage (ch.cathodeBias);
         case Probe::speaker: return reducedOrder ? ch.outputState : ch.power.voltage (ch.speaker);
-        case Probe::screen: return model == Model::carmenGhia || model == Model::astroverb16 ? 290.0 : 300.0;
+        case Probe::screen: return model == Model::hotCat30 ? 367.0
+                                   : model == Model::carmenGhia || model == Model::astroverb16 ? 290.0 : 300.0;
     }
     return 0.0;
 }
