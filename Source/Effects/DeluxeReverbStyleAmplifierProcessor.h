@@ -43,8 +43,10 @@ public:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
     /** Amplifier output (speaker-terminal volts, 8 ohm tap -- the real amp's single 12" Jensen) scaled to a signal
-        level: ~22 W into 8 ohm is ~13.3 V rms / 18.8 V peak. */
-    static constexpr double outputScale = 1.0 / 18.8;
+        level: ~22 W into 8 ohm is ~13.3 V rms / 18.8 V peak, further divided by 1.15 (-1.18 dB) to keep the
+        unity-trimmed level after the AB763-fixed bright caps (always-wired 120 pF across each volume track)
+        were restored -- they pass more HF energy into the mix node at low/mid volumes. */
+    static constexpr double outputScale = 1.0 / 21.55;
 
     // ---- reduced-order power stage (see SuperLeadStyleAmplifierProcessor's own note for the full mechanism/reasoning) ----
     // Built in from the start this time (per the user's own request, 2026-09-28): calibrated as part of the initial build,

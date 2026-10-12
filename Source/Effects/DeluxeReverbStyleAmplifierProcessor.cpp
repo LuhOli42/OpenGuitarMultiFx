@@ -283,9 +283,12 @@ void DeluxeReverbStyleAmplifierProcessor::buildChannel (Channel& ch)
             c.addResistor (n2, gnd, 6800.0); // fixed -- no Middle pot on this amp
 
             // Volume: 1M-A. Both channels' wipers mix into pMix through 100k, same "jumper" pattern as the other amps.
+            // The AB763 Deluxe Reverb's bright caps are fixed-wired (no Bright switch on this amp's faceplate,
+            // unlike the Twin's): a permanent 120 pF across each volume track, top to wiper.
             const auto w = c.addNode();
             ch.rVolTop[ch2] = c.addResistor (tone, w, 1.0e6);
             ch.rVolBot[ch2] = c.addResistor (w, gnd, 1.0e6);
+            c.addCapacitor (tone, w, 120.0e-12);
             c.addResistor (w, ch.pMix, 100.0e3);
         }
         ch.pPlateNormal = plateNodes[0];

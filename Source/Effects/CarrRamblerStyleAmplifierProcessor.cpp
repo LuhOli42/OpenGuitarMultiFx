@@ -179,8 +179,8 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.sB, railPlatesNominal - 8.0);
     }
 
-    // ================================================================ preamp: 12AX7 -> coupling cap -> Volume
-    // (the Trainwreck-Express input shape exactly: gain stage, 22 nF into the pot top, pot halves to ground).
+    // ================================================================ preamp: blackface signal order --
+    // V1A -> coupling cap -> TMB -> Volume -> V1B -> coupling cap -> PI grid (docs/circuits/CarrRambler.md).
     {
         auto& c = ch.pre;
         const auto in = c.addNode();
@@ -188,8 +188,8 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto rail = c.addNode();
         ch.pSrcRail = c.addSource (rail, railPlatesNominal * preFraction * 0.8);
 
-        // TrainwreckExpress's proven stage recipe, verbatim: stopper + optional leak + triode + Miller Cgp +
-        // plate load + cathode R (+optional bypass). Three cascaded stages share ONE solve -- that shared solve
+        // The proven stage recipe: stopper + optional leak + triode + Miller Cgp +
+        // plate load + cathode R (+optional bypass). Both stages share ONE solve -- that shared solve
         // is what keeps the iterate on a single attractor (splitting stages into per-stage blocks cycled).
         auto stage = [&] (NodalCircuit::Node gIn, double stopper, double leak, double rk, double ck,
                           NodalCircuit::Node& plate, NodalCircuit::Node& cathode, double plateGuess, double cathodeGuess)
@@ -213,35 +213,34 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         // V1A input stage: 68k stopper, 1M input leak, 100k / 1k5 + 22 uF (blackface values).
         stage (in, 68.0e3, 1.0e6, 1.5e3, 22.0e-6, ch.pPlate1, ch.pK1, 180.0, 1.4);
 
-        // .022 -> the single 1M-A Volume pot (top/bottom track halves).
-        const auto v1Out = c.addNode();
+        // Blackface signal order (the real Rambler's): V1A -> .022 coupling cap -> TMB -> Volume -> V1B.
+        // The coupling cap blocks the plate DC, so the stack, the Volume track and V1B's grid all sit at
+        // ground-referenced DC -- the pot track IS V1B's grid leak, exactly the Fender wiring.
+        const auto ti = c.addNode(), pTop = c.addNode(), pSlope = c.addNode(), pN1 = c.addNode(), pN2 = c.addNode();
+        const auto tone = c.addNode();
+        c.addCapacitor (ch.pPlate1, ti, 22.0e-9);
+        c.addCapacitor (ti, pTop, 250.0e-12);
+        c.addResistor (ti, pSlope, 100.0e3);
+        ch.rTrebleTop = c.addResistor (pTop, tone, 125.0e3);
+        ch.rTrebleBot = c.addResistor (tone, pN1, 125.0e3);
+        c.addCapacitor (pSlope, pN1, 0.1e-6);
+        ch.rBass = c.addResistor (pN1, pN2, 250.0e3);
+        c.addCapacitor (pSlope, pN2, 0.047e-6);
+        ch.rMid = c.addResistor (pN2, gnd, 10.0e3);
+
+        // 1M-A Volume: treble wiper -> track top -> wiper. The wiper feeds V1B's grid directly
+        // (the 68k stopper below), no coupling cap -- the real blackface wiring.
         ch.pTone = c.addNode(); // the wiper (kept for probing)
-        c.addCapacitor (ch.pPlate1, v1Out, 22.0e-9);
-        ch.rVolTop = c.addResistor (v1Out, ch.pTone, 0.5e6);
+        ch.rVolTop = c.addResistor (tone, ch.pTone, 0.5e6);
         ch.rVolBot = c.addResistor (ch.pTone, gnd, 0.5e6);
 
-        // V1B recovery: wiper-fed through 68k, no leak (floats at wiper DC), 2k7 + 0.68 uF partial bypass.
-        stage (ch.pTone, 68.0e3, 0.0, 2.7e3, 0.68e-6, ch.pPlate2, ch.pK2, 200.0, 1.9);
+        // V1B recovery stage: wiper-fed through 68k, blackface 1k5 + 22 uF cathode, 100k plate load.
+        stage (ch.pTone, 68.0e3, 0.0, 1.5e3, 22.0e-6, ch.pPlate2, ch.pK2, 200.0, 1.4);
 
-        // .022 -> V2A cold stage (10k unbypassed), 1R stopper + 1M leak.
-        const auto c2 = c.addNode();
-        NodalCircuit::Node pPlate3 = 0, pK3 = 0;
-        c.addCapacitor (ch.pPlate2, c2, 22.0e-9);
-        stage (c2, 1.0, 1.0e6, 10.0e3, 0.0, pPlate3, pK3, 250.0, 3.0);
-
-        // Blackface TMB hanging off V2A's plate (rides at plate DC; Fender wiring: both legs off the slope node,
-        // Bass bridges the summing nodes, Mid resistor to ground).
-        const auto pTop = c.addNode(), pSlope = c.addNode(), pN1 = c.addNode(), pN2 = c.addNode();
-        ch.pOut = c.addNode(); // the treble wiper / stack output
-        c.addCapacitor (pPlate3, pTop, 500.0e-12);
-        c.addResistor (pPlate3, pSlope, 100.0e3);
-        ch.rTrebleTop = c.addResistor (pTop, ch.pOut, 125.0e3);
-        ch.rTrebleBot = c.addResistor (ch.pOut, pN1, 125.0e3);
-        c.addCapacitor (pSlope, pN1, 22.0e-9);
-        ch.rBass = c.addResistor (pN1, pN2, 125.0e3);
-        c.addCapacitor (pSlope, pN2, 22.0e-9);
-        ch.rMid = c.addResistor (pN2, gnd, 12.5e3);
-        c.addResistor (ch.pOut, gnd, 1.0e6); // the PI grid leak, seen from the stack
+        // .022 coupling into the PI grid leak -- the preamp's output tap.
+        ch.pOut = c.addNode();
+        c.addCapacitor (ch.pPlate2, ch.pOut, 22.0e-9);
+        c.addResistor (ch.pOut, gnd, 1.0e6);
     }
 
     // ================================================================ power: LTP 5751 + 2x 6L6GC cathode-biased, no NFB
@@ -432,10 +431,11 @@ void CarrRamblerStyleAmplifierProcessor::updateSupply (Channel& ch) const
     const double dt = (double) supplyInterval / juce::jmax (1.0, sampleRate);
     const double a = 1.0 - std::exp (-dt / decouplingTau);
     ch.piRail += a * (screens * piFraction - ch.piRail);
-    // The tapped plate node feeds the power block as a Thevenin source, so its DC has to be removed here the
-    // same way the real amp's coupling cap + grid leak removes it: a ~5 ms one-pole tracker (~32 Hz, the corner of the real
-    // 22 nF / 470 k coupling corner) follows the plate's DC point as the supply sags into its settled state --
-    // ~30 V of settle drift would otherwise inject DC into the LTP for seconds.
+    // LF tracker on the preamp output tap (~32 Hz corner): removes the supply-sag swell the moving rails
+    // put on top of the signal before it reaches the power stage. It is load-bearing for the behavioural
+    // path: slowed or removed, the 5-30 Hz sag component intermodulates the saturator into ~4 dB of
+    // spurious HF that the full netlist's LTP/OT does not produce (AmpFullVsReducedConsistency). The price
+    // is a fraction of a dB at musical bass frequencies, on top of the physical .022 uF cap's own 7 Hz cut.
     ch.outDc += (1.0 - std::exp (-dt / 0.005)) * (ch.pre.voltage (ch.pOut) - ch.outDc);
     const double b = 1.0 - std::exp (-dt / (2.0 * decouplingTau));
     ch.preRail += b * (screens * preFraction - ch.preRail);
@@ -444,9 +444,6 @@ void CarrRamblerStyleAmplifierProcessor::updateSupply (Channel& ch) const
 
 double CarrRamblerStyleAmplifierProcessor::preampOutput (const Channel& ch) const noexcept
 {
-    // Makeup gain for the cold (unbypassed) cathode bias: ~12 dB/stage vs a bypassed 1.5k stage,
-    // needed to swing the phase splitter's grids. The bias choice is the stable solver operating
-    // point (documented in docs/circuits/CarrRambler.md); this restores the lost AC drive.
     return ch.pre.voltage (ch.pOut) - ch.outDc;
 }
 
@@ -563,6 +560,13 @@ void CarrRamblerStyleAmplifierProcessor::prepare (double newSampleRate, int maxB
         buildChannel (ch);
         auto bmVoicing = voicings::classAChime;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's f(drive)-f(asym) law
+        // Refitted after the preamp rebuild (blackface signal order): the full netlist's OT + speaker
+        // darken the top further than the class-A cab defaults -- earlier LP corner, less air.
+        bmVoicing.otHz = 11000.0;
+        bmVoicing.cabLpHz = 4300.0;
+        bmVoicing.cabAirHz = 6500.0;
+        bmVoicing.cabNotchHz = 1500.0;
+        bmVoicing.cabNotchDb = -6.5;
         ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
     }
