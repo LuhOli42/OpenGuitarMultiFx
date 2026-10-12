@@ -66,6 +66,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RockerverbStyleAmplifierProcessorTests.cpp
   SVTStyleAmplifierProcessorTests.cpp
   CarrRamblerStyleAmplifierProcessorTests.cpp
+  JimKelleyStyleAmplifierProcessorTests.cpp
   DividedBy13FTR37StyleAmplifierProcessorTests.cpp
   DumbleSteelStringStyleAmplifierProcessorTests.cpp
   SunnModelTStyleAmplifierProcessorTests.cpp
