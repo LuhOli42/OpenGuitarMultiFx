@@ -285,18 +285,20 @@ void AddEffectBrowserDialog::rebuildRows()
         const auto subcategory = registry.subcategoryForKey (key);
         const auto name = registry.displayNameForKey (key);
 
-        // The query matches the row name OR its category's name: a user
-        // typing "reverb" expects Hall/Plate/Spring too -- their display
-        // names never contain the word "reverb" themselves. Typing "cab"
-        // also matches the 'Amps + Cab' rail label, surfacing every
-        // with-cab amp row.
-        const bool matches = ! searching
-            || name.containsIgnoreCase (query)
+        // Each row matches on its own merits: name / category / subcategory
+        // as before (a user typing "reverb" expects Hall/Plate/Spring too),
+        // plus the 'Amps + Cab' rail label -- but that label only earns the
+        // CAB row, and only for cab-capable amps. Otherwise a 'cab' search
+        // would bury the results under every amp's head-only row plus
+        // cab-less amps like the Trace Elliot.
+        const bool ownMatch = name.containsIgnoreCase (query)
             || EffectRegistry::categoryDisplayName (category).containsIgnoreCase (query)
-            || (category == EffectRegistry::Category::amps
-                && juce::String ("Amps + Cab").containsIgnoreCase (query))
             || subcategory.containsIgnoreCase (query);
-        if (! matches || (! searching && category != tab.category))
+        const bool cabLabelMatch = category == EffectRegistry::Category::amps
+            && juce::String ("Amps + Cab").containsIgnoreCase (query);
+        if (searching && ! ownMatch && ! cabLabelMatch)
+            continue;
+        if (! searching && category != tab.category)
             continue;
         if (! searching && selectedSubcategory.isNotEmpty() && subcategory != selectedSubcategory)
             continue;
@@ -304,13 +306,14 @@ void AddEffectBrowserDialog::rebuildRows()
         // cabCapable() keys off the `*_cab` parameter, so new amps get
         // their cab-variant rows for free. The two amp tabs show one
         // insertion variant each; other tabs list both rows together, and
-        // a global search always shows both.
+        // a global search lists whichever variants actually matched.
         auto* probe = probeForKey (key);
         const bool cab = cabCapable (probe);
-        const bool plainRow = searching || tab.rows != RailTab::Rows::cabOnly;
-        const bool cabRow   = cab && (searching || tab.rows != RailTab::Rows::headOnly);
+        const bool plainRow = searching ? ownMatch : tab.rows != RailTab::Rows::cabOnly;
+        const bool cabRow   = cab && (searching ? (ownMatch || cabLabelMatch)
+                                               : tab.rows != RailTab::Rows::headOnly);
         if (! plainRow && ! cabRow)
-            continue; // a cab-less amp in the 'Amps + Cab' tab
+            continue; // a cab-less amp in the 'Amps + Cab' tab, or an unmatched row in search
 
         const auto searchSubline = [&] (bool forCabRow)
         {
