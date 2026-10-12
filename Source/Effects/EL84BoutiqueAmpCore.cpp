@@ -529,11 +529,11 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     // 1M/820k leaks). The Carmen Ghia keeps the plain grounded-grid pair.
     const bool isHotCat = model == Model::hotCat30;
     const bool isAstro = model == Model::astroverb16;
-    const bool elevatedRef = model == Model::matchlessHC30 || isHotCat || isAstro;
+    const bool elevatedRef = model == Model::matchlessHC30 || isHotCat;
     const auto piRef = c.addNode();
-    c.addCapacitor (input, ch.piGridA, isAstro ? 0.022e-6 : 0.01e-6);
+    c.addCapacitor (input, ch.piGridA, isAstro ? 0.02e-6 : 0.01e-6);
     c.addResistor (ch.piGridA, elevatedRef ? piRef : gnd, 1.0e6);
-    c.addResistor (ch.piGridB, elevatedRef ? piRef : gnd, isAstro ? 820.0e3 : 1.0e6);
+    c.addResistor (ch.piGridB, elevatedRef ? piRef : gnd, 1.0e6);
     // Channel 2 feeds the PI's second grid on the interactive two-channel
     // circuits: Hot Cat clean -> 10n -> V4b grid; DC-30 CH2 -> .01/400V -> V7b.
     if (model == Model::matchlessHC30 || isHotCat)
@@ -551,8 +551,8 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     c.addTriode (ch.piPlateB, ch.piGridB, tail, pi);
     c.addCapacitor (ch.piGridA, ch.piPlateA, 1.7e-12);
     c.addCapacitor (ch.piGridB, ch.piPlateB, 1.7e-12);
-    c.addResistor (rail, ch.piPlateA, isAstro ? 82.0e3 : 100.0e3);
-    c.addResistor (rail, ch.piPlateB, isAstro ? 82.0e3 : 100.0e3);
+    c.addResistor (rail, ch.piPlateA, 100.0e3);
+    c.addResistor (rail, ch.piPlateB, 100.0e3);
     if (elevatedRef)
     {
         c.addResistor (tail, piRef, isAstro ? 470.0 : 1.2e3);
@@ -563,13 +563,13 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
         c.addResistor (tail, gnd, 1.2e3);
     c.setInitialGuess (ch.piPlateA, 260.0);
     c.setInitialGuess (ch.piPlateB, 260.0);
-    c.setInitialGuess (tail, isAstro ? 29.0 : isHotCat ? 69.0 : 1.0);
+    c.setInitialGuess (tail, isHotCat ? 69.0 : 1.0);
 
     const auto gridCouplingA = c.addNode(), gridCouplingB = c.addNode();
     const auto gridA = c.addNode(), gridB = c.addNode();
     ch.powerPlateA = c.addNode();
     ch.powerPlateB = c.addNode();
-    const double powerCoupling = isAstro ? 0.022e-6 : isHotCat ? 0.033e-6 : 0.047e-6;
+    const double powerCoupling = isHotCat ? 0.033e-6 : 0.047e-6;
     c.addCapacitor (ch.piPlateA, gridCouplingA, powerCoupling);
     c.addCapacitor (ch.piPlateB, gridCouplingB, powerCoupling);
     if (model == Model::matchlessHC30 || isHotCat)
@@ -592,7 +592,7 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     // Grid stoppers: 1k5 (DC-30), 10k/2W (Hot Cat), 2k2 (Astroverb); CG reuses
     // these handles for its ganged PPIMV, so it starts at 1 ohm.
     const double gridStopper = model == Model::carmenGhia ? 1.0
-                             : isHotCat ? 10.0e3 : isAstro ? 2.2e3 : 1.5e3;
+                             : isHotCat ? 10.0e3 : 1.5e3;
     ch.rMasterTopA = c.addResistor (gridCouplingA, gridA, gridStopper);
     ch.rMasterTopB = c.addResistor (gridCouplingB, gridB, gridStopper);
     ch.cathodeBias = c.addNode();
@@ -601,7 +601,7 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     ch.rCathodeBias = c.addResistor (ch.cathodeBias, gnd, cathodeR);
     c.addCapacitor (ch.cathodeBias, gnd, 250.0e-6);
     const auto& powerTube = fourTubes ? tubes.el84Pair : tubes.el84;
-    const double screen = isHotCat ? 367.0 : isAstro ? 348.0 : fourTubes ? 300.0 : 290.0;
+    const double screen = isHotCat ? 367.0 : fourTubes ? 300.0 : 290.0;
     ch.penA = c.addPentode (ch.powerPlateA, gridA, ch.cathodeBias, powerTube, screen);
     ch.penB = c.addPentode (ch.powerPlateB, gridB, ch.cathodeBias, powerTube, screen);
     c.setInitialGuess (ch.powerPlateA, isHotCat ? 376.0 : 350.0);
@@ -645,12 +645,9 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
 
     if (model == Model::astroverb16)
     {
-        // Factory schematic NFB: OT secondary -> 10k -> FB node -> 4k7 -> PI
-        // tail; PRESENCE 25k pot shunts the FB node to ground, 100nF alongside.
         const auto nfb = c.addNode();
-        c.addResistor (ch.speaker, nfb, 10.0e3);
-        c.addResistor (nfb, ch.piTail, 4.7e3);
-        c.addCapacitor (nfb, gnd, 0.1e-6);
+        c.addCapacitor (ch.speaker, nfb, 0.1e-6);
+        c.addResistor (nfb, ch.piTail, 47.0e3);
         ch.rPresence = c.addResistor (nfb, gnd, 25.0e3);
     }
 }
@@ -823,7 +820,7 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     // the reference at the new defaults (was 1.17 / 14.0).
     const double level = model == Model::matchlessHC30 ? 2.02 :
                          model == Model::hotCat30 ? 34.0 :
-                         model == Model::carmenGhia ? 18.5 : 8.2;
+                         model == Model::carmenGhia ? 18.5 : 21.4;
     const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
     const double sag = reducedOrder ? 0.03 * ch.bmFeel : 0.025;
     return level * (std::tanh (drive * gain + asym) - std::tanh (asym)) * (model == Model::carmenGhia ? 0.65 : 0.8)
