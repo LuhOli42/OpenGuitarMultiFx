@@ -39,7 +39,7 @@ Same structure as the Rivera model, extended to four preamp netlists:
 2. `power` — LTP PI → 4× KT77 (Koren EL34-family fit: mu 8.11, ex 1.5, kg1 1201, kg2 3720, kp 100, kvb 24, the
    pair-doubling convention — kg1/kg2 halved, grid conductance doubled) → OT → speaker taps → NFB with
    Presence + Deep legs.
-3. `supply` — SS bridge (15 Ω effective) → ~430 V plates → 2 kΩ screens (~420 V) → 10 kΩ PI (~310 V) → 10 kΩ
+3. `supply` — SS bridge (15 Ω effective) → ~430 V plates → 470 Ω screens (~420 V) → 10 kΩ PI (~310 V) → 10 kΩ
    preamp (~270 V).
 
 reducedOrder ships on: the behavioral power stage reuses the K100-fit constants with the sag-rail table rescaled
@@ -72,7 +72,8 @@ Page 2 (synthetic): Power Drive, Bias (fixed-bias trimmer), Tube Feel, Speaker, 
 
 ## Verification targets
 
-- Rails ≈ 430 / ~420 V; bias ≈ −44 V; matched pair idle ~50–90 mA per pair (KT77 runs a little hotter than 6L6).
+- Rails ≈ 430 / ~415–420 V (470 Ω screen dropper); bias ≈ −44 V; matched pair idle ~55 mA per tube
+  (~110 mA per push-pull pair) — KT77 at these rails runs hotter than 6L6.
 - NFB stable at all settings (silence AC RMS < 0.01 on all four channels).
 - Per-channel output rises Clean → Crunch → Mega → Lead at matched knobs; each channel has its own stage count
   and stack values, so their waveshapes differ, not just their loudness.

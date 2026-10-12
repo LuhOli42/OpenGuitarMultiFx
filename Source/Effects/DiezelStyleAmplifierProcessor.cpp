@@ -37,12 +37,12 @@ namespace
 
     constexpr double cgp = 1.7e-12;
 
-    // VH4-class rails: solid-state bridge, ~430 V plates, ~420 V screens (2k dropper), ~310 V phase
+    // VH4-class rails: solid-state bridge, ~430 V plates, ~420 V screens (470R dropper), ~310 V phase
     // inverter, ~270 V preamp droppers (service-note topology; a VH4 schematic is not public).
     constexpr double railPlatesNominal = 430.0;
     constexpr double rectifierR = 15.0;
     constexpr double reservoir = 100.0e-6;
-    constexpr double screenResistor = 2000.0;
+    constexpr double screenResistor = 470.0;
     constexpr double piFraction = 310.0 / 430.0;
     constexpr double preFraction = 270.0 / 430.0;
     constexpr double idlePlateCurrent = 0.085;   // per pair of KT77s
@@ -628,7 +628,10 @@ void DiezelStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     {
         const double supplyRate = newSampleRate / (double) supplyInterval;
         bool passOk = true;
-        double ipRun = 2.0 * idlePlateCurrent, isRun = 0.02;
+        // reducedOrder never updates isRun from real pentode screens: seed it with the physical
+        // estimate (4x KT77 idle screens ~= 3 mA each) instead of the full-mode starting guess so
+        // the converged screen rail lands at the documented ~420 V, not ~10 V lower per extra mA.
+        double ipRun = 2.0 * idlePlateCurrent, isRun = reducedOrder ? 0.012 : 0.02;
         for (int pass = 0; pass < 10; ++pass)
         {
             ch.supply.setCurrentSource (ch.iA, -ipRun);

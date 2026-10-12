@@ -1000,6 +1000,18 @@ void RiveraKnuckleheadStyleAmplifierProcessor::process (juce::AudioBuffer<float>
     shortcut.end (buffer);
 }
 
+void RiveraKnuckleheadStyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    // Presets written before the 3-way channel selector stored knk_channel as a 2-way
+    // switch (0 = Clean, 1 = Lead). The pull-switch params didn't exist then, so a state
+    // with no knk_ninja is legacy: remap its saved 1 (Lead) to the new 2.
+    const bool legacy = ! state.hasAttribute ("knk_ninja");
+    const float savedChannel = (float) state.getDoubleAttribute ("knk_channel", -1.0);
+    EffectProcessor::setState (state);
+    if (legacy && juce::approximatelyEqual (savedChannel, 1.0f))
+        *channelParam = 2.0f;
+}
+
 void RiveraKnuckleheadStyleAmplifierProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
     static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::amp_svg, IconData::amp_svgSize);

@@ -197,6 +197,31 @@ public:
             logMessage ("CH2 ninja off/on: " + juce::String (nOff, 5) + " / " + juce::String (nOn, 5));
             expectGreaterThan (nOn, nOff * 1.5);
         }
+
+        beginTest ("legacy 2-channel presets migrate: a saved Lead (1) still loads as Lead");
+        {
+            auto channelValue = [] (Amp& amp)
+            {
+                for (auto* p : amp.getParameters()->getParameters (true))
+                    if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+                        if (f->paramID == juce::String (px) + "channel")
+                            return (double) f->get();
+                return -1.0;
+            };
+            // a state written before the pull params existed (no knk_ninja) with channel=1 meant Lead
+            Amp old;
+            juce::XmlElement legacy ("EffectState");
+            legacy.setAttribute (juce::String (px) + "channel", 1.0);
+            old.setState (legacy);
+            expectEquals (channelValue (old), 2.0);
+            // a current-format state with channel=1 really is Crunch
+            Amp now;
+            juce::XmlElement current ("EffectState");
+            current.setAttribute (juce::String (px) + "channel", 1.0);
+            current.setAttribute (juce::String (px) + "ninja", 0.0);
+            now.setState (current);
+            expectEquals (channelValue (now), 1.0);
+        }
     }
 };
 
