@@ -118,7 +118,7 @@ private:
         struct Spring
         {
             std::vector<double> buf1, buf2, buf3;
-            int pos = 0;
+            int64_t pos = 0; // wraps would need lcm(n1,n2,n3); 64-bit never overflows in practice
             double damp = 0.0;
             void prepare (double sampleRate);
             void clear();
@@ -131,12 +131,14 @@ private:
         int rBiasTrim = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rPres = 0, rNfb = 0;
-        int penA = 0, penB = 0;
+        int penA1 = 0, penA2 = 0, penB1 = 0, penB2 = 0, rLiftA = 0, rLiftB = 0;
         NodalCircuit::Node wMixPlate = 0, wMixK = 0, wPiGrid = 0, wPiPlate = 0, wPiK = 0, wGridA = 0,
-                           wGridB = 0, wPP1 = 0, wPP2 = 0, wBias = 0, wOut = 0, wRev = 0;
+                           wGridB = 0, wPP1 = 0, wPP2 = 0, wBias = 0, wOut = 0, wRev = 0,
+                           wKA2 = 0, wKB2 = 0;
 
         // reducedOrder behavioural state
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
+        double bmPresX = 0.0, bmPresY = 0.0; // presence pull's reduced-order high-pass state
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
 
         // supply: rectifier -> plate rail (sA) -> screen node (sB); PI / preamp taps are RC-filtered from sB

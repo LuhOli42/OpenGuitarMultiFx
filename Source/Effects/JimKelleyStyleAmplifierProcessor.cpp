@@ -388,10 +388,19 @@ void JimKelleyStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (ch.wGridA, g3s, 1.5e3);
         c.addResistor (ch.wGridB, g4s, 1.5e3);
         const double screenIdle = railPlatesNominal - screenResistor * (4.0 * idleScreenCurrent + piAndPreampCurrent);
-        ch.penA = c.addPentode (ch.wPP1, g3s, gnd, pentode6V6(), screenIdle);
-        ch.penB = c.addPentode (ch.wPP2, g4s, gnd, pentode6V6(), screenIdle);
+        // Four real 6V6GTs sharing plate/grid nodes per side. Power Select lifts the second tube of EACH
+        // pair's cathode (the real switch's cathode-lift half-power wiring): the surviving pair keeps
+        // push-pull balance -- lifting a whole side would remove one OT half entirely.
+        ch.penA1 = c.addPentode (ch.wPP1, g3s, gnd, pentode6V6(), screenIdle);
+        ch.penA2 = c.addPentode (ch.wPP1, g3s, ch.wKA2 = c.addNode(), pentode6V6(), screenIdle);
+        ch.penB1 = c.addPentode (ch.wPP2, g4s, gnd, pentode6V6(), screenIdle);
+        ch.penB2 = c.addPentode (ch.wPP2, g4s, ch.wKB2 = c.addNode(), pentode6V6(), screenIdle);
+        ch.rLiftA = c.addResistor (ch.wKA2, gnd, 0.001); // 60 W: hard ground; 30 W: 47k -> self-cuts at idle
+        ch.rLiftB = c.addResistor (ch.wKB2, gnd, 0.001);
         c.setInitialGuess (ch.wPP1, 470.0);
         c.setInitialGuess (ch.wPP2, 470.0);
+        c.setInitialGuess (ch.wKA2, 0.0);
+        c.setInitialGuess (ch.wKB2, 0.0);
         c.setInitialGuess (ch.wGridA, -50.0);
         c.setInitialGuess (ch.wGridB, -50.0);
         c.setInitialGuess (g3s, -50.0);
@@ -497,9 +506,14 @@ void JimKelleyStyleAmplifierProcessor::updatePots (const Knobs& k)
             if (k.presence != appliedPresence)
                 ch.power.setResistance (ch.rPres, presR);
             ch.power.setResistance (ch.rBiasTrim, biasTrim);
-            // Power Select 30 W: one 6V6 pair's screens drop to 0 V (the real switch unplugs a pair).
-            if (k.powerSel == 1)
-                ch.power.setPentodeScreen (ch.penB, 0.0);
+            // Power Select 30 W: lift the second tube of each pair's cathode (47k to ground) --
+            // the classic cathode-lift half-power circuit, so both OT halves stay driven.
+            if (k.powerSel != appliedPowerSel)
+            {
+                const double liftR = k.powerSel == 1 ? 47.0e3 : 0.001;
+                ch.power.setResistance (ch.rLiftA, liftR);
+                ch.power.setResistance (ch.rLiftB, liftR);
+            }
         }
         ch.supply.setResistance (ch.rRect, rectifier);
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
@@ -511,7 +525,8 @@ void JimKelleyStyleAmplifierProcessor::updatePots (const Knobs& k)
     appliedMidBoost = k.midBoost;
     appliedPresence = k.presence;
     appliedPowerSel = k.powerSel;
-    speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
+    // The level part of a tap mismatch is honest even without the physical OT (Ampeg convention).
+    speakerGain = std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
 }
 
 void JimKelleyStyleAmplifierProcessor::recover (Channel& ch) const
@@ -548,9 +563,10 @@ void JimKelleyStyleAmplifierProcessor::updateSupply (Channel& ch) const
     if (! reducedOrder)
     {
         ch.power.setSource (ch.wSrcRail, plates);
-        ch.power.setPentodeScreen (ch.penA, screens);
-        if (lastKnobs.powerSel == 0) // 60 W: both pairs fed; 30 W keeps penB's screens at 0 V
-            ch.power.setPentodeScreen (ch.penB, screens);
+        ch.power.setPentodeScreen (ch.penA1, screens);
+        ch.power.setPentodeScreen (ch.penA2, screens);
+        ch.power.setPentodeScreen (ch.penB1, screens);
+        ch.power.setPentodeScreen (ch.penB2, screens);
         ch.power.setSource (ch.wSrcPi, ch.piRail);
     }
     constexpr double decouplingTau = 9.1e3 * 20.0e-6;
@@ -586,7 +602,13 @@ double JimKelleyStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, doub
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double envScale = juce::jlimit (0.0, 1.0, ch.bmEnvelope / juce::jmax (1.0e-9, k));
     const double asym = (bmAsym * envScale + 0.3 * (biasTrim - 0.5)) * bmYmax;
-    const double drive = driveVoltage + asym;
+    // Presence pull: the full-order .1uF+1k5 leg in the NFB tail opens the loop above ~1.5 kHz;
+    // reduced order has no loop, so reproduce it as extra high-passed drive into the knee.
+    const double hpA = std::exp (-2.0 * juce::MathConstants<double>::pi * 1500.0 / juce::jmax (1.0, sampleRate));
+    const double hp = hpA * (ch.bmPresY + driveVoltage - ch.bmPresX);
+    ch.bmPresX = driveVoltage;
+    ch.bmPresY = hp;
+    const double drive = driveVoltage + (lastKnobs.presence == 1 ? 0.35 * hp : 0.0) + asym;
     const auto knee = [&] (double x) { return bmYmax * x / std::pow (1.0 + std::pow (x, bmKneeN), 1.0 / bmKneeN); };
     const auto f = [&] (double x) { const double ux = std::abs (x) / juce::jmax (1.0e-9, k);
                                     return std::copysign (knee (ux), x); };
@@ -651,18 +673,20 @@ double JimKelleyStyleAmplifierProcessor::plateCurrentA() const noexcept
 {
     if (reducedOrder)
         return 0.0;
-    double a = 0.0, s = 0.0;
-    channels[0].power.pentodeCurrents (channels[0].penA, a, s);
-    return a;
+    double a = 0.0, a2 = 0.0, s = 0.0;
+    channels[0].power.pentodeCurrents (channels[0].penA1, a, s);
+    channels[0].power.pentodeCurrents (channels[0].penA2, a2, s);
+    return a + a2;
 }
 
 double JimKelleyStyleAmplifierProcessor::plateCurrentB() const noexcept
 {
     if (reducedOrder)
         return 0.0;
-    double b = 0.0, s = 0.0;
-    channels[0].power.pentodeCurrents (channels[0].penB, b, s);
-    return b;
+    double b = 0.0, b2 = 0.0, s = 0.0;
+    channels[0].power.pentodeCurrents (channels[0].penB1, b, s);
+    channels[0].power.pentodeCurrents (channels[0].penB2, b2, s);
+    return b + b2;
 }
 
 void JimKelleyStyleAmplifierProcessor::prepare (double newSampleRate, int maxBlockSize, int numChannels)
@@ -731,13 +755,19 @@ void JimKelleyStyleAmplifierProcessor::prepare (double newSampleRate, int maxBlo
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sB) * piFraction);
             ch.power.setSource (ch.wSrcRail, ch.supply.voltage (ch.sA));
             const double scr = ch.supply.voltage (ch.sB);
-            ch.power.setPentodeScreen (ch.penA, scr);
-            ch.power.setPentodeScreen (ch.penB, scr);
+            ch.power.setPentodeScreen (ch.penA1, scr);
+            ch.power.setPentodeScreen (ch.penA2, scr);
+            ch.power.setPentodeScreen (ch.penB1, scr);
+            ch.power.setPentodeScreen (ch.penB2, scr);
             const bool powOk = ch.power.prepare (newSampleRate);
             dcOk = powOk && dcOk;
             ch.power.solveSample();
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
+            double ipA2 = 0.0, ipB2 = 0.0, isA2 = 0.0, isB2 = 0.0;
+            ch.power.pentodeCurrents (ch.penA1, ipA, isA);
+            ch.power.pentodeCurrents (ch.penA2, ipA2, isA2);
+            ch.power.pentodeCurrents (ch.penB1, ipB, isB);
+            ch.power.pentodeCurrents (ch.penB2, ipB2, isB2);
+            ipA += ipA2; ipB += ipB2; isA += isA2; isB += isB2;
         }
         ch.supply.setCurrentSource (ch.iA, -(ipA + ipB));
         ch.supply.setCurrentSource (ch.iB, -(isA + isB + piAndPreampCurrent));
@@ -748,9 +778,10 @@ void JimKelleyStyleAmplifierProcessor::prepare (double newSampleRate, int maxBlo
         {
             ch.power.setSource (ch.wSrcRail, ch.supply.voltage (ch.sA));
             const double scr = ch.supply.voltage (ch.sB);
-            ch.power.setPentodeScreen (ch.penA, scr);
-            if (appliedPowerSel == 0)
-                ch.power.setPentodeScreen (ch.penB, scr);
+            ch.power.setPentodeScreen (ch.penA1, scr);
+            ch.power.setPentodeScreen (ch.penA2, scr);
+            ch.power.setPentodeScreen (ch.penB1, scr);
+            ch.power.setPentodeScreen (ch.penB2, scr);
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sB) * piFraction);
         }
         ch.piRail = ch.supply.voltage (ch.sB) * piFraction;
@@ -842,7 +873,9 @@ void JimKelleyStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer
             const double preOut = preampOutput (ch);
             // Spring send taps the preamp output like the real amp's 12AT7 driver; the tank input is
             // normalised (pOut sits at roughly +-20 V full drive).
-            const double springOut = rv > 0.0f ? ch.spring.process (preOut / 20.0) : 0.0;
+            // The tank always advances -- gating the send instead would freeze stale wet signal
+            // into the buffers and replay it when the control comes back up.
+            const double springOut = ch.spring.process (preOut / 20.0);
             const double revReturn = rv * 30.0 * springOut; // scaled to volts at the 470k mixer leg
 
             const double driveRaw = masterGain * preOut;
@@ -864,13 +897,14 @@ void JimKelleyStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer
 
             if (! reducedOrder)
             {
-                double ipA, ipB, isA, isB;
-                ch.power.pentodeCurrents (ch.penA, ipA, isA);
-                ch.power.pentodeCurrents (ch.penB, ipB, isB);
-                // Each pentode element models a side's PARALLELED pair -- the supply sees four real tubes.
-                const double mult = powerSelChoice == 1 ? 1.0 : 2.0;
-                ch.sumPlate += mult * (ipA + ipB);
-                ch.sumScreen += mult * (isA + isB);
+                double ipA1, ipA2, ipB1, ipB2, isA1, isA2, isB1, isB2;
+                ch.power.pentodeCurrents (ch.penA1, ipA1, isA1);
+                ch.power.pentodeCurrents (ch.penA2, ipA2, isA2);
+                ch.power.pentodeCurrents (ch.penB1, ipB1, isB1);
+                ch.power.pentodeCurrents (ch.penB2, ipB2, isB2);
+                // Four real tubes -- the lifted pair self-cuts, so 30 W sags about half as much.
+                ch.sumPlate += ipA1 + ipA2 + ipB1 + ipB2;
+                ch.sumScreen += isA1 + isA2 + isB1 + isB2;
                 ++ch.sumCount;
             }
             if (++ch.supplyCounter >= supplyInterval)

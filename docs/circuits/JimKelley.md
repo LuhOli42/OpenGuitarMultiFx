@@ -53,8 +53,10 @@ layout" thread supplying the documented drawing errata.
   emulation (send taps the preamp output, return injected through the same 470k leg) —
   unlike the Carr Rambler / Deluxe Reverb models which drop the reverb control entirely.
   This amp's identity is built around it ("Single Channel Reverb"), and the task asks for it.
-- **Power Select.** 60 W runs all four 6V6GTAs; 30 W drops one pair (screens to 0 V in the
-  model). Supply feedback counts the real tube population.
+- **Power Select.** 60 W runs all four 6V6GTAs; 30 W lifts the second tube of EACH
+  pair's cathode via 47k (the classic cathode-lift half-power wiring) -- the lifted
+  pair self-cuts at idle, push-pull balance survives, and the supply sees roughly
+  half the plate population on its own.
 - **Documented drawing errata applied:** 10nF coupling cap after V1a, the missing cathodyne
   bias resistor, C20 = 0.0033uF family values, clamp placement on V1b's grid.
 - Historic cab pairing: the open-back 1x12 Electro-Voice EVM-12L (stock cab voice;
