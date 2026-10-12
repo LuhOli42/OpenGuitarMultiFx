@@ -773,7 +773,12 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         ch.bmDriveScale = pots::audio (smoothedParam (ch, 15, masterParam, 1.0));
         ch.bmBias = bias;
         ch.bmFeel = feel;
-        const double cutHz = 20000.0 * std::pow (0.15, smoothedParam (ch, 7, cutParam, 0.5));
+        // Hot Cat's page-2 control is Brilliance (more = brighter = less cut);
+        // map it to the same one-pole as Cut with the direction flipped.
+        const double cutControl = model == Model::hotCat30
+                                ? 1.0 - smoothedParam (ch, 7, brillianceParam, 0.7)
+                                : smoothedParam (ch, 7, cutParam, 0.5);
+        const double cutHz = 20000.0 * std::pow (0.15, cutControl);
         ch.bmCutAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * cutHz / juce::jmax (1.0, sampleRate));
         ch.bmShelf = (smoothedParam (ch, 14, presenceParam, 0.5) - 0.5) * 4.0;
         ch.bmPresAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 3500.0 / juce::jmax (1.0, sampleRate));
@@ -1010,8 +1015,7 @@ double EL84BoutiqueAmpCore::debugVoltage (Probe probe) const noexcept
         case Probe::cathodeBias: return reducedOrder ? 0.0 : ch.power.voltage (ch.cathodeBias);
         case Probe::speaker: return reducedOrder ? ch.outputState : ch.power.voltage (ch.speaker);
         case Probe::screen: return model == Model::hotCat30 ? 367.0
-                                   : model == Model::astroverb16 ? 348.0
-                                   : model == Model::carmenGhia ? 290.0 : 300.0;
+                                   : model == Model::carmenGhia || model == Model::astroverb16 ? 290.0 : 300.0;
     }
     return 0.0;
 }
