@@ -836,12 +836,12 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         ch.tone.solveSample();
         ch.plateDcU7b = reducedOrder ? 0.0 : ch.tone.voltage (ch.tPlateU7b);
         // All four channel taps read U7B (the shared recovery path), so every tap's DC
-        // baseline is that plate: seeding them from different nodes made the first sample
-        // of each DC blocker a large offset transient (startup pop on Clean/Crunch/Lead).
-        ch.toneTapDc[0] = ch.tone.voltage (ch.tTone);
-        ch.toneTapDc[1] = reducedOrder ? ch.toneTapDc[0] : ch.plateDcU7b;
-        ch.toneTapDc[2] = reducedOrder ? ch.toneTapDc[0] : ch.plateDcU7b;
-        ch.toneTapDc[3] = reducedOrder ? ch.toneTapDc[0] : ch.plateDcU7b;
+        // baseline is that plate in the full model (the tone-stack node under reducedOrder,
+        // where the recovery stages don't exist). Any other node would make the first
+        // sample of each DC blocker a large offset transient -- a startup/recovery pop.
+        const double tapDcBase = reducedOrder ? ch.tone.voltage (ch.tTone) : ch.plateDcU7b;
+        for (int t = 0; t < 4; ++t)
+            ch.toneTapDc[t] = tapDcBase;
         if (! reducedOrder)
             ch.power.solveSample();
 
