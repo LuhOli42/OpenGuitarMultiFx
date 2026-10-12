@@ -14,7 +14,7 @@ class EL84BoutiqueAmpCore : public EffectProcessor
 {
 public:
     enum class Model { matchlessHC30, hotCat30, carmenGhia, astroverb16 };
-    enum class Probe { preampPlate, piPlateA, piPlateB, powerPlateA, powerPlateB, cathodeBias, speaker, screen };
+    enum class Probe { preampPlate, piPlateA, piPlateB, powerPlateA, powerPlateB, cathodeBias, speaker };
 
     struct TubeFits
     {
@@ -49,6 +49,7 @@ protected:
 private:
     struct Channel
     {
+        std::array<double, 12> speakerHighpassState {};
         NodalCircuit pre, pre2, power, supply;
         NodalCircuit::DynamicState preRest, pre2Rest, powerRest, supplyRest;
         int preInput = 0, preInput2 = 0, preRail = 0, preRail2 = 0;
@@ -57,7 +58,7 @@ private:
         int toneCap = -1, rCut = -1, rPresence = -1;
         NodalCircuit::Node prePlate = 0, preOut = 0, preOut2 = 0, toneOut = 0;
         int powerInput = 0, powerRail = 0, powerCf = 0;
-        int rCathodeBias = -1, rMasterTopA = -1, rMasterTopB = -1;
+        int rCathodeBias = -1, rMasterTopA = -1, rMasterTopB = -1, rMasterBottomA = -1, rMasterBottomB = -1;
         int rSpeakerRe = -1, rSpeakerRp = -1, rSpeakerEddy = -1, capSpeakerCp = -1, grpSpeakerLe = -1, grpSpeakerLp = -1;
         int penA = -1, penB = -1;
         NodalCircuit::Node piPlateA = 0, piPlateB = 0, piGridA = 0, piGridB = 0, piTail = 0;
@@ -65,7 +66,10 @@ private:
         int supplyCurrent = 0, supplySource = 0, rectifierResistance = -1;
         NodalCircuit::Node supplyA = 0, supplyB = 0, preRailNode = 0;
         int supplyCounter = 0, currentCount = 0;
-        double currentSum = 0.0, preRailFiltered = 0.0, outputState = 0.0, envelope = 0.0;
+        double currentSum = 0.0, preRailFiltered = 0.0, outputState = 0.0, envelope = 0.0, shelfState = 0.0;
+        double inputPowerEnvelope = 0.0;
+        double presenceState = 0.0, presenceOutputState = 0.0, bassState = 0.0, trebleOutputState = 0.0;
+        double reducedOutputPreviousInput = 0.0, reducedOutputHighpass = 0.0;
         double preDc = 0.0, pre2Dc = 0.0;
         long long failures = 0;
     };
@@ -76,10 +80,14 @@ private:
     void buildSupply (Channel& channel);
     void updatePots (Channel& channel);
     void updateSupply (Channel& channel);
-    double behavioralPowerStage (Channel& channel, double drive) const noexcept;
+    double behavioralPowerStage (Channel& channel, double drive, double inputLevel) const noexcept;
     juce::AudioParameterFloat* addFloat (juce::AudioProcessorParameterGroup& group, const char* id, const char* name, float value);
     juce::AudioParameterFloat* findParam (const char* id) const;
     double param (const juce::AudioParameterFloat* parameter, double fallback) const noexcept;
+    struct HighpassSection
+    {
+        double b0 = 0.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0;
+    };
 
     Model model;
     TubeFits tubes;
@@ -87,6 +95,9 @@ private:
     const char* displayName;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     std::array<Channel, 2> channels;
+    std::array<HighpassSection, 6> speakerHighpassSections {};
+    std::size_t speakerHighpassSectionCount = 0;
+    double reducedOutputHighpassAlpha = 0.0;
     DualMonoShortcut shortcut;
 
     juce::AudioParameterFloat* channelParam = nullptr;

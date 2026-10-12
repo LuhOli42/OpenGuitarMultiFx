@@ -12,11 +12,11 @@ Sources:
 
 ## Modeled circuit
 
-Channel 1 uses two parallel 12AX7 triodes, a shared 100 kΩ plate load, and an 820 Ω cathode resistor bypassed by 25 µF (**all component values ESTIMATED**). Its following Bass/Treble network is a simplified, estimated Top-Boost-style bridged RC network, followed by Volume 1 and a 12AX7 recovery stage (100 kΩ plate load, 1.5 kΩ unbypassed cathode resistor; **ESTIMATED**).
+Channel 1 uses two parallel 12AX7 triodes, a shared 100 kΩ plate load, and an 820 Ω cathode resistor bypassed by 25 µF (**all component values ESTIMATED**). Its Top-Boost-style Bass/Treble stack reuses the AC30 implementation's 50 pF coupling capacitor, 100 kΩ slope resistor, two 0.022 µF capacitors, 1 MΩ Treble and Bass tracks, and 10 kΩ ground leg (**ESTIMATED**); the plate feeds the stack rather than bypassing it to the Volume 1 wiper. Volume 1 feeds a 12AX7 recovery stage (100 kΩ plate load, 1.5 kΩ unbypassed cathode resistor; **ESTIMATED**).
 
-Channel 2 uses an EF86 pentode with a 220 kΩ plate load and 2.2 kΩ / 25 µF cathode network (**ESTIMATED**, based on the AC15-style pentode stage), followed by Volume 2 and a six-position shunt-cap tone control: open, 470 pF, 1 nF, 2.2 nF, 4.7 nF, and 10 nF (**ESTIMATED**). The default channel is the EF86 channel. The two channel paths feed the shared phase-inverter and power-stage model.
+Channel 2 uses an EF86 pentode with a 220 kΩ plate load and 2.2 kΩ / 25 µF cathode network (**ESTIMATED**, based on the AC15-style pentode stage), followed by Volume 2, a 100 kΩ series resistor, the six-position tone-cap shunt, a 47 kΩ series resistor, and the 1 MΩ load (**ESTIMATED**). Tone positions are open, 470 pF, 1 nF, 2.2 nF, 4.7 nF, and 10 nF (**ESTIMATED**). The default channel is Channel 1; both paths feed the shared phase-inverter and power-stage model.
 
-The shared phase inverter is a 12AX7 long-tailed pair. Four EL84s are modeled as two parallel pairs with shared 50 Ω / 250 µF cathode bias. The output transformer and speaker network, 400 V-class supply, rectifier sag, and screen behavior are **ESTIMATED**. The implementation omits global negative feedback (**ESTIMATED**). Cut is an estimated cross-PI control; Master is located before the PI.
+The shared phase inverter is a 12AX7 long-tailed pair. Four EL84s are modeled as two parallel pairs with shared 50 Ω / 250 µF cathode bias (**ESTIMATED**). The output transformer and speaker network, 400 V-class supply, rectifier sag, and fixed screen voltage are **ESTIMATED**. The nodal pentode API accepts screen voltage as a per-sample scalar, not a circuit node, so no synthetic screen-voltage probe is exposed. The implementation omits global negative feedback (**ESTIMATED**). Cut is an estimated cross-PI control; Master is located before the PI. The production reduced-order output uses an **ESTIMATED** 90 Hz one-pole high-pass to roll off subsonic energy.
 
 ## Controls
 
@@ -26,14 +26,14 @@ Channel selects the parallel-triode or EF86 preamp. Tone 2 selects one of the si
 
 ## Verification
 
-The focused processor suite converged and passed its silence, plucked-note, control-response, and reduced/full tracking checks. Measured DC operating values are implementation readings, not manufacturer specifications:
+The focused processor suite checks DC convergence, silence, plucked-note stability, model controls, and reduced/full tracking. Measured DC operating values are implementation readings and are **ESTIMATED**, not manufacturer specifications:
 
 | Measurement | Voltage |
 |---|---:|
-| B+ | 380.5 V |
-| Preamp plate | 154.9 V |
-| PI plates | 332.7 / 332.7 V |
-| Power plates | 395.3 / 395.3 V |
-| Shared EL84 cathode | 5.9 V |
+| B+ | 380.5 V (**ESTIMATED**) |
+| Preamp plate | 154.9 V (**ESTIMATED**) |
+| PI plates | 332.7 / 332.7 V (**ESTIMATED**) |
+| Power plates | 395.3 / 395.3 V (**ESTIMATED**) |
+| Shared EL84 cathode | 5.9 V (**ESTIMATED**) |
 
-The measured default guitar-DI RMS was 0.001617 before registry trim, versus 0.061023 for AC30; the registry applies +31.54 dB to align defaults. Component values beyond the manufacturer-level facts above are estimates, not claims about a factory schematic.
+The original +31.54 dB trim came from treating the quieter EF86 channel as the default: at 220 Hz Channel 2 measured 0.000778 Vrms versus 0.023700 Vrms on Channel 1 (29.7 dB lower). The erroneous Channel 1 plate-to-Volume-wiper bypass was also removed, and its Top-Boost-like stack reuses the AC30 implementation's values listed above. The re-rendered untrimmed default DI RMS is 0.079141 (**ESTIMATED**); the registry's -2.26 dB trim is derived by matching AC30's 0.061023 RMS reference (**ESTIMATED**). Component values beyond the manufacturer-level facts above are estimates, not claims about a factory schematic.

@@ -361,19 +361,19 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/MatchlessHC30.md.
     MatchlessHC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MatchlessHC30StyleAmplifier");
-    registry.registerType ("MatchlessHC30StyleAmplifier", [] { return trimmed (oversampled<MatchlessHC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 31.54f); });
+    registry.registerType ("MatchlessHC30StyleAmplifier", [] { return trimmed (oversampled<MatchlessHC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -2.26f); });
     // docs/circuits/BadCatHotCat30.md.
     HotCat30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("HotCat30StyleAmplifier");
-    registry.registerType ("HotCat30StyleAmplifier", [] { return trimmed (oversampled<HotCat30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.83f); });
+    registry.registerType ("HotCat30StyleAmplifier", [] { return trimmed (oversampled<HotCat30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 3.05f); });
     // docs/circuits/DrZCarmenGhia.md.
     CarmenGhiaStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarmenGhiaStyleAmplifier");
-    registry.registerType ("CarmenGhiaStyleAmplifier", [] { return trimmed (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -15.05f); });
+    registry.registerType ("CarmenGhiaStyleAmplifier", [] { return trimmed (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -16.84f); });
     // docs/circuits/SoldanoAstroverb16.md.
     Astroverb16StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Astroverb16StyleAmplifier");
-    registry.registerType ("Astroverb16StyleAmplifier", [] { return trimmed (oversampled<Astroverb16StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -16.63f); });
+    registry.registerType ("Astroverb16StyleAmplifier", [] { return trimmed (oversampled<Astroverb16StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.26f); });
     // docs/circuits/SLO100.md. Soldano SLO-100 OD channel. Five cascaded 12AX7 gain stages, TMB tone stack,
     // LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated placeholder (Twin Reverb's 6L6GC constants).
     SLO100StyleAmplifierProcessor::reducedOrder = true;

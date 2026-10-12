@@ -113,7 +113,6 @@ public:
             double sum = 0.0, sumSq = 0.0; long long n = 0; bool finite = true;
             for (int b = 0; b < warmBlocks + measBlocks; ++b)
             {
-                buf.clear();
                 amp->process (buf);
                 if (b >= warmBlocks)
                     for (int i = 0; i < buf.getNumSamples(); ++i)

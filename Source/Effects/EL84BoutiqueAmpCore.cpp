@@ -1,6 +1,7 @@
 #include "EL84BoutiqueAmpCore.h"
 
 #include "IconKit.h"
+#include "PotTaper.h"
 #include "TubeAmpCommon.h"
 
 #include <IconData.h>
@@ -12,6 +13,39 @@ namespace openguitarmultifx
 
 namespace
 {
+    struct PowerStageFit
+    {
+        double gain, maxSwing, knee, sagDrive, maxSag, shelfHz, shelfGain;
+        double outputScaleLow, outputScaleMid, outputScaleHigh;
+    };
+
+    PowerStageFit powerStageFit (EL84BoutiqueAmpCore::Model model) noexcept
+    {
+        // Sag, knee and shelf fits follow full-netlist sweeps; output scales are refit to their 220 Hz RMS at
+        // input levels 0.002/0.02/0.2 with the reduced-path output high-pass enabled.
+        switch (model)
+        {
+            case EL84BoutiqueAmpCore::Model::matchlessHC30: return { 42.0, 0.0327, 3.0, 4.0, 0.14, 120.0, 0.70, 0.813, 0.649, 0.596 };
+            case EL84BoutiqueAmpCore::Model::hotCat30:      return { 3.2, 0.0292, 3.0, 4.0, 0.14, 120.0, 0.70, 4.09, 4.07, 1.98 };
+            case EL84BoutiqueAmpCore::Model::carmenGhia:    return { 12.0, 0.0550, 3.0, 3.0, 0.18, 1000.0, 3.0, 1.23, 0.763, 0.592 };
+            case EL84BoutiqueAmpCore::Model::astroverb16:   return { 2.32, 0.4500, 3.0, 3.0, 0.18, 140.0, 1.50, 8.74, 4.31, 3.52 };
+        }
+        return { 17.3, 0.0450, 3.0, 3.0, 0.18, 140.0, 0.70, 1.0, 1.0, 1.0 };
+    }
+
+    double fittedDriveScale (const PowerStageFit& fit, double inputLevel) noexcept
+    {
+        constexpr double rmsLevels[3] { 0.001414213562, 0.01414213562, 0.1414213562 };
+        const double scales[3] { fit.outputScaleLow, fit.outputScaleMid, fit.outputScaleHigh };
+        if (inputLevel <= rmsLevels[0])
+            return scales[0];
+        if (inputLevel >= rmsLevels[2])
+            return scales[2];
+        const int lower = inputLevel < rmsLevels[1] ? 0 : 1;
+        const double t = (inputLevel - rmsLevels[lower]) / (rmsLevels[lower + 1] - rmsLevels[lower]);
+        return scales[lower] + t * (scales[lower + 1] - scales[lower]);
+    }
+
     constexpr double railNominal = 400.0;
     constexpr double speakerNominal[3] { 4.0, 8.0, 16.0 };
     constexpr double primaryHalfInductance = 4.0;
@@ -41,7 +75,7 @@ EL84BoutiqueAmpCore::EL84BoutiqueAmpCore (Model ampModel, TubeFits fits, bool& r
     if (model == Model::matchlessHC30)
     {
         auto channel = std::make_unique<juce::AudioParameterFloat> (
-            "hc30_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
+            "hc30_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
             juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
             { return juce::roundToInt (v) == 0 ? juce::String ("Ch1 12AX7") : juce::String ("Ch2 EF86"); }));
         channelParam = channel.get();
@@ -108,7 +142,7 @@ EL84BoutiqueAmpCore::EL84BoutiqueAmpCore (Model ampModel, TubeFits fits, bool& r
     outputParam = addFloat (*page2, model == Model::matchlessHC30 ? "hc30_output" :
                                     model == Model::hotCat30 ? "hotcat30_output" :
                                     model == Model::carmenGhia ? "cghia_output" : "astro16_output",
-                           "Output", 0.5f);
+                           "Output", model == Model::matchlessHC30 ? 0.6f : 0.5f);
     group->addChild (std::move (page2));
     parameters = std::move (group);
 }
@@ -198,20 +232,19 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
 
         const auto a = c.addNode(), b = c.addNode(), d = c.addNode(), e = c.addNode(), f = c.addNode();
         const auto toneOut = c.addNode();
-        c.addCapacitor (plate, a, 220.0e-12);
+        c.addCapacitor (plate, a, 50.0e-12);
         c.addResistor (a, b, 100.0e3);
         c.addCapacitor (b, d, 0.022e-6);
         ch.rTrebleTop = c.addResistor (a, toneOut, 1.0e6);
         ch.rTrebleBottom = c.addResistor (toneOut, d, 1.0e6);
         ch.rBassTop = c.addResistor (d, e, 1.0e6);
         ch.rBassBottom = c.addResistor (e, f, 1.0e6);
-        c.addResistor (f, gnd, 100.0e3);
-        c.addCapacitor (b, toneOut, 0.022e-6);
+        c.addResistor (f, gnd, 10.0e3);
+        c.addCapacitor (b, e, 0.022e-6);
         ch.prePlate = plate;
         ch.toneOut = toneOut;
         ch.preVolumeTop = c.addResistor (toneOut, coupling, 1.0e6);
         ch.preVolumeBottom = c.addResistor (coupling, gnd, 1.0e6);
-        c.addCapacitor (plate, coupling, 0.022e-6);
         const auto second = addTriode (coupling, 100.0e3, 1.5e3, 0.0, 0.022e-6, false);
         ch.preOut = second.second;
         return;
@@ -280,9 +313,11 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         const auto inStack = ch.preOut;
         const auto a = c.addNode(), b = c.addNode(), d = c.addNode(), e = c.addNode(), f = c.addNode();
         c.addCapacitor (inStack, a, model == Model::matchlessHC30 ? 220.0e-12 : 470.0e-12);
-        c.addResistor (inStack, b, model == Model::matchlessHC30 ? 100.0e3 : 33.0e3);
-        c.addCapacitor (b, d, 0.022e-6);
-        c.addCapacitor (b, e, 0.022e-6);
+        c.addResistor (inStack, b, model == Model::matchlessHC30 ? 100.0e3
+                                     : model == Model::astroverb16 ? 47.0e3 : 33.0e3);
+        const double bassCap = model == Model::astroverb16 ? 0.022e-6 : 0.047e-6;
+        c.addCapacitor (b, d, bassCap);
+        c.addCapacitor (b, e, bassCap);
         ch.toneOut = c.addNode();
         ch.rTrebleTop = c.addResistor (a, ch.toneOut, 250.0e3);
         ch.rTrebleBottom = c.addResistor (ch.toneOut, d, 250.0e3);
@@ -368,12 +403,20 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     ch.powerPlateB = c.addNode();
     c.addCapacitor (ch.piPlateA, gridCouplingA, 0.047e-6);
     c.addCapacitor (ch.piPlateB, gridCouplingB, 0.047e-6);
-    c.addResistor (gridCouplingA, gnd, 220.0e3);
-    c.addResistor (gridCouplingB, gnd, 220.0e3);
     ch.rMasterTopA = c.addResistor (gridCouplingA, gridA, 1.0);
     ch.rMasterTopB = c.addResistor (gridCouplingB, gridB, 1.0);
-    c.addResistor (gridA, gnd, 220.0e3);
-    c.addResistor (gridB, gnd, 220.0e3);
+    if (model == Model::carmenGhia)
+    {
+        ch.rMasterBottomA = c.addResistor (gridA, gnd, 250.0e3);
+        ch.rMasterBottomB = c.addResistor (gridB, gnd, 250.0e3);
+    }
+    else
+    {
+        c.addResistor (gridCouplingA, gnd, 220.0e3);
+        c.addResistor (gridCouplingB, gnd, 220.0e3);
+        c.addResistor (gridA, gnd, 220.0e3);
+        c.addResistor (gridB, gnd, 220.0e3);
+    }
     ch.cathodeBias = c.addNode();
     const bool fourTubes = model == Model::matchlessHC30 || model == Model::hotCat30;
     const double cathodeR = fourTubes ? 50.0 : 130.0;
@@ -425,7 +468,7 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
         const auto nfb = c.addNode();
         c.addCapacitor (ch.speaker, nfb, 0.1e-6);
         c.addResistor (nfb, ch.piTail, 47.0e3);
-        ch.rPresence = c.addResistor (nfb, gnd, 25.0e3);
+        ch.rPresence = c.addResistor (nfb, gnd, 250.0e3);
     }
 }
 
@@ -457,8 +500,8 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, param (volume1Param, 0.4));
         setPot (ch.pre2, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, param (volume2Param, 0.4));
         const double bass = param (bass1Param, 0.5), treble = param (treble1Param, 0.5);
-        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - treble, 1.0e6));
-        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (treble, 1.0e6));
+        ch.pre.setResistance (ch.rTrebleTop, boundedPot (treble, 1.0e6));
+        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (1.0 - treble, 1.0e6));
         ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - bass, 1.0e6));
         ch.pre.setResistance (ch.rBassBottom, boundedPot (bass, 1.0e6));
         if (! reducedOrder)
@@ -470,11 +513,13 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     else if (model == Model::hotCat30)
     {
         setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, param (gainParam, 0.5));
-        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - param (trebleParam, 0.5), 250.0e3));
-        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (param (trebleParam, 0.5), 250.0e3));
+        const double treble = param (trebleParam, 0.5);
+        const double trebleTop = model == Model::astroverb16 ? 1.0 - treble : treble;
+        ch.pre.setResistance (ch.rTrebleTop, boundedPot (trebleTop, 250.0e3));
+        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (1.0 - trebleTop, 250.0e3));
         ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - param (bassParam, 0.5), 1.0e6));
         ch.pre.setResistance (ch.rBassBottom, boundedPot (param (bassParam, 0.5), 1.0e6));
-        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - param (midParam, 0.5), 25.0e3));
+        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (param (midParam, 0.5), 25.0e3));
     }
     else if (model == Model::carmenGhia)
     {
@@ -486,13 +531,11 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     {
         setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, param (preampParam, 0.5));
         setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, param (volume1Param, 0.5));
-        ch.pre.setResistance (ch.rTrebleTop, boundedPot (1.0 - param (trebleParam, 0.5), 250.0e3));
-        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (param (trebleParam, 0.5), 250.0e3));
+        ch.pre.setResistance (ch.rTrebleTop, boundedPot (param (trebleParam, 0.5), 250.0e3));
+        ch.pre.setResistance (ch.rTrebleBottom, boundedPot (1.0 - param (trebleParam, 0.5), 250.0e3));
         ch.pre.setResistance (ch.rBassTop, boundedPot (1.0 - param (bassParam, 0.5), 1.0e6));
         ch.pre.setResistance (ch.rBassBottom, boundedPot (param (bassParam, 0.5), 1.0e6));
-        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - param (midParam, 0.5), 25.0e3));
-        if (! reducedOrder)
-            ch.power.setResistance (ch.rPresence, boundedPot (1.0 - param (presenceParam, 0.5), 25.0e3));
+        if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (param (midParam, 0.5), 25.0e3));
     }
 
     if (! reducedOrder)
@@ -503,9 +546,11 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
             (model == Model::carmenGhia ? 400.0 : 130.0) * (0.05 + 0.95 * feel));
         if (model == Model::carmenGhia)
         {
-            const double master = param (masterParam, 1.0);
+            const double master = pots::audio (param (masterParam, 1.0));
             ch.power.setResistance (ch.rMasterTopA, boundedPot (1.0 - master, 250.0e3));
             ch.power.setResistance (ch.rMasterTopB, boundedPot (1.0 - master, 250.0e3));
+            ch.power.setResistance (ch.rMasterBottomA, boundedPot (master, 250.0e3));
+            ch.power.setResistance (ch.rMasterBottomB, boundedPot (master, 250.0e3));
         }
         const auto speakerIndex = juce::jlimit (0, 2, juce::roundToInt ((float) param (speakerParam, 2.0)));
         const auto load = tubeamp::speakerModel (speakerNominal[speakerIndex]);
@@ -538,18 +583,30 @@ void EL84BoutiqueAmpCore::updateSupply (Channel& ch)
         ch.pre2.setSource (ch.preRail2, ch.preRailFiltered);
 }
 
-double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) const noexcept
+double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive, double inputLevel) const noexcept
 {
+    const auto fit = powerStageFit (model);
+    if (model == Model::astroverb16)
+    {
+        const double presenceAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 1200.0
+                                                    / juce::jmax (1.0, sampleRate));
+        ch.presenceState += presenceAlpha * (drive - ch.presenceState);
+        drive += 1.0 * (param (presenceParam, 0.5) - 0.5) * (drive - ch.presenceState);
+    }
     const double attack = 1.0 - std::exp (-1.0 / (0.008 * juce::jmax (1.0, sampleRate)));
     const double release = 1.0 - std::exp (-1.0 / (0.045 * juce::jmax (1.0, sampleRate)));
     const double magnitude = std::abs (drive);
     ch.envelope += (magnitude > ch.envelope ? attack : release) * (magnitude - ch.envelope);
-    const double gain = model == Model::carmenGhia ? 10.0 : model == Model::astroverb16 ? 18.0 : 14.0;
-    const double level = model == Model::matchlessHC30 ? 0.97 :
-                         model == Model::hotCat30 ? 9.5 :
-                         model == Model::carmenGhia ? 22.4 : 21.4;
-    return level * std::tanh (drive * gain) * (model == Model::carmenGhia ? 0.65 : 0.8)
-        * (1.0 - 0.025 * juce::jlimit (0.0, 1.0, ch.envelope));
+    const double rail = 400.0 * (1.0 - fit.maxSag * ch.envelope / (fit.sagDrive + ch.envelope));
+    const double swing = rail * fit.maxSwing;
+    const double knee = swing / fit.gain;
+    const double u = magnitude / juce::jmax (1.0e-9, knee);
+    const double y = swing * u / std::pow (1.0 + std::pow (u, fit.knee), 1.0 / fit.knee);
+    const double raw = std::copysign (y, drive);
+    const double shelfAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * fit.shelfHz
+                                              / juce::jmax (1.0, sampleRate));
+    ch.shelfState += shelfAlpha * (raw - ch.shelfState);
+    return (ch.shelfState + fit.shelfGain * (raw - ch.shelfState)) * fittedDriveScale (fit, inputLevel);
 }
 
 void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
@@ -559,6 +616,40 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
     sampleRate = newSampleRate;
     dcOk = true;
     sampleCount = failureCount = 0;
+
+    reducedOutputHighpassAlpha = std::exp (-2.0 * juce::MathConstants<double>::pi * 90.0
+                                           / juce::jmax (1.0, sampleRate));
+
+    const auto makeHighpassSection = [this] (double cutoff, double q)
+    {
+        const double omega = 2.0 * juce::MathConstants<double>::pi * cutoff
+            / juce::jmax (1.0, sampleRate);
+        const double cosine = std::cos (omega);
+        const double sine = std::sin (omega);
+        const double alpha = sine / (2.0 * q);
+        const double a0 = 1.0 + alpha;
+        return HighpassSection { (1.0 + cosine) / (2.0 * a0),
+                                 -(1.0 + cosine) / a0,
+                                 (1.0 + cosine) / (2.0 * a0),
+                                 -2.0 * cosine / a0,
+                                 (1.0 - alpha) / a0 };
+    };
+    const double lowQ = 1.0 / (2.0 * std::cos (juce::MathConstants<double>::pi / 8.0));
+    const double highQ = 1.0 / (2.0 * std::cos (3.0 * juce::MathConstants<double>::pi / 8.0));
+    speakerHighpassSectionCount = 0;
+    if (model == Model::carmenGhia || model == Model::astroverb16)
+    {
+        const double firstCutoff = model == Model::astroverb16 ? 80.0 : 95.0;
+        speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (firstCutoff, lowQ);
+        speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (firstCutoff, highQ);
+        if (model == Model::astroverb16)
+        {
+            speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (100.0, lowQ);
+            speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (100.0, highQ);
+            speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (100.0, lowQ);
+            speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (100.0, highQ);
+        }
+    }
 
     for (auto& ch : channels)
     {
@@ -606,8 +697,9 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
     if (solveChannels == 0)
         return;
-    const double volume = model == Model::hotCat30 ? param (masterParam, 0.7) :
-        model == Model::matchlessHC30 ? param (masterParam, 0.7) : 1.0;
+    const double inputPowerAlpha = 1.0 - std::exp (-1.0 / (0.008 * juce::jmax (1.0, sampleRate)));
+    const double master = model == Model::hotCat30 || model == Model::matchlessHC30 || model == Model::carmenGhia
+        ? pots::audio (param (masterParam, model == Model::carmenGhia ? 1.0 : 0.7)) : 1.0;
     const double powerDrive = std::pow (10.0, (param (powerParam, 1.0) - 1.0) * 18.0 / 20.0);
     const double output = std::pow (10.0, (param (outputParam, 0.5) - 0.5) * 48.0 / 20.0);
     const int speakerIndex = juce::jlimit (0, 2, juce::roundToInt ((float) param (speakerParam, 2.0)));
@@ -628,19 +720,40 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
             pre.setSource (useSecondChannel ? ch.preInput2 : ch.preInput, input);
             const bool okPre = pre.solveSample();
             const double preOut = useSecondChannel ? pre.voltage (ch.preOut2) : pre.voltage (ch.preOut);
+            auto& dc = useSecondChannel ? ch.pre2Dc : ch.preDc;
+            const double dcAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 5.0
+                                                   / juce::jmax (1.0, sampleRate));
+            dc += dcAlpha * (preOut - dc);
+            const double acDrive = preOut - dc;
+            double toneDrive = acDrive;
+            double toneAdjustment = 0.0;
+            if (model == Model::hotCat30 || model == Model::astroverb16)
+            {
+                const double bassAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 180.0
+                                                         / juce::jmax (1.0, sampleRate));
+                ch.bassState += bassAlpha * (acDrive - ch.bassState);
+                const double bassShelf = 0.5 * (param (bassParam, 0.5) - 0.5) * ch.bassState;
+                toneDrive += bassShelf;
+                toneAdjustment += bassShelf;
+            }
             bool ok = okPre;
             double speakerVolts = 0.0;
             if (reducedOrder)
             {
-                auto& dc = useSecondChannel ? ch.pre2Dc : ch.preDc;
-                const double dcAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 5.0 / juce::jmax (1.0, sampleRate));
-                dc += dcAlpha * (preOut - dc);
-                speakerVolts = behavioralPowerStage (ch, (preOut - dc) * powerDrive);
+                ch.inputPowerEnvelope += inputPowerAlpha * (input * input - ch.inputPowerEnvelope);
+                const double prePiMaster = model == Model::carmenGhia ? 1.0 : master;
+                speakerVolts = behavioralPowerStage (ch, toneDrive * prePiMaster * powerDrive,
+                                                     std::sqrt (juce::jmax (0.0, ch.inputPowerEnvelope)));
+                if (model == Model::carmenGhia)
+                    speakerVolts *= master;
+                if (model == Model::astroverb16)
+                    speakerVolts *= param (volume1Param, 0.5);
             }
             else
             {
-                const double master = model == Model::carmenGhia ? 1.0 : volume;
-                ch.power.setSource (ch.powerCf, preOut * master * powerDrive);
+                const double prePiMaster = model == Model::carmenGhia ? 1.0 : master;
+                double powerInput = preOut + toneAdjustment;
+                ch.power.setSource (ch.powerCf, powerInput * prePiMaster * powerDrive);
                 const bool okPower = ch.power.solveSample();
                 ok = ok && okPower;
                 speakerVolts = ch.power.voltage (ch.speaker);
@@ -649,6 +762,44 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
                     ch.supplyCounter = 0;
                     updateSupply (ch);
                 }
+            }
+            if (model == Model::astroverb16)
+            {
+                const double trebleAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 1200.0
+                                                           / juce::jmax (1.0, sampleRate));
+                if (! reducedOrder)
+                {
+                    ch.presenceOutputState += trebleAlpha * (speakerVolts - ch.presenceOutputState);
+                    speakerVolts += 0.32 * (param (presenceParam, 0.5) - 0.5)
+                                    * (speakerVolts - ch.presenceOutputState);
+                }
+                ch.trebleOutputState += trebleAlpha * (speakerVolts - ch.trebleOutputState);
+                speakerVolts += 0.8 * (param (trebleParam, 0.5) - 0.5)
+                                * (speakerVolts - ch.trebleOutputState);
+            }
+            if (model == Model::carmenGhia || model == Model::astroverb16)
+            {
+                double filtered = speakerVolts;
+                for (std::size_t section = 0; section < speakerHighpassSectionCount; ++section)
+                {
+                    const auto& coefficients = speakerHighpassSections[section];
+                    const auto state = 2 * section;
+                    const double output = coefficients.b0 * filtered + ch.speakerHighpassState[state];
+                    ch.speakerHighpassState[state] = coefficients.b1 * filtered
+                        - coefficients.a1 * output + ch.speakerHighpassState[state + 1];
+                    ch.speakerHighpassState[state + 1] = coefficients.b2 * filtered
+                        - coefficients.a2 * output;
+                    filtered = output;
+                }
+                speakerVolts = filtered;
+            }
+            else if (reducedOrder)
+            {
+                const double filtered = reducedOutputHighpassAlpha
+                    * (ch.reducedOutputHighpass + speakerVolts - ch.reducedOutputPreviousInput);
+                ch.reducedOutputPreviousInput = speakerVolts;
+                ch.reducedOutputHighpass = filtered;
+                speakerVolts = filtered;
             }
             ch.outputState = speakerVolts;
 
@@ -683,7 +834,6 @@ double EL84BoutiqueAmpCore::debugVoltage (Probe probe) const noexcept
         case Probe::powerPlateB: return reducedOrder ? 0.0 : ch.power.voltage (ch.powerPlateB);
         case Probe::cathodeBias: return reducedOrder ? 0.0 : ch.power.voltage (ch.cathodeBias);
         case Probe::speaker: return reducedOrder ? ch.outputState : ch.power.voltage (ch.speaker);
-        case Probe::screen: return model == Model::carmenGhia || model == Model::astroverb16 ? 290.0 : 300.0;
     }
     return 0.0;
 }
