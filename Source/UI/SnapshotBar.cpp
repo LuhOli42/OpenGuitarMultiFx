@@ -82,7 +82,8 @@ void SnapshotBar::paint (juce::Graphics& g)
         {
             g.setColour (colour);
             g.fillRoundedRectangle (cell, 8.0f);
-            textColour = juce::Colours::black;
+            // Custom colours can be dark enough to need white text.
+            textColour = colour.contrasting (juce::Colours::black, juce::Colours::white);
         }
         else
         {

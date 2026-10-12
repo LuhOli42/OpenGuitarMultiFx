@@ -101,6 +101,16 @@ void FooterBar::tapTempo()
     lastTapMs = now;
 }
 
+void FooterBar::setActiveSnapshot (const juce::String& label, juce::Colour colour)
+{
+    if (snapshotLabel == label && snapshotColour == colour)
+        return;
+
+    snapshotLabel = label;
+    snapshotColour = colour;
+    repaint();
+}
+
 void FooterBar::setLevels (float inLevelIn, float outLevelIn)
 {
     inLevel = juce::jlimit (0.0f, 1.0f, inLevelIn);
@@ -146,8 +156,35 @@ void FooterBar::resized()
 void FooterBar::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (0xff1a1a1a));
-    g.setColour (juce::Colours::white.withAlpha (0.08f));
-    g.drawLine (0.0f, 0.0f, (float) getWidth(), 0.0f, 1.0f);
+
+    if (snapshotLabel.isNotEmpty())
+    {
+        // The snapshot strip: a full-width band along the top edge in the
+        // active snapshot's colour, with the letter (+ name when it has
+        // one) in a tab at the left end -- see setActiveSnapshot().
+        constexpr float stripHeight = 6.0f;
+        g.setColour (snapshotColour);
+        g.fillRect (0.0f, 0.0f, (float) getWidth(), stripHeight);
+
+        const juce::Font tabFont (13.0f, juce::Font::bold);
+        const float tabWidth = tabFont.getStringWidthFloat (snapshotLabel) + 22.0f;
+        juce::Path tab;
+        tab.addRoundedRectangle (16.0f, 0.0f, tabWidth, 21.0f, 6.0f, 6.0f,
+                                 false, false, true, true);
+        g.fillPath (tab);
+
+        // White on dark custom colours, black on light ones -- a black
+        // snapshot would otherwise hide the letter entirely.
+        g.setColour (snapshotColour.contrasting (juce::Colours::black, juce::Colours::white));
+        g.setFont (tabFont);
+        g.drawText (snapshotLabel, juce::Rectangle<float> (16.0f, 0.0f, tabWidth, 21.0f).toNearestInt(),
+                    juce::Justification::centred);
+    }
+    else
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.08f));
+        g.drawLine (0.0f, 0.0f, (float) getWidth(), 0.0f, 1.0f);
+    }
 
     drawHorizontalMeter (g, inMeterBounds, inLevel, "In");
     drawHorizontalMeter (g, outMeterBounds, outLevel, "Out");

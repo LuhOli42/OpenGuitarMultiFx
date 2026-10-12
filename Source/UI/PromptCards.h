@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_gui_extra/juce_gui_extra.h> // ColourSelector lives in gui_extra, not gui_basics
 
 #include <functional>
 #include <memory>
@@ -41,6 +42,24 @@ public:
 private:
     juce::Label titleLabel;
     juce::TextEditor field;
+    juce::TextButton okButton { "OK" }, cancelButton { "Cancel" };
+};
+
+/** Colour-picker card, for the snapshot colour editor's "Custom colour..." row (2026-10-12): a
+    juce::ColourSelector (swatch + HSV space + RGB sliders) with touch-sized OK/Cancel, hosted like every
+    other card on OverlayHost rather than ColourSelector's own CallOutBox/native-window entry points. */
+class ColourPickerCard : public juce::Component
+{
+public:
+    ColourPickerCard (const juce::String& title, juce::Colour initialColour,
+                      std::function<void (juce::Colour)> onAccepted, std::function<void()> onCancelled);
+
+    void resized() override;
+    void paint (juce::Graphics& g) override;
+
+private:
+    juce::Label titleLabel;
+    juce::ColourSelector selector;
     juce::TextButton okButton { "OK" }, cancelButton { "Cancel" };
 };
 

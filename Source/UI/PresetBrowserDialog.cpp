@@ -165,6 +165,9 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
     setupModeButton (bankModeButton, Mode::bank);
     setupModeButton (setlistModeButton, Mode::setlist);
 
+    addAndMakeVisible (newPresetButton);
+    newPresetButton.onClick = [this] { if (onNewRequested) onNewRequested(); };
+
     addAndMakeVisible (searchField);
     searchField.setTextToShowWhenEmpty ("Search presets...", juce::Colours::grey);
     searchField.onTextChange = [this] { rebuildTiles(); };
@@ -644,6 +647,9 @@ void PresetBrowserDialog::resized()
     bankModeButton.setBounds (titleRow.removeFromRight (104));
     titleRow.removeFromRight (6);
     allModeButton.setBounds (titleRow.removeFromRight (88));
+    titleRow.removeFromRight (6);
+    // 'New' lives next to 'All' in the tab row -- see onNewRequested.
+    newPresetButton.setBounds (titleRow.removeFromRight (72));
 
     area.removeFromTop (6);
 

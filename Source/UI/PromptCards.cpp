@@ -110,4 +110,50 @@ void TextPromptCard::paint (juce::Graphics& g)
     g.fillAll (cardBackground);
 }
 
+ColourPickerCard::ColourPickerCard (const juce::String& title, juce::Colour initialColour,
+                                    std::function<void (juce::Colour)> onAccepted, std::function<void()> onCancelled)
+{
+    styleTitle (titleLabel, title);
+    addAndMakeVisible (titleLabel);
+
+    selector.setColour (juce::ColourSelector::backgroundColourId, cardBackground);
+    selector.setCurrentColour (initialColour);
+    addAndMakeVisible (selector);
+
+    okButton.onClick = [this, onAccepted]
+    {
+        // Same as the cards above: nothing of this card may be touched once the callback runs.
+        auto callback = onAccepted;
+        const auto colour = selector.getCurrentColour();
+        if (callback)
+            callback (colour);
+    };
+    addAndMakeVisible (okButton);
+
+    cancelButton.onClick = [onCancelled] { if (auto callback = onCancelled) callback(); };
+    addAndMakeVisible (cancelButton);
+
+    setSize (460, 480);
+}
+
+void ColourPickerCard::resized()
+{
+    auto area = getLocalBounds().reduced (14);
+    titleLabel.setBounds (area.removeFromTop (26));
+    area.removeFromTop (8);
+
+    auto row = area.removeFromBottom (touch::minTapTarget);
+    cancelButton.setBounds (row.removeFromRight (110));
+    row.removeFromRight (8);
+    okButton.setBounds (row.removeFromRight (110));
+
+    area.removeFromBottom (8);
+    selector.setBounds (area);
+}
+
+void ColourPickerCard::paint (juce::Graphics& g)
+{
+    g.fillAll (cardBackground);
+}
+
 } // namespace openguitarmultifx

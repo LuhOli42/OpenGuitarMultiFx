@@ -121,11 +121,15 @@ private:
         callback, not this call, when the prompt shows. */
     void loadPresetAskingToSave (const juce::String& name, std::function<void()> onLoaded = nullptr);
 
-    /** The 'New' button next to the preset badge: back to a clean board (empty
-        chain, the launch default routing, fresh snapshots, no name) without
-        deleting effects one by one. Asks Save / Discard / Cancel first when
-        the loaded preset has unsaved changes, like loadPresetAskingToSave(). */
-    void newPresetAskingToSave();
+    /** The preset browser's 'New' button (moved off the top bar into the
+        browser's tab row per user request 2026-10-12): back to a clean board
+        (empty chain, the launch default routing, fresh snapshots, no name)
+        without deleting effects one by one. Asks Save / Discard / Cancel
+        first when the loaded preset has unsaved changes, like
+        loadPresetAskingToSave(). `onReset` (optional) fires only once the
+        board is actually cleared -- immediately when there's nothing to
+        save, or inside the prompt's Save/Discard path; never on Cancel. */
+    void newPresetAskingToSave (std::function<void()> onReset = nullptr);
     void newPreset();
 
     /** Recalls snapshot `index` (0-7 = A-H) on the live chain: stores the
@@ -145,6 +149,14 @@ private:
     void showSnapshotMenu (int index);
     void copySnapshot (int from, int to);
     juce::Colour colourOfSnapshot (int index) const;
+    /** Pushes the live snapshot's colour everywhere it owns the accent: the
+        LookAndFeel's app accent (knob fill, scrollbar thumb, button borders
+        without a per-effect override, popup highlight, meter fill) and the
+        FooterBar's colour strip -- user request 2026-10-12 ("a cor
+        principal tbm pode estar atrelada ao snapshot q estarmos"). Called
+        from updatePresetDisplay(), which already runs on every snapshot
+        switch, colour edit and preset load. */
+    void applySnapshotAccent();
     /** True when `param` of `processor` has a different value in any other snapshot than it has live now. */
     bool snapshotVaries (EffectProcessor* processor, juce::AudioParameterFloat* param) const;
     /** Re-fits every snapshot's block list to the chain's current size --
@@ -362,8 +374,6 @@ private:
     // Saves the currently loaded preset in place, no dialog -- only visible
     // once one is actually loaded (see updatePresetDisplay()).
     juce::TextButton quickSaveButton { "Save" };
-    // 'New' sits right after the badge: empty chain + unnamed state on tap.
-    juce::TextButton newPresetButton { "New" };
     juce::Label titleLabel { {}, "No preset loaded" };
     juce::Label cpuLabel;
     juce::TextButton settingsButton { juce::String::fromUTF8 ("\xe2\x8b\xae") }; // vertical ellipsis "..."
