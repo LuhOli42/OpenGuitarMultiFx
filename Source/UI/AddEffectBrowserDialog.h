@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <vector>
 
 namespace openguitarmultifx
 {
@@ -24,10 +25,16 @@ namespace openguitarmultifx
 
     Rows are name-first list rows at the 48px touch floor, not icon tiles:
     the glyph survives only as a small ornament next to the name. Inside a
-    category with more than one subcategory (Guitar Amps -> Clean / Crunch /
-    High-Gain, Fuzz -> Big Muff / Fuzz Face / Tone Bender, ...) a second
-    row of chips filters the list further -- same registration-metadata
-    mechanism as the category itself, no name-string matching.
+    category with more than one subcategory (Amps -> Clean / Crunch /
+    High-Gain / Bass, Fuzz -> Big Muff / Fuzz Face / Tone Bender, ...) a
+    second row of chips filters the list further -- same
+    registration-metadata mechanism as the category itself, no name-string
+    matching.
+
+    The single `amps` registry category gets TWO rail entries: 'Amps'
+    (every amp, head-only insert) and 'Amps + Cab' (the same amps with
+    their page-2 cab on) -- amps used to sit split across Guitar/Bass Amps
+    tabs with '+ Cab' rows interleaved in the same list.
 */
 class AddEffectBrowserDialog : public juce::Component
 {
@@ -41,9 +48,10 @@ public:
 
     /** Fires when an effect row is tapped (add this registry key). `cabOn`
         is the insertion variant for amps that carry a page-2 Cab selector:
-        every such amp lists twice -- plain name (cab off, head-only glyph)
-        and "name + Cab" (the amp's historic cab on, head+cabinet glyph).
-        Always false for rows without a cab variant. */
+        the 'Amps' rail entry lists them cab off (head-only glyph), the
+        'Amps + Cab' entry lists them with the amp's historic cab voicing
+        on (head+cabinet glyph). Always false for rows without a cab
+        variant. */
     std::function<void (juce::String registryKey, bool cabOn)> onEffectChosen;
     std::function<void()> onPopOverlay;
 
@@ -81,15 +89,29 @@ private:
         int layoutForWidth (int width);
     };
 
+    /** One rail entry. `both` shows a plain row plus a '+ Cab' row for
+        cab-capable keys (the non-amp tabs, where nothing is cab-capable
+        today); `headOnly` and `cabOnly` are the two amp tabs, one
+        insertion variant each. */
+    struct RailTab
+    {
+        juce::String label;
+        EffectRegistry::Category category;
+        enum class Rows { both, headOnly, cabOnly };
+        Rows rows = Rows::both;
+        int count = 0;
+    };
+
     /** The row's icon/accent source: a lazily created (and cached)
         instance from registry.create(). */
     const EffectProcessor* probeForKey (const juce::String& key);
-    void selectCategory (EffectRegistry::Category category);
+    void selectTab (int tabIndex);
     void rebuildChips();
     void rebuildRows();
 
     EffectRegistry& registry;
-    EffectRegistry::Category selectedCategory = EffectRegistry::Category::guitarAmps;
+    std::vector<RailTab> railTabs;
+    int selectedTab = 0;
     juce::String selectedSubcategory; // empty = All
     std::map<juce::String, std::unique_ptr<EffectProcessor>> probes;
     std::map<EffectRegistry::Category, int> counts;

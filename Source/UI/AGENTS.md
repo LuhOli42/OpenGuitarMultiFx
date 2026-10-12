@@ -166,8 +166,10 @@ The Settings screen ("..." button, `Tone3000Panel`) has a **Rendering quality** 
   "Drive" was split (2026-09-21) into **Overdrive** and **Distortion**, originally by display-name suffix in `categoryForDisplayName()`.
   **SUPERSEDED 2026-10-10**: the picker is now `AddEffectBrowserDialog` (OverlayHost card: category rail + tile grid + live
   search), and categories are `EffectRegistry::Category` metadata passed at `registerType()` time — `categoryForDisplayName()`
-  and the nested PopupMenu are gone. Amps are split **Guitar Amps** vs **Bass Amps** (SVT, B-15, V4B, Bass 400+, Acoustic 360,
-  Trace Elliot GP12) at registration, not by name.
+  and the nested PopupMenu are gone. **SUPERSEDED 2026-10-12**: the old Guitar Amps vs Bass Amps tab split merged into a
+  single `amps` registry category (bass amps carry the "Bass" subcategory chip); the dialog renders it as TWO rail
+  entries — **Amps** (head-only insert) and **Amps + Cab** (the same amps with their page-2 cab on) — so the plain amp
+  list no longer interleaves '+ Cab' rows.
 
 ## Master section (2026-10-11)
 

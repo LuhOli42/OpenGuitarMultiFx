@@ -127,6 +127,30 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     for (auto& key : registry.getRegisteredNames())
         ++counts[registry.categoryForKey (key)];
 
+    // The `amps` category gets two rail entries -- 'Amps' lists every amp
+    // head-only, 'Amps + Cab' the same amps with their page-2 cab on. All
+    // other categories get one entry each, in the registry's display order.
+    railTabs.push_back ({ "Amps", EffectRegistry::Category::amps, RailTab::Rows::headOnly, 0 });
+    railTabs.push_back ({ "Amps + Cab", EffectRegistry::Category::amps, RailTab::Rows::cabOnly, 0 });
+    for (auto category : EffectRegistry::categoriesInDisplayOrder())
+        if (category != EffectRegistry::Category::amps)
+            railTabs.push_back ({ EffectRegistry::categoryDisplayName (category), category, RailTab::Rows::both, 0 });
+
+    for (auto& tab : railTabs)
+    {
+        if (tab.rows != RailTab::Rows::cabOnly)
+        {
+            tab.count = counts[tab.category];
+            continue;
+        }
+        // Counting the cab-capable amps creates their probes a little
+        // earlier than the lazy path would -- the same probes the default
+        // 'Amps' tab builds on open anyway.
+        for (auto& key : registry.getRegisteredNames())
+            if (registry.categoryForKey (key) == tab.category && cabCapable (probeForKey (key)))
+                ++tab.count;
+    }
+
     addAndMakeVisible (titleLabel);
     titleLabel.setText ("Add Effect", juce::dontSendNotification);
     titleLabel.setFont (juce::Font (19.0f, juce::Font::bold));
@@ -135,18 +159,19 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     searchField.setTextToShowWhenEmpty ("Search effects...", juce::Colours::grey);
     searchField.onTextChange = [this] { rebuildRows(); };
 
-    // One rail button per category, in the registry's display order, each
-    // labelled with its effect count. Radio-grouped so exactly one is lit.
+    // One rail button per tab, each labelled with its row count.
+    // Radio-grouped so exactly one is lit.
     int radioId = 1;
-    for (auto category : EffectRegistry::categoriesInDisplayOrder())
+    for (int i = 0; i < (int) railTabs.size(); ++i)
     {
+        auto& tab = railTabs[(size_t) i];
         auto* button = categoryButtons.add (new juce::TextButton (
-            EffectRegistry::categoryDisplayName (category) + "  (" + juce::String (counts[category]) + ")"));
+            tab.label + "  (" + juce::String (tab.count) + ")"));
         rail.addAndMakeVisible (*button);
         button->setRadioGroupId (radioId, juce::dontSendNotification);
         button->setClickingTogglesState (true);
-        button->setToggleState (category == selectedCategory, juce::dontSendNotification);
-        button->onClick = [this, category] { selectCategory (category); };
+        button->setToggleState (i == selectedTab, juce::dontSendNotification);
+        button->onClick = [this, i] { selectTab (i); };
     }
 
     addAndMakeVisible (railViewport);
@@ -191,9 +216,9 @@ const EffectProcessor* AddEffectBrowserDialog::probeForKey (const juce::String& 
     return probe.get();
 }
 
-void AddEffectBrowserDialog::selectCategory (EffectRegistry::Category category)
+void AddEffectBrowserDialog::selectTab (int tabIndex)
 {
-    selectedCategory = category;
+    selectedTab = tabIndex;
     selectedSubcategory = {};
     rebuildChips();
     rebuildRows();
@@ -203,7 +228,7 @@ void AddEffectBrowserDialog::rebuildChips()
 {
     chipButtons.clear (true);
 
-    const auto subcategories = registry.subcategoriesForCategory (selectedCategory);
+    const auto subcategories = registry.subcategoriesForCategory (railTabs[(size_t) selectedTab].category);
     if (subcategories.size() <= 1)
     {
         chipsViewport.setVisible (false);
@@ -245,7 +270,8 @@ void AddEffectBrowserDialog::rebuildRows()
 
     // Chips are a within-category filter -- meaningless across a global
     // search, so they hide until the field is cleared again.
-    chipsViewport.setVisible (! searching && registry.subcategoriesForCategory (selectedCategory).size() > 1);
+    const auto& tab = railTabs[(size_t) selectedTab];
+    chipsViewport.setVisible (! searching && registry.subcategoriesForCategory (tab.category).size() > 1);
 
     // Sorted by display name (what the rows actually show), not by key.
     juce::StringArray keys = registry.getRegisteredNames();
@@ -259,40 +285,64 @@ void AddEffectBrowserDialog::rebuildRows()
         const auto subcategory = registry.subcategoryForKey (key);
         const auto name = registry.displayNameForKey (key);
 
-        // The query matches the row name OR its category's name: a user
-        // typing "reverb" expects Hall/Plate/Spring too -- their display
-        // names never contain the word "reverb" themselves.
-        const bool matches = ! searching
-            || name.containsIgnoreCase (query)
+        // Each row matches on its own merits: name / category / subcategory
+        // as before (a user typing "reverb" expects Hall/Plate/Spring too),
+        // plus the 'Amps + Cab' rail label -- but that label only earns the
+        // CAB row, and only for cab-capable amps. Otherwise a 'cab' search
+        // would bury the results under every amp's head-only row plus
+        // cab-less amps like the Trace Elliot.
+        const bool ownMatch = name.containsIgnoreCase (query)
             || EffectRegistry::categoryDisplayName (category).containsIgnoreCase (query)
             || subcategory.containsIgnoreCase (query);
-        if (! matches || (! searching && category != selectedCategory))
+        const bool cabLabelMatch = category == EffectRegistry::Category::amps
+            && juce::String ("Amps + Cab").containsIgnoreCase (query);
+        if (searching && ! ownMatch && ! cabLabelMatch)
+            continue;
+        if (! searching && category != tab.category)
             continue;
         if (! searching && selectedSubcategory.isNotEmpty() && subcategory != selectedSubcategory)
             continue;
 
-        auto& row = rowList.addRow();
-        row.key = key;
-        row.name = name;
-        row.subline = searching
-            ? EffectRegistry::categoryDisplayName (category)
-                + (subcategory.isNotEmpty() ? " · " + subcategory : juce::String())
-            : subcategory;
-        row.probe = probeForKey (key);
+        // cabCapable() keys off the `*_cab` parameter, so new amps get
+        // their cab-variant rows for free. The two amp tabs show one
+        // insertion variant each; other tabs list both rows together, and
+        // a global search lists whichever variants actually matched.
+        auto* probe = probeForKey (key);
+        const bool cab = cabCapable (probe);
+        const bool plainRow = searching ? ownMatch : tab.rows != RailTab::Rows::cabOnly;
+        const bool cabRow   = cab && (searching ? (ownMatch || cabLabelMatch)
+                                               : tab.rows != RailTab::Rows::headOnly);
+        if (! plainRow && ! cabRow)
+            continue; // a cab-less amp in the 'Amps + Cab' tab, or an unmatched row in search
 
-        // Every amp with a page-2 Cab selector lists a second row right after
-        // itself: 'name' inserts with the cab off (head-only glyph), 'name +
-        // Cab' with the amp's historic cab voicing on. cabCapable() keys off
-        // the `*_cab` parameter, so new amps get both rows for free.
-        if (cabCapable (row.probe))
+        const auto searchSubline = [&] (bool forCabRow)
         {
-            row.headOnlyIcon = true; // cabOn stays false: the plain row is the off variant
-            auto& cabRow = rowList.addRow();
-            cabRow.key = key;
-            cabRow.name = name + " + Cab";
-            cabRow.subline = row.subline;
-            cabRow.probe = row.probe;
-            cabRow.cabOn = true;
+            auto groupLabel = EffectRegistry::categoryDisplayName (category);
+            if (forCabRow)
+                groupLabel += " + Cab";
+            return groupLabel + (subcategory.isNotEmpty() ? " · " + subcategory : juce::String());
+        };
+
+        if (plainRow)
+        {
+            auto& row = rowList.addRow();
+            row.key = key;
+            row.name = name;
+            row.subline = searching ? searchSubline (false) : subcategory;
+            row.probe = probe;
+            row.headOnlyIcon = cab; // the cab-off row draws the head-only glyph
+        }
+
+        if (cabRow)
+        {
+            auto& row = rowList.addRow();
+            row.key = key;
+            // Inside the 'Amps + Cab' tab the group label already says it --
+            // repeating '+ Cab' on every row name is noise there.
+            row.name = searching || tab.rows == RailTab::Rows::both ? name + " + Cab" : name;
+            row.subline = searching ? searchSubline (true) : subcategory;
+            row.probe = probe;
+            row.cabOn = true;
         }
     }
 
