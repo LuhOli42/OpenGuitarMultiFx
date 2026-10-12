@@ -431,10 +431,11 @@ void CarrRamblerStyleAmplifierProcessor::updateSupply (Channel& ch) const
     const double dt = (double) supplyInterval / juce::jmax (1.0, sampleRate);
     const double a = 1.0 - std::exp (-dt / decouplingTau);
     ch.piRail += a * (screens * piFraction - ch.piRail);
-    // The tapped plate node feeds the power block as a Thevenin source, so its DC has to be removed here the
-    // same way the real amp's coupling cap + grid leak removes it: a ~5 ms one-pole tracker (~32 Hz, the corner of the real
-    // 22 nF / 470 k coupling corner) follows the plate's DC point as the supply sags into its settled state --
-    // ~30 V of settle drift would otherwise inject DC into the LTP for seconds.
+    // LF tracker on the preamp output tap (~32 Hz corner): removes the supply-sag swell the moving rails
+    // put on top of the signal before it reaches the power stage. It is load-bearing for the behavioural
+    // path: slowed or removed, the 5-30 Hz sag component intermodulates the saturator into ~4 dB of
+    // spurious HF that the full netlist's LTP/OT does not produce (AmpFullVsReducedConsistency). The price
+    // is a fraction of a dB at musical bass frequencies, on top of the physical .022 uF cap's own 7 Hz cut.
     ch.outDc += (1.0 - std::exp (-dt / 0.005)) * (ch.pre.voltage (ch.pOut) - ch.outDc);
     const double b = 1.0 - std::exp (-dt / (2.0 * decouplingTau));
     ch.preRail += b * (screens * preFraction - ch.preRail);
@@ -443,9 +444,6 @@ void CarrRamblerStyleAmplifierProcessor::updateSupply (Channel& ch) const
 
 double CarrRamblerStyleAmplifierProcessor::preampOutput (const Channel& ch) const noexcept
 {
-    // Makeup gain for the cold (unbypassed) cathode bias: ~12 dB/stage vs a bypassed 1.5k stage,
-    // needed to swing the phase splitter's grids. The bias choice is the stable solver operating
-    // point (documented in docs/circuits/CarrRambler.md); this restores the lost AC drive.
     return ch.pre.voltage (ch.pOut) - ch.outDc;
 }
 
