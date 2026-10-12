@@ -188,7 +188,11 @@ private:
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
+    juce::AudioParameterFloat* spongyParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
+    double spongyScale = 1.0;   // rectifier resistance multiplier (1 = Bold/diode, 5 = Spongy/5U4)
+    double spongySag = 1.0;     // extra sag depth in the reduced model when Spongy
+    double railNow = 460.0;     // B+ after rectifier droop (= railPlatesNominal when Bold)
 
     juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;

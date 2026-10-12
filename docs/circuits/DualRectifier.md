@@ -10,8 +10,9 @@ Display name: **Dual Rectifier-Style Amplifier** (trademark-safe convention).
 ## Architecture
 
 **RED channel only** is modelled, as the amp's defining voice. The ORANGE channel, LDR switching
-circuitry, tube/diode rectifier select switch, and FX loop are not implemented. Solid-state
-rectification only is modelled.
+circuitry and FX loop are not implemented. The Bold/Spongy rectifier select IS modelled
+(drec_spongy): Bold = solid-state diodes, Spongy = tube rectifier (5x series resistance,
+1.7x sag depth, ~6% lower B+).
 
 ### Preamp (four cascaded 12AX7 gain stages + cathode follower)
 

@@ -14,7 +14,8 @@ namespace
     using namespace tubeamp;
 
     // ---- supply (docs/circuits/DualRectifier.md). Factory Mesa Boogie Dual Rectifier (2-channel, 6-93 GEO. M.).
-    // Solid-state rectification only (the tube/diode select is not modelled).
+    // Solid-state rectification is the Bold default; the drec_spongy param models the
+    // tube-rectifier mode (more B+ drop, deeper sag, ~6% lower plate rail).
     // Rails: A=460V plates, B=454V screens, C=422V (PI), D=406V (V3A), E=402V (V1A/V2).
     // Chain: Rect → A (220µF, 150K bleeder) → CHOKE → B (220µF) → 2.7K → C (30µF) → 22K → D (30µF) → 15K → E (30µF). ----
     constexpr double railPlatesNominal = 460.0;
@@ -235,6 +236,12 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     auto power = make ("drec_power", "Power Drive", 0.5f);
     auto bias = make ("drec_bias", "Bias", 0.5f);
     auto feel = make ("drec_tube_feel", "Tube Feel", 1.0f);
+    // Rear-panel rectifier mode switch (Bold = diode bridge, Spongy = 5U4 tube rectifier):
+    // sag resistance, B+ droop and supply compression all change.
+    auto spongy = std::make_unique<juce::AudioParameterFloat> (
+        "drec_spongy", "Rectifier", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        { return juce::String (v >= 0.5f ? "Spongy" : "Bold"); }));
     auto speaker = std::make_unique<juce::AudioParameterFloat> (
         "drec_speaker", "Speaker", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), (float) matchedSpeaker,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
@@ -254,6 +261,7 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     biasParam = bias.get();
     tubeFeelParam = feel.get();
     speakerParam = speaker.get();
+    spongyParam = spongy.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "dualrec", "Dual Rectifier", "|", std::move (channel));
@@ -266,6 +274,7 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("drec_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
+    page2->addChild (std::move (spongy));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
     auto cab = tubeamp::makeCabParam ("drec_cab", "4x12 Recto", cabAlts);
@@ -515,7 +524,11 @@ void DualRectifierStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
     const double masterR = juce::jmax (1.0, 1.0e6 * pots::audio (k.master));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
-    const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
+    const double spongyOn = spongyParam != nullptr && spongyParam->get() >= 0.5f ? 1.0 : 0.0;
+    spongyScale = 1.0 + 4.0 * spongyOn;          // tube rectifier drops far more than the diode bridge
+    spongySag = 1.0 + 0.7 * spongyOn;            // deeper sag in the reduced model
+    railNow = railPlatesNominal * (1.0 - 0.06 * spongyOn); // lower B+ under tube rectification
+    const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel) * spongyScale;
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
 
     for (auto& ch : channels)
@@ -539,7 +552,7 @@ void DualRectifierStyleAmplifierProcessor::updatePots (const Knobs& k)
         if (! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
         ch.supply.setResistance (ch.rRect, rectifier);
-        ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
+        ch.supply.setSource (ch.srcVoc, railNow + rectifier * idleSupplyCurrent);
     }
     appliedSpeaker = k.speaker;
     speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
@@ -626,7 +639,10 @@ double DualRectifierStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     // operating point the way the full model's bias trim does.
     const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
     const double bias = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
-    ch.bmRail = bmSagRail[0] - feel * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
+    // Spongy drops the idle rail to railNow (tube rectifier's lower B+); the sag depth scales
+    // with it so Bold keeps byte-identical behavior when railNow == bmSagRail[0].
+    const double railScale = railNow / bmSagRail[0];
+    ch.bmRail = railNow - feel * spongySag * railScale * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double shift = 0.6 * (bias - 0.5) * k;
@@ -839,7 +855,7 @@ void DualRectifierStyleAmplifierProcessor::prepare (double newSampleRate, int, i
             ch.supply.setCurrentSource (ch.iD, -(iV3Run + iV2Run));
             ch.supply.setCurrentSource (ch.iE, -iV1Run);
             idleSupplyCurrent = ipRun + isRun + iPiRun + iV3Run + iV2Run + iV1Run + (ch.vScreen / bleeder);
-            ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifierResistance * feel * idleSupplyCurrent);
+            ch.supply.setSource (ch.srcVoc, railNow + rectifierResistance * feel * spongyScale * idleSupplyCurrent);
             ch.screenDropA = screenResistor * isA;
             ch.screenDropB = screenResistor * isB;
         }
