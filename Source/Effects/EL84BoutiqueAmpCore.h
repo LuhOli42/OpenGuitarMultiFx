@@ -55,9 +55,9 @@ private:
         int preInput = 0, preInput2 = 0, preRail = 0, preRail2 = 0;
         int preVolumeTop = -1, preVolumeBottom = -1, preVolume2Top = -1, preVolume2Bottom = -1;
         int rTrebleTop = -1, rTrebleBottom = -1, rBassTop = -1, rBassBottom = -1, rMid = -1;
-        int toneCap = -1, rCut = -1, rPresence = -1;
+        int rEdge = -1, rGainShunt = -1, toneCap = -1, rCut = -1, rPresence = -1;
         NodalCircuit::Node prePlate = 0, preOut = 0, preOut2 = 0, toneOut = 0;
-        int powerInput = 0, powerRail = 0, powerCf = 0;
+        int powerInput = 0, powerRail = 0, powerCf = 0, biasNegSource = -1, powerInput2 = -1;
         int rCathodeBias = -1, rMasterTopA = -1, rMasterTopB = -1;
         int rSpeakerRe = -1, rSpeakerRp = -1, rSpeakerEddy = -1, capSpeakerCp = -1, grpSpeakerLe = -1, grpSpeakerLp = -1;
         int penA = -1, penB = -1;
@@ -106,6 +106,8 @@ private:
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
 
+    bool hasSecondPreamp() const noexcept { return model == Model::matchlessHC30 || model == Model::hotCat30; }
+
     juce::AudioParameterFloat* channelParam = nullptr;
     juce::AudioParameterFloat* volume1Param = nullptr;
     juce::AudioParameterFloat* bass1Param = nullptr;
@@ -121,6 +123,9 @@ private:
     juce::AudioParameterFloat* masterParam = nullptr;
     juce::AudioParameterFloat* preampParam = nullptr;
     juce::AudioParameterFloat* presenceParam = nullptr;
+    juce::AudioParameterFloat* edgeParam = nullptr;
+    juce::AudioParameterFloat* levelParam = nullptr;
+    juce::AudioParameterFloat* brillianceParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* feelParam = nullptr;

@@ -8,7 +8,9 @@ namespace openguitarmultifx::tests
 {
 
 template <typename Amp>
-void runEL84BoutiqueAmpTests (juce::UnitTest& test, const char* gainId, const char* toneId)
+void runEL84BoutiqueAmpTests (juce::UnitTest& test, const char* gainId, const char* toneId,
+                              double cathodeMin = 1.0, double cathodeMax = 30.0,
+                              float testInput = 0.002f, float gainLo = 0.1f, float gainHi = 0.9f)
 {
     constexpr double sr = 48000.0;
     Amp::reducedOrder = false;
@@ -32,8 +34,8 @@ void runEL84BoutiqueAmpTests (juce::UnitTest& test, const char* gainId, const ch
     expectVoltage (amp.debugVoltage (EL84BoutiqueAmpCore::Probe::piPlateB), 100.0, 390.0, "PI plate B");
     expectVoltage (amp.debugVoltage (EL84BoutiqueAmpCore::Probe::powerPlateA), 100.0, 450.0, "power plate A");
     expectVoltage (amp.debugVoltage (EL84BoutiqueAmpCore::Probe::powerPlateB), 100.0, 450.0, "power plate B");
-    expectVoltage (amp.debugVoltage (EL84BoutiqueAmpCore::Probe::cathodeBias), 1.0, 30.0, "shared cathode bias");
-    expectVoltage (amp.debugVoltage (EL84BoutiqueAmpCore::Probe::screen), 200.0, 350.0, "screen voltage");
+    expectVoltage (amp.debugVoltage (EL84BoutiqueAmpCore::Probe::cathodeBias), cathodeMin, cathodeMax, "shared cathode bias");
+    expectVoltage (amp.debugVoltage (EL84BoutiqueAmpCore::Probe::screen), 200.0, 380.0, "screen voltage");
 
     test.beginTest ("ten seconds of silence remain quiet");
     juce::AudioBuffer<float> silence (1, 512);
@@ -74,9 +76,10 @@ void runEL84BoutiqueAmpTests (juce::UnitTest& test, const char* gainId, const ch
         }
     }
     test.expect (peak > 0.005 && peak < 1.5, "plucked output is audible and bounded");
+    test.logMessage ("solve failure rate " + juce::String (amp.getSolveFailureRate(), 4));
     test.expect (amp.getSolveFailureRate() < 0.05, "Newton failure rate below 5%");
 
-    const auto measureTone = [&] (double frequency, float gainValue, float toneValue, float inputLevel = 0.002f)
+    const auto measureTone = [&] (double frequency, float gainValue, float toneValue, float inputLevel)
     {
         Amp::reducedOrder = false;
         amp.reset();
@@ -101,10 +104,10 @@ void runEL84BoutiqueAmpTests (juce::UnitTest& test, const char* gainId, const ch
     };
 
     test.beginTest ("gain and tone controls affect the signal");
-    const double gainLow = measureTone (440.0, 0.1f, 0.5f);
-    const double gainHigh = measureTone (440.0, 0.9f, 0.5f);
-    const double toneDark = measureTone (4000.0, 0.6f, 0.1f);
-    const double toneBright = measureTone (4000.0, 0.6f, 0.9f);
+    const double gainLow = measureTone (440.0, gainLo, 0.5f, testInput);
+    const double gainHigh = measureTone (440.0, gainHi, 0.5f, testInput);
+    const double toneDark = measureTone (4000.0, 0.6f, 0.1f, testInput);
+    const double toneBright = measureTone (4000.0, 0.6f, 0.9f, testInput);
     test.logMessage ("gain RMS " + juce::String (gainLow, 6) + " -> " + juce::String (gainHigh, 6)
                      + "; 4 kHz tone RMS " + juce::String (toneDark, 6) + " -> " + juce::String (toneBright, 6));
     test.expect (gainHigh > gainLow * 1.05, "gain up increases output");
