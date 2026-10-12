@@ -90,7 +90,8 @@ namespace
 // Alternates this amp's page-2 Cab selector offers -- option ORDER must match between makeCabParam()
 // (names) and the tails' setCabChoices() (profiles). The historic pairing is the Electro-Voice EVM-12L
 // in the open-back 1x12 combo -- the stock voice; the alternates cover the other likely loads.
-const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::ev112, &tubeamp::cabs::open112, &tubeamp::cabs::greenback412 };
+// ev112 isn't in the alternates -- it IS the stock voicing (slot 1); listing it again would show a duplicate label.
+const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::open112, &tubeamp::cabs::greenback412 };
 }
 
 // ---- behavioural spring tank: three allpass delays + a damped feedback comb (the "drip" of a long
