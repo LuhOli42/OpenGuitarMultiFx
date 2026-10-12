@@ -227,6 +227,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/RiveraKnuckleheadStyleAmplifierProcessor.cpp
   Source/Effects/DiezelStyleAmplifierProcessor.cpp
   Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
+  Source/Effects/JimKelleyStyleAmplifierProcessor.cpp
   Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
   Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp
   Source/Effects/SunnModelTStyleAmplifierProcessor.cpp

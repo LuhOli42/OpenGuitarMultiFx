@@ -50,6 +50,7 @@
 #include "Effects/RiveraKnuckleheadStyleAmplifierProcessor.h"
 #include "Effects/DiezelStyleAmplifierProcessor.h"
 #include "Effects/CarrRamblerStyleAmplifierProcessor.h"
+#include "Effects/JimKelleyStyleAmplifierProcessor.h"
 #include "Effects/DividedBy13FTR37StyleAmplifierProcessor.h"
 #include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
 #include "Effects/SunnModelTStyleAmplifierProcessor.h"
@@ -587,6 +588,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     CarrRamblerStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarrRamblerStyleAmplifier");
     registry.registerType ("CarrRamblerStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarrRamblerStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -7.99f); }, "Clean");
+    // Jim Kelley Single Channel Reverb (docs/circuits/JimKelley.md): Dumble-adjacent boutique cascade
+    // (V1a -> Gain -> V1b with 1N914 grid clamps -> Baxandall shelving stack -> V3a), V4a mixer with
+    // global NFB + presence at its cathode, V4b cathodyne PI, 4x6V6GTA fixed-bias quad, behavioral
+    // spring return. reducedOrder placeholder trim pending its own POWERCAL measurement.
+    JimKelleyStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("JimKelleyStyleAmplifier");
+    registry.registerType ("JimKelleyStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<JimKelleyStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.20f); }, "Clean");
     // Divided by 13 FTR 37 (docs/circuits/DividedBy13FTR37.md): 5879 pentode "click" channel + blackface-like clean
     // channel mixed into an LTP PI and a fixed-bias 4x6V6 push-pull (Full/Half power). reducedOrder power stage.
     DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = true;
