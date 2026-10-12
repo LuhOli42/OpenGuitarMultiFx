@@ -22,10 +22,14 @@ void applyBlock (EffectProcessor& processor, const BlockSnapshot& snapshot)
     // should already have its target knob values in place when the
     // crossfade brings the wet path up -- same order a player gets for
     // free when they turn knobs on an already-bypassed pedal.
+    // The param list is copied so a processor's legacy-format migration
+    // (e.g. a selector that grew positions) can remap values on recall.
+    auto params = snapshot.params;
+    processor.migrateLegacySnapshotParams (params);
     if (auto* group = processor.getParameters())
         for (auto* param : group->getParameters (true))
             if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*> (param))
-                for (const auto& [id, value] : snapshot.params)
+                for (const auto& [id, value] : params)
                     if (floatParam->paramID == id)
                     {
                         *floatParam = value;

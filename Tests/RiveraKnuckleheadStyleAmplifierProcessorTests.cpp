@@ -222,6 +222,34 @@ public:
             now.setState (current);
             expectEquals (channelValue (now), 1.0);
         }
+
+        beginTest ("legacy snapshot blocks migrate: a snapshot-stored Lead (1) recalls as Lead");
+        {
+            // SnapshotPresetXml::applyBlock writes (id, value) pairs straight onto the
+            // params, bypassing setState -- the migration has to happen on the pairs.
+            Amp legacy;
+            std::vector<std::pair<juce::String, float>> legacyParams {
+                { juce::String (px) + "channel", 1.0f },
+                { juce::String (px) + "gain", 0.5f },
+            };
+            legacy.migrateLegacySnapshotParams (legacyParams);
+            float migrated = -1.0f;
+            for (const auto& [id, v] : legacyParams)
+                if (id == juce::String (px) + "channel")
+                    migrated = v;
+            expectEquals ((double) migrated, 2.0);
+
+            Amp current;
+            std::vector<std::pair<juce::String, float>> currentParams {
+                { juce::String (px) + "channel", 1.0f },
+                { juce::String (px) + "ninja", 0.0f },
+            };
+            current.migrateLegacySnapshotParams (currentParams);
+            for (const auto& [id, v] : currentParams)
+                if (id == juce::String (px) + "channel")
+                    migrated = v;
+            expectEquals ((double) migrated, 1.0);
+        }
     }
 };
 

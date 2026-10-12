@@ -1012,6 +1012,28 @@ void RiveraKnuckleheadStyleAmplifierProcessor::setState (const juce::XmlElement&
         *channelParam = 2.0f;
 }
 
+void RiveraKnuckleheadStyleAmplifierProcessor::migrateLegacySnapshotParams (
+    std::vector<std::pair<juce::String, float>>& params) const
+{
+    // Same legacy test as setState(): a snapshot block captured before the pull
+    // params existed has no knk_ninja entry; its knk_channel=1 meant Lead.
+    bool hasNinja = false;
+    juce::String* channelId = nullptr;
+    float* channelValue = nullptr;
+    for (auto& [id, value] : params)
+    {
+        if (id == "knk_ninja")
+            hasNinja = true;
+        else if (id == "knk_channel")
+        {
+            channelId = const_cast<juce::String*> (&id);
+            channelValue = &value;
+        }
+    }
+    if (! hasNinja && channelValue != nullptr && juce::approximatelyEqual (*channelValue, 1.0f))
+        *channelValue = 2.0f;
+}
+
 void RiveraKnuckleheadStyleAmplifierProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
     static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::amp_svg, IconData::amp_svgSize);

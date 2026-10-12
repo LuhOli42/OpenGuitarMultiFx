@@ -47,6 +47,7 @@ public:
     juce::Colour getAccentColour() const override { return juce::Colour (0xff274a63); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
     void setState (const juce::XmlElement& state) override;
+    void migrateLegacySnapshotParams (std::vector<std::pair<juce::String, float>>& params) const override;
 
     /** ~100 W into the 16 ohm tap is ~57 V peak at the speaker terminals. */
     static constexpr double outputScale = 1.0 / 57.0;

@@ -258,6 +258,15 @@ public:
         return xml;
     }
 
+    /** Legacy-format migration hook for snapshot recall: `snapshotxml::applyBlock` writes
+        saved (paramID, value) pairs straight onto parameters, bypassing setState(). A processor
+        that changed a parameter's MEANING between preset formats (e.g. a selector that grew
+        positions) overrides this to remap the pairs before they're applied. Default: untouched. */
+    virtual void migrateLegacySnapshotParams (std::vector<std::pair<juce::String, float>>& params) const
+    {
+        juce::ignoreUnused (params);
+    }
+
     virtual void setState (const juce::XmlElement& state)
     {
         if (auto* group = getParameters())
