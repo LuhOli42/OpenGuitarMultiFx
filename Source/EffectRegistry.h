@@ -32,8 +32,7 @@ public:
         key maps to exactly one of these; there is no "other" bucket. */
     enum class Category
     {
-        guitarAmps,
-        bassAmps,
+        amps,
         overdriveBoost,
         distortion,
         fuzz,
@@ -56,7 +55,7 @@ public:
     Category categoryForKey (const juce::String& key) const;
 
     /** The second-level grouping shown as chips inside a category (e.g.
-        Guitar Amps -> Clean / Crunch / High-Gain). Same registration-metadata
+        Amps -> Clean / Crunch / High-Gain / Bass). Same registration-metadata
         mechanism as category: passed to registerType(), never derived from
         display names. Empty = the key has no subcategory. */
     juce::String subcategoryForKey (const juce::String& key) const;
@@ -66,7 +65,7 @@ public:
         The dialog only renders chips when this returns more than one entry. */
     juce::StringArray subcategoriesForCategory (Category category) const;
 
-    /** User-facing tab label ("Guitar Amps", "Pitch/Filter", ...). */
+    /** User-facing tab label ("Amps", "Pitch/Filter", ...). */
     static juce::String categoryDisplayName (Category category);
 
     /** Every category, in the order the browser's rail shows them. */

@@ -38,24 +38,24 @@ public:
             expect (label.isNotEmpty(), key + " -> unnamed category");
         }
 
-        beginTest ("bass amps are split from guitar amps");
+        beginTest ("every amp lives in the single amps category");
         for (auto& key : keys)
         {
             const auto category = registry.categoryForKey (key);
             if (key.contains ("Amplifier"))
-                expect (category == EffectRegistry::Category::guitarAmps
-                        || category == EffectRegistry::Category::bassAmps,
-                        key + " is an amp outside the amp categories");
+                expect (category == EffectRegistry::Category::amps,
+                        key + " is an amp outside the amps category");
         }
 
-        // The bass heads and bass preamp must land in Bass Amps -- this was
-        // the exact complaint behind the split ("muito amp misturado").
+        // The bass heads and bass preamp share the same amps category as the
+        // guitar amps (the browser shows one 'Amps' tab), told apart by the
+        // 'Bass' subcategory chip.
         for (const char* key : { "SVTStyleAmplifier", "AmpegB15StyleAmplifier", "AmpegV4BStyleAmplifier",
                                  "MesaBass400PlusStyleAmplifier", "Acoustic360StyleAmplifier",
                                  "TraceElliotGP12StyleAmplifier" })
         {
-            expect (registry.categoryForKey (key) == EffectRegistry::Category::bassAmps,
-                    juce::String (key) + " should be a Bass Amp");
+            expect (registry.subcategoryForKey (key) == "Bass",
+                    juce::String (key) + " should be tagged Bass");
         }
 
         beginTest ("subcategories are consistent with the categories they group");
@@ -68,8 +68,9 @@ public:
         }
 
         // The amp split into voicing classes: every guitar amp has to land
-        // in exactly one of Clean / Crunch / High-Gain, or the browser's
-        // chip row silently leaves it under All only.
+        // in exactly one of Clean / Crunch / High-Gain (bass amps are their
+        // own 'Bass' chip), or the browser's chip row silently leaves it
+        // under All only.
         for (const char* key : { "TwinReverbStyleAmplifier", "DeluxeReverbStyleAmplifier", "JC120StyleAmplifier",
                                  "DumbleSteelStringStyleAmplifier" }) // the SSS is the ultra-clean Dumble
             expect (registry.subcategoryForKey (key) == "Clean",
@@ -89,9 +90,7 @@ public:
                     juce::String (key) + " should be a Bass drive");
 
         beginTest ("a category only earns a chip row when more than one subcategory is populated");
-        expect (registry.subcategoriesForCategory (EffectRegistry::Category::guitarAmps).size() == 3);
-        expect (registry.subcategoriesForCategory (EffectRegistry::Category::bassAmps).isEmpty(),
-                "bass amps are one group -- no chip row");
+        expect (registry.subcategoriesForCategory (EffectRegistry::Category::amps).size() == 4);
         expect (registry.subcategoriesForCategory (EffectRegistry::Category::distortion).size() <= 1);
         expect (registry.subcategoriesForCategory (EffectRegistry::Category::neural).size() <= 1);
 
