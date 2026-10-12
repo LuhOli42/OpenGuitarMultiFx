@@ -7,15 +7,16 @@ blackface-style platform — no global negative feedback.
 
 ## What is modelled
 
-- **Preamp** (`pre` NodalCircuit block, three cascaded 12AX7 stages sharing one Newton solve — the
-  TrainwreckExpress structure, which is the proven-stable topology in this solver):
+- **Preamp** (`pre` NodalCircuit block, two cascaded 12AX7 stages in the real blackface signal order —
+  corrected after an audit found the earlier draft was wired as a Trainwreck cascade, which made the
+  Rambler distort at every volume):
   - V1A input stage: 68k grid stopper, 1M leak, 100k plate load, 1k5 cathode + 22 µF bypass.
-  - 22 nF coupling into the single 1M-A Volume pot (track halves modelled as two resistors).
-  - V1B recovery stage: wiper-fed via 68k, 2k7 + 0.68 µF partial-bypass cathode.
-  - 22 nF coupling into a cold unbypassed 10k stage (the stack driver).
-  - Blackface TMB hanging directly on the stack driver's plate (rides at plate DC): 500 pF treble cap,
-    100k slope, 0.1 µF + 0.047 µF legs, 250k treble/bass rheostat wiring, fixed tail, treble wiper =
-    stack output, 1M "PI leak" to ground.
+  - 22 nF coupling into a blackface TMB: 250 pF treble bypass, 100k slope, 0.1 µF bass / 0.047 µF mid
+    legs, 250k-A treble pot, 250k-A bass rheostat, 10k-A mid rheostat to ground.
+  - Single 1M-A Volume pot (track halves modelled as two resistors) tapped at the treble wiper;
+    the wiper feeds V1B's grid directly — the pot track is the grid leak, as in the real wiring.
+  - V1B recovery stage: wiper-fed via 68k, 1k5 + 22 µF cathode, 100k plate load.
+  - 22 nF coupling into a 1M "PI grid leak" — the preamp's output tap.
   - Miller grid-to-plate capacitance on each triode.
 - **Power stage** (`power` block, theta = 0.9): LTP phase inverter (5751-family triode fit), 2x 6L6GC
   (KorenPentode defaults), cathode-biased, cathode-vary tremolo injected on the bias node, output
@@ -29,9 +30,8 @@ blackface-style platform — no global negative feedback.
 
 ## Deliberate simplifications
 
-- The two triodes of the real V1 are modelled as two *stages*, but the real amp's exact tube count on the
-  recovery path is folded into the three-stage cascade; component values follow the blackface family the
-  Rambler descends from, not a traced schematic (Carr does not publish one).
+- The two triodes of the real V1 are modelled as two stages (input -> stack/volume -> recovery), the
+  blackface family the Rambler descends from, not a traced schematic (Carr does not publish one).
 - No global NFB — matching the real amp.
 - Tremolo is amplitude/bias-vary only (no optocoupler phase subtleties); LFO is a sine.
 - `reducedOrder` replaces the nodal power block with the shared behavioural sag/power table
