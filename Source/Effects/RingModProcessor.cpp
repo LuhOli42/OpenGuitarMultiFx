@@ -117,8 +117,7 @@ void RingModProcessor::process (juce::AudioBuffer<float>& buffer)
 
 void RingModProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    // No ring-mod glyph on the icon sheet yet: the tremolo wave (amplitude modulation, which is what a ring modulator is) stands in.
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::tremolo_svg, IconData::tremolo_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::ring_mod_svg, IconData::ring_mod_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

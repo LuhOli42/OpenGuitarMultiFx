@@ -321,8 +321,7 @@ void GE7StyleEqualizerProcessor::process (juce::AudioBuffer<float>& buffer)
 
 void GE7StyleEqualizerProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    // No equaliser glyph on the icon sheet yet: the pulse trace (the sheet's Compressor / Expander glyph) stands in until one is added.
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::pulse_svg, IconData::pulse_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::eq_svg, IconData::eq_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

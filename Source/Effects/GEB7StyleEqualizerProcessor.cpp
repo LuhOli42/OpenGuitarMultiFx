@@ -320,7 +320,7 @@ void GEB7StyleEqualizerProcessor::process (juce::AudioBuffer<float>& buffer)
 
 void GEB7StyleEqualizerProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::pulse_svg, IconData::pulse_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::eq_svg, IconData::eq_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

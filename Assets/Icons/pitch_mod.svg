@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
   <path d="M6 24 Q16 12 24 24 Q32 36 42 24"/>
   <line x1="24" y1="6" x2="24" y2="15"/>
-  <polyline points="21 9 24 6 27 9"/>
+  <path d="M21 9 L24 6 L27 9"/>
   <line x1="24" y1="33" x2="24" y2="42"/>
-  <polyline points="21 38 24 42 27 38"/>
+  <path d="M21 38 L24 42 L27 38"/>
 </svg>
