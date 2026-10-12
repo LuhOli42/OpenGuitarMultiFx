@@ -173,7 +173,9 @@ void FooterBar::paint (juce::Graphics& g)
                                  false, false, true, true);
         g.fillPath (tab);
 
-        g.setColour (juce::Colours::black);
+        // White on dark custom colours, black on light ones -- a black
+        // snapshot would otherwise hide the letter entirely.
+        g.setColour (snapshotColour.contrasting (juce::Colours::black, juce::Colours::white));
         g.setFont (tabFont);
         g.drawText (snapshotLabel, juce::Rectangle<float> (16.0f, 0.0f, tabWidth, 21.0f).toNearestInt(),
                     juce::Justification::centred);

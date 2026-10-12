@@ -126,8 +126,10 @@ private:
         (empty chain, the launch default routing, fresh snapshots, no name)
         without deleting effects one by one. Asks Save / Discard / Cancel
         first when the loaded preset has unsaved changes, like
-        loadPresetAskingToSave(). */
-    void newPresetAskingToSave();
+        loadPresetAskingToSave(). `onReset` (optional) fires only once the
+        board is actually cleared -- immediately when there's nothing to
+        save, or inside the prompt's Save/Discard path; never on Cancel. */
+    void newPresetAskingToSave (std::function<void()> onReset = nullptr);
     void newPreset();
 
     /** Recalls snapshot `index` (0-7 = A-H) on the live chain: stores the

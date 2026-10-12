@@ -1111,12 +1111,16 @@ void MainComponent::showPresetsPanel()
     dialog->onNewRequested = [this, browser]
     {
         // The save-or-discard prompt stacks on top of the browser like
-        // every other card; refresh so a just-cleared board shows nothing
-        // highlighted (and stays browsable for the new board's first save).
+        // every other card; the refresh rides newPresetAskingToSave's
+        // onReset so it runs only once the board is ACTUALLY cleared
+        // (after Save/Discard too), leaving no stale highlighted tile --
+        // and not at all on Cancel.
         juce::Component::SafePointer<PresetBrowserDialog> safeBrowser (browser);
-        newPresetAskingToSave();
-        if (safeBrowser != nullptr)
-            safeBrowser->refresh();
+        newPresetAskingToSave ([safeBrowser]
+        {
+            if (safeBrowser != nullptr)
+                safeBrowser->refresh();
+        });
     };
 
     dialog->onDeleteRequested = [this] (juce::String name)
@@ -1351,18 +1355,20 @@ void MainComponent::newPreset()
     updatePresetDisplay();
 }
 
-void MainComponent::newPresetAskingToSave()
+void MainComponent::newPresetAskingToSave (std::function<void()> onReset)
 {
     if (! isPresetDirty())
     {
         newPreset();
+        if (onReset)
+            onReset();
         return;
     }
 
     overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
         "Unsaved changes", "\"" + currentPresetName + "\" has changes that aren't saved.",
         juce::StringArray { "Save", "Discard", "Cancel" },
-        [this] (int choice)
+        [this, onReset = std::move (onReset)] (int choice)
         {
             overlayHost.popOverlay();
             if (choice == 2)
@@ -1370,6 +1376,8 @@ void MainComponent::newPresetAskingToSave()
             if (choice == 0)
                 savePresetAs (currentPresetName);
             newPreset();
+            if (onReset)
+                onReset();
         }));
 }
 
