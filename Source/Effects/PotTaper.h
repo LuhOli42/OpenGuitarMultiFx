@@ -30,6 +30,8 @@ namespace openguitarmultifx::pots
 inline double law (double knob, double midpointFraction) noexcept
 {
     const double x = knob < 0.0 ? 0.0 : (knob > 1.0 ? 1.0 : knob);
+    if (std::abs (midpointFraction - 0.5) < 1.0e-9) // linear ("B"): the exponential form degenerates to 0/0 there
+        return x;
     const double r = 1.0 / midpointFraction - 1.0;
     const double b = r * r;
     return (std::pow (b, x) - 1.0) / (b - 1.0);

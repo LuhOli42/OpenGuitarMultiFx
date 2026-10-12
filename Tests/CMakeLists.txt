@@ -80,6 +80,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   BucketBrigadeDelayTests.cpp
   ChorusPedalTests.cpp
   FlangerPedalTests.cpp
+  DelayPedalTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp

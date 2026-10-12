@@ -270,6 +270,9 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/Modulation/Flanger/FlangerProcessor.cpp
   Source/Effects/Modulation/Flanger/BbdFlangerProcessor.cpp
   Source/Effects/Modulation/Flanger/AlgorithmicFlangerProcessor.cpp
+  Source/Effects/Delay/BbdDelayProcessor.cpp
+  Source/Effects/Delay/TapeEchoProcessor.cpp
+  Source/Effects/Delay/AlgorithmicDelayProcessor.cpp
   Source/Effects/PhaserProcessor.cpp
   Source/Effects/RotaryProcessor.cpp
   Source/Effects/UniVibeProcessor.cpp

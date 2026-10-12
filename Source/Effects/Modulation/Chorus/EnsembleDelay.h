@@ -56,13 +56,19 @@ class WetLowpass
 public:
     void prepare (double sampleRate, double hz, double q = 0.7071)
     {
+        retune (sampleRate, hz, q);
+        reset();
+    }
+
+    /** New cutoff, state kept (a knob moving): allocation- and click-free. */
+    void retune (double sampleRate, double hz, double q = 0.7071) noexcept
+    {
         const double w = 2.0 * 3.14159265358979323846 * hz / sampleRate, cw = std::cos (w), al = std::sin (w) / (2.0 * q);
         const double a0 = 1.0 + al;
         b0 = (1.0 - cw) * 0.5 / a0;
         b1 = (1.0 - cw) / a0;
         a1 = -2.0 * cw / a0;
         a2 = (1.0 - al) / a0;
-        reset();
     }
     void reset() noexcept { z1 = z2 = 0.0; }
     double process (double x) noexcept
