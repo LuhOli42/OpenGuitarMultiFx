@@ -46,7 +46,7 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return "Diezel"; }
+    const char* getName() const override { return "Diezel VH4"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff4a3a63); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
     std::unique_ptr<juce::XmlElement> getState() const override;
