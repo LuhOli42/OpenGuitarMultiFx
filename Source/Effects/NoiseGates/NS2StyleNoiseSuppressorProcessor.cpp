@@ -83,7 +83,7 @@ void NS2StyleNoiseSuppressorProcessor::process (juce::AudioBuffer<float>& buffer
 
 void NS2StyleNoiseSuppressorProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::gate_svg, IconData::gate_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::ns2_suppressor_svg, IconData::ns2_suppressor_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 
