@@ -1,8 +1,11 @@
-# Rivera Knucklehead Reverb (K100, 1993)
+# Rivera Knucklehead Reverb (three-channel revision)
 
-The Rivera Knucklehead Reverb is Paul Rivera's flagship 100 W head — "two amps in one": a blackface-flavoured clean
-channel and a cascading high-gain lead channel, a real long-tailed-pair phase inverter, four 6L6GCs on fixed bias,
-and Rivera's signature Presence + Focus controls in the global negative-feedback loop.
+The Rivera Knucklehead Reverb is Paul Rivera's flagship 100 W head — the early K100 was "two amps in one", and the
+later revision this model targets (the rev-3 schematic era, sold with the pull-pot front panel and a third,
+Ninja-always-on lead channel — the "Tre" behaviour) adds Clean / Crunch / Lead with pull-switches on the pots:
+a blackface-flavoured clean channel, a cascading Crunch, and a high-gain Lead, a real long-tailed-pair phase
+inverter, four 6L6GCs on fixed bias, and Rivera's signature Presence + Focus controls in the global
+negative-feedback loop.
 
 ## Sources
 
@@ -14,8 +17,9 @@ and Rivera's signature Presence + Focus controls in the global negative-feedback
 
 - **CH1 (clean)**: V1A → Volume (VR101 1 MEG) → CH1's own TMB (VR104/VR103/VR102, 270 pF treble cap, 33 k slope,
   .047/.1 µF) → V4A recovery (22 k plate, 1k5 + 22 µF) → Master (VR105 1 MEG).
-- **CH2 (lead)**: V1B → Gain → CH2's own TMB (270 pF, 33 k slope, .047/.1 µF, 25 k mid) → V2A (1k5 + 22 µF, 100 k)
+- **CH2 (crunch)**: V1B → Gain → CH2's own TMB (270 pF, 33 k slope, .047/.1 µF, 25 k mid) → V2A (1k5 + 22 µF, 100 k)
   → V2B (1k5 + 1 µF, 100 k) → Master (VR110 250 k).
+- **CH3 (lead)**: the same path with the pull-Ninja's extra triode permanently in circuit — the "Tre" behaviour.
 - **PI**: V5 long-tailed pair — 470 k grid leaks, 680 R cathode link, 8k8 tail leg, 82k5/100 k plates, .022 couplings,
   150 k grid leaks to the −47 V bias node, 1 k stoppers.
 - **Power**: 4× 6L6GC as two paralleled pairs, cathodes to ground, screens ~445 V; global negative feedback from the
@@ -27,10 +31,11 @@ and Rivera's signature Presence + Focus controls in the global negative-feedback
 
 Three blocks, same structure as the Trainwreck Express model:
 
-1. `pre` — **both channel paths in one netlist** (the real amp's relays just route; both paths are always solved and
-   the Channel control selects which output feeds the power section): CH1 = V1A (47 k plate, per the drawing) →
+1. `pre` — **the three channel paths in one netlist** (the real amp's relays just route; all paths are always solved
+   and the Channel control selects which output feeds the power section): CH1 = V1A (47 k plate, per the drawing) →
    Volume → TMB (50 k mid) → V4A (22 k plate) → 1 M Master. CH2 = V1B (100 k) → Gain → TMB (25 k mid) → V2A →
-   V2B → 250 k Master.
+   V2B → 250 k Master. CH3 = the CH2 chain with the Ninja stage (V3B) forced on, matching the real amp's
+   Ninja-always-in lead channel.
 2. `power` — V5 LTP exactly as drawn → 4× 6L6GC (two pair-models) → ~1k8 centre-tapped OT → 16 Ω tap → speaker
    model. NFB from the speaker node through 47 k into the tail feedback node; Presence = variable R + .1 µF shunt
    on the feedback node (HF), Focus = variable R + 2.2 µF shunt (LF). Knob up = more feedback removed = more of that

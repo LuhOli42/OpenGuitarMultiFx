@@ -11,9 +11,10 @@ namespace openguitarmultifx
 {
 
 /**
-    A Rivera Knucklehead Reverb-style guitar amplifier (the 1993 100 W K100, Rivera's "two amps in one" 6L6 design),
-    modelled at component level on NodalCircuit -- docs/circuits/RiveraKnucklehead.md, read that file to understand
-    this processor.
+    A Rivera Knucklehead Reverb-style guitar amplifier (the 100 W 6L6 head in its three-channel revision --
+    rev-3 schematic era, the pull-pot "Tre" variant with Clean / Crunch / Lead, not the original two-channel
+    K100), modelled at component level on NodalCircuit -- docs/circuits/RiveraKnucklehead.md, read that file
+    to understand this processor.
 
     Three parts, the same structure as the Trainwreck Express-style amplifier:
       1. the preamp -- BOTH channels, in one netlist: CH1 clean (V1A -> Volume -> its own TMB stack -> V4A recovery ->
