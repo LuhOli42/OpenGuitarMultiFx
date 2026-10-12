@@ -36,4 +36,12 @@ The focused processor suite checks DC convergence, silence, plucked-note stabili
 | Power plates | 395.3 / 395.3 V (**ESTIMATED**) |
 | Shared EL84 cathode | 5.9 V (**ESTIMATED**) |
 
-The original +31.54 dB trim came from treating the quieter EF86 channel as the default: at 220 Hz Channel 2 measured 0.000778 Vrms versus 0.023700 Vrms on Channel 1 (29.7 dB lower). The erroneous Channel 1 plate-to-Volume-wiper bypass was also removed, and its Top-Boost-like stack reuses the AC30 implementation's values listed above. The re-rendered untrimmed default DI RMS is 0.079141 (**ESTIMATED**); the registry's -2.26 dB trim is derived by matching AC30's 0.061023 RMS reference (**ESTIMATED**). Component values beyond the manufacturer-level facts above are estimates, not claims about a factory schematic.
+The original +31.54 dB trim used the much quieter EF86 Channel 2 as the default/reference; the corrected default is Channel 1. At 220 Hz Channel 2 measured 0.000778 Vrms versus 0.023700 Vrms on Channel 1 (**ESTIMATED**). The erroneous Channel 1 plate-to-Volume-wiper capacitor was removed so its plate now feeds the Top-Boost-style stack, which reuses the AC30 implementation's values listed above. The untrimmed default DI RMS is 0.079141 (**ESTIMATED**); the registry's -2.26 dB trim matches AC30's 0.061023 RMS reference (**ESTIMATED**). Render measurements below use the guitar DI; all are **ESTIMATED**.
+
+| DI render | RMS after trim | Crest | <80 Hz |
+|---|---:|---:|---:|
+| Default | 0.061010 | 11.53 dB | -40.88 dB |
+| Clean (Volume 1 = 0.2) | 0.039091 | 14.20 dB | -46.28 dB |
+| Hot (Volume 1 = 0.8) | 0.088976 | 9.24 dB | -37.19 dB |
+
+The hot reduced-order behavioral speaker-node peak is 10.26 V (**ESTIMATED**). Component values beyond the manufacturer-level facts above are estimates, not claims about a factory schematic.

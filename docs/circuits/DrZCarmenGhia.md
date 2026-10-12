@@ -28,4 +28,12 @@ The focused processor suite checks DC convergence, silence, plucked-note stabili
 | Power plates | 394.3 / 394.3 V (**ESTIMATED**) |
 | Shared EL84 cathode | 14.9 V (**ESTIMATED**) |
 
-The re-rendered untrimmed default guitar-DI RMS is 0.423903 (**ESTIMATED**); the registry's -16.84 dB trim is derived by matching AC30's 0.061023 RMS reference (**ESTIMATED**). The disagreement between the public tube listings is retained here rather than silently treated as resolved.
+The untrimmed default guitar-DI RMS is 0.423902 (**ESTIMATED**); the registry's -16.84 dB trim matches AC30's 0.061023 RMS reference (**ESTIMATED**). Render measurements below use the guitar DI; all are **ESTIMATED**.
+
+| DI render | RMS after trim | Crest | <80 Hz |
+|---|---:|---:|---:|
+| Default | 0.060991 | 12.98 dB | -38.49 dB |
+| Clean (Volume = 0.2) | 0.046196 | 13.24 dB | -40.40 dB |
+| Hot (Volume = 0.7) | 0.072752 | 12.83 dB | -37.62 dB |
+
+The reduced-order behavioral stage uses an **ESTIMATED** 0.44 speaker-node scale and inverse post-guard compensation to keep its hot speaker-node peak near 29.86 V without changing the calibrated output level. The disagreement between the public tube listings is retained here rather than silently treated as resolved.

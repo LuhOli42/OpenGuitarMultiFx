@@ -17,20 +17,23 @@ namespace
     {
         double gain, maxSwing, knee, sagDrive, maxSag, shelfHz, shelfGain;
         double outputScaleLow, outputScaleMid, outputScaleHigh;
+        double speakerNodeScale, reducedOutputScale;
     };
 
     PowerStageFit powerStageFit (EL84BoutiqueAmpCore::Model model) noexcept
     {
         // Sag, knee and shelf fits follow full-netlist sweeps; output scales are refit to their 220 Hz RMS at
         // input levels 0.002/0.02/0.2 with the reduced-path output high-pass enabled.
+        // Ghia's 0.44 and Astroverb's 0.09 speaker-node scales keep their measured hot peaks near 30 V;
+        // the inverses are restored after the guard so reduced/full output tracking is preserved.
         switch (model)
         {
-            case EL84BoutiqueAmpCore::Model::matchlessHC30: return { 42.0, 0.0327, 3.0, 4.0, 0.14, 120.0, 0.70, 0.813, 0.649, 0.596 };
-            case EL84BoutiqueAmpCore::Model::hotCat30:      return { 3.2, 0.0292, 3.0, 4.0, 0.14, 120.0, 0.70, 4.09, 4.07, 1.98 };
-            case EL84BoutiqueAmpCore::Model::carmenGhia:    return { 12.0, 0.0550, 3.0, 3.0, 0.18, 1000.0, 3.0, 1.23, 0.763, 0.592 };
-            case EL84BoutiqueAmpCore::Model::astroverb16:   return { 2.32, 0.4500, 3.0, 3.0, 0.18, 140.0, 1.50, 8.74, 4.31, 3.52 };
+            case EL84BoutiqueAmpCore::Model::matchlessHC30: return { 42.0, 0.0327, 3.0, 4.0, 0.14, 120.0, 0.70, 0.813, 0.649, 0.596, 1.0, 1.0 };
+            case EL84BoutiqueAmpCore::Model::hotCat30:      return { 3.2, 0.0292, 3.0, 4.0, 0.14, 120.0, 0.70, 4.09, 4.07, 1.98, 1.0, 1.0 };
+            case EL84BoutiqueAmpCore::Model::carmenGhia:    return { 12.0, 0.0550, 3.0, 3.0, 0.18, 1000.0, 3.0, 1.23, 0.763, 0.592, 0.44, 2.2727272727 };
+            case EL84BoutiqueAmpCore::Model::astroverb16:   return { 2.32, 0.4500, 3.0, 3.0, 0.18, 140.0, 1.50, 8.74, 4.31, 3.52, 0.09, 11.1111111111 };
         }
-        return { 17.3, 0.0450, 3.0, 3.0, 0.18, 140.0, 0.70, 1.0, 1.0, 1.0 };
+        return { 17.3, 0.0450, 3.0, 3.0, 0.18, 140.0, 0.70, 1.0, 1.0, 1.0, 1.0, 1.0 };
     }
 
     double fittedDriveScale (const PowerStageFit& fit, double inputLevel) noexcept
@@ -606,7 +609,8 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive, dou
     const double shelfAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * fit.shelfHz
                                               / juce::jmax (1.0, sampleRate));
     ch.shelfState += shelfAlpha * (raw - ch.shelfState);
-    return (ch.shelfState + fit.shelfGain * (raw - ch.shelfState)) * fittedDriveScale (fit, inputLevel);
+    return (ch.shelfState + fit.shelfGain * (raw - ch.shelfState))
+         * fittedDriveScale (fit, inputLevel) * fit.speakerNodeScale;
 }
 
 void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
@@ -639,16 +643,9 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
     speakerHighpassSectionCount = 0;
     if (model == Model::carmenGhia || model == Model::astroverb16)
     {
-        const double firstCutoff = model == Model::astroverb16 ? 80.0 : 95.0;
+        const double firstCutoff = model == Model::astroverb16 ? 100.0 : 95.0;
         speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (firstCutoff, lowQ);
         speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (firstCutoff, highQ);
-        if (model == Model::astroverb16)
-        {
-            speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (100.0, lowQ);
-            speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (100.0, highQ);
-            speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (100.0, lowQ);
-            speakerHighpassSections[speakerHighpassSectionCount++] = makeHighpassSection (100.0, highQ);
-        }
     }
 
     for (auto& ch : channels)
@@ -703,6 +700,7 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
     const double powerDrive = std::pow (10.0, (param (powerParam, 1.0) - 1.0) * 18.0 / 20.0);
     const double output = std::pow (10.0, (param (outputParam, 0.5) - 0.5) * 48.0 / 20.0);
     const int speakerIndex = juce::jlimit (0, 2, juce::roundToInt ((float) param (speakerParam, 2.0)));
+    const double reducedOutputScale = reducedOrder ? powerStageFit (model).reducedOutputScale : 1.0;
     const bool useSecondChannel = model == Model::matchlessHC30 && param (channelParam, 1.0) >= 0.5;
 
     for (int i = 0; i < buffer.getNumSamples(); ++i)
@@ -809,7 +807,8 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
                 speakerVolts = 0.0;
                 ok = false;
             }
-            const double out = speakerVolts * outputScale * output * std::pow (speakerNominal[2] / speakerNominal[speakerIndex], -0.8);
+            const double out = speakerVolts * outputScale * reducedOutputScale * output
+                * std::pow (speakerNominal[2] / speakerNominal[speakerIndex], -0.8);
             samples[i] = (float) out;
             if (chIdx == 0)
             {

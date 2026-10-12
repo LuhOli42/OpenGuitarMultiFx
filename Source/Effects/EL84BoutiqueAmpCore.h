@@ -49,7 +49,7 @@ protected:
 private:
     struct Channel
     {
-        std::array<double, 12> speakerHighpassState {};
+        std::array<double, 4> speakerHighpassState {};
         NodalCircuit pre, pre2, power, supply;
         NodalCircuit::DynamicState preRest, pre2Rest, powerRest, supplyRest;
         int preInput = 0, preInput2 = 0, preRail = 0, preRail2 = 0;
@@ -95,7 +95,7 @@ private:
     const char* displayName;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     std::array<Channel, 2> channels;
-    std::array<HighpassSection, 6> speakerHighpassSections {};
+    std::array<HighpassSection, 2> speakerHighpassSections {};
     std::size_t speakerHighpassSectionCount = 0;
     double reducedOutputHighpassAlpha = 0.0;
     DualMonoShortcut shortcut;
