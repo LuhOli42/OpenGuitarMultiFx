@@ -70,7 +70,7 @@ void DarkglassB7KStyleOverdriveProcessor::buildChannel (Channel& ch)
     {
         auto& c = ch.a;
         const auto nb = c.addNode(), nIn = c.addNode(), a1 = c.addNode(), plus = c.addNode(), buf = c.addNode();
-        const auto g1 = c.addNode(), drvIn = c.addNode(), sh = c.addNode(), minus = c.addNode(), out = c.addNode();
+        const auto g1 = c.addNode(), nA = c.addNode(), drvIn = c.addNode(), sh = c.addNode(), minus = c.addNode(), out = c.addNode();
         c.addSource (nb, vBias);
         ch.srcIn = c.addSource (nIn, 0.0);
 
@@ -83,15 +83,16 @@ void DarkglassB7KStyleOverdriveProcessor::buildChannel (Channel& ch)
         c.addRailLimitedOpAmp (plus, buf, buf, { tl072.lowRail, tl072.highRail });
         ch.nBuf = buf;
 
-        // Grunt: series-RC shunt (1 uF then the switched resistor) bleeds highs pre-clip = more low end.
-        // It hangs off drvIn, not buf: the follower output is ideal (zero output Z) so a shunt there
-        // can never move the node voltage — through the Attack series R it bleeds the drive input.
-        c.addCapacitor (drvIn, g1, 1.0e-6);
+        // Estimated 2.2k feed resistance gives the pre-clip shapers source impedance; keep the dry tap at buf.
+        c.addResistor (buf, nA, 2.2e3);
+
+        // Grunt: estimated 0.15 uF + switched R series shunt at drvIn, bleeding highs for relative bass lift.
+        c.addCapacitor (drvIn, g1, 0.15e-6);
         ch.rGrunt = c.addResistor (g1, nb, 1.0e9);
 
-        // Attack: handled series R into drvIn, a bright cap across it, a shunt cap to the bias
-        ch.rAttack = c.addResistor (buf, drvIn, 100.0);
-        ch.cAttack = c.addCapacitor (buf, drvIn, 1.0e-12);
+        // Attack: handled series R from nA into drvIn, a bright cap across it, a shunt cap to the bias
+        ch.rAttack = c.addResistor (nA, drvIn, 100.0);
+        ch.cAttack = c.addCapacitor (nA, drvIn, 1.0e-12);
         ch.cShunt = c.addCapacitor (drvIn, sh, 1.0e-12);
         c.addResistor (sh, nb, 4.7e3);
         c.addResistor (drvIn, nb, 100.0e3);
@@ -104,7 +105,7 @@ void DarkglassB7KStyleOverdriveProcessor::buildChannel (Channel& ch)
         ch.rFb = c.addResistor (minus, out, 22.0e3 + 100.0e3);
         ch.nDrive = out;
 
-        for (auto n : { plus, buf, g1, drvIn, sh, minus, out })
+        for (auto n : { plus, buf, g1, nA, drvIn, sh, minus, out })
             c.setInitialGuess (n, vBias);
     }
 
@@ -221,7 +222,7 @@ void DarkglassB7KStyleOverdriveProcessor::updatePots()
     const double rAtt = attack == 0 ? 4.7e3 : (attack == 2 ? 10.0e3 : 100.0);
     const double cAtt = attack == 2 ? 22.0e-9 : 1.0e-12;
     const double cSh  = attack == 0 ? 3.3e-9 : 1.0e-12;
-    // Grunt: the switched shunt resistor after the 1 uF (off / mild / raw).
+    // Grunt: the switched shunt resistor after the estimated 0.15 uF (off / mild / strong bass lift).
     const double rGr = grunt == 0 ? 1.0e9 : (grunt == 2 ? 4.7e3 : 22.0e3);
 
     for (auto& ch : channels)
