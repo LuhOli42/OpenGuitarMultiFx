@@ -268,6 +268,28 @@ Algorithms: [AlgorithmicFlangers.md](AlgorithmicFlangers.md) (through-zero, barb
 **Known gap for this family:** none of the clock VCOs is modelled from parts (their transistor current sources are not
 legible enough on these drawings); the window is mapped exponentially across Manual + Width × LFO.
 
+## Delays (`BbdDelayProcessor`, `TapeEchoProcessor`, `AlgorithmicDelayProcessor`)
+
+The BBD delays reuse the chorus/flanger building blocks (BucketBrigadeDelay with the schematic's filters, `Ne570`
+compander — every one of these pedals has one — rails as the regeneration limit). Delay time = linear in the Delay pot's
+resistance (RC clock), between each pedal's published range. The Boss DD-2 runs on the same queue: its 12-bit converter
+and DRAM at a variable sample rate ARE a sampled queue with sample-and-hold (`BucketBrigadeDelay::setQuantization`,
+`setFrozen` for Hold).
+
+| Unit | Doc | Line | Range |
+|---|---|---|---|
+| Boss DM-2 | [DM2Delay.md](DM2Delay.md) | MN3005 | 20–300 ms |
+| EHX Deluxe Memory Man | [MemoryManDelay.md](MemoryManDelay.md) | 2 × MN3005 | 30–550 ms |
+| MXR M118 | [MXR118Delay.md](MXR118Delay.md) | 6 × SAD1024 section | 30–300 ms |
+| Ibanez AD9 | [AD9Delay.md](AD9Delay.md) | MN3205 | 10–300 ms |
+| Ibanez AD80 | [AD80Delay.md](AD80Delay.md) | MN3005 | 15–330 ms |
+| DOD FX90 | [FX90Delay.md](FX90Delay.md) | MN3005 | 20–400 ms |
+| Arion SAD-1 | [SAD1Delay.md](SAD1Delay.md) | MN3205, stereo | 20–300 ms |
+| Boss DD-2 | [DD2Delay.md](DD2Delay.md) | 12-bit RAM | 12.5 ms – 800 ms (S/M/L) + Hold |
+
+Tape/drum: [TapeEchoes.md](TapeEchoes.md) (Space Echo, Echoplex EP-3, Echorec — behavioural). Algorithms:
+[AlgorithmicDelays.md](AlgorithmicDelays.md).
+
 ## Cross-cutting: oversampling
 Every clipping pedal that measured audibly aliased at 1x runs through `OversampledEffect`
 (2x, DS-1 4x); the table, the method and the CPU trade-off are in

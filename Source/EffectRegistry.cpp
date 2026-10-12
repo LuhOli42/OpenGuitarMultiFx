@@ -116,6 +116,9 @@
 #include "Effects/Modulation/Flanger/FlangerProcessor.h"
 #include "Effects/Modulation/Flanger/BbdFlangerProcessor.h"
 #include "Effects/Modulation/Flanger/AlgorithmicFlangerProcessor.h"
+#include "Effects/Delay/BbdDelayProcessor.h"
+#include "Effects/Delay/TapeEchoProcessor.h"
+#include "Effects/Delay/AlgorithmicDelayProcessor.h"
 #include "Effects/PhaserProcessor.h"
 #include "Effects/RotaryProcessor.h"
 #include "Effects/UniVibeProcessor.h"
@@ -668,6 +671,22 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("AnalogDelay", EffectRegistry::Category::delay, [] { return std::make_unique<AnalogDelayProcessor>(); }, "Analog");
     registry.registerType ("DualDelay", EffectRegistry::Category::delay, [] { return std::make_unique<DualDelayProcessor>(); }, "Digital");
     registry.registerType ("MultiTapDelay", EffectRegistry::Category::delay, [] { return std::make_unique<MultiTapDelayProcessor>(); }, "Multi-Tap");
+    // Delay pedals modelled from their schematics (Source/Effects/Delay, docs/circuits/*Delay*.md), tape echoes, algorithms.
+    registry.registerType ("DM2StyleDelay", EffectRegistry::Category::delay, [] { return pickupLoaded (std::make_unique<BbdDelayProcessor> (DelayModel::dm2), 470000.0); }, "Analog");
+    registry.registerType ("MemoryManStyleDelay", EffectRegistry::Category::delay, [] { return pickupLoaded (std::make_unique<BbdDelayProcessor> (DelayModel::memoryMan), 1000000.0); }, "Analog");
+    registry.registerType ("MXR118StyleDelay", EffectRegistry::Category::delay, [] { return pickupLoaded (std::make_unique<BbdDelayProcessor> (DelayModel::mxr118), 470000.0); }, "Analog");
+    registry.registerType ("AD9StyleDelay", EffectRegistry::Category::delay, [] { return pickupLoaded (std::make_unique<BbdDelayProcessor> (DelayModel::ad9), 510000.0); }, "Analog");
+    registry.registerType ("AD80StyleDelay", EffectRegistry::Category::delay, [] { return pickupLoaded (std::make_unique<BbdDelayProcessor> (DelayModel::ad80), 510000.0); }, "Analog");
+    registry.registerType ("FX90StyleDelay", EffectRegistry::Category::delay, [] { return pickupLoaded (std::make_unique<BbdDelayProcessor> (DelayModel::fx90), 470000.0); }, "Analog");
+    registry.registerType ("SAD1StyleDelay", EffectRegistry::Category::delay, [] { return pickupLoaded (std::make_unique<BbdDelayProcessor> (DelayModel::sad1), 470000.0); }, "Analog");
+    registry.registerType ("DD2StyleDelay", EffectRegistry::Category::delay, [] { return pickupLoaded (std::make_unique<BbdDelayProcessor> (DelayModel::dd2), 1000000.0); }, "Digital");
+    registry.registerType ("SpaceEchoStyleDelay", EffectRegistry::Category::delay, [] { return std::make_unique<TapeEchoProcessor> (TapeEchoModel::spaceEcho); }, "Tape");
+    registry.registerType ("EchoplexStyleDelay", EffectRegistry::Category::delay, [] { return std::make_unique<TapeEchoProcessor> (TapeEchoModel::echoplex); }, "Tape");
+    registry.registerType ("EchorecStyleDelay", EffectRegistry::Category::delay, [] { return std::make_unique<TapeEchoProcessor> (TapeEchoModel::echorec); }, "Tape");
+    registry.registerType ("DuckingDelay", EffectRegistry::Category::delay, [] { return std::make_unique<AlgorithmicDelayProcessor> (AlgorithmicDelay::ducking); }, "Special");
+    registry.registerType ("ShimmerDelay", EffectRegistry::Category::delay, [] { return std::make_unique<AlgorithmicDelayProcessor> (AlgorithmicDelay::shimmer); }, "Special");
+    registry.registerType ("LoFiDelay", EffectRegistry::Category::delay, [] { return std::make_unique<AlgorithmicDelayProcessor> (AlgorithmicDelay::lofi); }, "Special");
+    registry.registerType ("GranularDelay", EffectRegistry::Category::delay, [] { return std::make_unique<AlgorithmicDelayProcessor> (AlgorithmicDelay::granular); }, "Special");
 
     // Phase 3: Modulation.
     registry.registerType ("Tremolo", EffectRegistry::Category::modulation, [] { return std::make_unique<TremoloProcessor>(); }, "Tremolo");

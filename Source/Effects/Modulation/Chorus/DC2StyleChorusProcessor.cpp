@@ -116,8 +116,8 @@ void DC2StyleChorusProcessor::process (juce::AudioBuffer<float>& buffer)
         const double x = right != nullptr ? 0.5 * ((double) left[i] + (double) right[i]) : (double) left[i];
         const double pre = bbdchorus::railClip (preEmphasis.process (inputCoupling.process (x)), -opAmpSwing, opAmpSwing);
         const double squeezed = bbdchorus::railClip (compressor.compress (pre), -opAmpSwing, opAmpSwing);
-        const double wetA = expanderA.expand (bbdA.process (squeezed, clockA));
-        const double wetB = expanderB.expand (bbdB.process (squeezed, clockB));
+        const double wetA = bbdchorus::railClip (expanderA.expand (bbdA.process (squeezed, clockA)), -opAmpSwing, opAmpSwing);
+        const double wetB = bbdchorus::railClip (expanderB.expand (bbdB.process (squeezed, clockB)), -opAmpSwing, opAmpSwing);
 
         const double dry = mixDry.process (pre);
         left[i] = (float) bbdchorus::railClip (dry + mixOwnA.process (wetA) + mixCross.process (wetB), -opAmpSwing, opAmpSwing);

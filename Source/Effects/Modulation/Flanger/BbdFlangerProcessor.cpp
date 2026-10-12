@@ -380,7 +380,7 @@ double BbdFlangerProcessor::processSample (Channel& ch, double x, double clockHz
 
     const double raw = longLine ? ch.bbdLong.process (toBbd, clockHz) : ch.bbd.process (toBbd, clockHz);
     ch.lastWet = raw;
-    const double wet = compander ? ch.expander.expand (raw) : raw;
+    const double wet = compander ? bbdchorus::railClip (ch.expander.expand (raw), -railVolts, railVolts) : raw;
 
     const double out = dryGain * ch.dryMix.process (pre) + wetGain * wetNorm * ch.wetMix.process (wet);
     return bbdchorus::railClip (out, -railVolts, railVolts);
