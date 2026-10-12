@@ -72,15 +72,20 @@ public:
         // a chorus clock puts several edges in every audio sample and std::exp dominated the cost.
         if (nextEdge < 1.0 || ((edgeIndex & 1) != 0 && nextEdge <= 1.0))
         {
+            // Input sections are only read on even edges and output sections only driven on odd ones, so each set is
+            // stepped two edges at a time (a flanger's clock puts dozens of edges in every audio sample).
+            const bool evenNext = (edgeIndex & 1) == 0;
+            const double firstEven = evenNext ? nextEdge : nextEdge + edgeStep;
+            const double firstOdd = evenNext ? nextEdge + edgeStep : nextEdge;
             for (auto& s : in)
             {
-                s.e = std::exp (s.pTs * nextEdge);
-                s.step = std::exp (s.pTs * edgeStep);
+                s.e = std::exp (s.pTs * firstEven);
+                s.step = std::exp (s.pTs * (2.0 * edgeStep));
             }
             for (auto& s : out)
             {
-                s.e = std::exp (s.pTs * (1.0 - nextEdge));
-                s.step = std::exp (-s.pTs * edgeStep);
+                s.e = std::exp (s.pTs * (1.0 - firstOdd));
+                s.step = std::exp (-s.pTs * (2.0 * edgeStep));
             }
 
             while (nextEdge < 1.0 || ((edgeIndex & 1) != 0 && nextEdge <= 1.0))
@@ -89,8 +94,11 @@ public:
                 {
                     // Input transistor closes: sample the input filter's output at this instant.
                     double v = 0.0;
-                    for (const auto& s : in)
+                    for (auto& s : in)
+                    {
                         v += s.weight * (s.g * s.e * s.x).real();
+                        s.e *= s.step;
+                    }
                     queue[head] = v;
                     if (++head >= queue.size())
                         head = 0;
@@ -102,12 +110,11 @@ public:
                     const double delta = yBbd - yOld;
                     yOld = yBbd;
                     for (auto& s : out)
+                    {
                         s.x += s.g * s.e * delta;
+                        s.e *= s.step;
+                    }
                 }
-                for (auto& s : in)
-                    s.e *= s.step;
-                for (auto& s : out)
-                    s.e *= s.step;
                 ++edgeIndex;
                 nextEdge += edgeStep;
             }

@@ -113,7 +113,9 @@
 #include "Effects/Modulation/Chorus/TriChorusProcessor.h"
 #include "Effects/Modulation/Chorus/StringEnsembleProcessor.h"
 #include "Effects/VibratoProcessor.h"
-#include "Effects/FlangerProcessor.h"
+#include "Effects/Modulation/Flanger/FlangerProcessor.h"
+#include "Effects/Modulation/Flanger/BbdFlangerProcessor.h"
+#include "Effects/Modulation/Flanger/AlgorithmicFlangerProcessor.h"
 #include "Effects/PhaserProcessor.h"
 #include "Effects/RotaryProcessor.h"
 #include "Effects/UniVibeProcessor.h"
@@ -677,8 +679,21 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("SCH1StyleChorus", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<SCH1StyleChorusProcessor>(), 470000.0), 1.76f); }, "Chorus");
     registry.registerType ("TriChorus", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<TriChorusProcessor>(), 0.45f); }, "Chorus");
     registry.registerType ("StringEnsemble", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<StringEnsembleProcessor>(), 0.18f); }, "Chorus");
-    registry.registerType ("Vibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<VibratoProcessor>(); }, "Flanger/Vibrato");
-    registry.registerType ("Flanger", EffectRegistry::Category::modulation, [] { return std::make_unique<FlangerProcessor>(); }, "Flanger/Vibrato");
+    registry.registerType ("Vibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<VibratoProcessor>(); }, "Vibrato");
+    registry.registerType ("Flanger", EffectRegistry::Category::modulation, [] { return std::make_unique<FlangerProcessor>(); }, "Flanger");
+    // BBD flanger pedals (Source/Effects/Modulation/Flanger, docs/circuits/*Flanger*.md) and the algorithmic ones.
+    registry.registerType ("MXR117StyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::mxr117), 470000.0), 1.56f); }, "Flanger");
+    registry.registerType ("ElectricMistressStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::electricMistress), 130000.0), 6.65f); }, "Flanger");
+    registry.registerType ("BF2StyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::bf2), 407000.0), -2.48f); }, "Flanger");
+    registry.registerType ("ADAStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::ada), 500000.0), -3.31f); }, "Flanger");
+    registry.registerType ("TycobraheStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::tycobrahe), 377000.0), -2.75f); }, "Flanger");
+    registry.registerType ("EchoFlangerStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::echoFlanger), 100000.0), 0.15f); }, "Flanger");
+    registry.registerType ("FX75StyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::fx75), 470000.0), -0.54f); }, "Flanger");
+    registry.registerType ("FL301StyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::fl301), 510000.0), -2.66f); }, "Flanger");
+    registry.registerType ("ThroughZeroFlanger", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<AlgorithmicFlangerProcessor> (AlgorithmicFlanger::throughZero), 0.0f); }, "Flanger");
+    registry.registerType ("BarberpoleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<AlgorithmicFlangerProcessor> (AlgorithmicFlanger::barberpole), 0.0f); }, "Flanger");
+    registry.registerType ("InstantFlanger", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<AlgorithmicFlangerProcessor> (AlgorithmicFlanger::instant), 0.0f); }, "Flanger");
+    registry.registerType ("EnvelopeFlanger", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<AlgorithmicFlangerProcessor> (AlgorithmicFlanger::envelope), 0.0f); }, "Flanger");
     registry.registerType ("Phaser", EffectRegistry::Category::modulation, [] { return std::make_unique<PhaserProcessor>(); }, "Phase/Vibe");
     registry.registerType ("Rotary", EffectRegistry::Category::modulation, [] { return std::make_unique<RotaryProcessor>(); }, "Phase/Vibe");
     registry.registerType ("UniVibe", EffectRegistry::Category::modulation, [] { return std::make_unique<UniVibeProcessor>(); }, "Phase/Vibe");
@@ -759,7 +774,7 @@ juce::StringArray EffectRegistry::subcategoriesForCategory (Category category) c
         { Category::overdriveBoost, { "Overdrive", "Booster", "Bass" } },
         { Category::fuzz,           { "Big Muff", "Fuzz Face", "Tone Bender" } },
         { Category::dynamics,       { "Compressor", "Gate" } },
-        { Category::modulation,     { "Chorus", "Flanger/Vibrato", "Phase/Vibe", "Tremolo", "Pitch" } },
+        { Category::modulation,     { "Chorus", "Flanger", "Vibrato", "Phase/Vibe", "Tremolo", "Pitch" } },
         { Category::delay,          { "Digital", "Analog", "Tape", "Multi-Tap", "Special" } },
         { Category::reverb,         { "Spring", "Plate", "Room/Hall", "Ambient", "Special" } },
         { Category::pitchFilter,    { "EQ", "Filter", "Pitch" } },
