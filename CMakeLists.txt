@@ -255,7 +255,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/DualDelayProcessor.cpp
   Source/Effects/MultiTapDelayProcessor.cpp
   Source/Effects/TremoloProcessor.cpp
-  Source/Effects/ChorusProcessor.cpp
+  Source/Effects/Modulation/Chorus/ChorusProcessor.cpp
   Source/Effects/VibratoProcessor.cpp
   Source/Effects/FlangerProcessor.cpp
   Source/Effects/PhaserProcessor.cpp

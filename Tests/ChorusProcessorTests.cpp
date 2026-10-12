@@ -1,4 +1,4 @@
-#include "Effects/ChorusProcessor.h"
+#include "Effects/Modulation/Chorus/ChorusProcessor.h"
 
 #include <juce_core/juce_core.h>
 

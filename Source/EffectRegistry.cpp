@@ -103,7 +103,7 @@
 #include "Effects/DualDelayProcessor.h"
 #include "Effects/MultiTapDelayProcessor.h"
 #include "Effects/TremoloProcessor.h"
-#include "Effects/ChorusProcessor.h"
+#include "Effects/Modulation/Chorus/ChorusProcessor.h"
 #include "Effects/VibratoProcessor.h"
 #include "Effects/FlangerProcessor.h"
 #include "Effects/PhaserProcessor.h"
@@ -654,9 +654,9 @@ void registerBuiltInEffects (EffectRegistry& registry)
 
     // Phase 3: Modulation.
     registry.registerType ("Tremolo", EffectRegistry::Category::modulation, [] { return std::make_unique<TremoloProcessor>(); }, "Tremolo");
-    registry.registerType ("Chorus", EffectRegistry::Category::modulation, [] { return std::make_unique<ChorusProcessor>(); }, "Chorus/Flanger");
-    registry.registerType ("Vibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<VibratoProcessor>(); }, "Chorus/Flanger");
-    registry.registerType ("Flanger", EffectRegistry::Category::modulation, [] { return std::make_unique<FlangerProcessor>(); }, "Chorus/Flanger");
+    registry.registerType ("Chorus", EffectRegistry::Category::modulation, [] { return std::make_unique<ChorusProcessor>(); }, "Chorus");
+    registry.registerType ("Vibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<VibratoProcessor>(); }, "Flanger/Vibrato");
+    registry.registerType ("Flanger", EffectRegistry::Category::modulation, [] { return std::make_unique<FlangerProcessor>(); }, "Flanger/Vibrato");
     registry.registerType ("Phaser", EffectRegistry::Category::modulation, [] { return std::make_unique<PhaserProcessor>(); }, "Phase/Vibe");
     registry.registerType ("Rotary", EffectRegistry::Category::modulation, [] { return std::make_unique<RotaryProcessor>(); }, "Phase/Vibe");
     registry.registerType ("UniVibe", EffectRegistry::Category::modulation, [] { return std::make_unique<UniVibeProcessor>(); }, "Phase/Vibe");
@@ -738,7 +738,7 @@ juce::StringArray EffectRegistry::subcategoriesForCategory (Category category) c
         { Category::overdriveBoost, { "Overdrive", "Booster", "Bass" } },
         { Category::fuzz,           { "Big Muff", "Fuzz Face", "Tone Bender" } },
         { Category::dynamics,       { "Compressor", "Gate" } },
-        { Category::modulation,     { "Chorus/Flanger", "Phase/Vibe", "Tremolo", "Pitch" } },
+        { Category::modulation,     { "Chorus", "Flanger/Vibrato", "Phase/Vibe", "Tremolo", "Pitch" } },
         { Category::delay,          { "Digital", "Analog", "Tape", "Multi-Tap", "Special" } },
         { Category::reverb,         { "Spring", "Plate", "Room/Hall", "Ambient", "Special" } },
         { Category::pitchFilter,    { "EQ", "Filter", "Pitch" } },

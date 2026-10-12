@@ -76,6 +76,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   MesaBass400PlusStyleAmplifierProcessorTests.cpp
   Acoustic360StyleAmplifierProcessorTests.cpp
   ChannelKnobMemoryTests.cpp
+  BucketBrigadeDelayTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
