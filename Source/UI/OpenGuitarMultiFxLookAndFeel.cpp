@@ -4,6 +4,9 @@
 
 namespace openguitarmultifx
 {
+// The fallback accent, used until the first applySnapshotAccent() call
+// moves it to the live snapshot's colour (see the header).
+juce::Colour OpenGuitarMultiFxLookAndFeel::appAccent { 0xff42a2c8 };
 
 OpenGuitarMultiFxLookAndFeel::OpenGuitarMultiFxLookAndFeel()
 {
@@ -26,42 +29,54 @@ OpenGuitarMultiFxLookAndFeel::OpenGuitarMultiFxLookAndFeel()
     // is pulled from that same near-black family instead, with one shared
     // accent (getAppAccentColour(), already what the rotary knobs render
     // in by default) for anything interactive that needs to stand out.
-    const auto accent  = getAppAccentColour();
     const auto widget  = juce::Colour (0xff262626); // buttons/comboboxes/fields -- one step up from panel bg, reads as "raised"
     const auto outline = juce::Colour (0xff3c3c3c); // resting border for the above
 
     setColour (juce::ResizableWindow::backgroundColourId, juce::Colour (0xff141414));
 
     setColour (juce::TextButton::buttonColourId, widget);
-    setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.35f));
     setColour (juce::TextButton::textColourOnId, juce::Colours::white);
     setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     setColour (juce::ComboBox::backgroundColourId, widget);
     setColour (juce::ComboBox::outlineColourId, outline);
     setColour (juce::ComboBox::textColourId, juce::Colours::white);
 
-    setColour (juce::Slider::rotarySliderFillColourId, accent);
     setColour (juce::Slider::rotarySliderOutlineColourId, outline);
-    setColour (juce::Slider::thumbColourId, accent);
     setColour (juce::Slider::textBoxTextColourId, juce::Colours::white);
     setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff1a1a1a));
     setColour (juce::Slider::textBoxOutlineColourId, outline);
 
-    setColour (juce::ToggleButton::tickColourId, accent);
     setColour (juce::ToggleButton::tickDisabledColourId, juce::Colours::grey);
     setColour (juce::ToggleButton::textColourId, juce::Colours::white);
 
-    setColour (juce::ScrollBar::thumbColourId, accent);
-
     setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff1e1e1e));
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, accent.withAlpha (0.3f));
     setColour (juce::PopupMenu::textColourId, juce::Colours::white);
+
+    applyAccentColours();
+}
+
+void OpenGuitarMultiFxLookAndFeel::applyAccentColours()
+{
+    const auto accent = appAccent;
+
+    setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.35f));
+    setColour (juce::Slider::rotarySliderFillColourId, accent);
+    setColour (juce::Slider::thumbColourId, accent);
+    setColour (juce::ToggleButton::tickColourId, accent);
+    setColour (juce::ScrollBar::thumbColourId, accent);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, accent.withAlpha (0.3f));
 
     // Default for the per-button accent override (see the header) -- any
     // button that hasn't had accentColourId set on it, or on a parent,
     // resolves here via Component::findColour()'s walk-up-to-LookAndFeel
     // fallback.
     setColour (accentColourId, accent);
+}
+
+void OpenGuitarMultiFxLookAndFeel::setAppAccentColour (juce::Colour colour)
+{
+    appAccent = colour;
+    applyAccentColours();
 }
 
 juce::Typeface::Ptr OpenGuitarMultiFxLookAndFeel::getTypefaceForFont (const juce::Font& font)

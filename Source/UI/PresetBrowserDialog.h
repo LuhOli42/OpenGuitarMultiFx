@@ -45,6 +45,10 @@ public:
 
     /** Fires when a preset tile is tapped (load this preset). */
     std::function<void (juce::String presetName)> onPresetChosen;
+    /** The 'New' button in the title row (moved here off the top bar per user
+        request 2026-10-12: "na tab de presets, do lado do all") -- the owner
+        clears the board to a fresh unnamed preset, asking to save first. */
+    std::function<void()> onNewRequested;
     /** Fires when the user taps Save with a name typed in. */
     std::function<void (juce::String presetName)> onSaveRequested;
     /** Management actions routed back to the owner because they prompt and/or
@@ -137,6 +141,7 @@ private:
 
     juce::Label titleLabel;
     juce::TextButton allModeButton { "All" }, bankModeButton { "Banks" }, setlistModeButton { "Setlists" };
+    juce::TextButton newPresetButton { "New" };
 
     // All-mode filter row
     juce::TextEditor searchField;

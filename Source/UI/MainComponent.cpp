@@ -127,9 +127,6 @@ MainComponent::MainComponent()
     addAndMakeVisible (presetBadge);
     presetBadge.onClicked = [this] { showPresetsPanel(); };
 
-    addAndMakeVisible (newPresetButton);
-    newPresetButton.onClick = [this] { newPresetAskingToSave(); };
-
     // The A-H snapshot strip: tap a letter to recall that snapshot (see
     // selectSnapshot()). Shown from the start -- an unsaved chain still has
     // an active snapshot, same as a hardware pedalboard before you save.
@@ -311,6 +308,10 @@ MainComponent::MainComponent()
         audioEngine.getDeviceManager().setMidiInputDeviceEnabled (midiInput.identifier, true);
         audioEngine.getDeviceManager().addMidiInputDeviceCallback (midiInput.identifier, this);
     }
+
+    // Snapshot A's colour owns the accent from launch -- no updatePresetDisplay()
+    // runs this early (it would also clobber the audio-device warning above).
+    applySnapshotAccent();
 }
 
 MainComponent::~MainComponent()
@@ -1107,6 +1108,17 @@ void MainComponent::showPresetsPanel()
         loadPresetAskingToSave (name);
     };
 
+    dialog->onNewRequested = [this, browser]
+    {
+        // The save-or-discard prompt stacks on top of the browser like
+        // every other card; refresh so a just-cleared board shows nothing
+        // highlighted (and stays browsable for the new board's first save).
+        juce::Component::SafePointer<PresetBrowserDialog> safeBrowser (browser);
+        newPresetAskingToSave();
+        if (safeBrowser != nullptr)
+            safeBrowser->refresh();
+    };
+
     dialog->onDeleteRequested = [this] (juce::String name)
     {
         overlayHost.pushOverlay (std::make_unique<ChoiceCard> (
@@ -1471,6 +1483,10 @@ void MainComponent::showSnapshotMenu (int index)
         const auto colour = snapshotxml::defaultColourFor (c);
         colours.addColouredItem (101 + c, colourNames[c], colour, true, snapshots[(size_t) index].colour == colour.toString());
     }
+    // Any colour, not just the eight defaults ("seria legal dar pra
+    // personalizar qual cor de cada snapshot"): a ColourSelector card like
+    // every other popup in the app.
+    colours.addItem (150, "Custom colour...");
 
     juce::PopupMenu copyTo;
     for (int t = 0; t < snapshotxml::maxSnapshots; ++t)
@@ -1483,7 +1499,8 @@ void MainComponent::showSnapshotMenu (int index)
     menu.addSubMenu ("Colour", colours);
     menu.addSubMenu ("Copy to", copyTo);
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapshotBar),
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapshotBar)
+                                                   .withStandardItemHeight (touch::minTapTarget),
                         [this, index, alive = aliveFlag] (int result)
     {
         if (! alive->load() || result == 0)
@@ -1496,6 +1513,18 @@ void MainComponent::showSnapshotMenu (int index)
                 [this, index] (juce::String newName)
                 {
                     snapshots[(size_t) index].name = newName;
+                    overlayHost.popOverlay();
+                    updatePresetDisplay();
+                },
+                [this] { overlayHost.popOverlay(); }));
+        }
+        else if (result == 150)
+        {
+            overlayHost.pushOverlay (std::make_unique<ColourPickerCard> (
+                "Colour for snapshot " + snapshotxml::letterFor (index), colourOfSnapshot (index),
+                [this, index] (juce::Colour colour)
+                {
+                    snapshots[(size_t) index].colour = colour.toString();
                     overlayHost.popOverlay();
                     updatePresetDisplay();
                 },
@@ -1518,6 +1547,27 @@ juce::Colour MainComponent::colourOfSnapshot (int index) const
 {
     const auto& hex = snapshots[(size_t) index].colour;
     return hex.isNotEmpty() ? juce::Colour::fromString (hex) : snapshotxml::defaultColourFor (index);
+}
+
+void MainComponent::applySnapshotAccent()
+{
+    const auto colour = colourOfSnapshot (currentSnapshot);
+
+    // The app's primary colour tracks the live snapshot ("a cor principal
+    // tbm pode estar atrelada ao snapshot q estarmos"): knob fill, scrollbar
+    // thumbs, button borders that have no per-effect override, popup
+    // highlight, meter fill -- every accent read happens inside paint() or
+    // findColour(), so one repaint is all it takes to switch themes.
+    if (auto* laf = dynamic_cast<OpenGuitarMultiFxLookAndFeel*> (&juce::LookAndFeel::getDefaultLookAndFeel()))
+        laf->setAppAccentColour (colour);
+
+    const auto& name = snapshots[(size_t) currentSnapshot].name;
+    footerBar.setActiveSnapshot (snapshotxml::letterFor (currentSnapshot)
+                                     + (name.isNotEmpty() ? juce::String (" ") + juce::String::fromUTF8 ("\xc2\xb7") + " " + name
+                                                          : juce::String()),
+                                 colour);
+
+    repaint();
 }
 
 bool MainComponent::snapshotVaries (EffectProcessor* processor, juce::AudioParameterFloat* param) const
@@ -1696,6 +1746,7 @@ void MainComponent::updatePresetDisplay()
                             : "No preset loaded",
                          juce::dontSendNotification);
     quickSaveButton.setVisible (currentPresetName.isNotEmpty());
+    applySnapshotAccent();
     resized(); // quickSaveButton's visibility changes how much room titleLabel gets
 }
 
@@ -2023,8 +2074,6 @@ void MainComponent::resized()
     // A little wider than it used to be -- the badge draws number+letter
     // ("12B") now, not just a bare number.
     presetBadge.setBounds (top.removeFromLeft (88));
-    top.removeFromLeft (8);
-    newPresetButton.setBounds (top.removeFromLeft (60).withSizeKeepingCentre (60, touch::minTapTarget));
     top.removeFromLeft (8);
     // The A-H snapshot strip, one minTapTarget cell per snapshot.
     snapshotBar.setBounds (top.removeFromLeft (snapshotxml::maxSnapshots * touch::minTapTarget)

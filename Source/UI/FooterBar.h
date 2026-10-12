@@ -63,6 +63,15 @@ public:
     /** Reflects a restored master level into the knob without re-firing onMasterGainChanged. */
     void setMasterGainDb (float db);
 
+    /** The active snapshot's identity, for the colour strip along this
+        bar's top edge: user request 2026-10-12 -- "na barra q tem o bpm eq
+        tuner, ela ter uma faixa indicar pela cor qual snapshot ela ta".
+        `label` is what the tab at the strip's left end shows (the letter,
+        plus the snapshot's name when it has one); `colour` is the
+        snapshot's resolved colour. This class still knows nothing about
+        snapshots -- it draws what it's given. */
+    void setActiveSnapshot (const juce::String& label, juce::Colour colour);
+
 private:
     void tapTempo();
     void updateMasterReadout();
@@ -81,6 +90,10 @@ private:
     std::vector<double> recentTapIntervalsMs;
 
     float masterDb = 0.0f;
+
+    // The snapshot colour strip's content -- see setActiveSnapshot().
+    juce::String snapshotLabel;
+    juce::Colour snapshotColour;
 
     juce::Rectangle<float> inMeterBounds, outMeterBounds;
 

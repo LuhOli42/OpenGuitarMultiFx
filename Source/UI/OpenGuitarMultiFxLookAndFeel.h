@@ -58,15 +58,23 @@ public:
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour& backgroundColour,
                                 bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
 
-    /** The app's one DEFAULT accent colour -- the knob fill/pointer colour
+    /** The app's CURRENT accent colour -- the knob fill/pointer colour
         (Slider::rotarySliderFillColourId, set in the .cpp) and the drawer's
         scrollbar thumb, and drawButtonBackground()'s fallback border when a
-        button hasn't been given its own accentColourId (see below). Kept
-        distinct from any effect's own category colour so generic chrome
-        (outside a selected block's drawer) doesn't borrow a colour that
-        would look like it belongs to whichever effect happened to be
-        selected last. */
-    static juce::Colour getAppAccentColour() noexcept { return juce::Colour (0xff42a2c8); }
+        button hasn't been given its own accentColourId (see below). It
+        follows the active snapshot's colour (user request 2026-10-12: "a cor
+        principal tbm pode estar atrelada ao snapshot q estarmos") --
+        MainComponent::applySnapshotAccent() calls setAppAccentColour()
+        whenever the snapshot changes or its colour is edited. Default until
+        then is the original blue 0xff42a2c8. */
+    static juce::Colour getAppAccentColour() noexcept { return appAccent; }
+
+    /** Repaints the app accent: rewrites the static store above AND every
+        accent-derived colour ID on this LookAndFeel (rotary fill, thumb,
+        tick, scrollbar, popup highlight, the default accentColourId), so
+        components that repaint after this resolve the new colour through
+        their normal findColour() path. Caller repaints. */
+    void setAppAccentColour (juce::Colour colour);
 
     /** Per-button accent override -- ParameterPanel sets this to the
         selected processor's own getAccentColour() on its drawer buttons
@@ -84,7 +92,12 @@ public:
     };
 
 private:
+    /** Re-applies every accent-derived colour ID (see the constructor and
+        setAppAccentColour()). */
+    void applyAccentColours();
+
     juce::Typeface::Ptr regular, bold, extraBold;
+    static juce::Colour appAccent;
 };
 
 } // namespace openguitarmultifx
