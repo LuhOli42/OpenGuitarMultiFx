@@ -590,7 +590,8 @@ void ENGLPowerballStyleAmplifierProcessor::recover (Channel& ch) const
     ch.mwDcPrev = reducedOrder ? 0.0 : ch.tone.voltage (ch.tMasterWiper);
     ch.mwDcOut = 0.0;
     {
-        const NodalCircuit::Node taps[] = { ch.tTone, ch.tPlateU6b, ch.tPlateU7a, ch.tPlateU7b };
+        // Same taps as process(): every channel reads U7B's plate (shared post-EQ recovery path).
+        const NodalCircuit::Node taps[] = { ch.tPlateU7b, ch.tPlateU7b, ch.tPlateU7b, ch.tPlateU7b };
         for (int t = 0; t < 4; ++t)
         {
             ch.tapDcPrev[t] = (reducedOrder ? ch.tone.voltage (ch.tTone) : ch.tone.voltage (taps[t])) - ch.toneTapDc[t];
@@ -834,9 +835,12 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         ch.tone.setSource (ch.tSrcPre, 0.0);
         ch.tone.solveSample();
         ch.plateDcU7b = reducedOrder ? 0.0 : ch.tone.voltage (ch.tPlateU7b);
+        // All four channel taps read U7B (the shared recovery path), so every tap's DC
+        // baseline is that plate: seeding them from different nodes made the first sample
+        // of each DC blocker a large offset transient (startup pop on Clean/Crunch/Lead).
         ch.toneTapDc[0] = ch.tone.voltage (ch.tTone);
-        ch.toneTapDc[1] = reducedOrder ? ch.toneTapDc[0] : ch.tone.voltage (ch.tPlateU6b);
-        ch.toneTapDc[2] = reducedOrder ? ch.toneTapDc[0] : ch.tone.voltage (ch.tPlateU7a);
+        ch.toneTapDc[1] = reducedOrder ? ch.toneTapDc[0] : ch.plateDcU7b;
+        ch.toneTapDc[2] = reducedOrder ? ch.toneTapDc[0] : ch.plateDcU7b;
         ch.toneTapDc[3] = reducedOrder ? ch.toneTapDc[0] : ch.plateDcU7b;
         if (! reducedOrder)
             ch.power.solveSample();

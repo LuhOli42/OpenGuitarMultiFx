@@ -638,7 +638,10 @@ double DualRectifierStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     // operating point the way the full model's bias trim does.
     const double feel = juce::jlimit (0.0, 1.0, (double) lastKnobs.tubeFeel);
     const double bias = juce::jlimit (0.0, 1.0, (double) lastKnobs.bias);
-    ch.bmRail = bmSagRail[0] - feel * spongySag * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
+    // Spongy drops the idle rail to railNow (tube rectifier's lower B+); the sag depth scales
+    // with it so Bold keeps byte-identical behavior when railNow == bmSagRail[0].
+    const double railScale = railNow / bmSagRail[0];
+    ch.bmRail = railNow - feel * spongySag * railScale * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double shift = 0.6 * (bias - 0.5) * k;
