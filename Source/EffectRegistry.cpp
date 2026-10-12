@@ -48,6 +48,7 @@
 #include "Effects/GibsonEH150StyleAmplifierProcessor.h"
 #include "Effects/GarnetHerzogStyleAmplifierProcessor.h"
 #include "Effects/RiveraKnuckleheadStyleAmplifierProcessor.h"
+#include "Effects/DiezelStyleAmplifierProcessor.h"
 #include "Effects/CarrRamblerStyleAmplifierProcessor.h"
 #include "Effects/DividedBy13FTR37StyleAmplifierProcessor.h"
 #include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
@@ -568,6 +569,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     RiveraKnuckleheadStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("RiveraKnuckleheadStyleAmplifier");
     registry.registerType ("RiveraKnuckleheadStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<RiveraKnuckleheadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 12.77f); }, "High-Gain");
+    // Diezel VH4 (docs/circuits/Diezel.md): four channel netlists (Clean / Crunch / Mega / Lead,
+    // progressively hotter), LTP PI, 4xKT77, global NFB with Presence + Deep. reducedOrder power stage;
+    // the preamp nets are per-channel so only the selected channel solves per sample.
+    DiezelStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DiezelStyleAmplifier");
+    registry.registerType ("DiezelStyleAmplifier", EffectRegistry::Category::guitarAmps, [] { return trimmedLimited (oversampled<DiezelStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 29.56f); }, "High-Gain");
     // Carr Rambler (docs/circuits/CarrRambler.md): blackface-like single-channel preamp, LTP PI, cathode-biased
     // 2x6L6GC, zero global feedback, bias-vary tremolo, pentode/triode switch. reducedOrder behavioral power stage.
     CarrRamblerStyleAmplifierProcessor::reducedOrder = true;

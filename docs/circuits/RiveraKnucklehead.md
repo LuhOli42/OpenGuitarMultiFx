@@ -43,13 +43,19 @@ Tubes: Koren ECC83 for all 12AX7A sections; Koren 6L6GC pair set for the output 
 
 | Param | Real control |
 |---|---|
-| Channel | Clean / Lead selector (the amp's channel relays) |
+| Channel | Clean / Crunch / Lead selector (CH1 / CH2 / CH3 — the amp's channel relays) |
 | Volume | CH1 Volume |
-| Gain | CH2 Gain |
+| Gain | CH2/CH3 Gain |
 | Treble / Middle / Bass | the tone controls (drives the selected channel's own stack) |
 | Master | channel masters |
 | Presence | Presence (HF negative-feedback lift) |
 | Focus | Focus (LF negative-feedback lift) |
+| Bright | CH1 Treble pull-Bright (C107-style 120 pF across the treble control) |
+| Notch | CH1 Middle pull-Notch (mid-range notch shunt) |
+| Contour | CH1 Bass pull-Contour |
+| Scoop | CH2/CH3 Middle pull-Scoop |
+| Boost | CH1 Master push-Boost (extra clean triode stage) |
+| Ninja | CH2/CH3 Master pull-Ninja Boost — the LDR-switched V3B triode stage (always engaged on CH3) |
 
 Page 2 (synthetic): Power Drive, Bias (the fixed-bias trimmer), Tube Feel, Speaker (4/8/16 Ω on the 16 Ω tap),
 Output.
@@ -58,8 +64,11 @@ Output.
 
 - **Reverb is not modelled** — the real spring tank (V3A driver / recovery) is documented but out of scope; use the
   chain's own reverb block after the amp.
-- **Ninja boost and CH3 voicing** are not modelled.
-- Both channels' EQs are driven by one set of T/M/B params (the real amp has two 3-knob rows; the knobs track).
+- CH3 is voiced as the Ninja-always-on variant of CH2 (TRE behaviour; the FS-7 routes Ninja to CH2 only).
+- All channels' EQs are driven by one set of T/M/B params (the real amp has one tone row per channel; the knobs track).
+- The pull-switch functions are modelled at their switch positions (bright cap, mid notch/scoop shunts, bass contour,
+  the V3B ninja triode); the CH2 gain-pot PULL NOTCH (C105) is folded into Scoop's voicing rather than given a
+  separate eighth switch.
 - Focus's exact cap value is estimated (the drawing's area is ambiguous); its topology — an LF version of the
   presence shunt — matches Rivera's description of Focus as "low-frequency damping".
 - The NFB secondary winding sense follows the Twin Reverb model's convention; verified stable in the silence test.
@@ -69,3 +78,4 @@ Output.
 - Rails ≈ 460 / 445 V; PI plates ~230–260 V; bias ≈ −47 V; matched pair idle ~50–80 mA per pair.
 - The NFB loop is stable at all settings (silence AC RMS < 0.01 on both channels).
 - Lead channel out-gains the clean channel at matched settings; Presence lifts HF, Focus lifts LF.
+- CH1 Boost and CH2 Ninja each add a stage's worth of gain (>1.5× RMS in the sweep test).

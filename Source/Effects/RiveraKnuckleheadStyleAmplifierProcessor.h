@@ -24,10 +24,14 @@ namespace openguitarmultifx
          global negative-feedback loop the Knucklehead runs, carrying the Presence and Focus controls;
       3. the solid-state bridge supply (~460 / 445 / 318 / ~250 V nodes; the real amp's TP12/TP4/TP5 marks).
 
-    Controls, page 1: Channel (Clean / Lead), Volume (CH1), Gain (CH2), Treble, Middle, Bass, Master, Presence, Focus.
+    Controls, page 1: Channel (Clean / Crunch / Lead -- the KR100T is three-channel), Volume (CH1), Gain (CH2/CH3),
+    Treble, Middle, Bass, Master, Presence, Focus, and the pull-switches the real pots carry: Bright (CH1 treble
+    pull), Notch (CH1 middle pull), Contour (CH1 bass pull), Scoop (CH2/CH3 middle pull), Boost (CH1 master push)
+    and Ninja (CH2/CH3 master pull -- on CH3 the extra stage is always in, so Ninja is a no-op there, matching
+    the FS-7's channel-2-only wiring).
     Page 2 (synthetic): Power Drive (a master ahead of the phase inverter), Bias (the fixed-bias trimmer), Tube Feel
-    (supply sag), Speaker (4 / 8 / 16 ohm on the 16 ohm tap), Output. The spring reverb, Ninja boost and CH3 voicing
-    are documented simplifications.
+    (supply sag), Speaker (4 / 8 / 16 ohm on the 16 ohm tap), Output. The spring reverb is a documented
+    simplification.
 */
 class RiveraKnuckleheadStyleAmplifierProcessor : public EffectProcessor
 {
@@ -60,6 +64,7 @@ public:
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
     enum class Probe { cleanPlate1, cleanCath1, leadPlate1, leadCath1, leadPlate2, leadPlate3, cleanOut, leadOut,
+                       boostPlateC, boostPlateL,
                        piPlateA, piPlateB, piCathode, powerGridA, powerGridB, powerPlateA, powerPlateB, speaker,
                        biasNode, nfb };
     double debugVoltage (Probe p) const noexcept;
@@ -94,6 +99,11 @@ private:
         int rTrebleTopL = 0, rTrebleBotL = 0, rBassL = 0, rMidL = 0;
         NodalCircuit::Node pPlateC1 = 0, pKC1 = 0, pPlateC4 = 0, pKC4 = 0, pOutClean = 0;
         NodalCircuit::Node pPlateL1 = 0, pKL1 = 0, pPlateL2 = 0, pKL2 = 0, pPlateL3 = 0, pKL3 = 0, pOutLead = 0;
+        // pull-switch elements: CH1 bright cap across the volume pot, mid-notch bleed (CH1) and mid-scoop
+        // bleed (CH2/CH3) parallel resistors, CH1 contour cap; boost stages are switched by series/output R
+        int capBrightC = 0, capBrightL = 0, rNotchC = 0, capContourC = 0, rScoopL = 0, capNotchL = 0;
+        int rBoostDirectC = 0, rBoostOutC = 0, rBoostDirectL = 0, rBoostOutL = 0;
+        NodalCircuit::Node pPlateBC = 0, pKBC = 0, pPlateBL = 0, pKBL = 0;
         double outDcClean = 0.0, outDcLead = 0.0;
 
         // power section
@@ -124,8 +134,9 @@ private:
     struct Knobs
     {
         double volume, gain, treble, middle, bass, master, presence, focus, powerDrive, bias, tubeFeel;
+        bool bright, notch, contour, scoop, boost, ninja; // the pot pull-switches
         int speaker;  // 0 = 4 ohm, 1 = 8, 2 = 16
-        int channel;  // 0 = clean, 1 = lead
+        int channel;  // 0 = clean, 1 = crunch (CH2), 2 = lead (CH3)
     };
     void updatePots (const Knobs& k);
     void recover (Channel& ch) const;
@@ -154,6 +165,12 @@ private:
     juce::AudioParameterFloat* middleParam = nullptr;
     juce::AudioParameterFloat* bassParam = nullptr;
     juce::AudioParameterFloat* masterParam = nullptr;
+    juce::AudioParameterFloat* brightParam = nullptr;
+    juce::AudioParameterFloat* notchParam = nullptr;
+    juce::AudioParameterFloat* contourParam = nullptr;
+    juce::AudioParameterFloat* scoopParam = nullptr;
+    juce::AudioParameterFloat* boostParam = nullptr;
+    juce::AudioParameterFloat* ninjaParam = nullptr;
     juce::AudioParameterFloat* presenceParam = nullptr;
     juce::AudioParameterFloat* focusParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
@@ -164,6 +181,9 @@ private:
 
     juce::SmoothedValue<float> smoothedVolume, smoothedGain, smoothedTreble, smoothedMiddle, smoothedBass, smoothedMaster,
         smoothedPresence, smoothedFocus, smoothedPower, smoothedBias, smoothedFeel, smoothedOutput;
+    // pull-switches are relays in the real amp: plain bools, no smoothing (the netside changes are capacitor/resistor
+    // swaps gated through the control-rate updatePots, which already debounces a live flip)
+    int appliedChannelSwitches = -1;
 
     void forceReprepare()
     {
