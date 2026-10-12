@@ -24,7 +24,7 @@ negative-feedback loop.
   150 k grid leaks to the −47 V bias node, 1 k stoppers.
 - **Power**: 4× 6L6GC as two paralleled pairs, cathodes to ground, screens ~445 V; global negative feedback from the
   speaker terminal through 47 k (R201) into the PI tail's feedback node — carrying **Presence** (VR112 25 k + C203
-  .1 µF) and **Focus** (VR111 250 k + a larger cap, the low-frequency counterpart).
+  .1 µF) and **Focus** (VR111 250 k, described as low-frequency damping).
 - **Supply**: solid-state bridge → ~460 V plates → screens; TP marks as above.
 
 ## What is modelled
@@ -38,8 +38,9 @@ Three blocks, same structure as the Trainwreck Express model:
    Ninja-always-in lead channel.
 2. `power` — V5 LTP exactly as drawn → 4× 6L6GC (two pair-models) → ~1k8 centre-tapped OT → 16 Ω tap → speaker
    model. NFB from the speaker node through 47 k into the tail feedback node; Presence = variable R + .1 µF shunt
-   on the feedback node (HF), Focus = variable R + 2.2 µF shunt (LF). Knob up = more feedback removed = more of that
-   band in the output.
+   on the feedback node (HF), Focus = VR111 + 2.2 µF + a behavioral 10 H inductor in series to ground. This forms
+   a series-resonant LF shunt, with `f0 = 1/(2π√LC)` (about 33.9 Hz for these modeled values). The cap blocks DC.
+   Knob up = more feedback removed = more LF in the output.
 3. `supply` — SS bridge → 100 µF reservoir → 500 R screens → RC-filtered PI (~318 V) and preamp (~250 V) taps.
 
 Tubes: Koren ECC83 for all 12AX7A sections; Koren 6L6GC pair set for the output pairs.
@@ -74,8 +75,10 @@ Output.
 - The pull-switch functions are modelled at their switch positions (bright cap, mid notch/scoop shunts, bass contour,
   the V3B ninja triode); the CH2 gain-pot PULL NOTCH (C105) is folded into Scoop's voicing rather than given a
   separate eighth switch.
-- Focus's exact cap value is estimated (the drawing's area is ambiguous); its topology — an LF version of the
-  presence shunt — matches Rivera's description of Focus as "low-frequency damping".
+- Focus's 2.2 µF capacitor and behavioral inductive element are a modeling choice, not a traced topology; the
+  schematic area is ambiguous. A plain series-RC shunt cannot select LF: its capacitor opens at low frequency and
+  increasingly shunts highs as frequency rises. The series inductor makes the modeled shunt resonant and LF-selective;
+  the capacitor also blocks DC through the PI-tail feedback node.
 - The NFB secondary winding sense follows the Twin Reverb model's convention; verified stable in the silence test.
 
 ## Verification targets

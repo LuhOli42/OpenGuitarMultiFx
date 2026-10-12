@@ -14,9 +14,12 @@ drive stage -> 4049 CMOS-inverter clipping (the "Microtubes" engine) -> clean/we
 
 ## What is modelled (block A..D netlists)
 
-- **A**: input coupling + follower, then three pre-clip shaping networks: Grunt (a switched series-RC
-  HF-bleed -> relative bass boost), Attack (3-way: series-R+shunt-C treble cut / flat / bright-cap
-  treble shelf), and the drive op-amp (saturating TL072 macro, gain ~6x..100x on the Drive pot).
+- **A**: input coupling + follower, then an estimated 2.2 kΩ series feed resistor into the pre-clip shaping
+  networks (the dry path still taps the buffer output). Grunt is an estimated 0.15 µF + switched-resistor
+  series-RC shunt at the drive input, bleeding highs for relative bass boost; the strongest-bleed 4.7 kΩ
+  position has a corner near 226 Hz. Attack (3-way: series-R + shunt-C treble cut / flat / bright-cap
+  treble shelf) follows the feed resistor, then the drive op-amp (saturating TL072 macro, gain ~6x..100x
+  on the Drive pot).
 - **B**: the CMOS clipper -- an inverting stage on the 4049-style macro (10k in / 220k fb, rails
   0.4..8.6 V = near rail-to-rail CMOS swing) plus the anti-parallel silicon diode shunt to the bias.
 - **C**: Blend (each leg through half a 47k track into the summing node) + 4-band EQ built on the
@@ -29,5 +32,5 @@ drive stage -> 4049 CMOS-inverter clipping (the "Microtubes" engine) -> clean/we
 - The real EQ uses dedicated gyrator op-amps per band inside the feedback of one summing amp; the
   model uses the project's folded-inductor equivalent of the same network (same impedance, fewer nodes).
 - Band sweep range is ~ +/-15 dB (the GE7-style network's natural depth) vs the quoted +/-12 dB.
-- The exact Grunt/Attack RC values are not published; they are voiced to the documented direction
-  (bass-shelf amount / treble cut-flat-boost) rather than traced values.
+- The Grunt/Attack RC values and the 2.2 kΩ feed resistor are estimates, not published/traced values; they
+  are voiced to the documented direction (bass-shelf amount / treble cut-flat-boost).
