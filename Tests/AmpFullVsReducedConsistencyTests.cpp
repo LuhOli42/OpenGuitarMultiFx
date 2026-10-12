@@ -10,6 +10,7 @@
 #include "Effects/CarrRamblerStyleAmplifierProcessor.h"
 #include "Effects/DeluxeReverbStyleAmplifierProcessor.h"
 #include "Effects/DividedBy13FTR37StyleAmplifierProcessor.h"
+#include "Effects/DiezelStyleAmplifierProcessor.h"
 #include "Effects/DualRectifierStyleAmplifierProcessor.h"
 #include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
 #include "Effects/ENGLPowerballStyleAmplifierProcessor.h"
@@ -377,7 +378,8 @@ public:
             { "dualrect",     4.0,  5.0, 0.0 }, { "evh5150",     12.0,  3.0, 0.0 },
             { "powerball",    7.0,  3.0, 0.0 }, { "rockerverb",  17.0,  8.0, 0.0 },
             { "eh150",       4.0,  7.0, 0.0 }, { "herzog",       4.0,  7.0, 0.0 },
-            { "knucklehead", 4.0, 12.0, 0.0 }, { "carr",         1.5,  5.0, 0.0 },
+            { "knucklehead", 4.0, 12.0, 0.0 }, { "diezel",       4.0,  6.0, 0.0 },
+            { "carr",        1.5,  5.0, 0.0 },
             { "ftr37",       4.0, 10.0, 0.0 }, { "dumble",       4.0,  9.0, 0.0 },
             { "sunn",        18.0, 15.0, 0.0 }, { "deliverance",  3.0, 12.0, 0.0 },
             { "uberschall",   3.0, 14.0, 0.0 }, { "b15",         3.0, 13.0, 0.0 },
@@ -577,6 +579,7 @@ public:
         AMP_ENTRY ("eh150",       GibsonEH150StyleAmplifierProcessor)
         AMP_ENTRY ("herzog",      GarnetHerzogStyleAmplifierProcessor)
         AMP_ENTRY ("knucklehead", RiveraKnuckleheadStyleAmplifierProcessor)
+        AMP_ENTRY ("diezel",      DiezelStyleAmplifierProcessor)
         AMP_ENTRY ("carr",        CarrRamblerStyleAmplifierProcessor)
         AMP_ENTRY ("ftr37",       DividedBy13FTR37StyleAmplifierProcessor)
         AMP_ENTRY ("dumble",      DumbleSteelStringStyleAmplifierProcessor)

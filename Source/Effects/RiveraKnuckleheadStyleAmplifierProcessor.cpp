@@ -88,15 +88,31 @@ RiveraKnuckleheadStyleAmplifierProcessor::RiveraKnuckleheadStyleAmplifierProcess
         return std::make_unique<juce::AudioParameterFloat> (px + id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
     auto channel = std::make_unique<juce::AudioParameterFloat> (
-        px + "channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        px + "channel", "Channel", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-        { return juce::roundToInt (v) == 0 ? juce::String ("Clean") : juce::String ("Lead"); }));
+        {
+            constexpr const char* names[] = { "Clean", "Crunch", "Lead" };
+            return juce::String (names[juce::jlimit (0, 2, juce::roundToInt (v))]);
+        }));
+    auto pull = [&] (const char* id, const char* name)
+    {
+        return std::make_unique<juce::AudioParameterFloat> (
+            px + id, name, juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+            { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    };
     auto volume = make ("volume", "Volume", 0.5f);
     auto gain = make ("gain", "Gain", 0.5f);
     auto treble = make ("treble", "Treble", 0.5f);
     auto middle = make ("middle", "Middle", 0.5f);
     auto bass = make ("bass", "Bass", 0.5f);
     auto master = make ("master", "Master", 0.8f);
+    auto bright = pull ("bright", "Bright");
+    auto notch = pull ("notch", "Notch");
+    auto contour = pull ("contour", "Contour");
+    auto scoop = pull ("scoop", "Scoop");
+    auto boost = pull ("boost", "Boost");
+    auto ninja = pull ("ninja", "Ninja");
     auto presence = make ("presence", "Presence", 0.5f);
     auto focus = make ("focus", "Focus", 0.5f);
     auto power = make ("power", "Power Drive", 1.0f);
@@ -117,6 +133,12 @@ RiveraKnuckleheadStyleAmplifierProcessor::RiveraKnuckleheadStyleAmplifierProcess
     middleParam = middle.get();
     bassParam = bass.get();
     masterParam = master.get();
+    brightParam = bright.get();
+    notchParam = notch.get();
+    contourParam = contour.get();
+    scoopParam = scoop.get();
+    boostParam = boost.get();
+    ninjaParam = ninja.get();
     presenceParam = presence.get();
     focusParam = focus.get();
     powerParam = power.get();
@@ -132,6 +154,12 @@ RiveraKnuckleheadStyleAmplifierProcessor::RiveraKnuckleheadStyleAmplifierProcess
     group->addChild (std::move (middle));
     group->addChild (std::move (bass));
     group->addChild (std::move (master));
+    group->addChild (std::move (bright));
+    group->addChild (std::move (notch));
+    group->addChild (std::move (contour));
+    group->addChild (std::move (scoop));
+    group->addChild (std::move (boost));
+    group->addChild (std::move (ninja));
     group->addChild (std::move (presence));
     group->addChild (std::move (focus));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("rivera_knucklehead_page2", "Page 2", "|", std::move (power));
@@ -200,8 +228,12 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
 
         // Rivera TMB (anode-driven, no cathode follower): 270 pF treble cap, 33k slope, .047 bass + .1 mid caps,
         // 250k audio treble, 250k linear bass, linear mid (50k CH1 / 25k CH2). Returns the treble wiper.
+        // The pull-switch elements are wired here so the pot values stay switchable: brightCap across the treble
+        // pot's top segment (C107 120 pF PULL BRIGHT on the drawing), notchR as a mid shunt to ground (the
+        // notched-midrange pull), contourCap paralleling the bass cap (CH1's bass pull, TRE variant).
         auto toneStack = [&] (NodalCircuit::Node drive, double midMax,
-                              int& rTrebleTop, int& rTrebleBot, int& rBass, int& rMid)
+                              int& rTrebleTop, int& rTrebleBot, int& rBass, int& rMid,
+                              int* capBright = nullptr, int* rNotch = nullptr, int* capContour = nullptr)
         {
             const auto tt = c.addNode(), tw = c.addNode(), tb = c.addNode(), x = c.addNode(), mt = c.addNode();
             c.addCapacitor (drive, tt, 270.0e-12);
@@ -212,6 +244,12 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
             c.addCapacitor (x, mt, 100.0e-9);
             rBass = c.addResistor (tb, mt, 125.0e3);
             rMid = c.addResistor (mt, gnd, midMax * 0.5);
+            if (capBright != nullptr)
+                *capBright = c.addCapacitor (tt, tw, 1.0e-15);
+            if (rNotch != nullptr)
+                *rNotch = c.addResistor (mt, gnd, 1.0e9);
+            if (capContour != nullptr)
+                *capContour = c.addCapacitor (x, tb, 1.0e-15);
             return tw;
         };
 
@@ -222,7 +260,8 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
             c.addCapacitor (ch.pPlateC1, d, 22.0e-9);
             ch.rVolTop = c.addResistor (d, w, 900.0e3);   // VR101 1MEG
             ch.rVolBot = c.addResistor (w, gnd, 100.0e3);
-            const auto tw = toneStack (w, 50.0e3, ch.rTrebleTopC, ch.rTrebleBotC, ch.rBassC, ch.rMidC);
+            const auto tw = toneStack (w, 50.0e3, ch.rTrebleTopC, ch.rTrebleBotC, ch.rBassC, ch.rMidC,
+                                       &ch.capBrightC, &ch.rNotchC, &ch.capContourC);
             // V4A recovery: 22k plate (R133), 1k5 + 22 uF cathode (R135/C124)
             const auto g4 = c.addNode();
             c.addResistor (tw, g4, 68.0e3);
@@ -237,7 +276,27 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
             c.setInitialGuess (c4k, 1.5);
             ch.pPlateC4 = c4p;
             ch.pKC4 = c4k;
-            c.addCapacitor (c4p, mc, 22.0e-9);
+            // CH1 master-push Boost (S102 on VR105 on the drawing): the extra triode stands in for the
+            // boost stage the relays route through -- the direct cap path is replaced, not summed. The
+            // stage runs the real amp's V4B half with a cold unbypassed 4k7 cathode: gain ~10, the manual's
+            // "subtler than Channel 2's Boost ... it thickens".
+            {
+                const auto d4 = c.addNode(), gb = c.addNode(), pb = c.addNode(), kb = c.addNode(), ob = c.addNode();
+                c.addCapacitor (c4p, d4, 22.0e-9);
+                ch.rBoostDirectC = c.addResistor (d4, mc, 1.0);
+                c.addCapacitor (c4p, gb, 22.0e-9);
+                c.addResistor (gb, gnd, 1.0e6);
+                c.addTriode (pb, gb, kb, triode12AX7());
+                c.addCapacitor (gb, pb, cgp);
+                c.addResistor (rail, pb, 100.0e3);
+                c.addResistor (kb, gnd, 4.7e3);
+                c.addCapacitor (pb, ob, 22.0e-9);
+                ch.rBoostOutC = c.addResistor (ob, mc, 1.0e9);
+                c.setInitialGuess (pb, 190.0);
+                c.setInitialGuess (kb, 2.0);
+                ch.pPlateBC = pb;
+                ch.pKBC = kb;
+            }
             ch.rMasterCleanTop = c.addResistor (mc, mw, 800.0e3); // VR105 1MEG master
             ch.rMasterCleanBot = c.addResistor (mw, gnd, 200.0e3);
             ch.pOutClean = mw;
@@ -273,7 +332,8 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
         };
 
         auto toneStack = [&] (NodalCircuit::Node drive, double midMax,
-                              int& rTrebleTop, int& rTrebleBot, int& rBass, int& rMid)
+                              int& rTrebleTop, int& rTrebleBot, int& rBass, int& rMid,
+                              int* capBright = nullptr, int* rNotch = nullptr)
         {
             const auto tt = c.addNode(), tw = c.addNode(), tb = c.addNode(), x = c.addNode(), mt = c.addNode();
             c.addCapacitor (drive, tt, 270.0e-12);
@@ -284,6 +344,10 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
             c.addCapacitor (x, mt, 100.0e-9);
             rBass = c.addResistor (tb, mt, 125.0e3);
             rMid = c.addResistor (mt, gnd, midMax * 0.5);
+            if (capBright != nullptr)
+                *capBright = c.addCapacitor (tt, tw, 1.0e-15);
+            if (rNotch != nullptr)
+                *rNotch = c.addResistor (mt, gnd, 1.0e9);
             return tw;
         };
 
@@ -293,7 +357,8 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
             c.addCapacitor (ch.pPlateL1, d, 22.0e-9);
             ch.rGainTop = c.addResistor (d, w, 900.0e3);  // CH2 gain 1M
             ch.rGainBot = c.addResistor (w, gnd, 100.0e3);
-            const auto tw = toneStack (w, 25.0e3, ch.rTrebleTopL, ch.rTrebleBotL, ch.rBassL, ch.rMidL);
+            const auto tw = toneStack (w, 25.0e3, ch.rTrebleTopL, ch.rTrebleBotL, ch.rBassL, ch.rMidL,
+                                       &ch.capBrightL, &ch.rScoopL);
             const auto c2 = c.addNode();
             c.addResistor (tw, c2, 1.0e6);
             // V2A: 1k5 + 22 uF, 100k
@@ -303,7 +368,27 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
             // V2B: 1k5 + 1 uF, 100k (the colder clipper stage)
             stage (c3, 1.0, 1.0e6, 100.0e3, 1.5e3, 1.0e-6, ch.pPlateL3, ch.pKL3, 220.0, 1.8);
             const auto mc = c.addNode(), mw = c.addNode();
-            c.addCapacitor (ch.pPlateL3, mc, 22.0e-9);
+            // V3B, the drawing's NINJA BOOST stage (PH105/PH106 LDR switching): a fourth triode inserted
+            // between V2B's plate and the CH2/CH3 master. Always engaged on CH3 -- the TRE variant's
+            // third channel is this path with the extra stage permanently in.
+            {
+                const auto d4 = c.addNode(), gb = c.addNode(), pb = c.addNode(), kb = c.addNode(), ob = c.addNode();
+                c.addCapacitor (ch.pPlateL3, d4, 22.0e-9);
+                ch.rBoostDirectL = c.addResistor (d4, mc, 1.0);
+                c.addCapacitor (ch.pPlateL3, gb, 22.0e-9);
+                c.addResistor (gb, gnd, 1.0e6);
+                c.addTriode (pb, gb, kb, triode12AX7());
+                c.addCapacitor (gb, pb, cgp);
+                c.addResistor (rail, pb, 100.0e3);          // R120 per the drawing
+                c.addResistor (kb, gnd, 1.5e3);
+                c.addCapacitor (kb, gnd, 22.0e-6);
+                c.addCapacitor (pb, ob, 22.0e-9);
+                ch.rBoostOutL = c.addResistor (ob, mc, 1.0e9);
+                c.setInitialGuess (pb, 200.0);
+                c.setInitialGuess (kb, 1.6);
+                ch.pPlateBL = pb;
+                ch.pKBL = kb;
+            }
             ch.rMasterLeadTop = c.addResistor (mc, mw, 200.0e3);  // VR110 250K master
             ch.rMasterLeadBot = c.addResistor (mw, gnd, 50.0e3);
             ch.pOutLead = mw;
@@ -443,6 +528,18 @@ void RiveraKnuckleheadStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double biasVolts = biasNominal - biasSpan * (1.0 - 2.0 * k.bias); // knob up = hotter (less negative)
     const double rectifier = rectifierR * (0.05 + 0.95 * k.tubeFeel);
 
+    // pull-switches: bright = C107 120 pF across the treble top segment; notch (CH1) / scoop (CH2-CH3) =
+    // mid shunts to ground (notch ~50% of the pot's travel band, scoop ~80% -- the drawing and the TRE
+    // manual place them on different pots with the scoop the deeper cut); contour = +47 nF on the CH1
+    // bass cap. boost = CH1 extra triode routed in; ninja = the V3B stage on the lead path, always in
+    // on CH3 (channel 2).
+    const double brightC = k.bright ? 120.0e-12 : 1.0e-15;
+    const double notchR = k.notch ? 6.8e3 : 1.0e9;
+    const double scoopR = k.scoop ? 2.7e3 : 1.0e9;
+    const double contourC = k.contour ? 47.0e-9 : 1.0e-15;
+    const bool boostIn = k.boost;
+    const bool ninjaIn = k.ninja || k.channel >= 2;
+
     for (auto& ch : channels)
     {
         ch.pre.setResistance (ch.rVolTop, juce::jmax (1.0, 1.0e6 - volBottom));
@@ -457,6 +554,15 @@ void RiveraKnuckleheadStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.preL.setResistance (ch.rTrebleBotL, trebleBottom);
         ch.preL.setResistance (ch.rBassL, bass);
         ch.preL.setResistance (ch.rMidL, midL);
+        ch.pre.setCapacitance (ch.capBrightC, brightC);
+        ch.preL.setCapacitance (ch.capBrightL, brightC);
+        ch.pre.setResistance (ch.rNotchC, notchR);
+        ch.preL.setResistance (ch.rScoopL, scoopR);
+        ch.pre.setCapacitance (ch.capContourC, contourC);
+        ch.pre.setResistance (ch.rBoostDirectC, boostIn ? 1.0e9 : 1.0);
+        ch.pre.setResistance (ch.rBoostOutC, boostIn ? 1.0 : 1.0e9);
+        ch.preL.setResistance (ch.rBoostDirectL, ninjaIn ? 1.0e9 : 1.0);
+        ch.preL.setResistance (ch.rBoostOutL, ninjaIn ? 1.0 : 1.0e9);
         ch.pre.setResistance (ch.rMasterCleanTop, juce::jmax (1.0, 1.0e6 - masterBottom));
         ch.pre.setResistance (ch.rMasterCleanBot, masterBottom);
         ch.preL.setResistance (ch.rMasterLeadTop, juce::jmax (1.0, 250.0e3 - masterLBottom));
@@ -612,6 +718,8 @@ double RiveraKnuckleheadStyleAmplifierProcessor::debugVoltage (Probe p) const no
         case Probe::leadPlate3: return ch.preL.voltage (ch.pPlateL3);
         case Probe::cleanOut: return ch.pre.voltage (ch.pOutClean);
         case Probe::leadOut: return ch.preL.voltage (ch.pOutLead);
+        case Probe::boostPlateC: return ch.pre.voltage (ch.pPlateBC);
+        case Probe::boostPlateL: return ch.preL.voltage (ch.pPlateBL);
         case Probe::piPlateA: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPiPlateA);
         case Probe::piPlateB: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPiPlateB);
         case Probe::piCathode: return reducedOrder ? 0.0 : ch.power.voltage (ch.wPiK);
@@ -674,7 +782,10 @@ void RiveraKnuckleheadStyleAmplifierProcessor::prepare (double newSampleRate, in
     appliedSpeaker = -1;
     updatePots ({ volumeParam->get(), gainParam->get(), trebleParam->get(), middleParam->get(), bassParam->get(),
                   masterParam->get(), presenceParam->get(), focusParam->get(), powerParam->get(), biasParam->get(),
-                  tubeFeelParam->get(), juce::roundToInt (speakerParam->get()), juce::roundToInt (channelParam->get()) });
+                  tubeFeelParam->get(),
+                  brightParam->get() > 0.5f, notchParam->get() > 0.5f, contourParam->get() > 0.5f,
+                  scoopParam->get() > 0.5f, boostParam->get() > 0.5f, ninjaParam->get() > 0.5f,
+                  juce::roundToInt (speakerParam->get()), juce::roundToInt (channelParam->get()) });
 
     dcOk = true;
     for (auto& ch : channels)
@@ -777,7 +888,10 @@ void RiveraKnuckleheadStyleAmplifierProcessor::process (juce::AudioBuffer<float>
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ vo, gn, tr, mi, ba, ms, pr, fc, pw, bi, fe, speakerChoice, channelChoice });
+            updatePots ({ vo, gn, tr, mi, ba, ms, pr, fc, pw, bi, fe,
+                          brightParam->get() > 0.5f, notchParam->get() > 0.5f, contourParam->get() > 0.5f,
+                          scoopParam->get() > 0.5f, boostParam->get() > 0.5f, ninjaParam->get() > 0.5f,
+                          speakerChoice, channelChoice });
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
@@ -884,6 +998,40 @@ void RiveraKnuckleheadStyleAmplifierProcessor::process (juce::AudioBuffer<float>
     }
 
     shortcut.end (buffer);
+}
+
+void RiveraKnuckleheadStyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    // Presets written before the 3-way channel selector stored knk_channel as a 2-way
+    // switch (0 = Clean, 1 = Lead). The pull-switch params didn't exist then, so a state
+    // with no knk_ninja is legacy: remap its saved 1 (Lead) to the new 2.
+    const bool legacy = ! state.hasAttribute ("knk_ninja");
+    const float savedChannel = (float) state.getDoubleAttribute ("knk_channel", -1.0);
+    EffectProcessor::setState (state);
+    if (legacy && juce::approximatelyEqual (savedChannel, 1.0f))
+        *channelParam = 2.0f;
+}
+
+void RiveraKnuckleheadStyleAmplifierProcessor::migrateLegacySnapshotParams (
+    std::vector<std::pair<juce::String, float>>& params) const
+{
+    // Same legacy test as setState(): a snapshot block captured before the pull
+    // params existed has no knk_ninja entry; its knk_channel=1 meant Lead.
+    bool hasNinja = false;
+    juce::String* channelId = nullptr;
+    float* channelValue = nullptr;
+    for (auto& [id, value] : params)
+    {
+        if (id == "knk_ninja")
+            hasNinja = true;
+        else if (id == "knk_channel")
+        {
+            channelId = const_cast<juce::String*> (&id);
+            channelValue = &value;
+        }
+    }
+    if (! hasNinja && channelValue != nullptr && juce::approximatelyEqual (*channelValue, 1.0f))
+        *channelValue = 2.0f;
 }
 
 void RiveraKnuckleheadStyleAmplifierProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const

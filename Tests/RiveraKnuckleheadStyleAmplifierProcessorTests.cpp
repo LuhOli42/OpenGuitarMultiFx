@@ -87,7 +87,7 @@ public:
 
         beginTest ("silence stays silent: the global-NFB loop must not self-oscillate, on either channel");
         {
-            for (float chSel : { 0.0f, 1.0f })
+            for (float chSel : { 0.0f, 1.0f, 2.0f })
             {
                 Amp amp;
                 setParam (amp, juce::String (px) + "channel", chSel);
@@ -117,7 +117,7 @@ public:
 
         beginTest ("a hot guitar-level signal stays finite, bounded and solved on both channels");
         {
-            for (float chSel : { 0.0f, 1.0f })
+            for (float chSel : { 0.0f, 1.0f, 2.0f })
             {
                 Amp amp;
                 setParam (amp, juce::String (px) + "channel", chSel);
@@ -136,7 +136,8 @@ public:
         {
             Amp probe;
             for (auto* id : { "channel", "volume", "gain", "treble", "middle", "bass", "master", "presence", "focus",
-                              "power", "bias", "tube_feel", "speaker", "output" })
+                              "power", "bias", "tube_feel", "speaker", "output",
+                              "bright", "notch", "contour", "scoop", "boost", "ninja" })
                 expect (hasParam (probe, juce::String (px) + id), juce::String (id));
 
             auto level = [] (float chSel, const char* id, float v, double hz, double amplitude)
@@ -149,7 +150,7 @@ public:
                 return sineRms (amp, hz, amplitude);
             };
             const double clean = level (0.0f, "volume", 0.25f, 440.0, 0.002);
-            const double lead = level (1.0f, "gain", 0.25f, 440.0, 0.002);
+            const double lead = level (2.0f, "gain", 0.25f, 440.0, 0.002);
             logMessage ("clean vs lead channel out at matched settings: " + juce::String (clean, 5) + " / " + juce::String (lead, 5));
             expectGreaterThan (lead, clean * 1.3);
 
@@ -175,6 +176,79 @@ public:
             hot.prepare (sr, 128, 1);
             cold.prepare (sr, 128, 1);
             expectGreaterThan (hot.plateCurrentA(), cold.plateCurrentA() * 1.3);
+
+            // pull-switches: CH1 boost and CH2/CH3 ninja each switch in a real extra triode stage
+            auto levelPull = [] (float chSel, const char* id, float v, double hz, double amplitude)
+            {
+                Amp amp;
+                setParam (amp, juce::String (px) + "channel", chSel);
+                setParam (amp, juce::String (px) + "volume", 0.5f);
+                setParam (amp, juce::String (px) + "gain", 0.5f);
+                setParam (amp, juce::String (px) + id, v);
+                return sineRms (amp, hz, amplitude);
+            };
+            const double bOff = levelPull (0.0f, "boost", 0.0f, 440.0, 0.01);
+            const double bOn = levelPull (0.0f, "boost", 1.0f, 440.0, 0.01);
+            logMessage ("CH1 boost off/on: " + juce::String (bOff, 5) + " / " + juce::String (bOn, 5));
+            expectGreaterThan (bOn, bOff * 1.5);
+
+            const double nOff = levelPull (1.0f, "ninja", 0.0f, 440.0, 0.005);
+            const double nOn = levelPull (1.0f, "ninja", 1.0f, 440.0, 0.005);
+            logMessage ("CH2 ninja off/on: " + juce::String (nOff, 5) + " / " + juce::String (nOn, 5));
+            expectGreaterThan (nOn, nOff * 1.5);
+        }
+
+        beginTest ("legacy 2-channel presets migrate: a saved Lead (1) still loads as Lead");
+        {
+            auto channelValue = [] (Amp& amp)
+            {
+                for (auto* p : amp.getParameters()->getParameters (true))
+                    if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+                        if (f->paramID == juce::String (px) + "channel")
+                            return (double) f->get();
+                return -1.0;
+            };
+            // a state written before the pull params existed (no knk_ninja) with channel=1 meant Lead
+            Amp old;
+            juce::XmlElement legacy ("EffectState");
+            legacy.setAttribute (juce::String (px) + "channel", 1.0);
+            old.setState (legacy);
+            expectEquals (channelValue (old), 2.0);
+            // a current-format state with channel=1 really is Crunch
+            Amp now;
+            juce::XmlElement current ("EffectState");
+            current.setAttribute (juce::String (px) + "channel", 1.0);
+            current.setAttribute (juce::String (px) + "ninja", 0.0);
+            now.setState (current);
+            expectEquals (channelValue (now), 1.0);
+        }
+
+        beginTest ("legacy snapshot blocks migrate: a snapshot-stored Lead (1) recalls as Lead");
+        {
+            // SnapshotPresetXml::applyBlock writes (id, value) pairs straight onto the
+            // params, bypassing setState -- the migration has to happen on the pairs.
+            Amp legacy;
+            std::vector<std::pair<juce::String, float>> legacyParams {
+                { juce::String (px) + "channel", 1.0f },
+                { juce::String (px) + "gain", 0.5f },
+            };
+            legacy.migrateLegacySnapshotParams (legacyParams);
+            float migrated = -1.0f;
+            for (const auto& [id, v] : legacyParams)
+                if (id == juce::String (px) + "channel")
+                    migrated = v;
+            expectEquals ((double) migrated, 2.0);
+
+            Amp current;
+            std::vector<std::pair<juce::String, float>> currentParams {
+                { juce::String (px) + "channel", 1.0f },
+                { juce::String (px) + "ninja", 0.0f },
+            };
+            current.migrateLegacySnapshotParams (currentParams);
+            for (const auto& [id, v] : currentParams)
+                if (id == juce::String (px) + "channel")
+                    migrated = v;
+            expectEquals ((double) migrated, 1.0);
         }
     }
 };

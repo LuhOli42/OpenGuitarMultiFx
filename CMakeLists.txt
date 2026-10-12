@@ -225,6 +225,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/GibsonEH150StyleAmplifierProcessor.cpp
   Source/Effects/GarnetHerzogStyleAmplifierProcessor.cpp
   Source/Effects/RiveraKnuckleheadStyleAmplifierProcessor.cpp
+  Source/Effects/DiezelStyleAmplifierProcessor.cpp
   Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
   Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
   Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp

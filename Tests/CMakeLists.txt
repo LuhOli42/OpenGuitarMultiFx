@@ -53,6 +53,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   GibsonEH150StyleAmplifierProcessorTests.cpp
   GarnetHerzogStyleAmplifierProcessorTests.cpp
   RiveraKnuckleheadStyleAmplifierProcessorTests.cpp
+  DiezelStyleAmplifierProcessorTests.cpp
   MatchlessHC30StyleAmplifierProcessorTests.cpp
   HotCat30StyleAmplifierProcessorTests.cpp
   CarmenGhiaStyleAmplifierProcessorTests.cpp
