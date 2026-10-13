@@ -1,6 +1,6 @@
 #include "Effects/FastMath.h"
-#include "Effects/PhaserProcessor.h"
-#include "Effects/UniVibeProcessor.h"
+#include "Effects/Modulation/Phaser/PhaserProcessor.h"
+#include "Effects/Modulation/Phaser/UniVibeProcessor.h"
 #include "Effects/PitchModProcessor.h"
 
 #include <juce_core/juce_core.h>

@@ -1,4 +1,4 @@
-#include "Effects/PhaserProcessor.h"
+#include "Effects/Modulation/Phaser/PhaserProcessor.h"
 
 #include <juce_core/juce_core.h>
 
