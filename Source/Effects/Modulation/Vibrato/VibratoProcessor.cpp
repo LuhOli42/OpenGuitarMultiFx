@@ -1,6 +1,6 @@
 #include "VibratoProcessor.h"
-#include "FastMath.h"
-#include "IconKit.h"
+#include "Effects/FastMath.h"
+#include "Effects/IconKit.h"
 
 #include <IconData.h>
 
