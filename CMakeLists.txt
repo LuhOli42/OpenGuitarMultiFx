@@ -171,7 +171,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/BassBigMuffStyleFuzzProcessor.cpp
   Source/Effects/DarkglassB7KStyleOverdriveProcessor.cpp
   Source/Effects/SansAmpBDDIStyleOverdriveProcessor.cpp
-  Source/Effects/BossOC2StyleOctaverProcessor.cpp
+  Source/Effects/Pitch/BossOC2StyleOctaverProcessor.cpp
   Source/Effects/DT1StyleDistortionProcessor.cpp
   Source/Effects/ODR1StyleOverdriveProcessor.cpp
   Source/Effects/OverdriverStyleOverdriveProcessor.cpp
@@ -281,9 +281,13 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/RotaryProcessor.cpp
   Source/Effects/Modulation/Phaser/UniVibeProcessor.cpp
   Source/Effects/PitchModProcessor.cpp
-  Source/Effects/PitchShiftProcessor.cpp
-  Source/Effects/OctaverProcessor.cpp
-  Source/Effects/HarmonizerProcessor.cpp
+  Source/Effects/Pitch/PitchShiftProcessor.cpp
+  Source/Effects/Pitch/OctaverProcessor.cpp
+  Source/Effects/Pitch/HarmonizerProcessor.cpp
+  Source/Effects/Pitch/OctaveFuzzProcessor.cpp
+  Source/Effects/Pitch/DividerOctaverProcessor.cpp
+  Source/Effects/Pitch/GuitarSynthProcessor.cpp
+  Source/Effects/Pitch/AlgorithmicPitchProcessor.cpp
   Source/Effects/LooperProcessor.cpp
   Source/Presets/PresetManager.cpp
   Source/Presets/PresetLibrary.cpp
