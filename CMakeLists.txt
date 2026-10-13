@@ -78,6 +78,8 @@ juce_add_binary_data(OpenGuitarMultiFx_Icons
   HEADER_NAME IconData.h
   SOURCES
     Assets/Icons/gate.svg
+    Assets/Icons/ds201_gate.svg
+    Assets/Icons/ns2_suppressor.svg
     Assets/Icons/pulse.svg
     Assets/Icons/overdrive.svg
     Assets/Icons/distortion.svg
