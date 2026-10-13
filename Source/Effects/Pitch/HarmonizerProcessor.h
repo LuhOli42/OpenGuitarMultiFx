@@ -1,7 +1,7 @@
 #pragma once
 
-#include "EffectProcessor.h"
-#include "DelayLine.h"
+#include "Effects/EffectProcessor.h"
+#include "Effects/DelayLine.h"
 
 #include <array>
 #include <vector>

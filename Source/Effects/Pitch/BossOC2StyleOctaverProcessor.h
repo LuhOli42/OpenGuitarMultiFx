@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../Engine/Biquad.h"
-#include "DualMono.h"
-#include "EffectProcessor.h"
+#include "Engine/Biquad.h"
+#include "Effects/DualMono.h"
+#include "Effects/EffectProcessor.h"
 
 #include <array>
 

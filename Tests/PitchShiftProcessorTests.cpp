@@ -1,4 +1,4 @@
-#include "Effects/PitchShiftProcessor.h"
+#include "Effects/Pitch/PitchShiftProcessor.h"
 
 #include <juce_core/juce_core.h>
 

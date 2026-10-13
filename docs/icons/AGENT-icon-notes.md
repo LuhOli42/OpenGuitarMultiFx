@@ -165,9 +165,9 @@ palette now for effects that don't exist yet.
 | RotaryProcessor | Modulacao → Rotary | `Assets/Icons/rotary.svg` (single spin arrow around a centre point -- redrawn from an earlier 3-blade rotor) | `Source/Effects/RotaryProcessor.cpp` |
 | UniVibeProcessor | Modulacao → Uni-Vibe | `Assets/Icons/uni_vibe.svg` (plain circle, glowing centre -- redrawn from an earlier organic blob per direct user request) | `Source/Effects/UniVibeProcessor.cpp` |
 | PitchModProcessor | Modulacao → Pitch Mod | `Assets/Icons/pitch_mod.svg` (wave with arrows pointing both up and down) | `Source/Effects/PitchModProcessor.cpp` |
-| PitchShiftProcessor | Filtro/FX → Pitch Shift | `Assets/Icons/pitch_shift.svg` (one note moving to a new position via a single arrow) | `Source/Effects/PitchShiftProcessor.cpp` |
-| OctaverProcessor | Filtro/FX → Octaver | `Assets/Icons/octaver.svg` (same wave twice, dotted one at double wavelength) | `Source/Effects/OctaverProcessor.cpp` |
-| HarmonizerProcessor | Filtro/FX → Harmonizer | `Assets/Icons/harmonizer.svg` (two notes on one stem, sounding together) | `Source/Effects/HarmonizerProcessor.cpp` |
+| PitchShiftProcessor | Filtro/FX → Pitch Shift | `Assets/Icons/pitch_shift.svg` (one note moving to a new position via a single arrow) | `Source/Effects/Pitch/PitchShiftProcessor.cpp` |
+| OctaverProcessor | Filtro/FX → Octaver | `Assets/Icons/octaver.svg` (same wave twice, dotted one at double wavelength) | `Source/Effects/Pitch/OctaverProcessor.cpp` |
+| HarmonizerProcessor | Filtro/FX → Harmonizer | `Assets/Icons/harmonizer.svg` (two notes on one stem, sounding together) | `Source/Effects/Pitch/HarmonizerProcessor.cpp` |
 | LooperProcessor | Delay → Looper | `Assets/Icons/looper.svg` (a near-complete circular repeat arrow, no centre dot -- distinct from Rotary's partial arc + dot) | `Source/Effects/LooperProcessor.cpp` |
 | PositiveGroundBoosterProcessor ("Rangemaster-Style Booster") | Drive → Boost | `Assets/Icons/boost.svg` (plain up-arrow) | `Source/Effects/PositiveGroundBoosterProcessor.cpp` |
 | DS1StyleDistortionProcessor ("DS-1-Style Distortion") | Drive → Distortion | `Assets/Icons/distortion.svg` (was the overdrive glyph as a placeholder until 2026-09-21) | `Source/Effects/DS1StyleDistortionProcessor.cpp` |

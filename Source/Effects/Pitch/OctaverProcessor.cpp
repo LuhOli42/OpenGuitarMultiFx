@@ -1,5 +1,5 @@
 #include "OctaverProcessor.h"
-#include "IconKit.h"
+#include "Effects/IconKit.h"
 
 #include <IconData.h>
 
