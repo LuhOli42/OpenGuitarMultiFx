@@ -309,6 +309,18 @@ term), **OTA** (Small Stone, exponential gm), **LDR** (Uni-Vibe's lamp + CdS cel
 
 Algorithms: [AlgorithmicPhasers.md](AlgorithmicPhasers.md).
 
+## Vibratos (`VibratoPedalProcessor`, `AlgorithmicVibratoProcessor`)
+
+| Unit | Doc | How |
+|---|---|---|
+| Boss VB-2 | [VB2Vibrato.md](VB2Vibrato.md) | BBD (shared), sine LFO, Rise Time |
+| Magnatone 280 | [MagnatoneVibrato.md](MagnatoneVibrato.md) | varistor-swung phase network (all-pass sections), stereo |
+| EHX Clone Theory | [CloneTheoryVibrato.md](CloneTheoryVibrato.md) | BBD, Chorus-Vibrato blend, Vibraflange |
+| Hammond scanner | [ScannerVibrato.md](ScannerVibrato.md) | LC line + scanner, V1-3 / C1-3 |
+
+Algorithms: [AlgorithmicVibratos.md](AlgorithmicVibratos.md). (The CE-1, Memory Man and Uni-Vibe 905 have their own
+vibrato modes, documented with them.)
+
 ## Cross-cutting: oversampling
 Every clipping pedal that measured audibly aliased at 1x runs through `OversampledEffect`
 (2x, DS-1 4x); the table, the method and the CPU trade-off are in

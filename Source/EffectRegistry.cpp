@@ -112,7 +112,9 @@
 #include "Effects/Modulation/Chorus/SCH1StyleChorusProcessor.h"
 #include "Effects/Modulation/Chorus/TriChorusProcessor.h"
 #include "Effects/Modulation/Chorus/StringEnsembleProcessor.h"
-#include "Effects/VibratoProcessor.h"
+#include "Effects/Modulation/Vibrato/VibratoProcessor.h"
+#include "Effects/Modulation/Vibrato/VibratoPedalProcessor.h"
+#include "Effects/Modulation/Vibrato/AlgorithmicVibratoProcessor.h"
 #include "Effects/Modulation/Flanger/FlangerProcessor.h"
 #include "Effects/Modulation/Flanger/BbdFlangerProcessor.h"
 #include "Effects/Modulation/Flanger/AlgorithmicFlangerProcessor.h"
@@ -701,6 +703,14 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("TriChorus", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<TriChorusProcessor>(), 0.45f); }, "Chorus");
     registry.registerType ("StringEnsemble", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<StringEnsembleProcessor>(), 0.18f); }, "Chorus");
     registry.registerType ("Vibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<VibratoProcessor>(); }, "Vibrato");
+    // Vibratos from real hardware (Source/Effects/Modulation/Vibrato, docs/circuits/*Vibrato*.md) and algorithms.
+    registry.registerType ("VB2StyleVibrato", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<VibratoPedalProcessor> (VibratoModel::vb2), 1000000.0), 0.0f); }, "Vibrato");
+    registry.registerType ("MagnatoneStyleVibrato", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<VibratoPedalProcessor> (VibratoModel::magnatone), 0.0f); }, "Vibrato");
+    registry.registerType ("CloneTheoryStyleVibrato", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<VibratoPedalProcessor> (VibratoModel::cloneTheory), 100000.0), -3.30f); }, "Vibrato");
+    registry.registerType ("ScannerVibrato", EffectRegistry::Category::modulation, [] { return trimmed (std::make_unique<VibratoPedalProcessor> (VibratoModel::hammondScanner), 0.0f); }, "Vibrato");
+    registry.registerType ("TapeWarbleVibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<AlgorithmicVibratoProcessor> (AlgorithmicVibrato::tapeWarble); }, "Vibrato");
+    registry.registerType ("StereoVibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<AlgorithmicVibratoProcessor> (AlgorithmicVibrato::stereo); }, "Vibrato");
+    registry.registerType ("RandomVibrato", EffectRegistry::Category::modulation, [] { return std::make_unique<AlgorithmicVibratoProcessor> (AlgorithmicVibrato::random); }, "Vibrato");
     registry.registerType ("Flanger", EffectRegistry::Category::modulation, [] { return std::make_unique<FlangerProcessor>(); }, "Flanger");
     // BBD flanger pedals (Source/Effects/Modulation/Flanger, docs/circuits/*Flanger*.md) and the algorithmic ones.
     registry.registerType ("MXR117StyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::mxr117), 470000.0), 1.56f); }, "Flanger");

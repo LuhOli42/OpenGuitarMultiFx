@@ -82,6 +82,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   FlangerPedalTests.cpp
   DelayPedalTests.cpp
   PhaserPedalTests.cpp
+  VibratoPedalTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp

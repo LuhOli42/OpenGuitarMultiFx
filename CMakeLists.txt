@@ -266,7 +266,9 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/Modulation/Chorus/SCH1StyleChorusProcessor.cpp
   Source/Effects/Modulation/Chorus/TriChorusProcessor.cpp
   Source/Effects/Modulation/Chorus/StringEnsembleProcessor.cpp
-  Source/Effects/VibratoProcessor.cpp
+  Source/Effects/Modulation/Vibrato/VibratoProcessor.cpp
+  Source/Effects/Modulation/Vibrato/VibratoPedalProcessor.cpp
+  Source/Effects/Modulation/Vibrato/AlgorithmicVibratoProcessor.cpp
   Source/Effects/Modulation/Flanger/FlangerProcessor.cpp
   Source/Effects/Modulation/Flanger/BbdFlangerProcessor.cpp
   Source/Effects/Modulation/Flanger/AlgorithmicFlangerProcessor.cpp
