@@ -273,9 +273,11 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/Delay/BbdDelayProcessor.cpp
   Source/Effects/Delay/TapeEchoProcessor.cpp
   Source/Effects/Delay/AlgorithmicDelayProcessor.cpp
-  Source/Effects/PhaserProcessor.cpp
+  Source/Effects/Modulation/Phaser/PhaserProcessor.cpp
+  Source/Effects/Modulation/Phaser/PhaserPedalProcessor.cpp
+  Source/Effects/Modulation/Phaser/AlgorithmicPhaserProcessor.cpp
   Source/Effects/RotaryProcessor.cpp
-  Source/Effects/UniVibeProcessor.cpp
+  Source/Effects/Modulation/Phaser/UniVibeProcessor.cpp
   Source/Effects/PitchModProcessor.cpp
   Source/Effects/PitchShiftProcessor.cpp
   Source/Effects/OctaverProcessor.cpp

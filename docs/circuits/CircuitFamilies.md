@@ -290,6 +290,25 @@ and DRAM at a variable sample rate ARE a sampled queue with sample-and-hold (`Bu
 Tape/drum: [TapeEchoes.md](TapeEchoes.md) (Space Echo, Echoplex EP-3, Echorec — behavioural). Algorithms:
 [AlgorithmicDelays.md](AlgorithmicDelays.md).
 
+## Phasers (`PhaserPedalProcessor`, `AlgorithmicPhaserProcessor`)
+
+First-order all-pass stages in TPT form (`Modulation/Phaser/PhaserParts.h`) with the pedal's capacitors and its
+voltage-controlled resistance: **JFET** (Phase 90/45, PS-1, PT-909, Micro Fazer — ohmic-region square law with the Vds
+term), **OTA** (Small Stone, exponential gm), **LDR** (Uni-Vibe's lamp + CdS cells, the Bi-Phase's LED opto cells).
+
+| Pedal | Doc | Stages / element |
+|---|---|---|
+| MXR Phase 90 | [Phase90Phaser.md](Phase90Phaser.md) | 4 × JFET, Script / Block (R28) |
+| MXR Phase 45 | [Phase45Phaser.md](Phase45Phaser.md) | 2 × JFET |
+| EHX Small Stone | [SmallStonePhaser.md](SmallStonePhaser.md) | 4 × OTA, Color |
+| Maestro/Oberheim PS-1 | [PS1Phaser.md](PS1Phaser.md) | 6 × JFET, 3 speeds |
+| Mu-Tron Bi-Phase | [BiPhasePhaser.md](BiPhasePhaser.md) | 2 × 6 opto, stereo / series |
+| Uni-Vibe 905 | [UniVibe905Phaser.md](UniVibe905Phaser.md) | 4 × LDR + lamp, unequal caps |
+| Ibanez PT-909 | [PT909Phaser.md](PT909Phaser.md) | 4 × JFET, feedback |
+| Univox Micro Fazer | [MicroFazerPhaser.md](MicroFazerPhaser.md) | 4 × JFET |
+
+Algorithms: [AlgorithmicPhasers.md](AlgorithmicPhasers.md).
+
 ## Cross-cutting: oversampling
 Every clipping pedal that measured audibly aliased at 1x runs through `OversampledEffect`
 (2x, DS-1 4x); the table, the method and the CPU trade-off are in

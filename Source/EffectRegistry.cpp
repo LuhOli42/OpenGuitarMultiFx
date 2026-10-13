@@ -119,9 +119,11 @@
 #include "Effects/Delay/BbdDelayProcessor.h"
 #include "Effects/Delay/TapeEchoProcessor.h"
 #include "Effects/Delay/AlgorithmicDelayProcessor.h"
-#include "Effects/PhaserProcessor.h"
+#include "Effects/Modulation/Phaser/PhaserProcessor.h"
 #include "Effects/RotaryProcessor.h"
-#include "Effects/UniVibeProcessor.h"
+#include "Effects/Modulation/Phaser/UniVibeProcessor.h"
+#include "Effects/Modulation/Phaser/PhaserPedalProcessor.h"
+#include "Effects/Modulation/Phaser/AlgorithmicPhaserProcessor.h"
 #include "Effects/PitchModProcessor.h"
 #include "Effects/PitchShiftProcessor.h"
 #include "Effects/OctaverProcessor.h"
@@ -716,6 +718,19 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("Phaser", EffectRegistry::Category::modulation, [] { return std::make_unique<PhaserProcessor>(); }, "Phase/Vibe");
     registry.registerType ("Rotary", EffectRegistry::Category::modulation, [] { return std::make_unique<RotaryProcessor>(); }, "Phase/Vibe");
     registry.registerType ("UniVibe", EffectRegistry::Category::modulation, [] { return std::make_unique<UniVibeProcessor>(); }, "Phase/Vibe");
+    // Phaser pedals modelled from their schematics (Source/Effects/Modulation/Phaser, docs/circuits/*Phaser*.md) and algorithms.
+    registry.registerType ("Phase90StylePhaser", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<PhaserPedalProcessor> (PhaserModel::phase90), 480000.0), 1.01f); }, "Phase/Vibe");
+    registry.registerType ("Phase45StylePhaser", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<PhaserPedalProcessor> (PhaserModel::phase45), 470000.0), 0.21f); }, "Phase/Vibe");
+    registry.registerType ("SmallStoneStylePhaser", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<PhaserPedalProcessor> (PhaserModel::smallStone), 100000.0), 2.87f); }, "Phase/Vibe");
+    registry.registerType ("PS1StylePhaser", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<PhaserPedalProcessor> (PhaserModel::ps1), 33000.0), 2.25f); }, "Phase/Vibe");
+    registry.registerType ("BiPhaseStylePhaser", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<PhaserPedalProcessor> (PhaserModel::biPhase), 680000.0), 4.02f); }, "Phase/Vibe");
+    registry.registerType ("UniVibe905StylePhaser", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<PhaserPedalProcessor> (PhaserModel::uniVibe), 47000.0), 5.65f); }, "Phase/Vibe");
+    registry.registerType ("PT909StylePhaser", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<PhaserPedalProcessor> (PhaserModel::pt909), 510000.0), 0.21f); }, "Phase/Vibe");
+    registry.registerType ("MicroFazerStylePhaser", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<PhaserPedalProcessor> (PhaserModel::microFazer), 220000.0), 1.38f); }, "Phase/Vibe");
+    registry.registerType ("BarberpolePhaser", EffectRegistry::Category::modulation, [] { return std::make_unique<AlgorithmicPhaserProcessor> (AlgorithmicPhaser::barberpole); }, "Phase/Vibe");
+    registry.registerType ("EnvelopePhaser", EffectRegistry::Category::modulation, [] { return std::make_unique<AlgorithmicPhaserProcessor> (AlgorithmicPhaser::envelope); }, "Phase/Vibe");
+    registry.registerType ("QuadraturePhaser", EffectRegistry::Category::modulation, [] { return std::make_unique<AlgorithmicPhaserProcessor> (AlgorithmicPhaser::quadrature); }, "Phase/Vibe");
+    registry.registerType ("StepPhaser", EffectRegistry::Category::modulation, [] { return std::make_unique<AlgorithmicPhaserProcessor> (AlgorithmicPhaser::step); }, "Phase/Vibe");
     registry.registerType ("PitchMod", EffectRegistry::Category::modulation, [] { return std::make_unique<PitchModProcessor>(); }, "Pitch");
 
     // Phase 4: Pitch.
