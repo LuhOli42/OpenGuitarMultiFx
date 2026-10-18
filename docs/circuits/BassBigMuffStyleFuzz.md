@@ -17,18 +17,21 @@ recovery stage), voiced in the Sovtek/Russian family, plus the two bass-specific
 - The full four-stage netlist at the Russian-family values (identical to this repo's
   `MuffModel::russianGreen` spec: 12k/390R cells, 500 pF feedback caps, 0.047 uF clip-branch caps,
   R8 20k tone split) -- the lower-gain, bass-keeping voice.
-- **BASS BOOST** as the input-coupling capacitor switch: C1 goes from 0.022 uF (input HPF corner ~170 Hz,
-  tilting a bass signal down) to 0.22 uF (~17 Hz, flat) -- more of the bass register reaches the clip
-  stages, which is exactly what the real toggle does ("lets more low end into the circuit").
-- **DRY** as a 33k resistor summing the input source node into the output node downstream of the Volume
-  divider: constant-level dry + whatever the Volume wiper passes of the distortion, matching the real
+- **BASS BOOST** as the input-coupling capacitor switch: C1 goes from 0.022 uF (input HPF corner ~185 Hz with
+  39K, tilting a bass signal down) to 0.082 uF (~50 Hz with 39K, flat across the bass register) -- more of the bass
+  reaches the clip stages, which is exactly what the real toggle does ("lets more low end into the circuit").
+- **DRY** as 10K from the input source to the output node, alongside 22K from the Volume wiper to that
+  node: constant-level dry + whatever the Volume wiper passes of the distortion, matching the real
   pedal's "Volume becomes a blend" description.
 
 ## Deliberate simplifications
 
-- The real bass-boost network's exact switched component placement (it sits across two positions in
-  some traces) is folded into the single input-cap switch -- same audible mechanism (bass into the
-  clip), one handled capacitor.
+- The EC-D40 Rev.A traces on freestompboxes (t=31296; dylan159, 2021 / G. Bisson, 2022) show the real
+  Bass Boost as a low-passed path (R30 / C31, roughly 300–400 Hz) mixed into the tone-stack output, not
+  an input-capacitor switch. They also show many capacitors doubled in parallel (for example,
+  100 nF || 100 nF = 200 nF coupling caps). Neither detail is modelled: the traced component values are
+  incomplete (C38 is unknown), so the implementation keeps the simpler input-cap switch and Russian-family
+  coupling values rather than inventing missing parts.
 - Transistor betas assumed at 500 (2N5089-class), same as the Russian model.
 - Controls: Sustain, Tone, Volume + Bass Boost and Dry toggles (stepped params so the unity suite
   leaves them at their defaults).

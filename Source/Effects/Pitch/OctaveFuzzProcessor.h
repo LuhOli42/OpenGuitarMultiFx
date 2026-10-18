@@ -49,17 +49,22 @@ private:
     {
         NodalCircuit c, pre; // pre: the Super-Fuzz's input stage (block A), driving c through the Drive pot
         int srcIn = 0, srcPre = 0;
-        int rDriveBypass = -1, rDriveSeries = -1; // -1 = the model has no such element
-        NodalCircuit::Node nRect = 0, nStage = 0, nPre = 0;
-        double stageRest = 0.0, rectRest = 0.0, preRest = 0.0; // operating points the AC taps are measured from (no start-up step)
+        int rDriveBypass = -1, rDriveSeries = -1, rOctaveSwitch = -1; // -1 = the model has no such element
+        NodalCircuit::Node nRect = 0, nPre = 0;
+        NodalCircuit::DynamicState restOff, restOn;
+        double rectRest = 0.0, rectRestOff = 0.0, rectRestOn = 0.0;
+        double preRest = 0.0; // operating point the Super-Fuzz AC tap is measured from (no start-up step)
         analog::Filter post, toneLow, toneHigh;
         double clipState = 0.0;
     };
+
+    enum class ToggleRamp { steady, down, up };
 
     juce::AudioParameterFloat* add (const juce::String& id, const juce::String& name, float def, int positions = 0,
                                     juce::StringArray labels = {});
     void buildChannel (Channel& ch);
     void updatePots();
+    void applyToneMachineSwitchState (int octaveOn) noexcept;
 
     OctaveFuzzModel model;
     std::array<Channel, 2> channels;
@@ -71,6 +76,9 @@ private:
     std::array<diodes::ShuntClipper, 2> clippers { diodes::ShuntClipper (10.0e3, diodes::germanium), diodes::ShuntClipper (10.0e3, diodes::germanium) };
 
     double sampleRate = 0.0, lastDrive = -1.0, driveFraction = 0.5;
+    double octaveGain = 1.0, octaveGainStep = 0.0;
+    int lastToggle = -1, pendingToggle = -1;
+    ToggleRamp toggleRamp = ToggleRamp::steady;
     long long sampleCount = 0, failureCount = 0;
 };
 
