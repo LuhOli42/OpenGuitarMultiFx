@@ -182,6 +182,11 @@ public:
                         + juce::String (p.debugNodeVoltage (4), 3) + " V, splitter emitter " + juce::String (p.debugNodeVoltage (7), 3)
                         + " V, splitter collector " + juce::String (p.debugNodeVoltage (6), 3) + " V, rectifier sum "
                         + juce::String (p.debugNodeVoltage (11), 3) + " V");
+            expectWithinAbsoluteError (p.debugNodeVoltage (3), 0.748, 0.05);
+            expectWithinAbsoluteError (p.debugNodeVoltage (4), 2.216, 0.05);
+            expectWithinAbsoluteError (p.debugNodeVoltage (7), 1.589, 0.05);
+            expectWithinAbsoluteError (p.debugNodeVoltage (6), 7.378, 0.05);
+            expectWithinAbsoluteError (p.debugNodeVoltage (11), 3.112, 0.05);
         }
 
         beginTest ("Tone Machine Octave switch selects octave or fundamental at 0.03 and 0.08 input");
