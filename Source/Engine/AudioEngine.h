@@ -32,9 +32,18 @@ public:
     AudioEngine();
     ~AudioEngine() override;
 
-    /** Control thread. Opens the default device and starts processing. */
+    /** Control thread. Opens the default device and starts processing.
+        A failed open still registers the callback and starts the sweep
+        timer so retryDevice() can recover without a restart. */
     bool start();
     void stop();
+
+    /** Control thread. Re-runs the device open sequence after a failed
+        start() -- the recovery action behind the UI's NO AUDIO DEVICE
+        state (audit #93 item 2). A no-op (returns {}) while a device is
+        already open, so callers never have to guard it; otherwise returns
+        the open error, or {} on success. */
+    juce::String retryDevice();
 
     /** Control thread. The engine takes ownership of the graph. */
     void setSignalGraph (std::unique_ptr<SignalGraph> newGraph);
@@ -145,6 +154,11 @@ public:
     juce::StringArray getAvailableOutputPairNames() const;
 
 private:
+    /** The full open sequence (default device -> preferred USB interface
+        -> preferred sample rate) shared by start() and retryDevice().
+        Returns {} on success, the initialise error otherwise. */
+    juce::String openDevice();
+
     void audioDeviceIOCallbackWithContext (const float* const* inputChannelData, int numInputChannels,
                                             float* const* outputChannelData, int numOutputChannels,
                                             int numSamples, const juce::AudioIODeviceCallbackContext& context) override;

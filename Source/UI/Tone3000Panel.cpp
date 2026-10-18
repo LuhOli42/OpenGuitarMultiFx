@@ -48,6 +48,19 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     content.addAndMakeVisible (rateSectionLabel);
     rateSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     rateSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    content.addChildComponent (retryDeviceButton);
+    retryDeviceButton.onClick = [this]
+    {
+        if (! onRetryDevice)
+            return;
+        const auto err = onRetryDevice();
+        // Success makes the host re-show this section (real rate buttons
+        // appear, this button hides); a failure surfaces in the same hint
+        // spot the "no device" message uses.
+        if (err.isNotEmpty())
+            rateHintLabel.setText ("Could not open the audio device: " + err, juce::dontSendNotification);
+    };
+
     content.addAndMakeVisible (rateHintLabel);
     rateHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     rateHintLabel.setFont (juce::Font (14.0f));
@@ -152,6 +165,9 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
     // Empty here can mean no device OR a device that reports no supported rate -- both read the same.
     rateHintLabel.setText (rateValues.isEmpty() ? "No usable sample rate reported by the audio device." : "The rate the audio device runs at (48 kHz is the default). Changing it restarts audio.",
                            juce::dontSendNotification);
+    // The recovery action only exists while there is nothing to recover
+    // against -- once rates show up a retry would just interrupt audio.
+    retryDeviceButton.setVisible (rateValues.isEmpty());
     resized();
 }
 
@@ -358,6 +374,8 @@ int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
         b->setBounds (rateRow.removeFromLeft (120));
         rateRow.removeFromLeft (8);
     }
+    if (retryDeviceButton.isVisible())
+        retryDeviceButton.setBounds (rateRow.removeFromLeft (180));
     area.removeFromTop (6);
     rateHintLabel.setBounds (area.removeFromTop (34));
     area.removeFromTop (14);

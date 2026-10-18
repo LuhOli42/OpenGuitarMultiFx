@@ -164,6 +164,16 @@ MainComponent::MainComponent()
     addAndMakeVisible (settingsButton);
     settingsButton.onClick = [this] { showSettingsPanel(); };
 
+    addChildComponent (retryAudioButton);
+    retryAudioButton.onClick = [this]
+    {
+        // Idempotent: a no-op while a device is open, a re-run of the
+        // whole open sequence otherwise (see AudioEngine::retryDevice).
+        // The next timer tick re-derives audioDeviceOk either way, so
+        // nothing here needs to read the result.
+        audioEngine.retryDevice();
+    };
+
     // Not made visible -- OverlayHost manages its own visibility as cards
     // get pushed/popped (see AGENT.md's UI/UX Design Philosophy).
     addChildComponent (overlayHost);
@@ -248,6 +258,10 @@ MainComponent::MainComponent()
         // and updatePresetDisplay() overwrites titleLabel on the first preset refresh).
         cpuLabel.setColour (juce::Label::textColourId, juce::Colours::orange);
     }
+    // The warning used to be all it offered; now there's an action too
+    // (audit #93 item 2). Set here, not only on timer transitions -- a
+    // failed first open means the transition check never fires.
+    retryAudioButton.setVisible (! audioDeviceOk);
 
     // Remembered across launches -- the interface's gain staging, like the tuning before it, describes the hardware
     // plugged in rather than a sound, so it is not part of any guitar preset. See AudioEngine::setInputGainDb().
@@ -984,6 +998,16 @@ void MainComponent::showSettingsPanel()
     // shows it) -- a failed switch can still leave a device open, and timerCallback
     // re-derives audioDeviceOk from the device itself every tick regardless.
     panel->onSampleRateChanged = [this] (double rate) { return audioEngine.setSampleRate (rate); };
+    auto* rawPanel = panel.get();
+    panel->onRetryDevice = [this, rawPanel]
+    {
+        const auto err = audioEngine.retryDevice();
+        if (err.isEmpty() && rawPanel != nullptr)
+            // Re-derive the section from the now-open device: rate
+            // buttons appear and the retry action hides itself.
+            rawPanel->showSampleRates (audioEngine.getAvailableSampleRates(), audioEngine.getCurrentSampleRate());
+        return err;
+    };
     panel->showSampleRates (audioEngine.getAvailableSampleRates(), audioEngine.getCurrentSampleRate());
 
     overlayHost.pushOverlay (std::move (panel));
@@ -1099,7 +1123,7 @@ void MainComponent::showPresetsPanel()
                     return;
                 savePresetAs (name);
                 overlayHost.popOverlay(); // the list
-            }));
+            }, 1));
     };
 
     dialog->onPresetChosen = [this] (juce::String name)
@@ -1145,7 +1169,7 @@ void MainComponent::showPresetsPanel()
                     updatePresetDisplay();
                 }
                 closePresetCardsAndReopenList();
-            }));
+            }, 1));
     };
 
     dialog->onRenameRequested = [this] (juce::String name)
@@ -1265,7 +1289,7 @@ void MainComponent::showPresetsPanel()
                     return;
                 presetLibrary.deleteSetlist (setlistName);
                 closePresetCardsAndReopenList();
-            }));
+            }, 1));
     };
 
     // Stepping keeps the browser open -- it's the performance action the
@@ -1327,7 +1351,7 @@ void MainComponent::loadPresetAskingToSave (const juce::String& name, std::funct
             loadPresetByName (name);
             if (onLoaded)
                 onLoaded();
-        }));
+        }, 2));
 }
 
 void MainComponent::newPreset()
@@ -1378,7 +1402,7 @@ void MainComponent::newPresetAskingToSave (std::function<void()> onReset)
             newPreset();
             if (onReset)
                 onReset();
-        }));
+        }, 2));
 }
 
 void MainComponent::capturePresetBaseline()
@@ -2013,6 +2037,8 @@ void MainComponent::timerCallback()
     {
         audioDeviceOk = deviceOk;
         cpuLabel.setColour (juce::Label::textColourId, audioDeviceOk ? juce::Colours::white : juce::Colours::orange);
+        retryAudioButton.setVisible (! audioDeviceOk); // Retry only exists while there's nothing to retry against
+        resized();
     }
 
     // Average and worst-block, not one number: see AudioEngine::getPeakCpuUsage().
@@ -2058,6 +2084,31 @@ void MainComponent::timerCallback()
     }
 }
 
+void MainComponent::GearButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    // Same chrome as every other button (fill + accent border), then the
+    // cog mark on top -- a ring, a hub, and 8 short teeth rotated around
+    // it. No font involved anywhere: the device build ships no system
+    // fonts (see OpenGuitarMultiFxLookAndFeel), which the "..." glyph this
+    // replaces silently needed.
+    getLookAndFeel().drawButtonBackground (g, *this, findColour (juce::TextButton::buttonColourId), highlighted, down);
+
+    const auto centre = getLocalBounds().toFloat().getCentre();
+    const float ringR = (float) getWidth() * 0.21f;
+    const float toothLen = (float) getWidth() * 0.13f;
+    const float stroke = (float) getWidth() * 0.055f;
+    g.setColour (findColour (juce::TextButton::textColourOffId).withAlpha (down ? 1.0f : 0.85f));
+
+    for (int i = 0; i < 8; ++i)
+    {
+        const float angle = (float) i * juce::MathConstants<float>::pi / 4.0f;
+        const auto dir = juce::Point<float> (std::cos (angle), std::sin (angle));
+        g.drawLine ({ centre + dir * ringR, centre + dir * (ringR + toothLen) }, stroke);
+    }
+    g.drawEllipse (juce::Rectangle<float> (ringR * 2.0f, ringR * 2.0f).withCentre (centre), stroke);
+    g.fillEllipse (juce::Rectangle<float> (stroke * 1.4f, stroke * 1.4f).withCentre (centre));
+}
+
 void MainComponent::resized()
 {
     overlayHost.setBounds (getLocalBounds());
@@ -2076,6 +2127,10 @@ void MainComponent::resized()
     auto top = area.removeFromTop (topBarHeight);
     // 150, not 70: it carries the average AND the worst-block peak now (see timerCallback()).
     cpuLabel.setBounds (top.removeFromRight (150).withSizeKeepingCentre (150, 20));
+    // Sits between the CPU readout and Settings when the device is dead --
+    // the actionable half of the NO AUDIO DEVICE warning (audit #93).
+    if (retryAudioButton.isVisible())
+        retryAudioButton.setBounds (top.removeFromRight (80).withSizeKeepingCentre (80, touch::minTapTarget));
     settingsButton.setBounds (top.removeFromRight (touch::minTapTarget)
                                    .withSizeKeepingCentre (touch::minTapTarget, touch::minTapTarget));
     top.removeFromRight (8);
@@ -2083,10 +2138,12 @@ void MainComponent::resized()
     // ("12B") now, not just a bare number.
     presetBadge.setBounds (top.removeFromLeft (88));
     top.removeFromLeft (8);
-    // The A-H snapshot strip, one minTapTarget cell per snapshot.
+    // The A-H snapshot strip, one minTapTarget cell per snapshot, plus
+    // the little "tap -- hold" caption the bar draws on top (see
+    // SnapshotBar::hintHeight -- audit #93 item 3).
     snapshotBar.setBounds (top.removeFromLeft (snapshotxml::maxSnapshots * touch::minTapTarget)
                              .withSizeKeepingCentre (snapshotxml::maxSnapshots * touch::minTapTarget,
-                                                     touch::minTapTarget));
+                                                     touch::minTapTarget + SnapshotBar::hintHeight));
     top.removeFromLeft (8);
     if (quickSaveButton.isVisible())
     {
