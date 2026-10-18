@@ -158,5 +158,8 @@ which is why eco needs it). 1x is audibly aliased -- the pedal keeps Orders{1,1,
 ## Pipeline engine: tried, not applied (2026-10-17)
 Compiled with `pipeline::CompiledCircuit`, blocks 2 and 3 match the netlist exactly, but block 1's gain transistors run
 deep into saturation and the compiler's one-variable transistor port (vbc held at its DC value) cannot follow them:
-band 1.7 dB, envelope tails 40 dB off. The netlist stays the engine (`pipelineEngine` defaults to false) until a
-two-variable (vbe, vbc) transistor port exists.
+band 1.7 dB, envelope tails 40 dB off. With the full two-junction transistor port (`transistorFull`, added for this,
+SPICE pnjlim step limiting) block 1 matches: level 0.14 dB, band 1.22 dB, peak 0.16 dB, envelope 2.3 dB -- but only
+at 6 Newton steps per transistor per sample (3 steps: band 4.1 dB), and then it is slower than this netlist (x0.55).
+The netlist stays the engine (`pipelineEngine` defaults to false): the pipeline pays off where a netlist is expensive,
+and this one already is not.

@@ -46,9 +46,10 @@ public:
     static inline bool reducedOrder = false;
 
     /** Pipeline engine: the three blocks compiled into linear networks + fixed-cost ports at their DC point
-        (docs/PerformancePipeline.md). OFF by default: block 1's two gain transistors run deep into saturation, which the
-        compiler's one-variable transistor port does not capture yet (CompiledPipeline test: timbre 1.7 dB, envelope
-        tails off), so the Newton netlist stays the engine until a two-variable (vbe, vbc) port exists. */
+        (docs/PerformancePipeline.md). OFF by default: block 1's two gain transistors run deep into saturation; with the
+        full two-junction transistor port (CompileOptions::transistorFull) the compiled engine matches the netlist
+        (level 0.14, band 1.22, peak 0.16, envelope 2.3 dB) but only at 6 Newton steps per transistor, which costs MORE
+        than this netlist (x0.55). No gain, so the netlist stays the engine. */
     void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
 
     /** Multiplier on the physical bc-junction diode (Is = Is/betaR, nVt) added base-to-collector on each

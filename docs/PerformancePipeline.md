@@ -93,7 +93,11 @@ elements and the solved DC voltages):
   node rail-limit port, and its integrator clamp diodes become the eco macro's 470-ohm anti-windup bleed
   (`addOpAmpMacroLite`): one port per op-amp, and the output still sticks to the rail while the feedback network keeps
   charging, which is what gives a high-gain stage its recovery tail after the note stops;
-- BJTs and JFETs are their small-signal Jacobians at the DC point. A BJT can also get a transfer port carrying its
+- BJTs and JFETs are their small-signal Jacobians at the DC point. `transistorFull` instead makes each two-port BJT a
+  pair of coupled ports (vbe, vbc) -> (ib, ic), full Ebers-Moll with both junctions, solved by a 2x2 Newton with SPICE
+  pnjlim limiting (only steps that take a junction above its critical voltage are compressed; a reverse collector
+  junction must swing volts per sample). Exact enough for deep saturation (HM-2) but costly: use it only where the
+  netlist it replaces is expensive. A BJT can also get a transfer port carrying its
   exponential with Vce(sat) folded in (`CompileOptions::transistorExponential`), only where the equivalence test shows
   it pays: on the Bass Big Muff it made things worse, so it is off by default;
 - diodes: series chains through an otherwise unconnected node are merged (one exponential of summed nVt), every set of
@@ -119,7 +123,7 @@ levels and two burst levels:
 | Bass Big Muff | 13.8 -> **3.8** | 0.44 | 0.44 | 0.30 | 1.32 | applied (compiled) |
 | DT-1 | 15.9 -> **5.5** | 0.00 | 0.34 | 0.17 | 0.48 | applied (compiled) |
 | Metal Zone | 27.2 -> **6.7** | 0.12 | 0.94 | 0.37 | 1.58 | applied (compiled); the envelope is the recovery after a rail-pinned Dist stage, against **8.97 dB for the reducedOrder model that shipped before** |
-| HM-2 | 13.4 (unchanged) | 0.37 | 1.73 | 0.75 | 39.6 | NOT applied: block 1's gain transistors run deep into saturation; a one-variable transistor port (vbc held) cannot follow it. Needs a two-variable (vbe, vbc) transistor port |
+| HM-2 | 13.4 (unchanged) | 0.14 | 1.22 | 0.16 | 2.29 | NOT applied: matched only with the full two-junction transistor port (`transistorFull`) at 6 Newton steps, which is slower than the netlist (x0.55); fewer steps lose the saturation. No gain, netlist kept |
 | Darkglass B7K | 11.6 (unchanged) | - | - | - | - | NOT converted: it has coupled inductors (a transformer), which the compiler does not express yet |
 
 All applied ones also pass the steady-state test (`OversampledEffectTests`: DT-1 -115 dB, Metal Zone -128 dB

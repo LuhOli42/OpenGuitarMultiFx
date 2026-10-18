@@ -442,8 +442,25 @@ private:
         const double z11 = z[(size_t) kb][(size_t) kb], z12 = z[(size_t) kb][(size_t) kc];
         const double z21 = z[(size_t) kc][(size_t) kb], z22 = z[(size_t) kc][(size_t) kc];
         double u1 = portVoltage[(size_t) kb], u2 = portVoltage[(size_t) kc], ib = 0.0, ic = 0.0, di[4];
-        const double vt = dev.model.thermalVoltageValue(), maxStep = 2.0 * vt;
-        for (int it = 0; it < 6; ++it)
+        const double vt = dev.model.thermalVoltageValue();
+        const double vcrit = vt * std::log (vt / (1.4142135623730951 * dev.model.saturationCurrentValue()));
+        // SPICE pnjlim on the absolute junction voltage: a step that takes a junction above its critical voltage is
+        // compressed logarithmically; anywhere else the full Newton step stands (a reverse-biased collector junction
+        // must be free to swing volts per sample)
+        auto limit = [vt, vcrit] (double vOld, double vNew) {
+            if (vNew > vcrit && std::abs (vNew - vOld) > 2.0 * vt)
+            {
+                if (vOld > 0.0)
+                {
+                    const double arg = 1.0 + (vNew - vOld) / vt;
+                    return arg > 0.0 ? vOld + vt * std::log (arg) : vcrit;
+                }
+                return vt * std::log (vNew / vt);
+            }
+            return vNew;
+        };
+        const double sg = dev.sign;
+        for (int it = 0; it < 6; ++it) // fewer steps lose the HM-2's saturation (band 4 dB at 3 steps)
         {
             dev.eval (u1, u2, ib, ic, di);
             const double f1 = u1 + z11 * ib + z12 * ic - p1;
@@ -453,12 +470,11 @@ private:
             const double c = z21 * di[0] + z22 * di[2], d = 1.0 + z21 * di[1] + z22 * di[3];
             const double det = a * d - b * c;
             if (std::abs (det) < 1.0e-30) break;
-            // u -= s: a negative s RAISES the junction voltage, where the exponential runs away -> limited to 2 Vt;
-            // lowering it is safe and allowed ten times further
-            const double s1 = juce::jlimit (-maxStep, 10.0 * maxStep, (f1 * d - b * f2) / det);
-            const double s2 = juce::jlimit (-maxStep, 10.0 * maxStep, (a * f2 - c * f1) / det);
-            u1 -= s1;
-            u2 -= s2;
+            const double n1 = u1 - (f1 * d - b * f2) / det, n2 = u2 - (a * f2 - c * f1) / det;
+            // limit in the device's own (mirrored for PNP) junction voltages
+            const double vbeOld = sg * (dev.vbe0 + u1), vbcOld = sg * (dev.vbc0 + u2);
+            u1 = sg * limit (vbeOld, sg * (dev.vbe0 + n1)) - dev.vbe0;
+            u2 = sg * limit (vbcOld, sg * (dev.vbc0 + n2)) - dev.vbc0;
         }
         dev.eval (u1, u2, ib, ic, di);
         portVoltage[(size_t) kb] = u1;
