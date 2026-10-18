@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../EbersMollBJT.h"
+
 #include <juce_core/juce_core.h>
 
 #include <array>
@@ -77,6 +79,33 @@ struct CompositeDiode
     std::array<Term, 6> terms {};
     int n = 0;
     DeviceCurve table;
+};
+
+/** A whole transistor as a two-variable port pair (vbe, vbc) -> (ib, ic): Ebers-Moll with both junctions, so it
+    saturates and cuts off like the netlist's two-port device. Currents are deviations from the DC operating point
+    (the linear network carries no stamp for this transistor). `sign` -1 mirrors for PNP. */
+struct BjtDevice
+{
+    EbersMollBJT model;
+    double sign = 1.0, vbe0 = 0.0, vbc0 = 0.0, ib0 = 0.0, ic0 = 0.0;
+
+    void init (const EbersMollBJT& m, bool pnp, double vbe, double vbc)
+    {
+        model = m; sign = pnp ? -1.0 : 1.0; vbe0 = vbe; vbc0 = vbc;
+        ib0 = ic0 = 0.0;
+        double ib = 0.0, ic = 0.0, di[4];
+        eval (0.0, 0.0, ib, ic, di);
+        ib0 = ib; ic0 = ic;
+    }
+    /** Deviation currents (into base, into collector) and their Jacobian d(ib, ic)/d(ube, ubc) as di[0..3]. */
+    void eval (double ube, double ubc, double& ib, double& ic, double* di) const noexcept
+    {
+        const double vbe = sign * (vbe0 + ube), vbc = sign * (vbc0 + ubc);
+        const auto op = model.evaluate (vbe, 0.0, vbe - vbc);
+        ib = sign * op.iB - ib0;
+        ic = sign * op.iC - ic0;
+        di[0] = op.diB_dvbe; di[1] = op.diB_dvbc; di[2] = op.diC_dvbe; di[3] = op.diC_dvbc;
+    }
 };
 
 /** A small-signal circuit as a LINEAR nodal network plus a few nonlinear one-port devices ("ports"), solved per sample
@@ -160,6 +189,19 @@ public:
         return numRows++;
     }
     static Node rowNode (int row) noexcept { return -(row + 2); }
+
+    /** A whole transistor as two coupled ports solved together (BjtDevice): port k = base current (control vbe,
+        injected b -> e), port k+1 = collector current (control vbc, injected c -> e). Do not stamp its Jacobian too. */
+    int addBjt (Node c, Node b, Node e, const BjtDevice* dev)
+    {
+        Port pb { b, e, Kind::bjtBase, 0.0, 1.0, 0.0, 0.0, b, e };
+        pb.bjt = dev;
+        Port pc { c, e, Kind::bjtCollector, 0.0, 1.0, 0.0, 0.0, b, c };
+        pc.bjt = dev;
+        const int k = addPort (pb);
+        addPort (pc);
+        return k;
+    }
 
     /** Unbiased diodes between a and b as one port (CompositeDiode, current a -> b); `c` must outlive the network. */
     int addCompositeDiode (Node a, Node b, const CompositeDiode* c)
@@ -291,6 +333,12 @@ public:
         for (int sweep = 0; sweep < activeSweeps; ++sweep)
             for (int k = 0; k < np; ++k)
             {
+                if (ports[(size_t) k].kind == Kind::bjtBase)
+                {
+                    solveBjt (k, pLin);
+                    ++k; // its collector port was solved with it
+                    continue;
+                }
                 const auto& zr = z[(size_t) k];
                 double pkd = pLin[(size_t) k];
                 for (int j = 0; j < np; ++j) if (j != k) pkd -= zr[(size_t) j] * portCurrent[(size_t) j];
@@ -318,9 +366,9 @@ public:
     double portVoltageCurrent (int port) const noexcept { return portCurrent[(size_t) port]; }
 
 private:
-    enum class Kind { diodePair, clamp, transfer, diode, composite };
+    enum class Kind { diodePair, clamp, transfer, diode, composite, bjtBase, bjtCollector };
     struct Port { Node a, b; Kind kind; double is, nv, vPos, vNeg; Node ca = -1, cb = -1; const TransferCurve* curve = nullptr; const DeviceCurve* device = nullptr;
-                  const CompositeDiode* comp = nullptr; };
+                  const CompositeDiode* comp = nullptr; const BjtDevice* bjt = nullptr; };
     struct Resistor { Node a, b; double ohms; };
     struct Cap { Node a, b; double farads, hist, current; double g = 0.0; };
     struct Vccs { Node outP, outN, cp, cn; double gm; };
@@ -356,6 +404,7 @@ private:
     {
         if (p.kind == Kind::transfer) { double d = 0.0, ds = 0.0; p.curve->eval (vk, d, ds); return d; }
         if (p.kind == Kind::composite) { double i = 0.0, di = 0.0; p.comp->table.eval (vk, i, di); return i; }
+        if (p.kind == Kind::bjtBase || p.kind == Kind::bjtCollector) return 0.0; // solved jointly, see solveBjt
         if (p.kind == Kind::diode)
         {
             const double e0 = expLin (p.vPos / p.nv);
@@ -374,6 +423,64 @@ private:
         if (vk > p.vPos) return p.is / p.nv * expLinSlope ((vk - p.vPos) / p.nv);
         if (vk < -p.vNeg) return p.is / p.nv * expLinSlope ((-p.vNeg - vk) / p.nv);
         return 0.0;
+    }
+
+    /** The transistor's two ports together: u + Z I(u) = p with u = (vbe, vbc) deviations, I = (ib, ic), Z the 2x2
+        block of port impedances (couplings to the other ports taken as in Gauss-Seidel). 2-D Newton from last sample's
+        solution, steps limited to 2 Vt per junction (SPICE-style), fixed count. */
+    void solveBjt (int k, const std::array<double, MaxPorts>& pLin) noexcept
+    {
+        const int np = numPorts, kb = k, kc = k + 1;
+        const auto& dev = *ports[(size_t) kb].bjt;
+        double p1 = pLin[(size_t) kb], p2 = pLin[(size_t) kc];
+        for (int j = 0; j < np; ++j)
+        {
+            if (j == kb || j == kc) continue;
+            p1 -= z[(size_t) kb][(size_t) j] * portCurrent[(size_t) j];
+            p2 -= z[(size_t) kc][(size_t) j] * portCurrent[(size_t) j];
+        }
+        const double z11 = z[(size_t) kb][(size_t) kb], z12 = z[(size_t) kb][(size_t) kc];
+        const double z21 = z[(size_t) kc][(size_t) kb], z22 = z[(size_t) kc][(size_t) kc];
+        double u1 = portVoltage[(size_t) kb], u2 = portVoltage[(size_t) kc], ib = 0.0, ic = 0.0, di[4];
+        const double vt = dev.model.thermalVoltageValue();
+        const double vcrit = vt * std::log (vt / (1.4142135623730951 * dev.model.saturationCurrentValue()));
+        // SPICE pnjlim on the absolute junction voltage: a step that takes a junction above its critical voltage is
+        // compressed logarithmically; anywhere else the full Newton step stands (a reverse-biased collector junction
+        // must be free to swing volts per sample)
+        auto limit = [vt, vcrit] (double vOld, double vNew) {
+            if (vNew > vcrit && std::abs (vNew - vOld) > 2.0 * vt)
+            {
+                if (vOld > 0.0)
+                {
+                    const double arg = 1.0 + (vNew - vOld) / vt;
+                    return arg > 0.0 ? vOld + vt * std::log (arg) : vcrit;
+                }
+                return vt * std::log (vNew / vt);
+            }
+            return vNew;
+        };
+        const double sg = dev.sign;
+        for (int it = 0; it < 6; ++it) // fewer steps lose the HM-2's saturation (band 4 dB at 3 steps)
+        {
+            dev.eval (u1, u2, ib, ic, di);
+            const double f1 = u1 + z11 * ib + z12 * ic - p1;
+            const double f2 = u2 + z21 * ib + z22 * ic - p2;
+            // Jacobian of (f1, f2) wrt (u1, u2)
+            const double a = 1.0 + z11 * di[0] + z12 * di[2], b = z11 * di[1] + z12 * di[3];
+            const double c = z21 * di[0] + z22 * di[2], d = 1.0 + z21 * di[1] + z22 * di[3];
+            const double det = a * d - b * c;
+            if (std::abs (det) < 1.0e-30) break;
+            const double n1 = u1 - (f1 * d - b * f2) / det, n2 = u2 - (a * f2 - c * f1) / det;
+            // limit in the device's own (mirrored for PNP) junction voltages
+            const double vbeOld = sg * (dev.vbe0 + u1), vbcOld = sg * (dev.vbc0 + u2);
+            u1 = sg * limit (vbeOld, sg * (dev.vbe0 + n1)) - dev.vbe0;
+            u2 = sg * limit (vbcOld, sg * (dev.vbc0 + n2)) - dev.vbc0;
+        }
+        dev.eval (u1, u2, ib, ic, di);
+        portVoltage[(size_t) kb] = u1;
+        portVoltage[(size_t) kc] = u2;
+        portCurrent[(size_t) kb] = ib;
+        portCurrent[(size_t) kc] = ic;
     }
 
     /** Solves v + z I(v) = p and returns I. f(v) = v + z I(v) - p is strictly increasing (and convex/concave either side

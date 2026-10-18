@@ -323,7 +323,7 @@ void HM2StyleDistortionProcessor::prepare (double newSampleRate, int, int)
         if (pipelineEngine)
         {
             pipeline::CompileOptions withTransistors;
-            withTransistors.transistorExponential = true; // the gain stages saturate: that IS the HM-2's distortion
+            withTransistors.transistorFull = true; // the gain stages saturate deeply: that IS the HM-2's distortion
             ch.f1.compile (ch.b1, ch.srcIn, { ch.nO1 }, newSampleRate, withTransistors);
             ch.f2.compile (ch.b2, ch.srcO1, { ch.nP }, newSampleRate);
             ch.f3.compile (ch.b3, ch.srcFin, { ch.nOut }, newSampleRate);
