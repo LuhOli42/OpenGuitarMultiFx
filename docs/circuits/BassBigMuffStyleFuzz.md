@@ -17,8 +17,8 @@ recovery stage), voiced in the Sovtek/Russian family, plus the two bass-specific
 - The full four-stage netlist at the Russian-family values (identical to this repo's
   `MuffModel::russianGreen` spec: 12k/390R cells, 500 pF feedback caps, 0.047 uF clip-branch caps,
   R8 20k tone split) -- the lower-gain, bass-keeping voice.
-- **BASS BOOST** as the input-coupling capacitor switch: C1 goes from 0.022 uF (input HPF corner ~170 Hz,
-  tilting a bass signal down) to 0.082 uF (~50 Hz with 39K, flat across the bass register) -- more of the bass
+- **BASS BOOST** as the input-coupling capacitor switch: C1 goes from 0.022 uF (input HPF corner ~185 Hz with
+  39K, tilting a bass signal down) to 0.082 uF (~50 Hz with 39K, flat across the bass register) -- more of the bass
   reaches the clip stages, which is exactly what the real toggle does ("lets more low end into the circuit").
 - **DRY** as 10K from the input source to the output node, alongside 22K from the Volume wiper to that
   node: constant-level dry + whatever the Volume wiper passes of the distortion, matching the real
