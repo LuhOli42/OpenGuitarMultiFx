@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -30,6 +31,12 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
 
+    /** Pipeline engine: every block compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). OFF by default: matches at normal levels (level 0.07 dB, x2.4) but misses
+        peaks / envelopes on hot bursts by 7-8 dB, the same symptom as the Darkglass (whose netlist spikes one sample at a
+        clamp reversal); not explained yet, so the netlist stays the engine. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
+
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Crunch Box"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffd9482b); }
@@ -51,6 +58,7 @@ private:
     struct Channel
     {
         NodalCircuit a, b;
+        pipeline::CompiledCircuit fA, fB;
 
         int srcIn = 0;                          // a: input
         NodalCircuit::Node nOp1 = 0;            // a: op-amp 1 output (= the Drive pot's wiper)
@@ -93,6 +101,7 @@ private:
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = false;
 
     static constexpr int controlInterval = 16; // samples between pot -> resistance updates
 };

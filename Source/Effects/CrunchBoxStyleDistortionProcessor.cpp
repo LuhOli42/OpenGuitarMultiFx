@@ -139,10 +139,15 @@ void CrunchBoxStyleDistortionProcessor::updatePots (double driveKnob, double ton
     for (auto& ch : channels)
     {
         ch.a.setResistance (ch.rDriveFeedback, dFb);
+        if (ch.fA.compiled()) ch.fA.setResistance (ch.rDriveFeedback, dFb);
         ch.b.setResistance (ch.rDriveSeries, dSer);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rDriveSeries, dSer);
         ch.b.setResistance (ch.rTone, rTone);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rTone, rTone);
         ch.b.setResistance (ch.rLevelTop, lTop);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rLevelTop, lTop);
         ch.b.setResistance (ch.rLevelBottom, lBottom);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rLevelBottom, lBottom);
     }
 }
 
@@ -174,6 +179,13 @@ void CrunchBoxStyleDistortionProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.a.prepare (newSampleRate) && dcOk;
         ch.b.setSource (ch.srcOp1, ch.a.voltage (ch.nOp1));
         dcOk = ch.b.prepare (newSampleRate) && dcOk;
+        ch.fA.clear(); ch.fB.clear();
+        if (pipelineEngine)
+        {
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate)
+                         && ch.fB.compile (ch.b, ch.srcOp1, { ch.nOut }, newSampleRate);
+            if (! ok) { ch.fA.clear(); ch.fB.clear(); }
+        }
     }
 
     controlCounter = 0;
@@ -204,6 +216,7 @@ void CrunchBoxStyleDistortionProcessor::process (juce::AudioBuffer<float>& buffe
         {
             controlCounter = 0;
             updatePots (d, t, l);
+            for (auto& chu : channels) { chu.fA.update(); chu.fB.update(); }
         }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
@@ -211,6 +224,16 @@ void CrunchBoxStyleDistortionProcessor::process (juce::AudioBuffer<float>& buffe
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fA.compiled())
+            {
+                ch.fA.setSource (ch.srcIn, (double) data[i]);
+                ch.fA.solveSample();
+                ch.fB.setSource (ch.srcOp1, ch.fA.voltage (ch.nOp1));
+                ch.fB.solveSample();
+                data[i] = (float) ch.fB.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.a.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.a.solveSample();
 

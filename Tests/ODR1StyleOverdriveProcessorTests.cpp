@@ -107,6 +107,7 @@ public:
         beginTest ("DC operating point: the three op-amp outputs sit at the 4.5 V bias, all three blocks converged");
         {
             ODR1StyleOverdriveProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 128, 1);
             expect (p.dcConverged(), "DC solve converged");
             logMessage ("stage 1 out " + juce::String (p.debugStage1Out(), 3) + " V, stage 2 out " + juce::String (p.debugStage2Out(), 3)
@@ -123,6 +124,7 @@ public:
                 for (double f : { 300.0, 1000.0, 2500.0 })
                 {
                     ODR1StyleOverdriveProcessor p;
+                    p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                     p.prepare (sr, 128, 1);
                     setKnobs (p, d, 0.5f, 1.0f);
                     const double amp = 0.0002;
@@ -140,6 +142,7 @@ public:
         beginTest ("stage 1 clips on its two 4148 in the feedback (~0.5-0.7 V), symmetrically");
         {
             ODR1StyleOverdriveProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 128, 1);
             setKnobs (p, 1.0f, 0.5f, 1.0f);
             const auto e = stageExtremes (p, 220.0, 0.05, [] (ODR1StyleOverdriveProcessor& q) { return q.debugStage1Out(); });
@@ -170,6 +173,7 @@ public:
                 for (double f : { 150.0, 400.0, 800.0, 1600.0, 3000.0, 6000.0 })
                 {
                     ODR1StyleOverdriveProcessor p;
+                    p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                     p.prepare (sr, 128, 1);
                     setKnobs (p, 0.1f, spectrum, 1.0f);
                     const double pp = steadyPeakToPeak (p, f, 0.004, 300);
@@ -201,6 +205,7 @@ public:
         beginTest ("hot input and random knob moves: finite, and the solver never fails");
         {
             ODR1StyleOverdriveProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 128, 2);
             juce::Random rng (2030);
             juce::AudioBuffer<float> buf (2, 128);

@@ -4,6 +4,10 @@
 #include "Effects/DT1StyleDistortionProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
 #include "Effects/DarkglassB7KStyleOverdriveProcessor.h"
+#include "Effects/OCDStyleOverdriveProcessor.h"
+#include "Effects/CrunchBoxStyleDistortionProcessor.h"
+#include "Effects/ODR1StyleOverdriveProcessor.h"
+#include "Effects/ToneBenderStyleFuzzProcessor.h"
 #include "PipelineEngineEquivalence.h"
 
 #include <juce_core/juce_core.h>
@@ -315,6 +319,38 @@ public:
               { { "dt1_distortion", 0.9f }, { "dt1_tone", 0.8f }, { "dt1_level", 0.5f } },
               { { "dt1_distortion", 0.6f }, { "dt1_tone", 0.2f }, { "dt1_level", 0.5f } } },
             log));
+
+        auto make = [] (auto factory) {
+            return [factory] (bool pipe) { auto p = factory(); p->setPipelineEngine (pipe); return std::unique_ptr<EffectProcessor> (std::move (p)); };
+        };
+
+        beginTest ("OCD: compiled pipeline vs netlist");
+        expectAccepted (pipelinetest::compare (make ([] { return std::make_unique<OCDStyleOverdriveProcessor>(); }),
+            { { { "ocd_drive", 0.2f }, { "ocd_tone", 0.5f }, { "ocd_volume", 0.5f }, { "ocd_clipping", 0.0f }, { "ocd_peak", 0.0f } },
+              { { "ocd_drive", 0.95f }, { "ocd_tone", 0.8f }, { "ocd_volume", 0.5f }, { "ocd_clipping", 1.0f }, { "ocd_peak", 1.0f } },
+              { { "ocd_drive", 0.6f }, { "ocd_tone", 0.2f }, { "ocd_volume", 0.5f }, { "ocd_clipping", 0.0f }, { "ocd_peak", 1.0f } } }, log));
+
+        beginTest ("CrunchBox: compiled pipeline vs netlist (measured only: stays on the netlist, see its header)");
+        (void) (pipelinetest::compare (make ([] { return std::make_unique<CrunchBoxStyleDistortionProcessor>(); }),
+            { { { "crunchbox_drive", 0.2f }, { "crunchbox_tone", 0.5f }, { "crunchbox_volume", 0.5f } },
+              { { "crunchbox_drive", 0.95f }, { "crunchbox_tone", 0.8f }, { "crunchbox_volume", 0.5f } },
+              { { "crunchbox_drive", 0.6f }, { "crunchbox_tone", 0.2f }, { "crunchbox_volume", 0.5f } } }, log));
+
+        beginTest ("ODR-1: compiled pipeline vs netlist");
+        expectAccepted (pipelinetest::compare (make ([] { return std::make_unique<ODR1StyleOverdriveProcessor>(); }),
+            { { { "odr1_drive", 0.2f }, { "odr1_spectrum", 0.5f }, { "odr1_level", 0.5f } },
+              { { "odr1_drive", 0.95f }, { "odr1_spectrum", 0.8f }, { "odr1_level", 0.5f } },
+              { { "odr1_drive", 0.6f }, { "odr1_spectrum", 0.2f }, { "odr1_level", 0.5f } } }, log));
+
+        for (auto model : { ToneBenderStyleFuzzProcessor::Model::germanium, ToneBenderStyleFuzzProcessor::Model::silicon })
+        {
+            const juce::String pre = model == ToneBenderStyleFuzzProcessor::Model::germanium ? "tb" : "tbsi";
+            beginTest ("Tone Bender (" + pre + "): compiled pipeline vs netlist (measured only: stays on the netlist)");
+            (void) (pipelinetest::compare (make ([model] { return std::make_unique<ToneBenderStyleFuzzProcessor> (model); }),
+                { { { pre + "_attack", 0.3f }, { pre + "_volume", 0.5f } },
+                  { { pre + "_attack", 1.0f }, { pre + "_volume", 0.5f } },
+                  { { pre + "_attack", 0.6f }, { pre + "_volume", 0.7f } } }, log));
+        }
 
         beginTest ("Darkglass B7K: compiled pipeline vs netlist (measured only: see its header, the netlist spikes on hot bursts)");
         (void) (pipelinetest::compare (

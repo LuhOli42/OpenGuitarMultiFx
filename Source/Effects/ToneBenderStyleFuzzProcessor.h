@@ -4,6 +4,7 @@
 #include "EffectProcessor.h"
 #include "GuitarSource.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -42,6 +43,13 @@ public:
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
+
+    /** Pipeline engine: every block compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). OFF by default: a fuzz lives in its transistors' saturation; with linear
+        transistors the compiled engine diverges, with the full two-junction port (transistorFull) it is stable but off by
+        up to 23 dB at low Attack (germanium), broken on the silicon model's one-port transistors, and slower than this
+        netlist (x0.7). No gain: the netlist stays the engine (same conclusion as the HM-2). */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
 
     /** Eco-tier CPU: Q1 and Q3 become one-port saturating devices (addBjtSaturating -- the
         collector junction matters only as the load-line limit) while the directly-coupled
@@ -89,6 +97,7 @@ private:
     struct Channel
     {
         NodalCircuit c;
+        pipeline::CompiledCircuit fC;
         int srcIn = 0;
         NodalCircuit::Node nC1 = 0, nC2 = 0, nC3 = 0, nE3 = 0, nOut = 0;
         int rAttackTop = 0, rAttackBottom = 0;
@@ -129,6 +138,7 @@ private:
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = false;
 
     static constexpr int controlInterval = 16;
 };
