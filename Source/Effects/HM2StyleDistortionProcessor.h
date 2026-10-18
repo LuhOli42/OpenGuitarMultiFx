@@ -2,6 +2,7 @@
 
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -44,6 +45,12 @@ public:
         port that made the un-drained one-port pop on hard edges; docs/circuits/HM2StyleDistortion.md). */
     static inline bool reducedOrder = false;
 
+    /** Pipeline engine: the three blocks compiled into linear networks + fixed-cost ports at their DC point
+        (docs/PerformancePipeline.md). OFF by default: block 1's two gain transistors run deep into saturation, which the
+        compiler's one-variable transistor port does not capture yet (CompiledPipeline test: timbre 1.7 dB, envelope
+        tails off), so the Newton netlist stays the engine until a two-variable (vbe, vbc) port exists. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
+
     /** Multiplier on the physical bc-junction diode (Is = Is/betaR, nVt) added base-to-collector on each
         saturating transistor in the reduced model -- the port the one-port lacks. 0 reproduces the original
         under-drained one-port (edge pop); the harness sweep (HM2_SWEEP) is flat from ~0.05 up on every
@@ -80,6 +87,7 @@ private:
     struct Channel
     {
         NodalCircuit b1, b2, b3;
+        pipeline::CompiledCircuit f1, f2, f3;
 
         int srcIn = 0;                              // b1: input signal
         NodalCircuit::Node nC7 = 0, nN6 = 0, nO1 = 0; // b1: stage output, op-amp (-) node, op-amp output
@@ -97,6 +105,7 @@ private:
     void updatePots (double dist, double low, double high, double level);
 
     std::array<Channel, 2> channels;
+    bool pipelineEngine = false;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* distParam = nullptr;

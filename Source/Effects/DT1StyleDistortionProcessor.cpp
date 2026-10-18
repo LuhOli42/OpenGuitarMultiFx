@@ -149,6 +149,17 @@ void DT1StyleDistortionProcessor::updatePots (double distortion, double tone, do
         ch.b.setResistance (ch.rToneBass, tBass);
         ch.b.setResistance (ch.rLevelTop, lTop);
         ch.b.setResistance (ch.rLevelBottom, lBottom);
+        if (ch.fastA.compiled())
+        {
+            ch.fastA.setResistance (ch.rDistFeedback, dFeedback);
+            ch.fastB.setResistance (ch.rDistSeries, dSeries);
+            ch.fastB.setResistance (ch.rToneTreble, tTreble);
+            ch.fastB.setResistance (ch.rToneBass, tBass);
+            ch.fastB.setResistance (ch.rLevelTop, lTop);
+            ch.fastB.setResistance (ch.rLevelBottom, lBottom);
+            ch.fastA.update();
+            ch.fastB.update();
+        }
     }
 }
 
@@ -180,6 +191,13 @@ void DT1StyleDistortionProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.a.prepare (newSampleRate) && dcOk;
         ch.b.setSource (ch.srcOp1, ch.a.voltage (ch.nOp1));
         dcOk = ch.b.prepare (newSampleRate) && dcOk;
+        ch.fastA.clear();
+        ch.fastB.clear();
+        if (pipelineEngine)
+        {
+            ch.fastA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate);
+            ch.fastB.compile (ch.b, ch.srcOp1, { ch.nOut }, newSampleRate);
+        }
     }
 
     controlCounter = 0;
@@ -217,6 +235,16 @@ void DT1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fastA.compiled())
+            {
+                ch.fastA.setSource (ch.srcIn, (double) data[i]);
+                ch.fastA.solveSample();
+                ch.fastB.setSource (ch.srcOp1, ch.fastA.voltage (ch.nOp1));
+                ch.fastB.solveSample();
+                data[i] = (float) ch.fastB.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.a.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.a.solveSample();
 

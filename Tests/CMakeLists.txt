@@ -150,6 +150,8 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   UniVibeProcessorTests.cpp
   PitchModProcessorTests.cpp
   FastMathTests.cpp
+  GuitarSynthTests.cpp
+  PipelineEquivalenceTests.cpp
   PitchShiftProcessorTests.cpp
   OctaverProcessorTests.cpp
   HarmonizerProcessorTests.cpp

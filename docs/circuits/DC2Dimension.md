@@ -4,7 +4,7 @@ Processor: `Source/Effects/Modulation/Chorus/DC2StyleChorusProcessor.{h,cpp}` �
 
 ## Sources
 - Boss DC-2 schematic (yuvadm/guitar-effects-schematics, `Chorus/BOSS DC-2.jpg`).
-- Fractal Audio forum, "Mother of all effect emulation: Boss DC-2" — modes 1–2 slow, 3–4 fast, two depths; triangle LFO;
+- Public forum write-up on the Boss DC-2: — modes 1–2 slow, 3–4 fast, two depths; triangle LFO;
   the mode buttons put resistors in parallel with the LFO's timing and output resistors; two BBDs modulated 180° apart.
 
 ## What is modelled

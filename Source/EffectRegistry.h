@@ -41,6 +41,7 @@ public:
         delay,
         reverb,
         pitchFilter,
+        pitch,
         neural,
         cabs,
         utility

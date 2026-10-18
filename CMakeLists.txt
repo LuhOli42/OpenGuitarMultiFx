@@ -158,6 +158,15 @@ set(OGMFX_CORE_SOURCES
   Source/Engine/ParameterManager.cpp
   Source/Effects/NoiseGates/GateProcessor.cpp
   Source/Effects/CompressorProcessor.cpp
+  Source/Effects/MultiType/MultiTypeDelayProcessor.cpp
+  Source/Effects/MultiType/MultiTypeReverbProcessor.cpp
+  Source/Effects/MultiType/MultiTypeModulationProcessors.cpp
+  Source/Effects/MultiType/MultiTypeCompressorProcessor.cpp
+  Source/Effects/MultiType/MultiTypePitchProcessor.cpp
+  Source/Effects/GuitarSynth/GuitarToBassProcessor.cpp
+  Source/Effects/GuitarSynth/SubOctaveSynthProcessor.cpp
+  Source/Effects/GuitarSynth/TrackedSynthProcessor.cpp
+  Source/Effects/GuitarSynth/SpectralMorphProcessor.cpp
   Source/Effects/PositiveGroundBoosterProcessor.cpp
   Source/Effects/DS1StyleDistortionProcessor.cpp
   Source/Effects/OD1StyleOverdriveProcessor.cpp

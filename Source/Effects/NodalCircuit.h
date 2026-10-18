@@ -859,6 +859,71 @@ public:
         return true;
     }
 
+    /** A read-only export of the netlist at its current operating point (call after prepare()), for compiling it into
+        a pipeline::LinearPortNetwork (Source/Effects/Pipeline/CompiledCircuit.h). Control thread; allocates. */
+    struct Description
+    {
+        struct R { Node a, b; double ohms; };
+        struct C { Node a, b; double farads; bool inductor; };
+        struct S { Node node; double volts; bool current; };
+        struct OpRow { Node plus, minus, out; double invGain, cm; };
+        struct Rail { int row; double lo, hi; };
+        struct D { Node a, k; double is, nVt; };
+        struct Q { Node c, b, e; bool pnp; double iSat; double J[3][3]; EbersMollBJT model; double vb, ve, vc; bool onePort; };
+        struct F { Node d, g, s; double dD, dS; bool onePort; };
+        int nodeCount = 0;
+        std::vector<double> dc;          // DC voltage per node (index 0 = ground)
+        std::vector<R> resistors;        // same order as addResistor handles
+        std::vector<C> capacitors;
+        std::vector<S> sources;          // same order as addSource handles
+        std::vector<OpRow> opRows;
+        std::vector<Rail> rails;         // saturating / rail-limited op-amp outputs (row index into opRows)
+        std::vector<D> diodes;
+        std::vector<Q> bjts;
+        std::vector<F> jfets;
+        bool supported = true;           // false: an element the compiler cannot express (tubes, coupled inductors)
+    };
+
+    void describe (Description& d) const
+    {
+        d = {};
+        d.nodeCount = nodeCount;
+        d.dc.assign ((size_t) nodeCount + 1, 0.0);
+        for (int n = 1; n <= nodeCount; ++n) d.dc[(size_t) n] = voltage (n);
+        for (const auto& r : resistors) d.resistors.push_back ({ r.a, r.b, 1.0 / r.g });
+        for (const auto& c : capacitors) d.capacitors.push_back ({ c.a, c.b, c.farads, c.group >= 0 });
+        for (const auto& src : sources) d.sources.push_back ({ src.node, src.volts, src.current });
+        for (const auto& op : opAmps) d.opRows.push_back ({ op.plus, op.minus, op.out, op.invGain, op.cm });
+        if (satOpIndex >= 0) d.rails.push_back ({ satOpIndex, satSpec.lowRail, satSpec.highRail });
+        for (const auto& rd : railDevices)
+            for (int k = 0; k < (int) opAmps.size(); ++k)
+                if (opAmps[(size_t) k].out == rd.out && k != satOpIndex) { d.rails.push_back ({ k, rd.lo, rd.hi }); break; }
+        for (const auto& di : diodes) d.diodes.push_back ({ di.a, di.k, di.Is, di.nVt });
+        for (const auto& q : bjts)
+        {
+            Description::Q e { q.c, q.b, q.e, q.pnp, q.iSat, {}, q.model, voltage (q.b), voltage (q.e), voltage (q.c), q.iSat > 0.0 };
+            const double sg = q.pnp ? -1.0 : 1.0;
+            const auto op = e.onePort ? q.model.evaluate (sg * (e.vb - e.ve), 0.0, sg * (e.vb - e.ve) + 5.0)
+                                      : q.model.evaluate (sg * e.vb, sg * e.ve, sg * e.vc);
+            const double J[3][3] = { { -op.diC_dvbc, op.diC_dvbe + op.diC_dvbc, -op.diC_dvbe },
+                                     { -op.diB_dvbc, op.diB_dvbe + op.diB_dvbc, -op.diB_dvbe },
+                                     { -op.diE_dvbc, op.diE_dvbe + op.diE_dvbc, -op.diE_dvbe } };
+            for (int r = 0; r < 3; ++r)
+                for (int c = 0; c < 3; ++c)
+                    e.J[r][c] = J[r][c];
+            d.bjts.push_back (e);
+        }
+        for (const auto& j : jfets)
+        {
+            double iD = 0.0, dD = 0.0, dS = 0.0;
+            if (j.assumedVds > 0.0) j.model.evaluate (voltage (j.g) - voltage (j.s), j.assumedVds, 0.0, iD, dD, dS);
+            else j.model.evaluate (voltage (j.g), voltage (j.d), voltage (j.s), iD, dD, dS);
+            d.jfets.push_back ({ j.d, j.g, j.s, dD, dS, j.assumedVds > 0.0 });
+        }
+        if (! triodes.empty() || ! pentodes.empty() || ! inductorGroups.empty())
+            d.supported = false;
+    }
+
     double voltage (Node node) const noexcept
     {
         if (node <= 0)

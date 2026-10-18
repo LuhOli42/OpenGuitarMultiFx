@@ -154,3 +154,9 @@ CPU (RenderFx --bench, 48k mono 256-block): the wrapped eco path stays ~27% of a
 lever, Orders{0,...} at eco, was measured and rejected (2026-10-11, PEDAL_ALIAS worst-case row on the
 shipped reduced model): non-harmonic/harmonic is -27.8 dB at 1x vs the -40 dB bar (2x sits at -39.5,
 which is why eco needs it). 1x is audibly aliased -- the pedal keeps Orders{1,1,2}.
+
+## Pipeline engine: tried, not applied (2026-10-17)
+Compiled with `pipeline::CompiledCircuit`, blocks 2 and 3 match the netlist exactly, but block 1's gain transistors run
+deep into saturation and the compiler's one-variable transistor port (vbc held at its DC value) cannot follow them:
+band 1.7 dB, envelope tails 40 dB off. The netlist stays the engine (`pipelineEngine` defaults to false) until a
+two-variable (vbe, vbc) transistor port exists.

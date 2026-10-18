@@ -46,3 +46,8 @@ One `NodalCircuit` block: four two-port BJTs plus two anti-parallel diode pairs.
 * Eco-tier cost (dev box, 48k/256/mono): **21.9% -> 12.8% of a core** with the reduced netlist
   (audit `tools/fx-audit/cpu-bench-2026-10-11-r2.md`: 26.8% -> ~16-19% projected on the A7S).
 * Unity trim **-8.40 dB** (the Russian voice plus the low stage gains is quiet at noon).
+
+## Pipeline engine (default since 2026-10-17)
+Compiled with `pipeline::CompiledCircuit` (docs/PerformancePipeline.md): 13.8 % -> 3.8 % of a core; against the
+netlist level 0.44 dB, band 0.44 dB, peak 0.30 dB, envelope 1.32 dB. The transistor exponential port is left off here:
+it made the hot-burst tails worse. `setPipelineEngine (false)` = the netlist.

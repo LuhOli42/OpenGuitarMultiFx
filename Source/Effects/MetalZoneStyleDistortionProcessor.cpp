@@ -810,6 +810,7 @@ auto MetalZoneStyleDistortionProcessor::Channel::operator= (const Channel& o) ->
     if (this == &o)
         return *this;
     blk = o.blk;
+    for (size_t b = 0; b < fast.size(); ++b) fast[b] = o.fast[b];
     srcIn = o.srcIn;
     srcPrev = o.srcPrev;
     out = o.out;
@@ -1142,6 +1143,16 @@ void MetalZoneStyleDistortionProcessor::updatePots (const Knobs& k)
             ch.reduced->gDist = 1.0 / (rDist + 1.0e3);
         else
             ch.blk[1].setResistance (ch.rDist, rDist);
+        if (ch.fast[1].compiled())
+        {
+            ch.fast[1].setResistance (ch.rDist, rDist);
+            ch.fast[3].setResistance (ch.rHighA, highA); ch.fast[3].setResistance (ch.rHighB, highB);
+            ch.fast[3].setResistance (ch.rLowA, lowA);   ch.fast[3].setResistance (ch.rLowB, lowB);
+            ch.fast[4].setResistance (ch.rMidA, midA);   ch.fast[4].setResistance (ch.rMidB, midB);
+            ch.fast[4].setResistance (ch.rFreqA, rFreq); ch.fast[4].setResistance (ch.rFreqB, rFreq);
+            ch.fast[4].setResistance (ch.rLevTop, levTop); ch.fast[4].setResistance (ch.rLevBottom, levBottom);
+            for (auto& f : ch.fast) f.update();
+        }
         ch.blk[3].setResistance (ch.rHighA, highA);
         ch.blk[3].setResistance (ch.rHighB, highB);
         ch.blk[3].setResistance (ch.rLowA, lowA);
@@ -1218,8 +1229,12 @@ void MetalZoneStyleDistortionProcessor::prepare (double newSampleRate, int, int)
     for (auto& ch : channels)
     {
         ch = Channel {};
+        const bool savedReduced = reducedOrder;
+        if (pipelineEngine) reducedOrder = false; // the pipeline compiles the full netlist
         buildChannel (ch);
-        if (reducedOrder)
+        reducedOrder = savedReduced;
+        for (auto& f : ch.fast) f.clear();
+        if (reducedOrder && ! pipelineEngine)
         {
             ch.reduced = std::make_unique<ReducedFrontEnd>();
             ch.reduced->prepare (newSampleRate);
@@ -1257,6 +1272,13 @@ void MetalZoneStyleDistortionProcessor::prepare (double newSampleRate, int, int)
                     ch.blk[(size_t) b].setSource (ch.srcPrev[(size_t) b], ch.blk[(size_t) b - 1].voltage (ch.out[(size_t) b - 1]));
                 dcOk = ch.blk[(size_t) b].prepare (newSampleRate) && dcOk;
             }
+        if (pipelineEngine && ch.reduced == nullptr)
+        {
+            ch.fast[0].compile (ch.blk[0], ch.srcIn, { ch.out[0] }, newSampleRate);
+            for (int b = 1; b < numBlocks - 1; ++b)
+                ch.fast[(size_t) b].compile (ch.blk[(size_t) b], ch.srcPrev[(size_t) b], { ch.out[(size_t) b] }, newSampleRate);
+            ch.fast[4].compile (ch.blk[4], ch.srcPrev[4], { ch.out[4], ch.nOut }, newSampleRate);
+        }
     }
 
     controlCounter = 0;
@@ -1297,6 +1319,19 @@ void MetalZoneStyleDistortionProcessor::process (juce::AudioBuffer<float>& buffe
             auto* data = buffer.getWritePointer (chIdx);
 
             bool ok = true;
+            if (ch.fast[0].compiled())
+            {
+                ch.fast[0].setSource (ch.srcIn, (double) data[i]);
+                ch.fast[0].solveSample();
+                for (int b = 1; b < numBlocks; ++b)
+                {
+                    ch.fast[(size_t) b].setSource (ch.srcPrev[(size_t) b], ch.fast[(size_t) b - 1].voltage (ch.out[(size_t) b - 1]));
+                    ch.fast[(size_t) b].solveSample();
+                }
+                data[i] = (float) ch.fast[4].voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             if (ch.reduced != nullptr)
             {
                 ch.blk[3].setSource (ch.srcPrev[3], ch.reduced->step ((double) data[i]));

@@ -194,6 +194,16 @@ void BassBigMuffStyleFuzzProcessor::updatePots (double sustain, double tone, dou
         ch.c.setResistance (ch.rToneBass, tonePot * t);
         ch.c.setResistance (ch.rVolumeTop, volumePot * (1.0 - v));
         ch.c.setResistance (ch.rVolumeBottom, volumePot * v);
+        if (ch.fast.compiled())
+        {
+            ch.fast.setResistance (ch.rSustainTop, sustainPot * (1.0 - s));
+            ch.fast.setResistance (ch.rSustainBottom, sustainPot * s);
+            ch.fast.setResistance (ch.rToneTreble, tonePot * (1.0 - t));
+            ch.fast.setResistance (ch.rToneBass, tonePot * t);
+            ch.fast.setResistance (ch.rVolumeTop, volumePot * (1.0 - v));
+            ch.fast.setResistance (ch.rVolumeBottom, volumePot * v);
+            ch.fast.update();
+        }
     }
 }
 
@@ -209,6 +219,12 @@ void BassBigMuffStyleFuzzProcessor::updateSwitches()
     {
         ch.c.setCapacitance (ch.cIn, boost ? cInBoost : cInFlat);
         ch.c.setResistance (ch.rDry, dry ? rDryOn : rDryOff);
+        if (ch.fast.compiled())
+        {
+            ch.fast.setCapacitance (ch.cIn, boost ? cInBoost : cInFlat);
+            ch.fast.setResistance (ch.rDry, dry ? rDryOn : rDryOff);
+            ch.fast.update();
+        }
     }
 }
 
@@ -237,7 +253,13 @@ void BassBigMuffStyleFuzzProcessor::prepare (double newSampleRate, int, int)
 
     dcOk = true;
     for (auto& ch : channels)
+    {
         dcOk = ch.c.prepare (newSampleRate) && dcOk;
+        if (pipelineEngine)
+            ch.fast.compile (ch.c, ch.srcIn, { ch.nOut }, newSampleRate);
+        else
+            ch.fast.clear();
+    }
 
     controlCounter = 0;
     sampleCount = 0;
@@ -280,9 +302,19 @@ void BassBigMuffStyleFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
-            ch.c.setSource (ch.srcIn, (double) data[i]);
-            const bool ok = ch.c.solveSample();
-            data[i] = (float) ch.c.voltage (ch.nOut);
+            bool ok = true;
+            if (ch.fast.compiled())
+            {
+                ch.fast.setSource (ch.srcIn, (double) data[i]);
+                ch.fast.solveSample();
+                data[i] = (float) ch.fast.voltage (ch.nOut);
+            }
+            else
+            {
+                ch.c.setSource (ch.srcIn, (double) data[i]);
+                ok = ch.c.solveSample();
+                data[i] = (float) ch.c.voltage (ch.nOut);
+            }
 
             if (chIdx == 0)
             {
