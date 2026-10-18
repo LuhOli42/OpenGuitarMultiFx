@@ -125,7 +125,6 @@ void OctaveFuzzProcessor::buildChannel (Channel& ch)
             c.addDiode (nb, nr, siIs, siNVt);
             c.addResistor (nr, gnd, 100.0e3);
             ch.nRect = nr;
-            ch.nStage = c1;
             c.setInitialGuess (b1, 1.14);
             c.setInitialGuess (e1, 0.49);
             c.setInitialGuess (c1, 4.1);
@@ -167,7 +166,6 @@ void OctaveFuzzProcessor::buildChannel (Channel& ch)
             c.addDiode (kb, nr, 1.0e-14, 0.02585);
             c.addResistor (nr, gnd, 300.0 * 10.0e3);
             ch.nRect = nr;
-            ch.nStage = c2;
             c.setInitialGuess (b1, 2.0);
             c.setInitialGuess (e1, 1.4);
             c.setInitialGuess (c1, 5.2);
@@ -232,7 +230,6 @@ void OctaveFuzzProcessor::buildChannel (Channel& ch)
             c.addResistor (e45, gnd, 1.8e3);
             c.addCapacitor (e45, gnd, 10.0e-6);
             ch.nRect = c45;
-            ch.nStage = c3;
             c.setInitialGuess (b3, 3.6);
             c.setInitialGuess (c3, 6.0);
             c.setInitialGuess (e3, 3.0);
@@ -244,10 +241,9 @@ void OctaveFuzzProcessor::buildChannel (Channel& ch)
         }
         case OctaveFuzzModel::toneMachine:
         {
-            // As drawn (2N3565s): Q1 47K / 1K, its collector straight into the splitter's base (4K7 / 4K7); Q1 biased by DC
-            // feedback from the splitter's emitter through 100K + 100K, the midpoint decoupled by 0.1 u. Q1 idles at ~0.16 mA
-            // with its collector at ~1.5 V and the splitter's emitter at ~0.9 V -- the emitter half has under a volt of
-            // room below it, so a hard-driven note clips one half early (the pedal's gated, uneven octave).
+            // Justin Philpott's drawing: Q1's 47K / 1K gain stage feeds the splitter base directly, with 100K from
+            // the splitter emitter to a 100K-grounded, 0.1 uF-decoupled midpoint and 47K from that midpoint to Q1's base.
+            // The 1000 pF from Q1 base to splitter emitter is also present in the drawing.
             const auto b1 = c.addNode(), c1 = c.addNode(), e1 = c.addNode();
             c.addCapacitor (in, b1, 0.1e-6);
             c.addResistor (rail, c1, 47.0e3);
@@ -258,24 +254,31 @@ void OctaveFuzzProcessor::buildChannel (Channel& ch)
             c.addBjt (c2, c1, e2, false, smallSignal);
             c.addResistor (e2, gnd, 4.7e3);
             c.addResistor (e2, mid, 100.0e3);
-            c.addResistor (mid, b1, 100.0e3);
+            c.addResistor (mid, gnd, 100.0e3);
             c.addCapacitor (mid, gnd, 0.1e-6);
+            c.addResistor (mid, b1, 47.0e3);
+            c.addCapacitor (b1, e2, 1000.0e-12);
 
-            // 10 u into each 1N34A, 100K to ground on each, summed on the Octave switch's 100K.
-            const auto na = c.addNode(), nb = c.addNode(), nr = c.addNode();
+            // The splitter outputs are AC-coupled to 100K-grounded diode cathodes. The collector diode is always
+            // connected; the Octave switch connects the emitter-side diode's anode to the shared summing node.
+            const auto na = c.addNode(), nb = c.addNode(), nr = c.addNode(), nsw = c.addNode(), nd = c.addNode();
             c.addCapacitor (c2, na, 10.0e-6);
             c.addCapacitor (e2, nb, 10.0e-6);
             c.addResistor (na, gnd, 100.0e3);
             c.addResistor (nb, gnd, 100.0e3);
-            c.addDiode (na, nr, geIs, geNVt);
-            c.addDiode (nb, nr, geIs, geNVt);
-            c.addResistor (nr, gnd, 100.0e3);
-            ch.nRect = nr;
-            ch.nStage = c2;
-            c.setInitialGuess (b1, 0.78);
-            c.setInitialGuess (c1, 1.5);
-            c.setInitialGuess (c2, 8.1);
-            c.setInitialGuess (e2, 0.87);
+            c.addDiode (nr, na, geIs, geNVt);
+            c.addDiode (nsw, nb, geIs, geNVt);
+            ch.rOctaveSwitch = c.addResistor (nsw, nr, 1.0);
+            c.addResistor (rail, nr, 100.0e3);
+            c.addCapacitor (nr, nd, 10.0e-6);
+            c.addResistor (nd, gnd, 50.22e3);
+            ch.nRect = nd;
+            c.setInitialGuess (b1, 0.748);
+            c.setInitialGuess (c1, 2.216);
+            c.setInitialGuess (e2, 1.589);
+            c.setInitialGuess (c2, 7.378);
+            c.setInitialGuess (nr, 3.112);
+            c.setInitialGuess (nd, 0.0);
             break;
         }
     }
@@ -283,21 +286,36 @@ void OctaveFuzzProcessor::buildChannel (Channel& ch)
 
 void OctaveFuzzProcessor::updatePots()
 {
-    if (drive == nullptr)
-        return;
-    const double d = drive->get();
-    if (std::abs (d - lastDrive) < 1.0e-6)
-        return;
-    lastDrive = d;
-    for (auto& ch : channels)
+    if (drive != nullptr)
     {
-        if (model == OctaveFuzzModel::octavia && ch.rDriveBypass >= 0)
-            ch.c.setResistance (ch.rDriveBypass, std::max (10.0, 10.0e3 * (1.0 - pots::audio (d)))); // Boost: 10K in the bypass
-        if (model == OctaveFuzzModel::superFuzz && ch.rDriveSeries >= 0)
+        const double d = drive->get();
+        if (std::abs (d - lastDrive) >= 1.0e-6)
         {
-            const double f = pots::audio (d);
-            driveFraction = f;
-            ch.c.setResistance (ch.rDriveSeries, std::max (1.0, f * (1.0 - f) * superFuzzDrivePot)); // the wiper's Thevenin
+            lastDrive = d;
+            for (auto& ch : channels)
+            {
+                if (model == OctaveFuzzModel::octavia && ch.rDriveBypass >= 0)
+                    ch.c.setResistance (ch.rDriveBypass, std::max (10.0, 10.0e3 * (1.0 - pots::audio (d)))); // Boost: 10K in the bypass
+                if (model == OctaveFuzzModel::superFuzz && ch.rDriveSeries >= 0)
+                {
+                    const double f = pots::audio (d);
+                    driveFraction = f;
+                    ch.c.setResistance (ch.rDriveSeries, std::max (1.0, f * (1.0 - f) * superFuzzDrivePot)); // the wiper's Thevenin
+                }
+            }
+        }
+    }
+
+    if (model == OctaveFuzzModel::toneMachine && toggle != nullptr)
+    {
+        const int octaveState = toggle->get() >= 0.5f ? 1 : 0;
+        if (octaveState != lastToggle)
+        {
+            lastToggle = octaveState;
+            const double resistance = octaveState != 0 ? 1.0 : 1.0e9;
+            for (auto& ch : channels)
+                if (ch.rOctaveSwitch >= 0)
+                    ch.c.setResistance (ch.rOctaveSwitch, resistance);
         }
     }
 }
@@ -327,6 +345,7 @@ void OctaveFuzzProcessor::prepare (double newSampleRate, int, int)
         }
     }
     lastDrive = -1.0;
+    lastToggle = -1;
     updatePots();
     for (auto& ch : channels)
     {
@@ -336,7 +355,6 @@ void OctaveFuzzProcessor::prepare (double newSampleRate, int, int)
             ch.preRest = ch.pre.voltage (ch.nPre);
         }
         ch.c.prepare (newSampleRate);
-        ch.stageRest = ch.c.voltage (ch.nStage);
         ch.rectRest = ch.c.voltage (ch.nRect);
     }
     smoothedLevel.reset (newSampleRate, paramRampSeconds);
@@ -362,7 +380,6 @@ void OctaveFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int solve = shortcut.begin (channels, buffer, sampleRate);
     const bool notchOn = model == OctaveFuzzModel::superFuzz && toggle->get() >= 0.5f;
-    const bool octaveOn = model != OctaveFuzzModel::toneMachine || toggle->get() >= 0.5f;
     const double toneMix = tone != nullptr ? (double) tone->get() : 0.5;
     // Tone Machine Sustain: the 50K Drive pot (220R under it) into Q3, 10K / 1K with the emitter bypassed (~x150),
     // whose collector (10K) drives the 1N34A pair to ground.
@@ -387,7 +404,7 @@ void OctaveFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
             ok = ch.c.solveSample() && ok;
             if (c == 0) { ++sampleCount; if (! ok) ++failureCount; }
 
-            double y = octaveOn ? ch.c.voltage (ch.nRect) - ch.rectRest : ch.c.voltage (ch.nStage) - ch.stageRest;
+            double y = ch.c.voltage (ch.nRect) - ch.rectRest;
             y = ch.post.process (y);
             if (model == OctaveFuzzModel::toneMachine)
             {

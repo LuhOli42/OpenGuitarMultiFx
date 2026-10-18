@@ -773,7 +773,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.markQualityDependent ("SuperFuzzStyleFuzz");
     registry.registerType ("SuperFuzzStyleFuzz", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (oversampled<OctaveFuzzProcessor> (Orders { 1, 2, 3 }, OctaveFuzzModel::superFuzz), 100000.0), 9.70f); }, "Octave");
     registry.markQualityDependent ("ToneMachineStyleFuzz");
-    registry.registerType ("ToneMachineStyleFuzz", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (oversampled<OctaveFuzzProcessor> (Orders { 1, 2, 3 }, OctaveFuzzModel::toneMachine), 100000.0), 18.53f); }, "Octave");
+    registry.registerType ("ToneMachineStyleFuzz", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (oversampled<OctaveFuzzProcessor> (Orders { 1, 2, 3 }, OctaveFuzzModel::toneMachine), 100000.0), 18.71f); }, "Octave");
     registry.registerType ("OctaveMultiplexerStyleOctaver", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<DividerOctaverProcessor> (DividerOctaverModel::octaveMultiplexer), 1000000.0), -4.89f); }, "Octave");
     registry.registerType ("FX35StyleOctaver", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<DividerOctaverProcessor> (DividerOctaverModel::fx35), 470000.0), -3.92f); }, "Octave");
     registry.registerType ("OCT1StyleOctaver", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<DividerOctaverProcessor> (DividerOctaverModel::oct1), 1000000.0), -8.33f); }, "Octave");

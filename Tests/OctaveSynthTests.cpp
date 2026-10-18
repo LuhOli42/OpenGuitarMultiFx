@@ -78,10 +78,58 @@ public:
         return out;
     }
 
+    static std::vector<float> runToneMachine (double amp, bool octaveOn)
+    {
+        OctaveFuzzProcessor p (OctaveFuzzModel::toneMachine);
+        set (p, "_octave", octaveOn ? 1.0f : 0.0f);
+        p.prepare (sr, 256, 1);
+        juce::AudioBuffer<float> b (1, 256);
+        std::vector<float> out;
+        constexpr int total = 2 * (int) sr, skip = (int) (0.5 * sr);
+        for (int base = 0; base < total; base += 256)
+        {
+            for (int i = 0; i < 256; ++i)
+                b.setSample (0, i, (float) (amp * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * (base + i) / sr)));
+            p.process (b);
+            if (base + 256 > skip)
+            {
+                const int first = juce::jmax (0, skip - base);
+                out.insert (out.end(), b.getReadPointer (0) + first, b.getReadPointer (0) + 256);
+            }
+        }
+        return out;
+    }
+
     void runTest() override
     {
         EffectRegistry registry;
         registerBuiltInEffects (registry);
+
+        beginTest ("Tone Machine schematic operating point");
+        {
+            OctaveFuzzProcessor p (OctaveFuzzModel::toneMachine);
+            p.prepare (sr, 256, 1);
+            logMessage ("Q1 base " + juce::String (p.debugNodeVoltage (3), 3) + " V, Q1 collector/splitter base "
+                        + juce::String (p.debugNodeVoltage (4), 3) + " V, splitter emitter " + juce::String (p.debugNodeVoltage (7), 3)
+                        + " V, splitter collector " + juce::String (p.debugNodeVoltage (6), 3) + " V, rectifier sum "
+                        + juce::String (p.debugNodeVoltage (11), 3) + " V");
+        }
+
+        beginTest ("Tone Machine Octave switch selects octave or fundamental at 0.03 and 0.08 input");
+        for (const double amp : { 0.03, 0.08 })
+        {
+            const auto on = runToneMachine (amp, true);
+            const auto off = runToneMachine (amp, false);
+            const double onFundamental = goertzel (on, 220.0), onOctave = goertzel (on, 440.0);
+            const double offFundamental = goertzel (off, 220.0), offOctave = goertzel (off, 440.0);
+            logMessage ("input " + juce::String (amp, 2) + ": Octave ON 440/220 = "
+                        + juce::String (onOctave / juce::jmax (onFundamental, 1.0e-12), 3)
+                        + " (" + juce::String (onOctave, 5) + " / " + juce::String (onFundamental, 5)
+                        + "), OFF 440/220 = " + juce::String (offOctave / juce::jmax (offFundamental, 1.0e-12), 3)
+                        + " (" + juce::String (offOctave, 5) + " / " + juce::String (offFundamental, 5) + ")");
+            expectGreaterThan (onOctave, onFundamental, "Octave ON emphasizes 440 Hz at input " + juce::String (amp, 2));
+            expectLessThan (offOctave, offFundamental, "Octave OFF emphasizes 220 Hz at input " + juce::String (amp, 2));
+        }
 
         // amp: the test level (0.3 = a hot pickup). cpuLimit: 5% of a core, except the octave fuzzes: full netlists that the
         // alias table (docs/circuits/OctaveFuzzes.md) keeps at 2x even in Eco, like the Fuzz Face / Tone Bender / Big Muff.
@@ -90,8 +138,6 @@ public:
             { "OctaviaStyleFuzz", 440.0, {}, 0.3, 12.0 },
             { "GreenRingerStyleFuzz", 440.0, {}, 0.3, 12.0 },
             { "SuperFuzzStyleFuzz", 440.0, {}, 0.3, 12.0 },
-            // The Tone Machine's splitter idles with its emitter at ~0.9 V (DC feedback bias): driven hard it clips one half
-            // early and the fundamental comes back, as on the real pedal -- the octave is a moderate-level effect.
             { "ToneMachineStyleFuzz", 440.0, { { "_octave", 1.0f } }, 0.03, 12.0 },
             { "OctaveMultiplexerStyleOctaver", 110.0, { { "_blend", 1.0f } } },
             { "FX35StyleOctaver", 110.0, { { "_direct", 0.0f } } },

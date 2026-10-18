@@ -49,9 +49,9 @@ private:
     {
         NodalCircuit c, pre; // pre: the Super-Fuzz's input stage (block A), driving c through the Drive pot
         int srcIn = 0, srcPre = 0;
-        int rDriveBypass = -1, rDriveSeries = -1; // -1 = the model has no such element
-        NodalCircuit::Node nRect = 0, nStage = 0, nPre = 0;
-        double stageRest = 0.0, rectRest = 0.0, preRest = 0.0; // operating points the AC taps are measured from (no start-up step)
+        int rDriveBypass = -1, rDriveSeries = -1, rOctaveSwitch = -1; // -1 = the model has no such element
+        NodalCircuit::Node nRect = 0, nPre = 0;
+        double rectRest = 0.0, preRest = 0.0; // operating points the AC taps are measured from (no start-up step)
         analog::Filter post, toneLow, toneHigh;
         double clipState = 0.0;
     };
@@ -71,6 +71,7 @@ private:
     std::array<diodes::ShuntClipper, 2> clippers { diodes::ShuntClipper (10.0e3, diodes::germanium), diodes::ShuntClipper (10.0e3, diodes::germanium) };
 
     double sampleRate = 0.0, lastDrive = -1.0, driveFraction = 0.5;
+    int lastToggle = -1;
     long long sampleCount = 0, failureCount = 0;
 };
 
