@@ -14,6 +14,8 @@ struct CompileOptions
 {
     bool transistorExponential = false;      // per pedal, only where the equivalence test shows it pays (docs/PerformancePipeline.md)
     bool transistorSaturation = true;        // fold Vce(sat) into each two-port BJT's curve (see compile())
+    bool transistorFull = false;             // each two-port BJT as a full two-junction port pair (BjtDevice): deep
+                                             // saturation and cutoff like the netlist, at a 2x2 Newton per transistor
     int portSweeps = 2;                      // Gauss-Seidel sweeps over the ports per sample
     double saturationIs = 1.0e-4, saturationKnee = 0.05;
     double railIs = 1.0e-3, railKnee = 0.01;  // row rail port: input-referred volts, exponential beyond the rail
@@ -53,6 +55,7 @@ public:
         curves.clear();
         expCurve.reset();
         composites.clear();
+        bjtDevices.clear();
         transfer.clear();
         dc = d.dc;
         inputHandle = inputSource;
@@ -198,6 +201,14 @@ public:
 
         for (const auto& q : d.bjts)
         {
+            if (o.transistorFull && ! q.onePort)
+            {
+                auto dev = std::make_unique<BjtDevice>();
+                dev->init (q.model, q.pnp, q.vb - q.ve, q.vb - q.vc);
+                net->addBjt (m (q.c), m (q.b), m (q.e), dev.get());
+                bjtDevices.push_back (std::move (dev));
+                continue;
+            }
             const Node t[3] = { m (q.c), m (q.b), m (q.e) };
             for (int r = 0; r < 3; ++r)
                 for (int c = 0; c < 3; ++c)
@@ -332,6 +343,7 @@ private:
     std::vector<std::unique_ptr<DeviceCurve>> curves;
     std::unique_ptr<DeviceCurve> expCurve;
     std::vector<std::unique_ptr<CompositeDiode>> composites;
+    std::vector<std::unique_ptr<BjtDevice>> bjtDevices;
     std::vector<std::unique_ptr<TransferCurve>> transfer;
     struct PendingCurve { TransferCurve* curve; std::function<double (double)> icAt; Node c, e; double vce0, sign; bool saturate; };
     std::vector<PendingCurve> pending;
