@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../EbersMollBJT.h"
+#include "../TubeModels.h"
 
 #include <juce_core/juce_core.h>
 
@@ -105,6 +106,30 @@ struct BjtDevice
         ib = sign * op.iB - ib0;
         ic = sign * op.iC - ic0;
         di[0] = op.diB_dvbe; di[1] = op.diB_dvbc; di[2] = op.diC_dvbe; di[3] = op.diC_dvbc;
+    }
+};
+
+/** A triode as a two-variable port pair (vgk, vpk) -> (ig, ip), Koren plate + grid current, as deviations from the DC
+    point (the linear network carries no stamp for it). Plate current is a power law (no exponential runaway), so its
+    Newton step needs only a coarse limit; grid current is near-exponential above zero bias. */
+struct TriodeDevice
+{
+    KorenTriode model;
+    double vgk0 = 0.0, vpk0 = 0.0, ig0 = 0.0, ip0 = 0.0;
+
+    void init (const KorenTriode& m, double vgk, double vpk)
+    {
+        model = m; vgk0 = vgk; vpk0 = vpk;
+        const auto o = model.evaluate (vgk0, vpk0);
+        ig0 = o.ig; ip0 = o.ip;
+    }
+    /** Deviation currents (grid, plate) and d(ig, ip)/d(ugk, upk) as di[0..3]. */
+    void eval (double ugk, double upk, double& ig, double& ip, double* di) const noexcept
+    {
+        const auto o = model.evaluate (vgk0 + ugk, vpk0 + upk);
+        ig = o.ig - ig0;
+        ip = o.ip - ip0;
+        di[0] = o.dig_dvgk; di[1] = 0.0; di[2] = o.dip_dvgk; di[3] = o.dip_dvpk;
     }
 };
 
@@ -217,6 +242,19 @@ public:
         const int k = addPort (pb);
         addPort (pc);
         return k;
+    }
+
+    /** A triode as two coupled ports solved together (TriodeDevice): port k = grid current (control vgk, injected g -> k),
+        port k+1 = plate current (control vpk, injected p -> k). Do not stamp it in the linear part too. */
+    int addTriode (Node p, Node g, Node k, const TriodeDevice* dev)
+    {
+        Port pg { g, k, Kind::triodeGrid, 0.0, 1.0, 0.0, 0.0, g, k };
+        pg.tri = dev;
+        Port pp { p, k, Kind::triodePlate, 0.0, 1.0, 0.0, 0.0, p, k };
+        pp.tri = dev;
+        const int first = addPort (pg);
+        addPort (pp);
+        return first;
     }
 
     /** Unbiased diodes between a and b as one port (CompositeDiode, current a -> b); `c` must outlive the network. */
@@ -356,6 +394,12 @@ public:
                     ++k; // its collector port was solved with it
                     continue;
                 }
+                if (ports[(size_t) k].kind == Kind::triodeGrid)
+                {
+                    solveTriode (k, pLin);
+                    ++k; // its plate port was solved with it
+                    continue;
+                }
                 const auto& zr = z[(size_t) k];
                 double pkd = pLin[(size_t) k];
                 for (int j = 0; j < np; ++j) if (j != k) pkd -= zr[(size_t) j] * portCurrent[(size_t) j];
@@ -384,9 +428,9 @@ public:
     double portVoltageCurrent (int port) const noexcept { return portCurrent[(size_t) port]; }
 
 private:
-    enum class Kind { diodePair, clamp, transfer, diode, composite, bjtBase, bjtCollector };
+    enum class Kind { diodePair, clamp, transfer, diode, composite, bjtBase, bjtCollector, triodeGrid, triodePlate };
     struct Port { Node a, b; Kind kind; double is, nv, vPos, vNeg; Node ca = -1, cb = -1; const TransferCurve* curve = nullptr; const DeviceCurve* device = nullptr;
-                  const CompositeDiode* comp = nullptr; const BjtDevice* bjt = nullptr; };
+                  const CompositeDiode* comp = nullptr; const BjtDevice* bjt = nullptr; const TriodeDevice* tri = nullptr; };
     struct Resistor { Node a, b; double ohms; };
     struct Cap { Node a, b; double farads, hist, current; double g = 0.0; bool inductor = false; };
     struct Vccs { Node outP, outN, cp, cn; double gm; };
@@ -422,7 +466,8 @@ private:
     {
         if (p.kind == Kind::transfer) { double d = 0.0, ds = 0.0; p.curve->eval (vk, d, ds); return d; }
         if (p.kind == Kind::composite) { double i = 0.0, di = 0.0; p.comp->table.eval (vk, i, di); return i; }
-        if (p.kind == Kind::bjtBase || p.kind == Kind::bjtCollector) return 0.0; // solved jointly, see solveBjt
+        if (p.kind == Kind::bjtBase || p.kind == Kind::bjtCollector || p.kind == Kind::triodeGrid || p.kind == Kind::triodePlate)
+            return 0.0; // solved jointly, see solveBjt / solveTriode
         if (p.kind == Kind::diode)
         {
             const double e0 = expLin (p.vPos / p.nv);
@@ -499,6 +544,42 @@ private:
         portVoltage[(size_t) kc] = u2;
         portCurrent[(size_t) kb] = ib;
         portCurrent[(size_t) kc] = ic;
+    }
+
+    /** The triode's two ports together, same scheme as solveBjt: u + Z I(u) = p, 2x2 Newton from last sample's solution,
+        fixed count. Steps limited to 0.25 V on the grid (its current turns on near-exponentially above zero bias) and
+        25 V on the plate (a power law). */
+    void solveTriode (int k, const std::array<double, MaxPorts>& pLin) noexcept
+    {
+        const int np = numPorts, kg = k, kp = k + 1;
+        const auto& dev = *ports[(size_t) kg].tri;
+        double p1 = pLin[(size_t) kg], p2 = pLin[(size_t) kp];
+        for (int j = 0; j < np; ++j)
+        {
+            if (j == kg || j == kp) continue;
+            p1 -= z[(size_t) kg][(size_t) j] * portCurrent[(size_t) j];
+            p2 -= z[(size_t) kp][(size_t) j] * portCurrent[(size_t) j];
+        }
+        const double z11 = z[(size_t) kg][(size_t) kg], z12 = z[(size_t) kg][(size_t) kp];
+        const double z21 = z[(size_t) kp][(size_t) kg], z22 = z[(size_t) kp][(size_t) kp];
+        double u1 = portVoltage[(size_t) kg], u2 = portVoltage[(size_t) kp], ig = 0.0, ip = 0.0, di[4];
+        for (int it = 0; it < 2; ++it) // 2 matched 4 on the Tube Driver (band 1.0 vs 2.0 dB) at 1.6x the speed
+        {
+            dev.eval (u1, u2, ig, ip, di);
+            const double f1 = u1 + z11 * ig + z12 * ip - p1;
+            const double f2 = u2 + z21 * ig + z22 * ip - p2;
+            const double a = 1.0 + z11 * di[0] + z12 * di[2], b = z11 * di[1] + z12 * di[3];
+            const double c = z21 * di[0] + z22 * di[2], d = 1.0 + z21 * di[1] + z22 * di[3];
+            const double det = a * d - b * c;
+            if (std::abs (det) < 1.0e-30) break;
+            u1 -= juce::jlimit (-0.25, 0.25, (f1 * d - b * f2) / det);
+            u2 -= juce::jlimit (-25.0, 25.0, (a * f2 - c * f1) / det);
+        }
+        dev.eval (u1, u2, ig, ip, di);
+        portVoltage[(size_t) kg] = u1;
+        portVoltage[(size_t) kp] = u2;
+        portCurrent[(size_t) kg] = ig;
+        portCurrent[(size_t) kp] = ip;
     }
 
     /** Solves v + z I(v) = p and returns I. f(v) = v + z I(v) - p is strictly increasing (and convex/concave either side

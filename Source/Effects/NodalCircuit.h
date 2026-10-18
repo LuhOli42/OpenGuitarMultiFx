@@ -871,6 +871,7 @@ public:
         struct D { Node a, k; double is, nVt; };
         struct Q { Node c, b, e; bool pnp; double iSat; double J[3][3]; EbersMollBJT model; double vb, ve, vc; bool onePort; };
         struct F { Node d, g, s; double dD, dS; bool onePort; };
+        struct T { Node p, g, k; KorenTriode model; double vp, vg, vk; };
         int nodeCount = 0;
         std::vector<double> dc;          // DC voltage per node (index 0 = ground)
         std::vector<R> resistors;        // same order as addResistor handles
@@ -881,6 +882,7 @@ public:
         std::vector<D> diodes;
         std::vector<Q> bjts;
         std::vector<F> jfets;
+        std::vector<T> triodes;
         bool supported = true;           // false: an element the compiler cannot express (tubes, coupled inductors)
     };
 
@@ -927,7 +929,8 @@ public:
             else j.model.evaluate (voltage (j.g), voltage (j.d), voltage (j.s), iD, dD, dS);
             d.jfets.push_back ({ j.d, j.g, j.s, dD, dS, j.assumedVds > 0.0 });
         }
-        if (! triodes.empty() || ! pentodes.empty())
+        for (const auto& t : triodes) d.triodes.push_back ({ t.p, t.g, t.k, t.model, voltage (t.p), voltage (t.g), voltage (t.k) });
+        if (! pentodes.empty())
             d.supported = false;
     }
 

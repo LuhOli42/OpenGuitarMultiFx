@@ -136,7 +136,7 @@ levels and two burst levels:
 | SansAmp BDDI | 6.9 -> **2.7** | 0.19 | 0.21 | 0.22 | 0.36 | applied (compiled, batch 4: five blocks, the last with two inputs) |
 | RAT / RAT 2 / Turbo Rat | 6.4-6.6 (unchanged) | 0.04 | 0.3-1.5 | 2-5 | 1.4-2.4 | compiled (`railsFirst`, x1.9) but NOT applied: hot-burst peaks / envelopes above the bar |
 | DS-1 | 6.4 (unchanged) | 0.5 | 1.6 | 2.5 | 31 | compiled but NOT applied: envelope off on hot bursts (BJT gain stage + saturating op-amp), not explained |
-| Tube Driver | 10.1 (unchanged) | - | - | - | - | NOT converted: triodes, which the compiler does not express |
+| Tube Driver | 10.1 (unchanged) | 0.10 | 1.04 | 6.6 | 1.55 | compiled (triode ports, 2026-10-18) but NOT applied: x0.7 against the netlist (x1.0 with a single Newton step, which loses the band match), and driven-burst peaks off by up to 6.6 dB, only at high Drive where the gain-333 op-amp pins its rail |
 | HM-2 | 13.4 (unchanged) | 0.14 | 1.22 | 0.16 | 2.29 | NOT applied: matched only with the full two-junction transistor port (`transistorFull`) at 6 Newton steps, which is slower than the netlist (x0.55); fewer steps lose the saturation. No gain, netlist kept |
 | Darkglass B7K | 11.6 (unchanged) | 0.02 | 0.30 | 0.27 | 2.8 | compiled (inductors + two-input EQ block, x1.9 with `railsFirst`) but NOT applied: envelope 2.8 dB at the recovery after the drive stage. (The earlier 11 dB peak gap was the compiler's port order, not the netlist: corrected) |
 
@@ -145,6 +145,34 @@ non-periodic error) and stay within 0.1 dB of unity with their existing trims (`
 
 Still above 5 %: the Metal Zone (five op-amp stages, every one of them clips, so all of it must stay oversampled) and the
 DT-1 just over. The remaining cost is mostly the per-port solves of the stages pinned on a rail.
+
+## Hot-burst envelope mismatches: investigation (2026-10-18)
+
+RAT, DS-1, CrunchBox and Darkglass stay on the netlist. What was checked:
+
+- **CrunchBox**: block by block (`pipeline::compareBlock`, gated bursts, now with a tail-energy metric) the compiled
+  blocks match the netlist within 0.6 dB, tails included. The whole-pedal 8 dB envelope figure comes from a single
+  5 ms frame at about -32 dB, close to the -40 dB floor of the envelope window, plus one-sample excursions of the
+  netlist itself (the LED clipper node reaches 2.27 V for one sample where the pipeline holds 1.82 V). No compiler
+  defect was found.
+- **Darkglass**: the earlier 11 dB peak gap was the compiler's port order (fixed by `railsFirst`); what remains is
+  2.8 dB of envelope at the recovery after the drive stage.
+- **RAT / DS-1 / Tube Driver**: the mismatches appear only at high gain, when an op-amp stage pins its rail. The op-amp
+  macro becomes a 1 ohm source + rail clamp + 470 ohm bleed in the compiler, so the recovery from the rail is
+  where both models differ. More Gauss-Seidel sweeps (3) did not help and removed the speed-up.
+
+So the open item is the op-amp rail recovery, not the diode / transistor ports. Until it is resolved, those pedals keep
+`pipelineEngine = false` and their tests are "measured only".
+
+## Triodes in the compiler (2026-10-18)
+
+`NodalCircuit::describe()` now exports triodes and `CompiledCircuit` turns each one into a two-port device
+(`TriodeDevice`, `LinearPortNetwork::addTriode`): grid-cathode and plate-cathode voltages, the same Koren model as the
+netlist, linearised at the DC point, a 2x2 Newton with step limits (0.25 V grid, 25 V plate), 2 iterations. Pentodes are
+not exported yet, so power stages cannot be compiled. On the Tube Driver it matches the netlist at low and medium Drive
+(< 0.4 dB) but is not faster: a Koren evaluation (pow / exp / log) costs the same in both, so there is nothing to save
+when the triodes are the expensive part. It pays off only where the linear part dominates (big tone stacks, many
+passive nodes per tube), which is the case to measure on the amps.
 
 ## Next candidates (drive bench, 2026-10-15)
 
