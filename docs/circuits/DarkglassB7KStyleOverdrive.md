@@ -35,6 +35,8 @@ drive stage -> 4049 CMOS-inverter clipping (the "Microtubes" engine) -> clean/we
 ## Pipeline engine: compiled, not applied (2026-10-18)
 `pipeline::CompiledCircuit` compiles all four blocks (the EQ gyrators as inductors, the EQ block with two inputs). Against
 the netlist: level 0.06 dB, small-signal band 0.1 dB, x1.7 faster; on hot bursts the netlist throws one-sample spikes at
-the clipper (2.3 V on a silicon pair to the bias, sample 30318 of the burst test) because NodalCircuit caps the diode
-exponential at e^40 (~0.6 A), so peak / envelope cannot be compared there. `pipelineEngine` stays false until that
-cap is replaced by SPICE-style linear continuation and both engines are re-verified.
+the clipper (2.3 V on a silicon pair to the bias, sample 30318 of the burst test; the compiled engine goes -0.50 then
+-0.67 V there), so peak / envelope cannot be compared. It is NOT the e^40 cap on NodalCircuit's diode exponential:
+replacing it with SPICE-style linear continuation left the spike identical (11.26 dB). Most likely the netlist's
+step-limited (pnjlim) Newton accepting an unconverged point at the reversal. `pipelineEngine` stays false until that
+is explained.
