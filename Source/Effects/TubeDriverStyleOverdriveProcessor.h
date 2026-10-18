@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -31,6 +32,10 @@ public:
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
+
+    /** Pipeline engine (default): every block compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). false = the Newton netlist, the reference for the tests. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Tube Driver"; }
@@ -62,6 +67,7 @@ private:
     struct Channel
     {
         NodalCircuit a, b;
+        pipeline::CompiledCircuit fA, fB;
         int srcIn = 0, srcOp = 0;
         int rDrive = 0, rHiTop = 0, rHiBottom = 0, rLo = 0, rLevelTop = 0, rLevelBottom = 0;
         NodalCircuit::Node nOp2 = 0, nPlate1 = 0, nPlate2 = 0, nGrid1 = 0, nGrid2 = 0, nOut = 0;
@@ -72,6 +78,9 @@ private:
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
+    // The compiled pipeline (triode ports, Pipeline/CompiledCircuit.h) runs, but is NOT faster here (x0.7 against the netlist)
+    // and is off by up to 6.6 dB on driven-burst peaks: the netlist stays the default. docs/PerformancePipeline.md.
+    bool pipelineEngine = false;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* driveParam = nullptr;

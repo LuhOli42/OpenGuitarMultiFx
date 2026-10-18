@@ -11,6 +11,7 @@
 #include "Effects/RatStyleDistortionProcessor.h"
 #include "Effects/DS1StyleDistortionProcessor.h"
 #include "Effects/SansAmpBDDIStyleOverdriveProcessor.h"
+#include "Effects/TubeDriverStyleOverdriveProcessor.h"
 #include "PipelineEngineEquivalence.h"
 
 #include <juce_core/juce_core.h>
@@ -375,6 +376,12 @@ public:
             { { { "bddi_drive", 0.3f }, { "bddi_blend", 0.8f }, { "bddi_presence", 0.5f }, { "bddi_bass", 0.5f }, { "bddi_treble", 0.5f }, { "bddi_level", 0.5f } },
               { { "bddi_drive", 0.95f }, { "bddi_blend", 1.0f }, { "bddi_presence", 0.8f }, { "bddi_bass", 0.7f }, { "bddi_treble", 0.3f }, { "bddi_level", 0.5f } },
               { { "bddi_drive", 0.6f }, { "bddi_blend", 0.4f }, { "bddi_presence", 0.2f }, { "bddi_bass", 0.3f }, { "bddi_treble", 0.8f }, { "bddi_level", 0.5f } } }, log));
+
+        beginTest ("Tube Driver (triodes): compiled pipeline vs netlist (measured only: slower than the netlist, driven-burst peaks off)");
+        (void) (pipelinetest::compare (make ([] { return std::make_unique<TubeDriverStyleOverdriveProcessor>(); }),
+            { { { "tubedriver_drive", 0.2f }, { "tubedriver_hi", 0.5f }, { "tubedriver_lo", 0.5f }, { "tubedriver_level", 0.5f } },
+              { { "tubedriver_drive", 0.95f }, { "tubedriver_hi", 0.8f }, { "tubedriver_lo", 0.3f }, { "tubedriver_level", 0.5f } },
+              { { "tubedriver_drive", 0.6f }, { "tubedriver_hi", 0.2f }, { "tubedriver_lo", 0.8f }, { "tubedriver_level", 0.5f } } }, log));
 
         beginTest ("Darkglass B7K: compiled pipeline vs netlist (measured only: see its header, the netlist spikes on hot bursts)");
         (void) (pipelinetest::compare (

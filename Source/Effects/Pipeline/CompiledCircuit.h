@@ -67,6 +67,7 @@ public:
         expCurve.reset();
         composites.clear();
         bjtDevices.clear();
+        triodeDevices.clear();
         transfer.clear();
         dc = d.dc;
         inputHandle = inputSource;
@@ -267,6 +268,14 @@ public:
             transfer.push_back (std::move (curve));
         }
 
+        for (const auto& t : d.triodes)
+        {
+            auto dev = std::make_unique<TriodeDevice>();
+            dev->init (t.model, t.vg - t.vk, t.vp - t.vk);
+            net->addTriode (m (t.p), m (t.g), m (t.k), dev.get());
+            triodeDevices.push_back (std::move (dev));
+        }
+
         for (const auto& j : d.jfets)
         {
             const Node dn = m (j.d), gn = m (j.g), sn = m (j.s);
@@ -373,6 +382,7 @@ private:
     std::unique_ptr<DeviceCurve> expCurve;
     std::vector<std::unique_ptr<CompositeDiode>> composites;
     std::vector<std::unique_ptr<BjtDevice>> bjtDevices;
+    std::vector<std::unique_ptr<TriodeDevice>> triodeDevices;
     std::vector<std::unique_ptr<TransferCurve>> transfer;
     struct PendingCurve { TransferCurve* curve; std::function<double (double)> icAt; Node c, e; double vce0, sign; bool saturate; };
     std::vector<PendingCurve> pending;
@@ -392,7 +402,7 @@ inline juce::String compareBlock (const NodalCircuit& block, int inputSource, No
     CompiledCircuit fast;
     if (! fast.compile (block, inputSource, { probe }, sampleRate, o)) return "not compilable";
     const double dcOut = ref.voltage (probe);
-    double sa = 0, sb = 0, sd = 0, pa = 0, pb = 0;
+    double sa = 0, sb = 0, sd = 0, pa = 0, pb = 0, ta = 0, tb = 0; // ta/tb: energy in the 30 ms after each gate-off
     const int n = (int) sampleRate, skip = n / 2;
     for (int i = 0; i < n; ++i)
     {
@@ -407,10 +417,12 @@ inline juce::String compareBlock (const NodalCircuit& block, int inputSource, No
         const double a = ref.voltage (probe) - dcOut, b = fast.voltage (probe) - dcOut;
         sa += a * a; sb += b * b; sd += (a - b) * (a - b);
         pa = std::max (pa, std::abs (a)); pb = std::max (pb, std::abs (b));
+        if (hz < 0.0) { const double ph = std::fmod (t, 0.2); if (ph >= 0.1 && ph < 0.13) { ta += a * a; tb += b * b; } }
     }
     const double k = 1.0 / (n - skip);
     return juce::String (std::sqrt (sa * k), 5) + " / " + juce::String (std::sqrt (sb * k), 5) + " / diff " + juce::String (std::sqrt (sd * k), 5)
-         + " pk " + juce::String (pa, 3) + "/" + juce::String (pb, 3);
+         + " pk " + juce::String (pa, 3) + "/" + juce::String (pb, 3)
+         + (hz < 0.0 ? " tail " + juce::String (10.0 * std::log10 ((tb + 1e-30) / (ta + 1e-30)), 2) + " dB" : juce::String());
 }
 
 } // namespace openguitarmultifx::pipeline
