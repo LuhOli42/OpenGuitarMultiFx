@@ -3,6 +3,7 @@
 #include "Effects/MetalZoneStyleDistortionProcessor.h"
 #include "Effects/DT1StyleDistortionProcessor.h"
 #include "Effects/HM2StyleDistortionProcessor.h"
+#include "Effects/DarkglassB7KStyleOverdriveProcessor.h"
 #include "PipelineEngineEquivalence.h"
 
 #include <juce_core/juce_core.h>
@@ -313,6 +314,14 @@ public:
             { { { "dt1_distortion", 0.2f }, { "dt1_tone", 0.5f }, { "dt1_level", 0.5f } },
               { { "dt1_distortion", 0.9f }, { "dt1_tone", 0.8f }, { "dt1_level", 0.5f } },
               { { "dt1_distortion", 0.6f }, { "dt1_tone", 0.2f }, { "dt1_level", 0.5f } } },
+            log));
+
+        beginTest ("Darkglass B7K: compiled pipeline vs netlist (measured only: see its header, the netlist spikes on hot bursts)");
+        (void) (pipelinetest::compare (
+            [] (bool pipe) { auto p = std::make_unique<DarkglassB7KStyleOverdriveProcessor>(); p->setPipelineEngine (pipe); return std::unique_ptr<EffectProcessor> (std::move (p)); },
+            { { { "b7k_blend", 0.5f }, { "b7k_drive", 0.3f }, { "b7k_level", 0.5f }, { "b7k_low", 0.5f }, { "b7k_lo_mid", 0.5f }, { "b7k_hi_mid", 0.5f }, { "b7k_treble", 0.5f }, { "b7k_grunt", 0.0f }, { "b7k_attack", 1.0f } },
+              { { "b7k_blend", 0.9f }, { "b7k_drive", 0.9f }, { "b7k_level", 0.5f }, { "b7k_low", 0.8f }, { "b7k_lo_mid", 0.3f }, { "b7k_hi_mid", 0.7f }, { "b7k_treble", 0.6f }, { "b7k_grunt", 2.0f }, { "b7k_attack", 0.0f } },
+              { { "b7k_blend", 0.2f }, { "b7k_drive", 0.6f }, { "b7k_level", 0.5f }, { "b7k_low", 0.3f }, { "b7k_lo_mid", 0.7f }, { "b7k_hi_mid", 0.4f }, { "b7k_treble", 0.2f }, { "b7k_grunt", 1.0f }, { "b7k_attack", 2.0f } } },
             log));
 
         beginTest ("HM-2: compiled pipeline vs netlist (measured only: HM-2 stays on the netlist, see its header)");

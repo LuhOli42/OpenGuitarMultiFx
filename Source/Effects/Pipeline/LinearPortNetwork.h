@@ -151,6 +151,15 @@ public:
         dirty = true;
         return numCaps++;
     }
+
+    /** An inductor: the same trapezoidal state slot as a capacitor, with conductance T / 2L and the history running the
+        other way (i = g v + h, h' = 2 g v + h). `henries` stored in the capacitor's value field. */
+    int addInductor (Node a, Node b, double henries)
+    {
+        const int k = addCapacitor (a, b, henries);
+        caps[(size_t) k].inductor = true;
+        return k;
+    }
     void setCapacitance (int id, double farads)
     {
         auto& c = caps[(size_t) id];
@@ -184,9 +193,16 @@ public:
         r.out = out;
         r.n = 0;
         for (auto& t : terms) { if (r.n < 4) r.terms[(size_t) r.n++] = t; }
-        r.input = isInput;
+        r.input = isInput ? 0 : -1;
         dirty = true;
         return numRows++;
+    }
+    /** An input constraint row for signal input `index` (0 or 1): a block fed from two places (a dry/wet blend). */
+    int addInputConstraint (Node node, int index)
+    {
+        const int r = addConstraint (node, { { node, 1.0 } }, true);
+        rows[(size_t) r].input = index;
+        return r;
     }
     static Node rowNode (int row) noexcept { return -(row + 2); }
 
@@ -227,7 +243,8 @@ public:
 
     /** The signal source: an ideal voltage behind `seriesOhms` into `n` (Norton form). One per network. */
     void setInputNode (Node n, double seriesOhms) { inputNode = n; inputG = 1.0 / seriesOhms; dirty = true; }
-    void setInput (double volts) noexcept { inputVolts = volts; }
+    void setInput (double volts) noexcept { inputVolts[0] = volts; }
+    void setInput (int index, double volts) noexcept { inputVolts[(size_t) index] = volts; }
     void setPortSweeps (int n) noexcept { portSweeps = juce::jmax (1, n); }
 
     /** A node whose voltage is read every sample (the output). Only probed nodes can be read. */
@@ -316,7 +333,7 @@ public:
     {
         // Loops run over the fixed capacities (unused rows/columns are zero) so the compiler can unroll and vectorise.
         // `Real` is the hot-loop precision (state and compiled matrices); the ports are always solved in double.
-        const Real u = (Real) inputVolts;
+        const Real u = (Real) inputVolts[0], u1 = (Real) inputVolts[1];
         const int np = numPorts;
         const int ncPad = juce::jmin (MaxCaps, (numCaps + 7) & ~7), npPad = juce::jmin (MaxPorts, (numPorts + 3) & ~3);
         std::array<Real, MaxPorts> ic {};
@@ -325,7 +342,7 @@ public:
         std::array<double, MaxPorts> pLin {};
         for (int k = 0; k < np; ++k)
         {
-            pLin[(size_t) k] = (double) (portIn[(size_t) k] * u + dot (portH[(size_t) k].data(), hist.data(), ncPad));
+            pLin[(size_t) k] = (double) (portIn[(size_t) k] * u + portIn1[(size_t) k] * u1 + dot (portH[(size_t) k].data(), hist.data(), ncPad));
         }
         // Gauss-Seidel over the ports, a fixed number of sweeps: each port on its Thevenin equivalent with the others'
         // latest currents. One sweep is enough for weakly coupled ports; strongly coupled ones (a transistor's ports
@@ -349,14 +366,15 @@ public:
         std::array<Real, MaxCaps> next;
         for (int k = 0; k < ncPad; ++k)
         {
-            const Real vc = capIn[(size_t) k] * u + dot (capH[(size_t) k].data(), hist.data(), ncPad)
+            const Real vc = capIn[(size_t) k] * u + capIn1[(size_t) k] * u1 + dot (capH[(size_t) k].data(), hist.data(), ncPad)
                           - dot (capPort[(size_t) k].data(), ic.data(), npPad);
-            next[(size_t) k] = twoG[(size_t) k] * vc - hist[(size_t) k]; // trapezoid: h_new = 2 g v - h_old
+            // trapezoid: capacitor h_new = 2 g v - h_old; inductor (history stored negated) h_new = h_old - 2 g v
+            next[(size_t) k] = stateSign[(size_t) k] * (twoG[(size_t) k] * vc - hist[(size_t) k]);
         }
 
         for (int q = 0; q < numProbes; ++q)
         {
-            const Real y = probeIn[(size_t) q] * u + dot (probeH[(size_t) q].data(), hist.data(), ncPad)
+            const Real y = probeIn[(size_t) q] * u + probeIn1[(size_t) q] * u1 + dot (probeH[(size_t) q].data(), hist.data(), ncPad)
                          - dot (probePort[(size_t) q].data(), ic.data(), npPad);
             probeValue[(size_t) q] = (double) y;
         }
@@ -370,10 +388,10 @@ private:
     struct Port { Node a, b; Kind kind; double is, nv, vPos, vNeg; Node ca = -1, cb = -1; const TransferCurve* curve = nullptr; const DeviceCurve* device = nullptr;
                   const CompositeDiode* comp = nullptr; const BjtDevice* bjt = nullptr; };
     struct Resistor { Node a, b; double ohms; };
-    struct Cap { Node a, b; double farads, hist, current; double g = 0.0; };
+    struct Cap { Node a, b; double farads, hist, current; double g = 0.0; bool inductor = false; };
     struct Vccs { Node outP, outN, cp, cn; double gm; };
     struct Entry { Node r, c; double y; };
-    struct Row { Node out; std::array<std::pair<Node, double>, 4> terms {}; int n = 0; bool input = false; };
+    struct Row { Node out; std::array<std::pair<Node, double>, 4> terms {}; int n = 0; int input = -1; };
 
     int addPort (Port p)
     {
@@ -650,7 +668,7 @@ private:
         for (int k = 0; k < numCaps; ++k)
         {
             auto& c = caps[(size_t) k];
-            c.g = 2.0 * c.farads * fs;
+            c.g = c.inductor ? 1.0 / (2.0 * c.farads * fs) : 2.0 * c.farads * fs;
             stamp (c.a, c.b, c.g);
         }
         for (int k = 0; k < numVccs; ++k)
@@ -705,13 +723,18 @@ private:
         }
 
         capIn.fill (0.0); portIn.fill (0.0); probeIn.fill (0.0); twoG.fill (0.0);
+        capIn1.fill (0.0); portIn1.fill (0.0); probeIn1.fill (0.0);
         for (auto& r : capH) r.fill (0.0);
         for (auto& r : capPort) r.fill (0.0);
         for (auto& r : portH) r.fill (0.0);
         for (auto& r : z) r.fill (0.0);
         for (auto& r : probeH) r.fill (0.0);
         for (auto& r : probePort) r.fill (0.0);
-        for (int k = 0; k < numCaps; ++k) twoG[(size_t) k] = (Real) (2.0 * caps[(size_t) k].g);
+        for (int k = 0; k < numCaps; ++k)
+        {
+            twoG[(size_t) k] = (Real) (2.0 * caps[(size_t) k].g);
+            stateSign[(size_t) k] = (Real) (caps[(size_t) k].inductor ? -1.0 : 1.0);
+        }
 
         // Compile to the state-space form. Every quantity read per sample is d^T v for a difference vector d (a cap's
         // or port's two nodes, a probe's one node); v = inv (Bcap h + e_in g_in u - sum_j d_j I_j).
@@ -722,23 +745,25 @@ private:
             };
             return m (pa, qa) - m (pa, qb) - m (pb, qa) + m (pb, qb);
         };
-        int inputUnknown = -1;
-        double inputScale = 0.0;
-        if (inputNode >= 0) { inputUnknown = inputNode; inputScale = inputG; }
+        int inputUnknown[2] = { -1, -1 };
+        double inputScale[2] = { 0.0, 0.0 };
+        if (inputNode >= 0) { inputUnknown[0] = inputNode; inputScale[0] = inputG; }
         for (int r = 0; r < numRows; ++r)
-            if (rows[(size_t) r].input) { inputUnknown = numNodes + r; inputScale = 1.0; }
-        auto inForm = [&] (Node pa, Node pb) {
-            if (inputUnknown < 0) return 0.0;
+            if (rows[(size_t) r].input >= 0) { inputUnknown[rows[(size_t) r].input] = numNodes + r; inputScale[rows[(size_t) r].input] = 1.0; }
+        auto inFormAt = [&] (int idx, Node pa, Node pb) {
+            if (inputUnknown[idx] < 0) return 0.0;
             const int ua = unknownOf (pa), ub = unknownOf (pb);
-            const double ra = ua >= 0 ? inv[(size_t) ua][(size_t) inputUnknown] : 0.0;
-            const double rb = ub >= 0 ? inv[(size_t) ub][(size_t) inputUnknown] : 0.0;
-            return (ra - rb) * inputScale;
+            const double ra = ua >= 0 ? inv[(size_t) ua][(size_t) inputUnknown[idx]] : 0.0;
+            const double rb = ub >= 0 ? inv[(size_t) ub][(size_t) inputUnknown[idx]] : 0.0;
+            return (ra - rb) * inputScale[idx];
         };
+        auto inForm = [&] (Node pa, Node pb) { return inFormAt (0, pa, pb); };
         auto compileForms = [&] {
         for (int k = 0; k < numCaps; ++k)
         {
             const auto& ck = caps[(size_t) k];
             capIn[(size_t) k] = inForm (ck.a, ck.b);
+            capIn1[(size_t) k] = inFormAt (1, ck.a, ck.b);
             for (int m = 0; m < numCaps; ++m) capH[(size_t) k][(size_t) m] = form (ck.a, ck.b, caps[(size_t) m].a, caps[(size_t) m].b);
             for (int j = 0; j < numPorts; ++j) capPort[(size_t) k][(size_t) j] = form (ck.a, ck.b, ports[(size_t) j].a, ports[(size_t) j].b);
         }
@@ -746,6 +771,7 @@ private:
         {
             const auto& pk = ports[(size_t) k];
             portIn[(size_t) k] = inForm (pk.ca, pk.cb);
+            portIn1[(size_t) k] = inFormAt (1, pk.ca, pk.cb);
             for (int m = 0; m < numCaps; ++m) portH[(size_t) k][(size_t) m] = form (pk.ca, pk.cb, caps[(size_t) m].a, caps[(size_t) m].b);
             for (int j = 0; j < numPorts; ++j) z[(size_t) k][(size_t) j] = form (pk.ca, pk.cb, ports[(size_t) j].a, ports[(size_t) j].b);
         }
@@ -753,6 +779,7 @@ private:
         {
             const Node pn = probes[(size_t) q];
             probeIn[(size_t) q] = inForm (pn, ground);
+            probeIn1[(size_t) q] = inFormAt (1, pn, ground);
             for (int m = 0; m < numCaps; ++m) probeH[(size_t) q][(size_t) m] = form (pn, ground, caps[(size_t) m].a, caps[(size_t) m].b);
             for (int j = 0; j < numPorts; ++j) probePort[(size_t) q][(size_t) j] = form (pn, ground, ports[(size_t) j].a, ports[(size_t) j].b);
         }
@@ -795,16 +822,17 @@ private:
     std::array<std::array<double, MaxNodes>, MaxNodes> inv {};
     std::array<Node, MaxProbes> probes {};
     std::array<double, MaxProbes> probeValue {};
-    std::array<Real, MaxProbes> probeIn {};
+    std::array<Real, MaxProbes> probeIn {}, probeIn1 {};
     std::array<std::array<Real, MaxCaps>, MaxProbes> probeH {};
     std::array<std::array<Real, MaxPorts>, MaxProbes> probePort {};
-    std::array<Real, MaxCaps> capIn {}, hist {}, twoG {};
+    std::array<Real, MaxCaps> capIn {}, capIn1 {}, hist {}, twoG {}, stateSign {};
     std::array<std::array<Real, MaxCaps>, MaxCaps> capH {};
     std::array<std::array<Real, MaxPorts>, MaxCaps> capPort {};
-    std::array<Real, MaxPorts> portIn {};
+    std::array<Real, MaxPorts> portIn {}, portIn1 {};
     std::array<std::array<Real, MaxCaps>, MaxPorts> portH {};
     Node inputNode = -1;
-    double inputG = 0.0, inputVolts = 0.0;
+    double inputG = 0.0;
+    std::array<double, 2> inputVolts {};
     bool dirty = true;
     int portSweeps = 1, activeSweeps = 1;
 };
