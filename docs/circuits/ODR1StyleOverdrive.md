@@ -79,3 +79,8 @@ is at least consistent with what the wiring does); Level clockwise = louder.
 ## Not modelled
 The electronic bypass and its JFET/logic switching; the real gain (~0.9) and distortion of the JFET followers; the status LED;
 battery and supply filtering (the 9 V rail is ideal); Q2's real gain (assumed 250).
+
+## Pipeline engine (default since 2026-10-18)
+The three blocks compiled with `pipeline::CompiledCircuit` (docs/PerformancePipeline.md): 11.1 % -> 7.7 % of a core;
+against the netlist level 0.04 dB, band 0.26 dB, peak 0.07 dB, envelope 0.09 dB; steady-state -126.5 dB; unity 0.00 dB.
+`setPipelineEngine (false)` = the netlist (the circuit tests use it).

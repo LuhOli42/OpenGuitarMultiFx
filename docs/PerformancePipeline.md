@@ -125,6 +125,11 @@ levels and two burst levels:
 | Bass Big Muff | 13.8 -> **3.8** | 0.44 | 0.44 | 0.30 | 1.32 | applied (compiled) |
 | DT-1 | 15.9 -> **5.5** | 0.00 | 0.34 | 0.17 | 0.48 | applied (compiled) |
 | Metal Zone | 27.2 -> **6.7** | 0.12 | 0.94 | 0.37 | 1.58 | applied (compiled); the envelope is the recovery after a rail-pinned Dist stage, against **8.97 dB for the reducedOrder model that shipped before** |
+| OCD | 12.0 -> **6.8** | 0.27 | 0.20 | 0.26 | 1.47 | applied (compiled, batch 3) |
+| ODR-1 | 11.1 -> **7.7** | 0.04 | 0.26 | 0.07 | 0.09 | applied (compiled, batch 3) |
+| CrunchBox | 10.1 (unchanged) | 0.07 | 1.32 | 7.1 | 8.3 | compiled (x2.4) but NOT applied: hot-burst peaks / envelopes off by 7-8 dB, the Darkglass symptom; not explained yet |
+| Tone Bender (ge / si) | 8.9 (unchanged) | - | - | - | - | NOT applied: diverges with linear transistors; with `transistorFull` stable but off by up to 23 dB (ge), broken on the silicon model's one-port transistors, and slower than the netlist (x0.7) |
+| Tube Driver | 10.1 (unchanged) | - | - | - | - | NOT converted: triodes, which the compiler does not express |
 | HM-2 | 13.4 (unchanged) | 0.14 | 1.22 | 0.16 | 2.29 | NOT applied: matched only with the full two-junction transistor port (`transistorFull`) at 6 Newton steps, which is slower than the netlist (x0.55); fewer steps lose the saturation. No gain, netlist kept |
 | Darkglass B7K | 11.6 (unchanged) | 0.06 | 1.43 | 11.3 | 7.0 | compiled (inductors + two-input EQ block added for it, x1.7) but NOT applied: the peak/envelope misses are the NETLIST's -- on hot bursts it throws one-sample 2 V spikes at the clipper at a clamp reversal. Not its e^40 diode-exponential cap (tested: replacing it changed nothing); most likely its step-limited Newton accepting an unconverged point. To be explained before switching |
 

@@ -55,3 +55,7 @@ narrow mid-gain window.
 * The Tone taper/direction, the LM833 (vs the RC4558 or TL072 of other versions) and the bias supply are as stated above. The pedal's LED
   indicator and switching are not part of the audio path.
 * The LM833's slew rate (7 V/us) is not modelled; at these swings (a few volts at kHz) it does not limit.
+
+## Pipeline engine: compiled, not applied (2026-10-18)
+Compiled with `pipeline::CompiledCircuit`: level 0.07 dB, band 1.32 dB, x2.4, but hot-burst peaks / envelopes are off by
+7-8 dB (the Darkglass symptom, not explained yet). `pipelineEngine` defaults to false.

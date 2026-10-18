@@ -216,11 +216,17 @@ void ODR1StyleOverdriveProcessor::updatePots (double drive, double spectrum, dou
     for (auto& ch : channels)
     {
         ch.a.setResistance (ch.rDriveOut, dOut);
+        if (ch.fA.compiled()) ch.fA.setResistance (ch.rDriveOut, dOut);
         ch.a.setResistance (ch.rDriveIn, dIn);
+        if (ch.fA.compiled()) ch.fA.setResistance (ch.rDriveIn, dIn);
         ch.b1.setResistance (ch.rSpectrumA, sA);
+        if (ch.fB1.compiled()) ch.fB1.setResistance (ch.rSpectrumA, sA);
         ch.b1.setResistance (ch.rSpectrumB, sB);
+        if (ch.fB1.compiled()) ch.fB1.setResistance (ch.rSpectrumB, sB);
         ch.b2.setResistance (ch.rLevelTop, lTop);
+        if (ch.fB2.compiled()) ch.fB2.setResistance (ch.rLevelTop, lTop);
         ch.b2.setResistance (ch.rLevelBottom, lBottom);
+        if (ch.fB2.compiled()) ch.fB2.setResistance (ch.rLevelBottom, lBottom);
     }
 }
 
@@ -254,6 +260,14 @@ void ODR1StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.b1.prepare (newSampleRate) && dcOk;
         ch.b2.setSource (ch.srcOp2, ch.b1.voltage (ch.nOp2));
         dcOk = ch.b2.prepare (newSampleRate) && dcOk;
+        ch.fA.clear(); ch.fB1.clear(); ch.fB2.clear();
+        if (pipelineEngine)
+        {
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate)
+                         && ch.fB1.compile (ch.b1, ch.srcOp1, { ch.nOp2 }, newSampleRate)
+                         && ch.fB2.compile (ch.b2, ch.srcOp2, { ch.nOut }, newSampleRate);
+            if (! ok) { ch.fA.clear(); ch.fB1.clear(); ch.fB2.clear(); }
+        }
     }
 
     controlCounter = 0;
@@ -284,6 +298,8 @@ void ODR1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             controlCounter = 0;
             updatePots (d, s, l);
+
+            for (auto& chu : channels) { chu.fA.update(); chu.fB1.update(); chu.fB2.update(); }
         }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
@@ -291,6 +307,18 @@ void ODR1StyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fA.compiled())
+            {
+                ch.fA.setSource (ch.srcIn, (double) data[i]);
+                ch.fA.solveSample();
+                ch.fB1.setSource (ch.srcOp1, ch.fA.voltage (ch.nOp1));
+                ch.fB1.solveSample();
+                ch.fB2.setSource (ch.srcOp2, ch.fB1.voltage (ch.nOp2));
+                ch.fB2.solveSample();
+                data[i] = (float) ch.fB2.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.a.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.a.solveSample();
 

@@ -140,3 +140,8 @@ worst level 1.68 dB, worst band **2.26 dB** (Ge attack 0.2 in 0.3, top octaves ~
 Bar is band <1.2, so the flag stays off. Also measured: stamping iSat with the full-1K DC path
 instead of `top` is worse (Si level -3.6 dB, band 3.9). Measured eco cost if it shipped:
 **29.2% -> 20.2% Ge, 17.9% -> 11.9% Si**.
+
+## Pipeline engine: tried, not applied (2026-10-18)
+With linear transistors the compiled engine diverges (a fuzz lives in saturation); with the full two-junction port
+(`transistorFull`) it is stable but off by up to 23 dB at low Attack on the germanium model, broken on the silicon
+model's one-port transistors, and slower than this netlist (x0.7). The netlist stays the engine.

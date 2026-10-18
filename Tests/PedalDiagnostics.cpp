@@ -353,6 +353,7 @@ public:
                 for (int led = 0; led < 2; ++led)
                 {
                     OCDStyleOverdriveProcessor p;
+                    p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                     p.prepare (sr, 512, 1);
                     setParams (p, { drive, 0.5f, 0.5f, (float) led, 1.0f });
                     juce::AudioBuffer<float> b (1, 1);
@@ -381,6 +382,7 @@ public:
                 for (int led = 0; led < 2; ++led)
                 {
                     OCDStyleOverdriveProcessor p;
+                    p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                     p.prepare (sr, 512, 1);
                     setParams (p, { drive, 0.5f, 0.5f, (float) led, 1.0f });
                     const auto y = render (p, toneHz, amp, 3.0);

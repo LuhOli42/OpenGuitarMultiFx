@@ -48,6 +48,7 @@ public:
         beginTest ("DC operating point: both op-amp outputs and the clipper node at the 4.5 V bias");
         {
             P p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             expect (p.dcConverged());
             logMessage ("stage 1 " + juce::String (p.debugStage1Out(), 4) + " V, clipper node " + juce::String (p.debugClipNode(), 4)
@@ -60,6 +61,7 @@ public:
         beginTest ("silence in: finite, settled near silence, no solver failures");
         {
             P p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             juce::AudioBuffer<float> buf (1, 512);
             for (int b = 0; b < 20; ++b)
@@ -80,6 +82,7 @@ public:
             for (double f : { 200.0, 1000.0, 4000.0 })
             {
                 P p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setParams (p, { knob, 0.5f, 0.5f, 0.0f, 1.0f });
                 const double amp = knob < 0.5f ? 0.0005 : 0.00003;
@@ -94,6 +97,7 @@ public:
         beginTest ("stage 2 is x(1 + 150K/39K) = 4.85 above its 100 nF corner");
         {
             P p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setParams (p, { 0.3f, 0.5f, 0.5f, 0.0f, 1.0f });
             const auto m = run (p, 1000.0, 0.0003);
@@ -109,6 +113,7 @@ public:
         beginTest ("MOSFET clipping: the 2N7000 body diodes hold the node within ~0.5-0.9 V of the bias, symmetrically");
         {
             P p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setParams (p, { 1.0f, 0.5f, 0.5f, 0.0f, 1.0f });
             const auto m = run (p, 440.0, 0.1);
@@ -128,6 +133,7 @@ public:
         beginTest ("LED clipping (the switch takes the 2N7000s out): the node reaches the LEDs' ~1.4-2.0 V");
         {
             P p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setParams (p, { 1.0f, 0.5f, 0.5f, 1.0f, 1.0f });
             const auto m = run (p, 440.0, 0.1);
@@ -143,10 +149,12 @@ public:
             auto ratio = [] (float tone)
             {
                 P p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setParams (p, { 0.1f, tone, 1.0f, 0.0f, 1.0f });
                 const double hi = run (p, 5000.0, 0.0005).out;
                 P q;
+                q.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 q.prepare (sr, 512, 1);
                 setParams (q, { 0.1f, tone, 1.0f, 0.0f, 1.0f });
                 const double lo = run (q, 200.0, 0.0005).out;
@@ -162,6 +170,7 @@ public:
             auto level = [] (float hp)
             {
                 P p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setParams (p, { 0.1f, 0.5f, 1.0f, 0.0f, hp });
                 return run (p, 1000.0, 0.0005).out;
@@ -177,6 +186,7 @@ public:
             for (float v : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
             {
                 P p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setParams (p, { 0.5f, 0.5f, v, 0.0f, 1.0f });
                 const double out = run (p, 440.0, 0.05).out;
@@ -190,6 +200,7 @@ public:
             for (float d : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
             {
                 P p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setParams (p, { d, 0.5f, 1.0f, clip, 1.0f });
                 const auto m = run (p, 220.0, 0.5, 0.3, 0.1);
@@ -201,6 +212,7 @@ public:
         beginTest ("stereo: identical input gives identical channels; different input keeps them independent");
         {
             P p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 2);
             setParams (p, { 0.7f, 0.3f, 0.8f, 0.0f, 1.0f });
             juce::AudioBuffer<float> buf (2, 512);
@@ -230,6 +242,7 @@ public:
         for (int seed = 1234; seed < 1238; ++seed)
         {
             P p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 128, 2);
             expectEquals (runPedalStress (p, 12.0, seed), 0);
             expectLessThan (p.getSolveFailureRate(), 1.0e-5);
@@ -238,6 +251,7 @@ public:
         beginTest ("cost (informational)");
         {
             P p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setParams (p, { 0.8f, 0.3f, 0.7f, 0.0f, 1.0f });
             juce::AudioBuffer<float> buf (1, 512);

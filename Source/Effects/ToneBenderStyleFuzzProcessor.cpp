@@ -184,9 +184,13 @@ void ToneBenderStyleFuzzProcessor::updatePots (double attack, double volume)
     for (auto& ch : channels)
     {
         ch.c.setResistance (ch.rAttackTop, attackPot * top);
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rAttackTop, attackPot * top);
         ch.c.setResistance (ch.rAttackBottom, attackPot * juce::jmax (0.001, 1.0 - top));
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rAttackBottom, attackPot * juce::jmax (0.001, 1.0 - top));
         ch.c.setResistance (ch.rVolumeTop, volumePot * juce::jmax (0.001, 1.0 - vol));
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rVolumeTop, volumePot * juce::jmax (0.001, 1.0 - vol));
         ch.c.setResistance (ch.rVolumeBottom, volumePot * juce::jmax (0.001, vol));
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rVolumeBottom, volumePot * juce::jmax (0.001, vol));
         if (ch.q3Device >= 0)
             // The reduced Q3's load line: (rail - Vce(sat)) over the collector chain plus the
             // emitter degeneration this knob sets (the wiper's 4.7 uF bypass makes `top` the
@@ -218,7 +222,17 @@ void ToneBenderStyleFuzzProcessor::prepare (double newSampleRate, int, int)
 
     dcOk = true;
     for (auto& ch : channels)
+    {
         dcOk = ch.c.prepare (newSampleRate) && dcOk;
+        ch.fC.clear();
+        if (pipelineEngine)
+        {
+            pipeline::CompileOptions fuzz;
+            fuzz.transistorFull = true; // a fuzz lives in its transistors' saturation and cutoff
+            const bool ok = ch.fC.compile (ch.c, ch.srcIn, { ch.nOut }, newSampleRate, fuzz);
+            if (! ok) { ch.fC.clear(); }
+        }
+    }
 
     controlCounter = 0;
     sampleCount = 0;
@@ -246,6 +260,8 @@ void ToneBenderStyleFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             controlCounter = 0;
             updatePots (a, v);
+
+            for (auto& chu : channels) { chu.fC.update(); }
         }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
@@ -253,6 +269,14 @@ void ToneBenderStyleFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fC.compiled())
+            {
+                ch.fC.setSource (ch.srcIn, (double) data[i]);
+                ch.fC.solveSample();
+                data[i] = (float) ch.fC.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.c.setSource (ch.srcIn, (double) data[i]);
             const bool ok = ch.c.solveSample();
             data[i] = (float) ch.c.voltage (ch.nOut);
