@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -36,6 +37,11 @@ public:
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
+
+    /** Pipeline engine: every block compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). OFF by default: with railsFirst the three models match level / band (0.04 /
+        0.3-1.5 dB, x1.9) but miss peaks by 2-5 dB and the 5 ms envelope by 1.4-2.4 dB on hot bursts; not yet at the bar. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return spec.displayName; }
@@ -73,6 +79,7 @@ private:
     struct Channel
     {
         NodalCircuit c;
+        pipeline::CompiledCircuit fC;
 
         int srcIn = 0;
         NodalCircuit::Node nOpOut = 0, nDiodes = 0, nFilter = 0, nOut = 0;
@@ -113,6 +120,7 @@ private:
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = false;
 
     static constexpr int controlInterval = 16; // samples between pot -> resistance updates
 };

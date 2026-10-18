@@ -182,8 +182,10 @@ void CrunchBoxStyleDistortionProcessor::prepare (double newSampleRate, int, int)
         ch.fA.clear(); ch.fB.clear();
         if (pipelineEngine)
         {
-            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate)
-                         && ch.fB.compile (ch.b, ch.srcOp1, { ch.nOut }, newSampleRate);
+            pipeline::CompileOptions railsFirstOpts;
+            railsFirstOpts.railsFirst = true; // the clipper hangs off a rail-pinned op-amp (docs/PerformancePipeline.md)
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate, railsFirstOpts)
+                         && ch.fB.compile (ch.b, ch.srcOp1, { ch.nOut }, newSampleRate, railsFirstOpts);
             if (! ok) { ch.fA.clear(); ch.fB.clear(); }
         }
     }

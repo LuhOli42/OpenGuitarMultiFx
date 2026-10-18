@@ -2,6 +2,7 @@
 
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -44,6 +45,11 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
 
+    /** Pipeline engine: every block compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). OFF by default: level 0.5 dB / band 1.6 dB / peak 2.5 dB, but the 5 ms
+        envelope is off by up to 31 dB on hot bursts (the BJT gain stage and the saturating op-amp); not yet explained. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
+
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "DS-1"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb8622a); }
@@ -67,7 +73,8 @@ public:
 private:
     struct Channel
     {
-        NodalCircuit pre, post; // pre: buffer + JFET VCR + Q2 + op-amp stage; post: clipper/tone/level/output buffer
+        NodalCircuit pre, post;
+        pipeline::CompiledCircuit fPre, fPost; // pre: buffer + JFET VCR + Q2 + op-amp stage; post: clipper/tone/level/output buffer
 
         int srcIn = 0;
         NodalCircuit::Node nB2 = 0, nE2 = 0, nC2 = 0, nO = 0; // pre
@@ -104,6 +111,7 @@ private:
     }
 
     double sampleRate = 0.0;
+    bool pipelineEngine = false;
     int controlCounter = 0;
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;

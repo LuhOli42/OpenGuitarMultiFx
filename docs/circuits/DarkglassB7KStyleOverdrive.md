@@ -40,3 +40,10 @@ the clipper (2.3 V on a silicon pair to the bias, sample 30318 of the burst test
 replacing it with SPICE-style linear continuation left the spike identical (11.26 dB). Most likely the netlist's
 step-limited (pnjlim) Newton accepting an unconverged point at the reversal. `pipelineEngine` stays false until that
 is explained.
+
+### Correction (2026-10-18, later)
+The hot-burst peak mismatch above was mostly the compiler's, not the netlist's: Gauss-Seidel solved the clipper's diode
+port before the drive op-amp's rail limit, and that limit (a 1-ohm source when pinned) carries large currents, so the
+diode worked from a stale value. With `railsFirst` the peaks match (0.27 dB) and band is 0.30 dB; the 5 ms envelope is
+2.8 dB off at the recovery after the drive stage, above the 1.5 dB bar, so it stays off. The netlist's one-sample
+excursion seen at sample 30318 is real in the netlist output but is not what the peak metric was measuring.

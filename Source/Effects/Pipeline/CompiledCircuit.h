@@ -17,6 +17,9 @@ struct CompileOptions
     bool transistorFull = false;             // each two-port BJT as a full two-junction port pair (BjtDevice): deep
                                              // saturation and cutoff like the netlist, at a 2x2 Newton per transistor
     int portSweeps = 2;                      // Gauss-Seidel sweeps over the ports per sample
+    bool railsFirst = false;                 // solve op-amp rail limits before the diodes (Gauss-Seidel order): right
+                                             // for a clipper driven by a rail-pinned op-amp (RAT, Darkglass), worse for
+                                             // the OCD -- per pedal, by measurement
     double saturationIs = 1.0e-4, saturationKnee = 0.05;
     double railIs = 1.0e-3, railKnee = 0.01;  // row rail port: input-referred volts, exponential beyond the rail
     double railNodeIs = 1.0e-2, railNodeKnee = 0.01; // node rail port on a converted follower (1-ohm source)
@@ -117,6 +120,19 @@ public:
             }
             rowOf[k] = net->addConstraint (m (op.out), { { m (op.plus), 1.0 + op.cm }, { m (op.minus), -(1.0 - op.cm) }, { m (op.out), -op.invGain } });
         }
+
+        auto addRails = [&] {
+        for (const auto& rail : d.rails)
+        {
+            const auto& op = d.opRows[(size_t) rail.row];
+            const double v0 = dc[(size_t) op.out];
+            if (rowOf[(size_t) rail.row] < 0) // converted follower: a node limit on its output
+                net->addClamp (m (op.out), Net::ground, rail.hi - v0, v0 - rail.lo, o.railNodeIs, o.railNodeKnee, expTable());
+            else
+                net->addRowClamp (m (op.out), rowOf[(size_t) rail.row], rail.hi - v0, v0 - rail.lo, o.railIs, o.railKnee);
+        }
+        };
+        if (o.railsFirst) addRails();
 
         // diodes: unbiased anti-parallel pairs as one tabulated pair, the rest single ports. A converted follower's
         // integrator clamp diodes are replaced by the eco macro's anti-windup bleed (470 ohm integrator -> output,
@@ -272,15 +288,7 @@ public:
             }
         }
 
-        for (const auto& rail : d.rails)
-        {
-            const auto& op = d.opRows[(size_t) rail.row];
-            const double v0 = dc[(size_t) op.out];
-            if (rowOf[(size_t) rail.row] < 0) // converted follower: a node limit on its output
-                net->addClamp (m (op.out), Net::ground, rail.hi - v0, v0 - rail.lo, o.railNodeIs, o.railNodeKnee, expTable());
-            else
-                net->addRowClamp (m (op.out), rowOf[(size_t) rail.row], rail.hi - v0, v0 - rail.lo, o.railIs, o.railKnee);
-        }
+        if (! o.railsFirst) addRails();
 
         probeNodes.assign (probes);
         for (auto n : probeNodes) net->addProbe (m (n));

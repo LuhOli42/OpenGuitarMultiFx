@@ -105,6 +105,10 @@ elements and the solved DC voltages):
   diode's 1 A point: red LEDs need ~2 V, silicon ~0.9 V), biased ones are single exponential ports;
 - inductors (single winding: the same trapezoidal state as a capacitor, conductance T/2L, history reversed) and up to
   two signal inputs per block (a block fed from two blocks, e.g. a dry/wet blend);
+- port order (Gauss-Seidel) matters when one port drives another hard: `railsFirst` solves the op-amp rail limits
+  before the diodes. A clipper behind a rail-pinned op-amp needs it (the RAT's clipper read 2.4 V on a silicon pair
+  without it); the OCD measures worse with it, so it is chosen per pedal. More sweeps did not fix those cases and cost
+  the whole gain (3 sweeps: OCD x1.0);
 - exponentials are continued as straight lines above e^40 (SPICE junction limiting) so a port equation always has a
   root however hard a 100 dB open-loop gain pushes it; far-side Newton starts are computed in the log domain.
 
@@ -129,9 +133,12 @@ levels and two burst levels:
 | ODR-1 | 11.1 -> **7.7** | 0.04 | 0.26 | 0.07 | 0.09 | applied (compiled, batch 3) |
 | CrunchBox | 10.1 (unchanged) | 0.07 | 1.32 | 7.1 | 8.3 | compiled (x2.4) but NOT applied: hot-burst peaks / envelopes off by 7-8 dB, the Darkglass symptom; not explained yet |
 | Tone Bender (ge / si) | 8.9 (unchanged) | - | - | - | - | NOT applied: diverges with linear transistors; with `transistorFull` stable but off by up to 23 dB (ge), broken on the silicon model's one-port transistors, and slower than the netlist (x0.7) |
+| SansAmp BDDI | 6.9 -> **2.7** | 0.19 | 0.21 | 0.22 | 0.36 | applied (compiled, batch 4: five blocks, the last with two inputs) |
+| RAT / RAT 2 / Turbo Rat | 6.4-6.6 (unchanged) | 0.04 | 0.3-1.5 | 2-5 | 1.4-2.4 | compiled (`railsFirst`, x1.9) but NOT applied: hot-burst peaks / envelopes above the bar |
+| DS-1 | 6.4 (unchanged) | 0.5 | 1.6 | 2.5 | 31 | compiled but NOT applied: envelope off on hot bursts (BJT gain stage + saturating op-amp), not explained |
 | Tube Driver | 10.1 (unchanged) | - | - | - | - | NOT converted: triodes, which the compiler does not express |
 | HM-2 | 13.4 (unchanged) | 0.14 | 1.22 | 0.16 | 2.29 | NOT applied: matched only with the full two-junction transistor port (`transistorFull`) at 6 Newton steps, which is slower than the netlist (x0.55); fewer steps lose the saturation. No gain, netlist kept |
-| Darkglass B7K | 11.6 (unchanged) | 0.06 | 1.43 | 11.3 | 7.0 | compiled (inductors + two-input EQ block added for it, x1.7) but NOT applied: the peak/envelope misses are the NETLIST's -- on hot bursts it throws one-sample 2 V spikes at the clipper at a clamp reversal. Not its e^40 diode-exponential cap (tested: replacing it changed nothing); most likely its step-limited Newton accepting an unconverged point. To be explained before switching |
+| Darkglass B7K | 11.6 (unchanged) | 0.02 | 0.30 | 0.27 | 2.8 | compiled (inductors + two-input EQ block, x1.9 with `railsFirst`) but NOT applied: envelope 2.8 dB at the recovery after the drive stage. (The earlier 11 dB peak gap was the compiler's port order, not the netlist: corrected) |
 
 All applied ones also pass the steady-state test (`OversampledEffectTests`: DT-1 -115 dB, Metal Zone -128 dB
 non-periodic error) and stay within 0.1 dB of unity with their existing trims (`PedalUnityLevelTests`).

@@ -83,6 +83,7 @@ public:
         beginTest ("DC operating point -- every block converges");
         {
             SansAmpBDDIStyleOverdriveProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 128, 1);
             expect (p.dcConverged(), "DC solve converged");
             expect (p.getSolveFailureRate() < 0.01);
@@ -96,6 +97,7 @@ public:
             auto stagePp = [&] (Pr probe)
             {
                 SansAmpBDDIStyleOverdriveProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 128, 1);
                 double phase = 0.0, lo = 1.0e9, hi = -1.0e9;
                 juce::AudioBuffer<float> warm (1, 128);
@@ -128,6 +130,7 @@ public:
         beginTest ("audible output");
         {
             SansAmpBDDIStyleOverdriveProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 128, 1);
             const double pp = steadyStatePeakToPeak (p, 110.0, 0.1);
             logMessage ("110 Hz p-p: " + juce::String (pp, 3) + " V");
@@ -139,6 +142,7 @@ public:
             const double dry = [&]
             {
                 SansAmpBDDIStyleOverdriveProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 128, 1);
                 setKnob (p, "bddi_blend", 0.0f);
                 setKnob (p, "bddi_level", 0.8f);
@@ -147,6 +151,7 @@ public:
             const double wet = [&]
             {
                 SansAmpBDDIStyleOverdriveProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 128, 1);
                 setKnob (p, "bddi_blend", 1.0f);
                 setKnob (p, "bddi_drive", 0.8f);
@@ -162,6 +167,7 @@ public:
             const double mid = [&]
             {
                 SansAmpBDDIStyleOverdriveProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 128, 1);
                 setKnob (p, "bddi_blend", 1.0f);
                 setKnob (p, "bddi_drive", 0.0f);
@@ -171,6 +177,7 @@ public:
             const double low = [&]
             {
                 SansAmpBDDIStyleOverdriveProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 128, 1);
                 setKnob (p, "bddi_blend", 1.0f);
                 setKnob (p, "bddi_drive", 0.0f);
@@ -187,6 +194,7 @@ public:
             const auto thdAt = [&] (float drive)
             {
                 SansAmpBDDIStyleOverdriveProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 128, 1);
                 setKnob (p, "bddi_blend", 1.0f);
                 setKnob (p, "bddi_drive", drive);
@@ -204,6 +212,7 @@ public:
             const double up = [&]
             {
                 SansAmpBDDIStyleOverdriveProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 128, 1);
                 setKnob (p, "bddi_blend", 0.0f);
                 setKnob (p, "bddi_bass", 1.0f);
@@ -213,6 +222,7 @@ public:
             const double down = [&]
             {
                 SansAmpBDDIStyleOverdriveProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 128, 1);
                 setKnob (p, "bddi_blend", 0.0f);
                 setKnob (p, "bddi_bass", 0.0f);
