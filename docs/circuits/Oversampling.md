@@ -128,3 +128,8 @@ The -40 dB bar decided which eco orders could drop a step and which needed a red
 | HM-2 | -19.1 (reduced model, knobs 0.7); -27.8 worst case (knobs 1.0) | stays 2x; reducedOrder shipped (PR #85, bc-diode fix) but 1x is audibly aliased either way |
 | ToneBender Ge / Si | -15.3 / -14.5 | stays 2x; 1-port saturating swap misfit the Q2/Q3 feedback pair (level swings +-6 dB) |
 | DS-1 / BD-2 / OCD / CrunchBox / RATs / ODR-1 / DT-1 / Darkglass / TubeDriver / FuzzFaces | -10 .. -35 | stays 2x (all fail the -40 dB bar) |
+
+## Octave-up fuzzes (2026-10-13)
+Octavia -36.1 / -40.8 / -40.9, Green Ringer -35.3 / -56.4 / -61.9, Super-Fuzz -12.5 / -20.7 / -28.3, Tone Machine -14.1 / -21.7 / -29.1
+(1x / 2x / 4x, knobs 0.7). Tiers 2x/2x/4x (Octavia, Green Ringer) and 2x/4x/8x (Super-Fuzz, Tone Machine); details and CPU in
+[OctaveFuzzes.md](OctaveFuzzes.md).

@@ -321,6 +321,15 @@ Algorithms: [AlgorithmicPhasers.md](AlgorithmicPhasers.md).
 Algorithms: [AlgorithmicVibratos.md](AlgorithmicVibratos.md). (The CE-1, Memory Man and Uni-Vibe 905 have their own
 vibrato modes, documented with them.)
 
+## Octave and synth (`OctaveFuzzProcessor`, `DividerOctaverProcessor`, `GuitarSynthProcessor`, `AlgorithmicPitchProcessor`)
+
+Octave up = a phase splitter whose two halves are recombined -- by a diode per half (Octavia, Green Ringer, Tone Machine)
+or by a tied-collector transistor pair, cosh(v / Vt) (Super-Fuzz); netlists on NodalCircuit, operating points checked
+against the drawings' marked voltages ([OctaveFuzzes.md](OctaveFuzzes.md)); octave down =
+a level-tracking comparator clocking 4013 flip-flops that chop the signal or gate a square ([DividerOctavers.md](DividerOctavers.md),
+alongside the Boss OC-2); synths = those voices into a swept resonant VCF ([GuitarSynths.md](GuitarSynths.md)); algorithms
+([AlgorithmicPitch.md](AlgorithmicPitch.md)). Browser chips: **Octave**, **Synth**, **Pitch**.
+
 ## Cross-cutting: oversampling
 Every clipping pedal that measured audibly aliased at 1x runs through `OversampledEffect`
 (2x, DS-1 4x); the table, the method and the CPU trade-off are in

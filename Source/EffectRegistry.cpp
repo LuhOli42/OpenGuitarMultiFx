@@ -69,7 +69,7 @@
 #include "Effects/BassBigMuffStyleFuzzProcessor.h"
 #include "Effects/DarkglassB7KStyleOverdriveProcessor.h"
 #include "Effects/SansAmpBDDIStyleOverdriveProcessor.h"
-#include "Effects/BossOC2StyleOctaverProcessor.h"
+#include "Effects/Pitch/BossOC2StyleOctaverProcessor.h"
 #include "Effects/ParametricEQProcessor.h"
 #include "Effects/RingModProcessor.h"
 #include "Effects/NoiseGates/DS201StyleNoiseGateProcessor.h"
@@ -127,9 +127,13 @@
 #include "Effects/Modulation/Phaser/PhaserPedalProcessor.h"
 #include "Effects/Modulation/Phaser/AlgorithmicPhaserProcessor.h"
 #include "Effects/PitchModProcessor.h"
-#include "Effects/PitchShiftProcessor.h"
-#include "Effects/OctaverProcessor.h"
-#include "Effects/HarmonizerProcessor.h"
+#include "Effects/Pitch/PitchShiftProcessor.h"
+#include "Effects/Pitch/OctaverProcessor.h"
+#include "Effects/Pitch/HarmonizerProcessor.h"
+#include "Effects/Pitch/OctaveFuzzProcessor.h"
+#include "Effects/Pitch/DividerOctaverProcessor.h"
+#include "Effects/Pitch/GuitarSynthProcessor.h"
+#include "Effects/Pitch/AlgorithmicPitchProcessor.h"
 #include "Effects/LooperProcessor.h"
 #include "Effects/PingPongDelayProcessor.h"
 #include "Effects/ReverseDelayProcessor.h"
@@ -758,6 +762,29 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("PitchShift", EffectRegistry::Category::pitch, [] { return std::make_unique<PitchShiftProcessor>(); }, "Pitch");
     registry.registerType ("Octaver", EffectRegistry::Category::pitch, [] { return std::make_unique<OctaverProcessor>(); }, "Pitch");
     registry.registerType ("Harmonizer", EffectRegistry::Category::pitch, [] { return std::make_unique<HarmonizerProcessor>(); }, "Pitch");
+    // Octave and synth effects (Source/Effects/Pitch, docs/circuits/OctaveFuzzes.md, DividerOctavers.md, GuitarSynths.md,
+    // AlgorithmicPitch.md). The octave-up fuzzes run their rectifier netlists oversampled (rectification doubles the band);
+    // tiers from the alias table in OctaveFuzzes.md: none passes -40 dB at 1x; the Super-Fuzz and Tone Machine clip into
+    // germanium diodes like the Tone Bender clips, so they step 2x / 4x / 8x.
+    registry.markQualityDependent ("OctaviaStyleFuzz");
+    registry.registerType ("OctaviaStyleFuzz", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (oversampled<OctaveFuzzProcessor> (Orders { 1, 1, 2 }, OctaveFuzzModel::octavia), 1000000.0), 3.09f); }, "Octave");
+    registry.markQualityDependent ("GreenRingerStyleFuzz");
+    registry.registerType ("GreenRingerStyleFuzz", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (oversampled<OctaveFuzzProcessor> (Orders { 1, 1, 2 }, OctaveFuzzModel::greenRinger), 120000.0), 13.35f); }, "Octave");
+    registry.markQualityDependent ("SuperFuzzStyleFuzz");
+    registry.registerType ("SuperFuzzStyleFuzz", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (oversampled<OctaveFuzzProcessor> (Orders { 1, 2, 3 }, OctaveFuzzModel::superFuzz), 100000.0), 9.70f); }, "Octave");
+    registry.markQualityDependent ("ToneMachineStyleFuzz");
+    registry.registerType ("ToneMachineStyleFuzz", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (oversampled<OctaveFuzzProcessor> (Orders { 1, 2, 3 }, OctaveFuzzModel::toneMachine), 100000.0), 18.53f); }, "Octave");
+    registry.registerType ("OctaveMultiplexerStyleOctaver", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<DividerOctaverProcessor> (DividerOctaverModel::octaveMultiplexer), 1000000.0), -4.89f); }, "Octave");
+    registry.registerType ("FX35StyleOctaver", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<DividerOctaverProcessor> (DividerOctaverModel::fx35), 470000.0), -3.92f); }, "Octave");
+    registry.registerType ("OCT1StyleOctaver", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<DividerOctaverProcessor> (DividerOctaverModel::oct1), 1000000.0), -8.33f); }, "Octave");
+    registry.registerType ("MicroSynthStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<GuitarSynthProcessor> (GuitarSynthModel::microSynth), 68000.0), -12.11f); }, "Synth");
+    registry.registerType ("BassMicroSynthStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<GuitarSynthProcessor> (GuitarSynthModel::bassMicroSynth), 68000.0), -8.63f); }, "Synth");
+    registry.registerType ("GuitarSynthStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<GuitarSynthProcessor> (GuitarSynthModel::guitarSynth), 68000.0), -14.00f); }, "Synth");
+    registry.registerType ("BrassmasterStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<GuitarSynthProcessor> (GuitarSynthModel::brassmaster), 75000.0), -2.51f); }, "Synth");
+    registry.registerType ("PolyOctave", EffectRegistry::Category::pitch, [] { return std::make_unique<AlgorithmicPitchProcessor> (AlgorithmicPitch::pog); }, "Pitch");
+    registry.registerType ("Whammy", EffectRegistry::Category::pitch, [] { return std::make_unique<AlgorithmicPitchProcessor> (AlgorithmicPitch::whammy); }, "Pitch");
+    registry.registerType ("OrganMachine", EffectRegistry::Category::pitch, [] { return std::make_unique<AlgorithmicPitchProcessor> (AlgorithmicPitch::organ); }, "Synth");
+    registry.registerType ("MonoSynth", EffectRegistry::Category::pitch, [] { return std::make_unique<AlgorithmicPitchProcessor> (AlgorithmicPitch::monoSynth); }, "Synth");
 
     // Phase 5 (partial): Looper. Sits in the Delay category per the
     // reference sheet, not alongside the other Phase 4 Pitch effects.
