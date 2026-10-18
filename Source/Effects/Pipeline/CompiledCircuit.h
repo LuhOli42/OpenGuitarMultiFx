@@ -43,6 +43,14 @@ public:
         signal; `probes` the nodes that will be read. Returns false if the netlist holds an element this cannot express. */
     bool compile (const NodalCircuit& circuit, int inputSource, std::initializer_list<Node> probes, double sampleRate, const Options& o = {})
     {
+        return compile (circuit, inputSource, -1, probes, sampleRate, o);
+    }
+
+    /** Two signal sources (a block fed from two blocks, e.g. a dry/wet blend): `secondSource` -1 for none. */
+    bool compile (const NodalCircuit& circuit, int inputSource, int secondSource, std::initializer_list<Node> probes, double sampleRate,
+                  const Options& o = {})
+    {
+        secondHandle = secondSource;
         NodalCircuit::Description d;
         circuit.describe (d);
         return compileImpl (d, inputSource, probes, sampleRate, o);
@@ -67,18 +75,27 @@ public:
             if (! src.current && src.node > 0) fixed[(size_t) src.node] = true;
         const Node inNode = d.sources[(size_t) inputSource].node;
         inputDc = d.sources[(size_t) inputSource].volts;
+        const Node inNode2 = secondHandle >= 0 ? d.sources[(size_t) secondHandle].node : Node (0);
+        secondDc = secondHandle >= 0 ? d.sources[(size_t) secondHandle].volts : 0.0;
         for (int n = 1; n <= d.nodeCount; ++n)
-            if (! fixed[(size_t) n] || n == inNode) map[(size_t) n] = net->addNode();
+            if (! fixed[(size_t) n] || n == inNode || n == inNode2) map[(size_t) n] = net->addNode();
         auto m = [&] (Node n) { return n > 0 ? map[(size_t) n] : Net::ground; };
 
-        net->addConstraint (m (inNode), { { m (inNode), 1.0 } }, true);
+        net->addInputConstraint (m (inNode), 0);
+        if (secondHandle >= 0) net->addInputConstraint (m (inNode2), 1);
         for (const auto& r : d.resistors) net->addResistor (m (r.a), m (r.b), r.ohms);
         capMap.assign (d.capacitors.size(), -1);
         for (size_t k = 0; k < d.capacitors.size(); ++k)
         {
             const auto& c = d.capacitors[k];
-            if (c.inductor) return false;
-            if (m (c.a) >= 0 || m (c.b) >= 0) capMap[k] = net->addCapacitor (m (c.a), m (c.b), c.farads);
+            if (m (c.a) < 0 && m (c.b) < 0) continue;
+            if (c.inductor)
+            {
+                if (c.farads <= 0.0) return false;
+                capMap[k] = net->addInductor (m (c.a), m (c.b), c.farads);
+            }
+            else
+                capMap[k] = net->addCapacitor (m (c.a), m (c.b), c.farads);
         }
         // Op-amp rows. A saturating unity follower (an op-amp macro's output stage: + = integrator node, - = out = its
         // own output) becomes a 1-ohm controlled source instead of a constraint, so its rail limit can be an ordinary
@@ -296,7 +313,11 @@ public:
         return true;
     }
 
-    void setSource (int handle, double volts) noexcept { if (handle == inputHandle) net->setInput (volts - inputDc); }
+    void setSource (int handle, double volts) noexcept
+    {
+        if (handle == inputHandle) net->setInput (0, volts - inputDc);
+        else if (handle == secondHandle) net->setInput (1, volts - secondDc);
+    }
     void setResistance (int handle, double ohms) noexcept { net->setResistance (handle, ohms); }
     void setCapacitance (int handle, double farads) noexcept
     {
@@ -350,8 +371,8 @@ private:
     std::vector<double> dc;
     std::vector<Node> probeNodes;
     std::vector<int> capMap; // NodalCircuit capacitor handle -> network capacitor (-1: both ends AC ground)
-    int inputHandle = 0;
-    double inputDc = 0.0;
+    int inputHandle = 0, secondHandle = -1;
+    double inputDc = 0.0, secondDc = 0.0;
 };
 
 /** Diagnostics: runs a prepared netlist block and its compiled version side by side on a sine at `amp` (around the
@@ -363,11 +384,13 @@ inline juce::String compareBlock (const NodalCircuit& block, int inputSource, No
     CompiledCircuit fast;
     if (! fast.compile (block, inputSource, { probe }, sampleRate, o)) return "not compilable";
     const double dcOut = ref.voltage (probe);
-    double sa = 0, sb = 0, sd = 0;
+    double sa = 0, sb = 0, sd = 0, pa = 0, pb = 0;
     const int n = (int) sampleRate, skip = n / 2;
     for (int i = 0; i < n; ++i)
     {
-        const double x = inputDc + amp * std::sin (2.0 * 3.141592653589793 * hz * i / sampleRate);
+        const double t = i / sampleRate;
+        const double gate = hz < 0.0 ? (std::fmod (t, 0.2) < 0.1 ? 1.0 : 0.0) : 1.0; // hz < 0: gated bursts at |hz|
+        const double x = inputDc + gate * amp * std::sin (2.0 * 3.141592653589793 * std::abs (hz) * i / sampleRate);
         ref.setSource (inputSource, x);
         ref.solveSample();
         fast.setSource (inputSource, x);
@@ -375,9 +398,11 @@ inline juce::String compareBlock (const NodalCircuit& block, int inputSource, No
         if (i < skip) continue;
         const double a = ref.voltage (probe) - dcOut, b = fast.voltage (probe) - dcOut;
         sa += a * a; sb += b * b; sd += (a - b) * (a - b);
+        pa = std::max (pa, std::abs (a)); pb = std::max (pb, std::abs (b));
     }
     const double k = 1.0 / (n - skip);
-    return juce::String (std::sqrt (sa * k), 5) + " / " + juce::String (std::sqrt (sb * k), 5) + " / diff " + juce::String (std::sqrt (sd * k), 5);
+    return juce::String (std::sqrt (sa * k), 5) + " / " + juce::String (std::sqrt (sb * k), 5) + " / diff " + juce::String (std::sqrt (sd * k), 5)
+         + " pk " + juce::String (pa, 3) + "/" + juce::String (pb, 3);
 }
 
 } // namespace openguitarmultifx::pipeline

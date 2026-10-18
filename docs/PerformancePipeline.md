@@ -103,6 +103,8 @@ elements and the solved DC voltages):
 - diodes: series chains through an otherwise unconnected node are merged (one exponential of summed nVt), every set of
   unbiased diodes on the same node pair becomes ONE composite port with a tabulated curve (its range set by each
   diode's 1 A point: red LEDs need ~2 V, silicon ~0.9 V), biased ones are single exponential ports;
+- inductors (single winding: the same trapezoidal state as a capacitor, conductance T/2L, history reversed) and up to
+  two signal inputs per block (a block fed from two blocks, e.g. a dry/wet blend);
 - exponentials are continued as straight lines above e^40 (SPICE junction limiting) so a port equation always has a
   root however hard a 100 dB open-loop gain pushes it; far-side Newton starts are computed in the log domain.
 
@@ -124,7 +126,7 @@ levels and two burst levels:
 | DT-1 | 15.9 -> **5.5** | 0.00 | 0.34 | 0.17 | 0.48 | applied (compiled) |
 | Metal Zone | 27.2 -> **6.7** | 0.12 | 0.94 | 0.37 | 1.58 | applied (compiled); the envelope is the recovery after a rail-pinned Dist stage, against **8.97 dB for the reducedOrder model that shipped before** |
 | HM-2 | 13.4 (unchanged) | 0.14 | 1.22 | 0.16 | 2.29 | NOT applied: matched only with the full two-junction transistor port (`transistorFull`) at 6 Newton steps, which is slower than the netlist (x0.55); fewer steps lose the saturation. No gain, netlist kept |
-| Darkglass B7K | 11.6 (unchanged) | - | - | - | - | NOT converted: it has coupled inductors (a transformer), which the compiler does not express yet |
+| Darkglass B7K | 11.6 (unchanged) | 0.06 | 1.43 | 11.3 | 7.0 | compiled (inductors + two-input EQ block added for it, x1.7) but NOT applied: the peak/envelope misses are the NETLIST's -- on hot bursts it throws one-sample 2 V spikes at the clipper because `NodalCircuit` caps the diode exponential at e^40 (~0.6 A). Fix that in NodalCircuit, re-verify, then switch |
 
 All applied ones also pass the steady-state test (`OversampledEffectTests`: DT-1 -115 dB, Metal Zone -128 dB
 non-periodic error) and stay within 0.1 dB of unity with their existing trims (`PedalUnityLevelTests`).

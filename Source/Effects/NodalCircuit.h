@@ -891,7 +891,14 @@ public:
         d.dc.assign ((size_t) nodeCount + 1, 0.0);
         for (int n = 1; n <= nodeCount; ++n) d.dc[(size_t) n] = voltage (n);
         for (const auto& r : resistors) d.resistors.push_back ({ r.a, r.b, 1.0 / r.g });
-        for (const auto& c : capacitors) d.capacitors.push_back ({ c.a, c.b, c.farads, c.group >= 0 });
+        for (const auto& c : capacitors)
+        {
+            if (c.group < 0) { d.capacitors.push_back ({ c.a, c.b, c.farads, false }); continue; }
+            const auto& grp = inductorGroups[(size_t) c.group];
+            // a single winding exports its inductance (in the value field); coupled windings are not expressible
+            d.capacitors.push_back ({ c.a, c.b, grp.n == 1 && grp.inverse[0] != 0.0 ? 1.0 / grp.inverse[0] : 0.0, true });
+            if (grp.n != 1) d.supported = false;
+        }
         for (const auto& src : sources) d.sources.push_back ({ src.node, src.volts, src.current });
         for (const auto& op : opAmps) d.opRows.push_back ({ op.plus, op.minus, op.out, op.invGain, op.cm });
         if (satOpIndex >= 0) d.rails.push_back ({ satOpIndex, satSpec.lowRail, satSpec.highRail });
@@ -920,7 +927,7 @@ public:
             else j.model.evaluate (voltage (j.g), voltage (j.d), voltage (j.s), iD, dD, dS);
             d.jfets.push_back ({ j.d, j.g, j.s, dD, dS, j.assumedVds > 0.0 });
         }
-        if (! triodes.empty() || ! pentodes.empty() || ! inductorGroups.empty())
+        if (! triodes.empty() || ! pentodes.empty())
             d.supported = false;
     }
 

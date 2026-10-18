@@ -31,3 +31,10 @@ drive stage -> 4049 CMOS-inverter clipping (the "Microtubes" engine) -> clean/we
 - Band sweep range is ~ +/-15 dB (the GE7-style network's natural depth) vs the quoted +/-12 dB.
 - The exact Grunt/Attack RC values are not published; they are voiced to the documented direction
   (bass-shelf amount / treble cut-flat-boost) rather than traced values.
+
+## Pipeline engine: compiled, not applied (2026-10-18)
+`pipeline::CompiledCircuit` compiles all four blocks (the EQ gyrators as inductors, the EQ block with two inputs). Against
+the netlist: level 0.06 dB, small-signal band 0.1 dB, x1.7 faster; on hot bursts the netlist throws one-sample spikes at
+the clipper (2.3 V on a silicon pair to the bias, sample 30318 of the burst test) because NodalCircuit caps the diode
+exponential at e^40 (~0.6 A), so peak / envelope cannot be compared there. `pipelineEngine` stays false until that
+cap is replaced by SPICE-style linear continuation and both engines are re-verified.
