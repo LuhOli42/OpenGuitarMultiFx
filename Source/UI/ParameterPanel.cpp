@@ -222,7 +222,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
                     // default -- a player zeroing a knob expects dead centre.
                     // Selectors are exempt: their option stack eats the taps.
                     row.slider->setDoubleClickReturnValue (true, range.convertFrom0to1 (0.5f));
-                if (isSelector)
+                if (isSelector || range.interval >= 1.0f)
                 {
                     row.slider->setNumDecimalPlacesToDisplay (0);
                     row.slider->textFromValueFunction = [floatParam] (double v)

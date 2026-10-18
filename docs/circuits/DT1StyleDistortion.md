@@ -70,3 +70,8 @@ printed.
 ## Not modelled
 The electronic bypass and its JFET/logic switching; the real gain (~0.9) and distortion of the JFET followers; the status LED;
 battery and supply filtering (the 9 V rail is ideal).
+
+## Pipeline engine (default since 2026-10-17)
+Both blocks compiled with `pipeline::CompiledCircuit` (docs/PerformancePipeline.md): 15.9 % -> 5.5 % of a core; against
+the netlist level 0.00 dB, band 0.34 dB, peak 0.17 dB, envelope 0.48 dB. The LED pair and the 1 + 2-in-series 4148s are
+composite diode ports. `setPipelineEngine (false)` = the netlist (the circuit tests use it).

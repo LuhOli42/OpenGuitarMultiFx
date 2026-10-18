@@ -161,3 +161,9 @@ worst-band in the mid-0.2 configs for a not-fully-root-caused interpolation-side
 Other over-budget nodal pedals (BassBigMuff ~27%, TubeDriver ~24%, ODR1 ~23%) don't share
 this problem shape -- their cost is spread over the whole netlist solve, not one nested
 per-leg loop parameterised by 2 scalars, so the trick does not transfer.
+
+## Pipeline engine (default since 2026-10-17)
+The five blocks are compiled with `pipeline::CompiledCircuit` (docs/PerformancePipeline.md); this replaces the
+reducedOrder front-end as the engine. Cost 27.2 % -> 6.7 % of a core. Against the full netlist: level 0.12 dB, band
+0.94 dB, peak 0.37 dB, 5 ms envelope 1.58 dB (the reducedOrder model it replaces: 8.97 dB). The netlist (and
+reducedOrder) stay in the class: `setPipelineEngine (false)`; the circuit tests in this file's test suite use it.

@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/LinearPortNetwork.h"
 
 #include <array>
 
@@ -41,14 +42,17 @@ public:
         sovtekFirstEdition  // Version 7, 1st edition: the first Russian-made Big Muff (1990-91, Red Army Overdrive), 430 pF caps
     };
 
-    explicit BigMuffStyleFuzzProcessor (Model m = Model::usV3);
+    /** `pipelineEngine`: the same circuit as a linear nodal network with the transistors at their operating point and
+        the clipping diodes / swing limits as fixed-cost ports (pipeline::LinearPortNetwork) instead of the Newton
+        netlist. See docs/circuits/BigMuffStyleFuzz.md, "Pipeline engine". */
+    explicit BigMuffStyleFuzzProcessor (Model m = Model::usV3, bool pipelineEngine = false);
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    const char* getName() const override { return spec.displayName; }
+    const char* getName() const override { return displayName.c_str(); }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb4485f); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
@@ -104,6 +108,30 @@ private:
 
     void buildChannel (Channel& ch);
     void updatePots (double sustain, double tone, double volume);
+
+    using PipeNet = pipeline::LinearPortNetwork<24, 10, 16, 32, 6, 2, float>;
+    struct PipeChannel
+    {
+        PipeNet net;
+        int rSustainTop = 0, rSustainBottom = 0, rToneTreble = 0, rToneBass = 0, rVolumeTop = 0, rVolumeBottom = 0;
+        int out = 0;
+    };
+    void buildPipeChannel (PipeChannel& ch);
+    void updatePipePots (double sustain, double tone, double volume);
+    void processPipeline (juce::AudioBuffer<float>& buffer);
+
+    /** Static device curves the networks point at: the same for both channels, so they live here (not in the
+        channels: a channel is copied by the dual-mono shortcut and built on the stack). */
+    struct PipeTables
+    {
+        std::array<pipeline::TransferCurve, 4> transistors;
+        pipeline::DeviceCurve diode;
+    };
+    std::unique_ptr<PipeTables> pipeTablesStorage = std::make_unique<PipeTables>();
+    PipeTables& pipeTables = *pipeTablesStorage;
+    bool pipelineEngine = false;
+    std::string displayName;
+    std::array<PipeChannel, 2> pipeChannels;
 
     Model model;
     ModelSpec spec;

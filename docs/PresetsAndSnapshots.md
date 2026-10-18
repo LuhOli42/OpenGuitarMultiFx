@@ -7,7 +7,7 @@ looking at how commercial units do it. Each stage below has its own card on the 
 
 | Question | Decision |
 |---|---|
-| Variations inside a preset | **Snapshots**, Helix-style. Not Fractal-style channels per block. |
+| Variations inside a preset | **Snapshots**, Helix-style.. |
 | How many per preset | **8** (A–H), each with a name and a colour. |
 | What a snapshot stores | Every block's bypass state and **every** float parameter of every block, automatically. The user does not mark which knobs are snapshot-controlled. A knob whose value differs between snapshots gets a small marker. |
 | What a snapshot cannot do | Add, remove, reorder or swap blocks, change routing, or load a different NAM model / IR. That is what a preset is for. |
@@ -34,7 +34,6 @@ That only sounds clean if the engine handles jumps well. The code has three gaps
 |---|---|---|
 | Line 6 Helix | Up to 8 snapshots: bypass + parameter values, no block swaps, trails continue | Setlists, banks of 4 or 8 |
 | Neural DSP Quad Cortex | Scenes; `*` marks an edited preset | Setlists of 32 banks x 8; preset switch cuts audio, scene switch does not |
-| Fractal Axe-Fx | Scenes plus 4 channels per block | Numbered list |
 | Kemper | Performances with 5 slots and morphing | Performances |
 | Boss GT-1000 | Delay carry-over between patches (same delay type only) | Banks of 5, live sets |
 

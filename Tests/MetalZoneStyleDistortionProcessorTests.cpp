@@ -55,6 +55,7 @@ public:
     static double outDb (const K& k, double freq, double amplitude = 0.0001, int probe = -1)
     {
         MetalZoneStyleDistortionProcessor p;
+        p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
         p.prepare (sr, 128, 1);
         setKnobs (p, k);
         return 20.0 * std::log10 (juce::jmax (1.0e-12, steadyPeakToPeak (p, freq, amplitude, probe, freq < 300.0 ? 30 : 120)));
@@ -65,6 +66,7 @@ public:
         beginTest ("DC operating point: every op-amp output sits at the 4.5 V reference, the jack at 0 V");
         {
             MetalZoneStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
             p.prepare (sr, 128, 1);
             expect (p.dcConverged(), "DC solve converged");
             for (auto pr : { Probe::ic3b, Probe::ic3a, Probe::ic4b, Probe::ic4a, Probe::ic1a, Probe::ic2a })
@@ -181,6 +183,7 @@ public:
             {
                 K k; k.dist = d;
                 MetalZoneStyleDistortionProcessor p;
+                p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
                 p.prepare (sr, 128, 1);
                 setKnobs (p, k);
                 const double o = steadyPeakToPeak (p, 400.0, 0.05, -1, 100);
@@ -278,6 +281,7 @@ public:
         beginTest ("hot input and random knob moves: finite, and the solver never fails");
         {
             MetalZoneStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
             p.prepare (sr, 128, 2);
             juce::Random rng (99);
             juce::AudioBuffer<float> buf (2, 128);
