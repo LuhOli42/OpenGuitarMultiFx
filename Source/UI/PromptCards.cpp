@@ -203,6 +203,14 @@ NumPadCard::NumPadCard (const juce::String& title, const juce::String& initialTe
     auto appendChar = [this, refreshOk] (juce::juce_wchar c)
     {
         auto t = display.getText();
+        if (replaceOnNextKey)
+        {
+            replaceOnNextKey = false;
+            display.setText (c == '.' ? "0." : juce::String::charToString (c), false);
+            refreshOk();
+            return;
+        }
+        replaceOnNextKey = false;
         // One decimal point max; a '-' only ever leads.
         if (c == '.' && t.containsChar ('.'))
             return;
@@ -211,11 +219,13 @@ NumPadCard::NumPadCard (const juce::String& title, const juce::String& initialTe
     };
     auto backspace = [this, refreshOk]
     {
+        replaceOnNextKey = false;
         display.setText (display.getText().dropLastCharacters (1), false);
         refreshOk();
     };
     auto toggleSign = [this, refreshOk]
     {
+        replaceOnNextKey = false;
         auto t = display.getText();
         display.setText (t.startsWithChar ('-') ? t.substring (1) : "-" + t, false);
         refreshOk();

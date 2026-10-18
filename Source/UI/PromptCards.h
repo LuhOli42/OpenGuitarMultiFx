@@ -83,7 +83,8 @@ private:
     drag can't reliably land an exact number (audit #93's "numeric keypad
     card" option). OK hands back the typed text; the caller converts it
     through AudioParameterFloat::getValueForText, whose getFloatValue
-    parse tolerates any unit suffix the param's getText() appends. */
+    parse tolerates any unit suffix the param's getText() appends. The
+    pre-filled value is replaced by the first digit or decimal key. */
 class NumPadCard : public juce::Component,
                    public OutsideTapAware
 {
@@ -100,6 +101,7 @@ private:
     juce::TextEditor display;
     juce::OwnedArray<juce::TextButton> keys;
     juce::TextButton okButton { "OK" }, cancelButton { "Cancel" };
+    bool replaceOnNextKey = true;
 };
 
 } // namespace openguitarmultifx

@@ -437,8 +437,8 @@ void ParameterPanel::showValueKeypadFor (juce::Slider* knob)
 
     if (onPushOverlay)
         onPushOverlay (std::make_unique<NumPadCard> (
-            param->getName (100), param->getCurrentValueAsText(),
-            [this, param, box] (juce::String typed)
+            param->getName (100), knob->getTextFromValue (knob->getValue()),
+            [this, param, box, knob] (juce::String typed)
             {
                 // getValueForText parses through getFloatValue (tolerant
                 // of the unit suffix getText appends) and returns the
@@ -448,7 +448,7 @@ void ParameterPanel::showValueKeypadFor (juce::Slider* knob)
                     static_cast<juce::AudioProcessorParameter*> (param)->getValueForText (typed));
                 *param = (float) v;
                 if (box != nullptr)
-                    box->setButtonText (param->getCurrentValueAsText());
+                    box->setButtonText (knob->getTextFromValue ((double) param->get()));
                 refresh();
                 if (onPopOverlay) onPopOverlay();
             },
