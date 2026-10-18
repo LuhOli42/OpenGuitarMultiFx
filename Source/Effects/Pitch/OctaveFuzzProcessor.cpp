@@ -305,24 +305,29 @@ void OctaveFuzzProcessor::updatePots()
             }
         }
     }
+}
 
-    if (model == OctaveFuzzModel::toneMachine && toggle != nullptr)
+void OctaveFuzzProcessor::applyToneMachineSwitchState (int octaveOn) noexcept
+{
+    const double resistance = octaveOn != 0 ? 1.0 : 1.0e9;
+    for (size_t c = 0; c < channels.size(); ++c)
     {
-        const int octaveState = toggle->get() >= 0.5f ? 1 : 0;
-        if (octaveState != lastToggle)
-        {
-            lastToggle = octaveState;
-            const double resistance = octaveState != 0 ? 1.0 : 1.0e9;
-            for (auto& ch : channels)
-                if (ch.rOctaveSwitch >= 0)
-                    ch.c.setResistance (ch.rOctaveSwitch, resistance);
-        }
+        auto& ch = channels[c];
+        ch.c.setResistance (ch.rOctaveSwitch, resistance);
+        ch.c.restoreDynamicState (octaveOn != 0 ? ch.restOn : ch.restOff);
+        ch.rectRest = octaveOn != 0 ? ch.rectRestOn : ch.rectRestOff;
+        ch.post.reset();
+        ch.toneLow.reset();
+        ch.toneHigh.reset();
+        clippers[c].reset();
     }
+    lastToggle = octaveOn != 0 ? 1 : 0;
 }
 
 void OctaveFuzzProcessor::prepare (double newSampleRate, int, int)
 {
     sampleRate = newSampleRate;
+    const int initialToggle = toggle != nullptr && toggle->get() >= 0.5f ? 1 : 0;
     for (auto& ch : channels)
     {
         ch = Channel {};
@@ -345,7 +350,6 @@ void OctaveFuzzProcessor::prepare (double newSampleRate, int, int)
         }
     }
     lastDrive = -1.0;
-    lastToggle = -1;
     updatePots();
     for (auto& ch : channels)
     {
@@ -354,8 +358,23 @@ void OctaveFuzzProcessor::prepare (double newSampleRate, int, int)
             ch.pre.prepare (newSampleRate);
             ch.preRest = ch.pre.voltage (ch.nPre);
         }
-        ch.c.prepare (newSampleRate);
-        ch.rectRest = ch.c.voltage (ch.nRect);
+        if (model == OctaveFuzzModel::toneMachine)
+        {
+            ch.c.setResistance (ch.rOctaveSwitch, 1.0e9);
+            ch.c.prepare (newSampleRate);
+            ch.c.saveDynamicState (ch.restOff);
+            ch.rectRestOff = ch.c.voltage (ch.nRect);
+
+            ch.c.setResistance (ch.rOctaveSwitch, 1.0);
+            ch.c.prepare (newSampleRate);
+            ch.c.saveDynamicState (ch.restOn);
+            ch.rectRestOn = ch.c.voltage (ch.nRect);
+        }
+        else
+        {
+            ch.c.prepare (newSampleRate);
+            ch.rectRest = ch.c.voltage (ch.nRect);
+        }
     }
     smoothedLevel.reset (newSampleRate, paramRampSeconds);
     smoothedLevel.setCurrentAndTargetValue (level->get());
@@ -363,6 +382,14 @@ void OctaveFuzzProcessor::prepare (double newSampleRate, int, int)
         cl.reset();
     sampleCount = failureCount = 0;
     shortcut.reset();
+    octaveGain = 1.0;
+    octaveGainStep = 1.0 / std::max (1.0, 0.005 * newSampleRate);
+    pendingToggle = initialToggle;
+    toggleRamp = ToggleRamp::steady;
+    if (model == OctaveFuzzModel::toneMachine)
+        applyToneMachineSwitchState (initialToggle);
+    else
+        lastToggle = -1;
 }
 
 void OctaveFuzzProcessor::reset()
@@ -380,6 +407,18 @@ void OctaveFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
     const int numSamples = buffer.getNumSamples();
     const int solve = shortcut.begin (channels, buffer, sampleRate);
     const bool notchOn = model == OctaveFuzzModel::superFuzz && toggle->get() >= 0.5f;
+    if (model == OctaveFuzzModel::toneMachine)
+    {
+        const int requestedToggle = toggle->get() >= 0.5f ? 1 : 0;
+        if (requestedToggle != pendingToggle)
+        {
+            pendingToggle = requestedToggle;
+            if (pendingToggle == lastToggle)
+                toggleRamp = octaveGain < 1.0 ? ToggleRamp::up : ToggleRamp::steady;
+            else
+                toggleRamp = ToggleRamp::down;
+        }
+    }
     const double toneMix = tone != nullptr ? (double) tone->get() : 0.5;
     // Tone Machine Sustain: the 50K Drive pot (220R under it) into Q3, 10K / 1K with the emitter bypassed (~x150),
     // whose collector (10K) drives the 1N34A pair to ground.
@@ -387,6 +426,28 @@ void OctaveFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
 
     for (int i = 0; i < numSamples; ++i)
     {
+        if (model == OctaveFuzzModel::toneMachine)
+        {
+            if (toggleRamp == ToggleRamp::down)
+            {
+                octaveGain = std::max (0.0, octaveGain - octaveGainStep);
+                if (octaveGain <= 0.0)
+                {
+                    octaveGain = 0.0;
+                    applyToneMachineSwitchState (pendingToggle);
+                    toggleRamp = ToggleRamp::up;
+                }
+            }
+            else if (toggleRamp == ToggleRamp::up)
+            {
+                octaveGain = std::min (1.0, octaveGain + octaveGainStep);
+                if (octaveGain >= 1.0)
+                {
+                    octaveGain = 1.0;
+                    toggleRamp = ToggleRamp::steady;
+                }
+            }
+        }
         const double lvl = pots::audio (smoothedLevel.getNextValue());
         for (int c = 0; c < solve; ++c)
         {
@@ -418,7 +479,7 @@ void OctaveFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
                 if (notchOn)
                     y = ch.toneLow.process (y);
             }
-            data[i] = (float) (lvl * y);
+            data[i] = (float) (lvl * y * (model == OctaveFuzzModel::toneMachine ? octaveGain : 1.0));
         }
     }
     shortcut.end (buffer);

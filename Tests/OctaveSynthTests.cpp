@@ -100,6 +100,75 @@ public:
         return out;
     }
 
+    static double runSilentToggle (bool fromOn, bool toOn)
+    {
+        constexpr int block = 128, second = (int) sr;
+        OctaveFuzzProcessor p (OctaveFuzzModel::toneMachine);
+        set (p, "_octave", fromOn ? 1.0f : 0.0f);
+        p.prepare (sr, block, 1);
+        juce::AudioBuffer<float> b (1, block);
+        for (int n = 0; n < second; n += block)
+        {
+            b.clear();
+            p.process (b);
+        }
+        set (p, "_octave", toOn ? 1.0f : 0.0f);
+        double peak = 0.0;
+        for (int n = 0; n < second; n += block)
+        {
+            b.clear();
+            p.process (b);
+            for (int i = 0; i < block; ++i)
+                peak = std::max (peak, (double) std::abs (b.getSample (0, i)));
+        }
+        return peak;
+    }
+
+    static double freshToneMachinePeak (bool octaveOn)
+    {
+        constexpr int block = 128, second = (int) sr;
+        OctaveFuzzProcessor p (OctaveFuzzModel::toneMachine);
+        set (p, "_octave", octaveOn ? 1.0f : 0.0f);
+        p.prepare (sr, block, 1);
+        juce::AudioBuffer<float> b (1, block);
+        double peak = 0.0;
+        for (int n = 0; n < second; n += block)
+        {
+            for (int i = 0; i < block; ++i)
+                b.setSample (0, i, (float) (0.05 * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * (n + i) / sr)));
+            p.process (b);
+            for (int i = 0; i < block; ++i)
+                peak = std::max (peak, (double) std::abs (b.getSample (0, i)));
+        }
+        return peak;
+    }
+
+    static double runSineToggle (bool fromOn, bool toOn)
+    {
+        constexpr int block = 128, second = (int) sr;
+        OctaveFuzzProcessor p (OctaveFuzzModel::toneMachine);
+        set (p, "_octave", fromOn ? 1.0f : 0.0f);
+        p.prepare (sr, block, 1);
+        juce::AudioBuffer<float> b (1, block);
+        for (int n = 0; n < second; n += block)
+        {
+            for (int i = 0; i < block; ++i)
+                b.setSample (0, i, (float) (0.05 * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * (n + i) / sr)));
+            p.process (b);
+        }
+        set (p, "_octave", toOn ? 1.0f : 0.0f);
+        double peak = 0.0;
+        for (int n = 0; n < second; n += block)
+        {
+            for (int i = 0; i < block; ++i)
+                b.setSample (0, i, (float) (0.05 * std::sin (2.0 * juce::MathConstants<double>::pi * 220.0 * (second + n + i) / sr)));
+            p.process (b);
+            for (int i = 0; i < block; ++i)
+                peak = std::max (peak, (double) std::abs (b.getSample (0, i)));
+        }
+        return peak;
+    }
+
     void runTest() override
     {
         EffectRegistry registry;
@@ -129,6 +198,25 @@ public:
                         + " (" + juce::String (offOctave, 5) + " / " + juce::String (offFundamental, 5) + ")");
             expectGreaterThan (onOctave, onFundamental, "Octave ON emphasizes 440 Hz at input " + juce::String (amp, 2));
             expectLessThan (offOctave, offFundamental, "Octave OFF emphasizes 220 Hz at input " + juce::String (amp, 2));
+        }
+
+        beginTest ("Tone Machine Octave toggle during playback doesn't thump");
+        for (const auto& [fromOn, toOn] : { std::pair { true, false }, std::pair { false, true } })
+        {
+            const double silentPeak = runSilentToggle (fromOn, toOn);
+            logMessage ("silence " + juce::String (fromOn ? "ON" : "OFF") + " -> " + (toOn ? "ON" : "OFF")
+                        + ": peak " + juce::String (silentPeak, 6));
+            expectLessThan (silentPeak, 1.0e-3);
+        }
+        const double steadyOff = freshToneMachinePeak (false), steadyOn = freshToneMachinePeak (true);
+        for (const auto& [fromOn, toOn] : { std::pair { true, false }, std::pair { false, true } })
+        {
+            const double transitionPeak = runSineToggle (fromOn, toOn);
+            const double steadyPeak = toOn ? steadyOn : steadyOff;
+            logMessage ("sine " + juce::String (fromOn ? "ON" : "OFF") + " -> " + (toOn ? "ON" : "OFF")
+                        + ": peak " + juce::String (transitionPeak, 6) + ", fresh-position peak "
+                        + juce::String (steadyPeak, 6) + ", limit " + juce::String (1.5 * steadyPeak, 6));
+            expectLessThan (transitionPeak, 1.5 * steadyPeak);
         }
 
         // amp: the test level (0.3 = a hot pickup). cpuLimit: 5% of a core, except the octave fuzzes: full netlists that the
