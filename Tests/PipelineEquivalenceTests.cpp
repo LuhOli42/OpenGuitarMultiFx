@@ -8,6 +8,9 @@
 #include "Effects/CrunchBoxStyleDistortionProcessor.h"
 #include "Effects/ODR1StyleOverdriveProcessor.h"
 #include "Effects/ToneBenderStyleFuzzProcessor.h"
+#include "Effects/RatStyleDistortionProcessor.h"
+#include "Effects/DS1StyleDistortionProcessor.h"
+#include "Effects/SansAmpBDDIStyleOverdriveProcessor.h"
 #include "PipelineEngineEquivalence.h"
 
 #include <juce_core/juce_core.h>
@@ -351,6 +354,27 @@ public:
                   { { pre + "_attack", 1.0f }, { pre + "_volume", 0.5f } },
                   { { pre + "_attack", 0.6f }, { pre + "_volume", 0.7f } } }, log));
         }
+
+        for (auto model : { RatStyleDistortionProcessor::Model::original, RatStyleDistortionProcessor::Model::rat2, RatStyleDistortionProcessor::Model::turbo })
+        {
+            beginTest ("RAT model " + juce::String ((int) model) + ": compiled pipeline vs netlist (measured only: stays on the netlist)");
+            (void) (pipelinetest::compare (make ([model] { return std::make_unique<RatStyleDistortionProcessor> (model); }),
+                { { { "rat_distortion", 0.2f }, { "rat_filter", 0.5f }, { "rat_volume", 0.5f } },
+                  { { "rat_distortion", 0.95f }, { "rat_filter", 0.2f }, { "rat_volume", 0.5f } },
+                  { { "rat_distortion", 0.6f }, { "rat_filter", 0.8f }, { "rat_volume", 0.5f } } }, log));
+        }
+
+        beginTest ("DS-1: compiled pipeline vs netlist (measured only: stays on the netlist)");
+        (void) (pipelinetest::compare (make ([] { return std::make_unique<DS1StyleDistortionProcessor>(); }),
+            { { { "ds1_drive", 0.2f }, { "ds1_tone", 0.5f }, { "ds1_level", 0.5f } },
+              { { "ds1_drive", 0.95f }, { "ds1_tone", 0.8f }, { "ds1_level", 0.5f } },
+              { { "ds1_drive", 0.6f }, { "ds1_tone", 0.2f }, { "ds1_level", 0.5f } } }, log));
+
+        beginTest ("SansAmp BDDI: compiled pipeline vs netlist");
+        expectAccepted (pipelinetest::compare (make ([] { return std::make_unique<SansAmpBDDIStyleOverdriveProcessor>(); }),
+            { { { "bddi_drive", 0.3f }, { "bddi_blend", 0.8f }, { "bddi_presence", 0.5f }, { "bddi_bass", 0.5f }, { "bddi_treble", 0.5f }, { "bddi_level", 0.5f } },
+              { { "bddi_drive", 0.95f }, { "bddi_blend", 1.0f }, { "bddi_presence", 0.8f }, { "bddi_bass", 0.7f }, { "bddi_treble", 0.3f }, { "bddi_level", 0.5f } },
+              { { "bddi_drive", 0.6f }, { "bddi_blend", 0.4f }, { "bddi_presence", 0.2f }, { "bddi_bass", 0.3f }, { "bddi_treble", 0.8f }, { "bddi_level", 0.5f } } }, log));
 
         beginTest ("Darkglass B7K: compiled pipeline vs netlist (measured only: see its header, the netlist spikes on hot bursts)");
         (void) (pipelinetest::compare (

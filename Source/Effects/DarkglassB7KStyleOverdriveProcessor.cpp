@@ -306,10 +306,12 @@ void DarkglassB7KStyleOverdriveProcessor::prepare (double newSampleRate, int, in
         ch.fa.clear(); ch.fb.clear(); ch.feq.clear(); ch.fd.clear();
         if (pipelineEngine)
         {
-            const bool ok = ch.fa.compile (ch.a, ch.srcIn, { ch.nDrive, ch.nBuf }, newSampleRate)
-                         && ch.fb.compile (ch.b, ch.srcB, { ch.nClip }, newSampleRate)
-                         && ch.feq.compile (ch.eq, ch.srcDry, ch.srcWet, { ch.nEq }, newSampleRate)
-                         && ch.fd.compile (ch.d, ch.srcD, { ch.nOut }, newSampleRate);
+            pipeline::CompileOptions railsFirstOpts;
+            railsFirstOpts.railsFirst = true; // the clipper hangs off a rail-pinned op-amp (docs/PerformancePipeline.md)
+            const bool ok = ch.fa.compile (ch.a, ch.srcIn, { ch.nDrive, ch.nBuf }, newSampleRate, railsFirstOpts)
+                         && ch.fb.compile (ch.b, ch.srcB, { ch.nClip }, newSampleRate, railsFirstOpts)
+                         && ch.feq.compile (ch.eq, ch.srcDry, ch.srcWet, { ch.nEq }, newSampleRate, railsFirstOpts)
+                         && ch.fd.compile (ch.d, ch.srcD, { ch.nOut }, newSampleRate, railsFirstOpts);
             if (! ok) { ch.fa.clear(); ch.fb.clear(); ch.feq.clear(); ch.fd.clear(); }
         }
     }

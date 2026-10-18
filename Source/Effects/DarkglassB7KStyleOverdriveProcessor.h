@@ -26,10 +26,9 @@ class DarkglassB7KStyleOverdriveProcessor : public EffectProcessor
 public:
     /** Pipeline engine: the four blocks compiled into linear networks + fixed-cost ports at their DC point
         (docs/PerformancePipeline.md; the EQ block takes the dry and the driven signal as two inputs, the EQ gyrators are
-        inductors). OFF by default: it matches the netlist at normal levels (small-signal band 0.1 dB, x1.7 faster), but
-        on hot bursts the NETLIST itself throws one-sample spikes at the clipper (2.3 V across a silicon pair for one
-        sample at a clamp reversal). Not the e^40 cap on its diode exponential (removing it changed nothing); most likely
-        its step-limited Newton accepting an unconverged point. Not comparable there until that is explained. */
+        inductors). OFF by default. Most of the earlier hot-burst mismatch (peaks 11 dB) was the COMPILER's port order,
+        not the netlist: with railsFirst the peaks match (0.27 dB); what is left is the 5 ms envelope, 2.8 dB at the
+        recovery after a rail-pinned drive stage, above the 1.5 dB bar. */
     void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
 
     DarkglassB7KStyleOverdriveProcessor();
