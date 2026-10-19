@@ -60,15 +60,16 @@ if controls:
 of = {k for k in okeys if (eco(old_c, k) or 0) > FLAG}
 nf = {k for k in nkeys if (eco(new_c, k) or 0) > FLAG}
 P(f'- over the {FLAG:.0f}% budget: **{len(of)} -> {len(nf)}** (of {len(okeys)} -> {len(nkeys)})'
-  + (f'; box-normalised: {len([k for k in nkeys if (norm(eco(new_c, k)) or 0) > FLAG])}' if controls else ''))
-cleared = sorted(of - nf, key=lambda k: -(eco(old_c, k) or 0))
+  + (f'; box-normalised: {len([k for k in nkeys if (norm(eco(new_c, k)) or 0) > FLAG])}' if controls else '')
+  + (f'; plus {len(missing)} unmeasured (no new row -- timed out?): ' + ', '.join(f'`{k}`' for k in missing) if missing else ''))
+cleared = sorted((of - nf) - set(missing), key=lambda k: -(eco(old_c, k) or 0))
 newly = sorted(k for k in nf - of if k in old_c)
 newkeys_flag = sorted((k for k in nf if k not in old_c), key=lambda k: -eco(new_c, k))
 P(f'- moved under budget ({len(cleared)}): ' + (', '.join(f'`{k}` {f1(eco(old_c,k))}->{f1(eco(new_c,k))}'
   + (f' (norm {f1(norm(eco(new_c,k)))})' if controls else '') for k in cleared) or 'none'))
 if controls:
-    ncleared = sorted((k for k in of if (norm(eco(new_c, k)) or 0) <= FLAG), key=lambda k: -(eco(old_c, k) or 0))
-    nstill = sorted((k for k in of if (norm(eco(new_c, k)) or 0) > FLAG), key=lambda k: -(norm(eco(new_c, k)) or 0))
+    ncleared = sorted((k for k in of if eco(new_c, k) is not None and norm(eco(new_c, k)) <= FLAG), key=lambda k: -(eco(old_c, k) or 0))
+    nstill = sorted((k for k in of if eco(new_c, k) is not None and norm(eco(new_c, k)) > FLAG), key=lambda k: -(norm(eco(new_c, k)) or 0))
     P(f'- moved under budget, box-normalised ({len(ncleared)}): ' + (', '.join(f'`{k}` {f1(eco(old_c,k))}->{f1(norm(eco(new_c,k)))}' for k in ncleared) or 'none'))
     P(f'- still over budget, box-normalised ({len(nstill)}): ' + (', '.join(f'`{k}` {f1(eco(old_c,k))}->{f1(norm(eco(new_c,k)))}' for k in nstill) or 'none'))
 P(f'- newly over budget, existing effects ({len(newly)}): ' + (', '.join(f'`{k}` {f1(eco(old_c,k))}->{f1(eco(new_c,k))}' for k in newly) or 'none'))
@@ -83,6 +84,8 @@ for i, k in enumerate(top, 1):
     h = new_c[k].get('high'); r = new_c[k].get('reduced')
     P(f'| {i} | `{k}` | {f1(eco(new_c,k))} | {f1(norm(eco(new_c,k)))} | {f1(eco(old_c,k))} | {h["cpu_pct"] if h else "-"} '
       f'| {r["peak_block_ms"] if r else "-"} | {r["blocks_over_budget"] if r else "-"} |')
+if missing:
+    P('\nNot ranked (no new bench row, measurement unavailable): ' + ', '.join(f'`{k}`' for k in missing))
 P('')
 movers = [(k, eco(old_c, k), eco(new_c, k)) for k in okeys if k in new_c]
 movers = [m for m in movers if m[1] is not None and m[2] is not None and abs(norm(m[2])-m[1]) >= CPU_MOVE]

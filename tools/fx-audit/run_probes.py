@@ -54,7 +54,7 @@ def _registered_keys():
 _known = set(LINEAR) | set(DYN) | set(TIME) | {'Cab', 'DynamicCab', 'Looper', 'GateProcessor'}
 for _k in _registered_keys():
     if _k in _known: continue
-    if 'Compressor' in _k or _k.startswith('MtCmp_'): DYN.append(_k)
+    if _k.startswith('MtCmp_') or 'Reverb' not in _k and any(t in _k for t in ('Compressor', 'Limiter', 'Gate', 'Suppressor', 'Expander', 'Sustainer', 'Leveler')): DYN.append(_k)
     elif any(t in _k for t in ('Amplifier', 'Fuzz', 'Overdrive', 'Distortion', 'Booster')): LINEAR.append(_k)
     else: TIME.append(_k)
 
