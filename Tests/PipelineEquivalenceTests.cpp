@@ -358,8 +358,8 @@ public:
 
         for (auto model : { RatStyleDistortionProcessor::Model::original, RatStyleDistortionProcessor::Model::rat2, RatStyleDistortionProcessor::Model::turbo })
         {
-            beginTest ("RAT model " + juce::String ((int) model) + ": compiled pipeline vs netlist (measured only: stays on the netlist)");
-            (void) (pipelinetest::compare (make ([model] { return std::make_unique<RatStyleDistortionProcessor> (model); }),
+            beginTest ("RAT model " + juce::String ((int) model) + ": compiled pipeline vs netlist");
+            expectAccepted (pipelinetest::compare (make ([model] { return std::make_unique<RatStyleDistortionProcessor> (model); }),
                 { { { "rat_distortion", 0.2f }, { "rat_filter", 0.5f }, { "rat_volume", 0.5f } },
                   { { "rat_distortion", 0.95f }, { "rat_filter", 0.2f }, { "rat_volume", 0.5f } },
                   { { "rat_distortion", 0.6f }, { "rat_filter", 0.8f }, { "rat_volume", 0.5f } } }, log));
@@ -383,8 +383,8 @@ public:
               { { "tubedriver_drive", 0.95f }, { "tubedriver_hi", 0.8f }, { "tubedriver_lo", 0.3f }, { "tubedriver_level", 0.5f } },
               { { "tubedriver_drive", 0.6f }, { "tubedriver_hi", 0.2f }, { "tubedriver_lo", 0.8f }, { "tubedriver_level", 0.5f } } }, log));
 
-        beginTest ("Darkglass B7K: compiled pipeline vs netlist (measured only: see its header, the netlist spikes on hot bursts)");
-        (void) (pipelinetest::compare (
+        beginTest ("Darkglass B7K: compiled pipeline vs netlist");
+        expectAccepted (pipelinetest::compare (
             [] (bool pipe) { auto p = std::make_unique<DarkglassB7KStyleOverdriveProcessor>(); p->setPipelineEngine (pipe); return std::unique_ptr<EffectProcessor> (std::move (p)); },
             { { { "b7k_blend", 0.5f }, { "b7k_drive", 0.3f }, { "b7k_level", 0.5f }, { "b7k_low", 0.5f }, { "b7k_lo_mid", 0.5f }, { "b7k_hi_mid", 0.5f }, { "b7k_treble", 0.5f }, { "b7k_grunt", 0.0f }, { "b7k_attack", 1.0f } },
               { { "b7k_blend", 0.9f }, { "b7k_drive", 0.9f }, { "b7k_level", 0.5f }, { "b7k_low", 0.8f }, { "b7k_lo_mid", 0.3f }, { "b7k_hi_mid", 0.7f }, { "b7k_treble", 0.6f }, { "b7k_grunt", 2.0f }, { "b7k_attack", 0.0f } },

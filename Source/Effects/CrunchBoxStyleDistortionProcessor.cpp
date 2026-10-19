@@ -183,6 +183,7 @@ void CrunchBoxStyleDistortionProcessor::prepare (double newSampleRate, int, int)
         if (pipelineEngine)
         {
             pipeline::CompileOptions railsFirstOpts;
+            railsFirstOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
             railsFirstOpts.railsFirst = true; // the clipper hangs off a rail-pinned op-amp (docs/PerformancePipeline.md)
             const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate, railsFirstOpts)
                          && ch.fB.compile (ch.b, ch.srcOp1, { ch.nOut }, newSampleRate, railsFirstOpts);

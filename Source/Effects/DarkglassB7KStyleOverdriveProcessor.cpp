@@ -307,6 +307,7 @@ void DarkglassB7KStyleOverdriveProcessor::prepare (double newSampleRate, int, in
         if (pipelineEngine)
         {
             pipeline::CompileOptions railsFirstOpts;
+            railsFirstOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
             railsFirstOpts.railsFirst = true; // the clipper hangs off a rail-pinned op-amp (docs/PerformancePipeline.md)
             const bool ok = ch.fa.compile (ch.a, ch.srcIn, { ch.nDrive, ch.nBuf }, newSampleRate, railsFirstOpts)
                          && ch.fb.compile (ch.b, ch.srcB, { ch.nClip }, newSampleRate, railsFirstOpts)

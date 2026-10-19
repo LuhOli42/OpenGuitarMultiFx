@@ -165,6 +165,7 @@ public:
         lastSolveOk = false; // a restored state has not just been solved: force one real solve first
         settleCount = 0;
     }
+    static inline double limitedResidualAccept = 0.05; // volts: the same, for a point reached by a limited step (see newtonPortsFrom)
     static inline double portResidualAccept = 30.0; // volts: the largest port-equation error a converged point may carry (garbage is hundreds; a real point is micro-volts)
     void setIntegrationTheta (double newTheta) noexcept { theta = newTheta; }
 
@@ -884,12 +885,14 @@ public:
         std::vector<F> jfets;
         std::vector<T> triodes;
         bool supported = true;           // false: an element the compiler cannot express (tubes, coupled inductors)
+        double theta = 0.5;              // the capacitor / inductor integration rule (setIntegrationTheta)
     };
 
     void describe (Description& d) const
     {
         d = {};
         d.nodeCount = nodeCount;
+        d.theta = theta;
         d.dc.assign ((size_t) nodeCount + 1, 0.0);
         for (int n = 1; n <= nodeCount; ++n) d.dc[(size_t) n] = voltage (n);
         for (const auto& r : resistors) d.resistors.push_back ({ r.a, r.b, 1.0 / r.g });
@@ -2369,7 +2372,7 @@ private:
             // plain Newton step from a low-current start overshoots by orders of magnitude, then sheds only
             // ~Vt per iteration on the way back.
             double proposed[maxPortsV], rawStep[maxPortsV];
-            bool limited = false;
+            bool limited = false, junctionLimited = false; // junctionLimited: the p-n log limit cut this step
             double maxStep = 0.0;
             // The fraction of its Newton step that the forward-junction limiter let through, at its smallest over all
             // ports. Junctions coupled through the network (the two clamp diodes of an op-amp macro-model: u_a + u_b is a
@@ -2388,7 +2391,10 @@ private:
                         ? limitJunction (unew, std::max (u[j], 0.0), junction[j].vt, junction[j].vcrit)
                         : -limitJunction (-unew, std::max (-u[j], 0.0), junction[j].vt2, junction[j].vcrit2);
                     if (limitedValue != unew)
+                    {
                         limited = true;
+                        junctionLimited = true;
+                    }
                     unew = limitedValue;
                 }
                 else if (junction[j].isJunction)
@@ -2397,6 +2403,7 @@ private:
                     if (limitedValue != unew)
                     {
                         limited = true;
+                        junctionLimited = true;
                         if (rawStep[j] > 1.0e-9 && limitedValue > u[j])
                             forwardFraction = std::min (forwardFraction, (limitedValue - u[j]) / rawStep[j]);
                     }
@@ -2520,7 +2527,13 @@ private:
                         f += Km[j][k] * curNext[k];
                     worstPortError = std::max (worstPortError, std::abs (f) / (1.0 + 1.0e-3 * std::abs (u[j])));
                 }
-                converged = worstPortError < portResidualAccept;
+                // After a step the p-n junction log-limit cut, the Newton step did not solve the linearised equations, so
+                // nodeError -- the linearisation's leftover -- no longer measures the error and the port equations themselves
+                // must balance (to 50 mV). Found on the RAT (2026-10-18): a silicon clipper node accepted at 1.88 V
+                // after 4 iterations, 1.25 V off balance (inside the 30 V guard), heard as a one-sample spike on every hard
+                // polarity flip. Not applied to tube circuits, whose solver budgets were tuned around the looser rule.
+                const bool strict = junctionLimited && triodes.empty() && pentodes.empty();
+                converged = worstPortError < (strict ? limitedResidualAccept : portResidualAccept);
             }
             previousStep = maxStep;
 

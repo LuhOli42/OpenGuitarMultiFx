@@ -23,6 +23,10 @@ struct CompileOptions
     double saturationIs = 1.0e-4, saturationKnee = 0.05;
     double railIs = 1.0e-3, railKnee = 0.01;  // row rail port: input-referred volts, exponential beyond the rail
     double railNodeIs = 1.0e-2, railNodeKnee = 0.01; // node rail port on a converted follower (1-ohm source)
+    bool integratorClamp = false;            // op-amp macro (follower whose + node has clamp diodes to fixed rails): keep
+                                             // the follower an exact row and clamp its integrator node instead of the
+                                             // 1-ohm source + 470-ohm bleed, so it recovers from a rail like the diodes do
+                                             // (per pedal, by measurement: on for most, worse on the OCD)
 };
 
 /** A NodalCircuit block compiled into a LinearPortNetwork at its DC operating point (docs/PerformancePipeline.md):
@@ -59,8 +63,9 @@ public:
         return compileImpl (d, inputSource, probes, sampleRate, o);
     }
 
-    bool compileImpl (const NodalCircuit::Description& d, int inputSource, std::initializer_list<Node> probes, double sampleRate, const Options& o)
+    bool compileImpl (const NodalCircuit::Description& d, int inputSource, std::initializer_list<Node> probes, double sampleRate, const Options& oIn)
     {
+        const Options& o = oIn;
         if (! d.supported) return false;
         net = std::make_unique<Net>();
         curves.clear();
@@ -106,12 +111,24 @@ public:
         // node port on the output: the output stops at the rail while the integrator behind it carries on (clamped by
         // its own diodes) and the feedback network keeps charging -- what the netlist's saturating switch does.
         std::vector<int> rowOf (d.opRows.size(), -1);
-        std::vector<bool> railed (d.opRows.size(), false);
+        std::vector<bool> railed (d.opRows.size(), false), onIntegrator (d.opRows.size(), false);
+        auto clampedIntegrator = [&] (Node px) {
+            for (const auto& di : d.diodes)
+                if ((di.a == px && di.k > 0 && fixed[(size_t) di.k]) || (di.k == px && di.a > 0 && fixed[(size_t) di.a]))
+                    return true;
+            return false;
+        };
         for (const auto& rail : d.rails) railed[(size_t) rail.row] = true;
         for (size_t k = 0; k < d.opRows.size(); ++k)
         {
             const auto& op = d.opRows[k];
             const bool follower = op.minus == op.out && op.invGain == 0.0 && op.cm == 0.0;
+            if (railed[k] && follower && o.integratorClamp && clampedIntegrator (op.plus))
+            {
+                rowOf[k] = net->addConstraint (m (op.out), { { m (op.plus), 1.0 }, { m (op.minus), -1.0 } });
+                onIntegrator[k] = true;
+                continue;
+            }
             if (railed[k] && follower)
             {
                 constexpr double g = 1.0; // 1 ohm output: negligible next to the macro's 75
@@ -127,7 +144,12 @@ public:
         {
             const auto& op = d.opRows[(size_t) rail.row];
             const double v0 = dc[(size_t) op.out];
-            if (rowOf[(size_t) rail.row] < 0) // converted follower: a node limit on its output
+            if (onIntegrator[(size_t) rail.row]) // macro: limit the integrator node, the exact follower copies it
+            {
+                const double vp = dc[(size_t) op.plus];
+                net->addClamp (m (op.plus), Net::ground, rail.hi - vp, vp - rail.lo, o.railNodeIs, o.railNodeKnee, expTable());
+            }
+            else if (rowOf[(size_t) rail.row] < 0) // converted follower: a node limit on its output
                 net->addClamp (m (op.out), Net::ground, rail.hi - v0, v0 - rail.lo, o.railNodeIs, o.railNodeKnee, expTable());
             else
                 net->addRowClamp (m (op.out), rowOf[(size_t) rail.row], rail.hi - v0, v0 - rail.lo, o.railIs, o.railKnee);
@@ -142,9 +164,9 @@ public:
         std::vector<bool> used (d.diodes.size(), false);
         for (size_t k = 0; k < d.opRows.size(); ++k)
         {
-            if (rowOf[k] >= 0 || ! railed[k]) continue;
+            if ((rowOf[k] >= 0 && ! onIntegrator[k]) || ! railed[k]) continue;
             const Node px = d.opRows[k].plus;
-            bool bled = false;
+            bool bled = onIntegrator[k]; // the integrator clamp replaces the diodes: no bleed
             for (size_t i = 0; i < d.diodes.size(); ++i)
             {
                 const auto& di = d.diodes[i];
@@ -302,6 +324,7 @@ public:
         probeNodes.assign (probes);
         for (auto n : probeNodes) net->addProbe (m (n));
         net->setPortSweeps (o.portSweeps);
+        net->setTheta (d.theta); // integrate as the netlist does, or the two differ on every hard edge
         net->prepare (sampleRate);
 
         // The transistor curves need the circuit around them: saturation is where the collector current has pulled
