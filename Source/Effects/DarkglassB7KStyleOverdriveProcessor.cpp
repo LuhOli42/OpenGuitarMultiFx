@@ -169,11 +169,11 @@ void DarkglassB7KStyleOverdriveProcessor::buildChannel (Channel& ch)
             else
             {
                 // Bass + peaking mids: series-C + gyrator resonators (GE7 topology). The bass band is a
-                // broad ~90 Hz resonator (the 100 Hz bass band's quasi-shelf), the mids peak at ~1 kHz
-                // and ~1.2 kHz (the real pedal's 1 kHz / 3.3 kHz centres, constrained by this network's
-                // resonance-vs-LP-corner range -- see docs/circuits/DarkglassB7KStyleOverdrive.md).
+                // broad ~85 Hz resonator (the 100 Hz bass band's quasi-shelf), the mids resonate at
+                // 1/(2 pi sqrt(Cs Cgyr Rgyr Rloss)) = 0.96 kHz and 2.8 kHz: the B7K's published 1 kHz Lo Mid
+                // and 2.8 kHz Hi Mid (docs/circuits/DarkglassB7KStyleOverdrive.md).
                 const double cs    = k == 0 ? 4.7e-6  : k == 1 ? 0.1e-6  : 0.039e-6;
-                const double cGyr  = k == 0 ? 42.9e-9 : k == 1 ? 8.2e-9  : 2.2e-9;
+                const double cGyr  = k == 0 ? 42.9e-9 : k == 1 ? 8.2e-9  : 3.0e-9;
                 const double rGyr  = k == 0 ? 47.0e3  : k == 1 ? 100.0e3 : 82.0e3;
                 const auto x = c.addNode(), y = c.addNode();
                 c.addCapacitor (wiper, x, cs);
