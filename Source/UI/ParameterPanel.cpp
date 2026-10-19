@@ -38,7 +38,7 @@ namespace
     // to avoid reintroducing the "wasted space under every knob" MIDI
     // Learn was corrected for (this toggle is deliberately visible by
     // request, but only on the knobs that actually have it).
-    constexpr int syncToggleHeight = 22;
+    constexpr int syncToggleHeight = 48; // touch::minTapTarget -- audit #93 item 5 flagged the old 22px row
 }
 
 ParameterPanel::ParameterPanel()
@@ -102,6 +102,8 @@ void ParameterPanel::refresh()
             const float v = row.param->get();
             if (std::abs ((double) v - row.slider->getValue()) > 1.0e-6)
                 row.slider->setValue (v, juce::dontSendNotification);
+            if (row.valueBox != nullptr)
+                row.valueBox->setButtonText (row.slider->getTextFromValue (row.slider->getValue()));
             if (row.selector != nullptr)
             {
                 const auto range = row.param->getNormalisableRange();
@@ -140,6 +142,8 @@ void ParameterPanel::rebuildForCurrentProcessor()
     {
         knobGridHost.removeChildComponent (row.widget());
         knobGridHost.removeChildComponent (row.label.get());
+        if (row.valueBox != nullptr)
+            knobGridHost.removeChildComponent (row.valueBox.get());
         if (row.syncToggle != nullptr)
             knobGridHost.removeChildComponent (row.syncToggle.get());
     }
@@ -201,9 +205,11 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 SliderRow row;
                 row.param = floatParam;
                 row.page = pageIndex;
-                row.slider = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
-                                                               juce::Slider::TextBoxBelow);
-                row.slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 90, 26);
+                row.slider = std::make_unique<FineTuneSlider> (juce::Slider::RotaryHorizontalVerticalDrag,
+                                                               juce::Slider::NoTextBox);
+                // No editable text box: on the device it would summon an OS
+                // keyboard that doesn't exist -- the tap-to-open keypad
+                // (valueBox below) replaces it entirely.
                 row.slider->setColour (juce::Slider::rotarySliderFillColourId, accent);
                 row.slider->setColour (juce::Slider::thumbColourId, accent);
 
@@ -233,9 +239,21 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 }
 
                 auto* rawSlider = row.slider.get();
-                row.slider->onValueChange = [floatParam, rawSlider]
+
+                if (! isSelector)
+                {
+                    row.valueBox = std::make_unique<ValueFieldButton>();
+                    row.valueBox->setButtonText (rawSlider->getTextFromValue (rawSlider->getValue()));
+                    row.valueBox->onClick = [this, rawSlider] { showValueKeypadFor (rawSlider); };
+                    knobGridHost.addAndMakeVisible (*row.valueBox);
+                }
+
+                auto* rawValueBox = row.valueBox.get();
+                row.slider->onValueChange = [floatParam, rawSlider, rawValueBox]
                 {
                     *floatParam = (float) rawSlider->getValue();
+                    if (rawValueBox != nullptr)
+                        rawValueBox->setButtonText (rawSlider->getTextFromValue (rawSlider->getValue()));
                 };
 
                 if (isSelector)
@@ -402,6 +420,39 @@ void ParameterPanel::cycleTempoSync (juce::AudioParameterFloat* param)
     }
 
     refresh();
+}
+
+void ParameterPanel::showValueKeypadFor (juce::Slider* knob)
+{
+    if (knob == nullptr)
+        return;
+
+    const auto it = std::find_if (sliders.begin(), sliders.end(),
+        [knob] (const SliderRow& row) { return row.slider.get() == knob; });
+    if (it == sliders.end() || it->param == nullptr)
+        return;
+
+    auto* param = it->param;
+    auto* box = it->valueBox.get();
+
+    if (onPushOverlay)
+        onPushOverlay (std::make_unique<NumPadCard> (
+            param->getName (100), knob->getTextFromValue (knob->getValue()),
+            [this, param, box, knob] (juce::String typed)
+            {
+                // getValueForText parses through getFloatValue (tolerant
+                // of the unit suffix getText appends) and returns the
+                // NORMALISED value -- convertFrom0to1 lands it back on the
+                // param's own units before operator= writes it.
+                const double v = param->getNormalisableRange().convertFrom0to1 (
+                    static_cast<juce::AudioProcessorParameter*> (param)->getValueForText (typed));
+                *param = (float) v;
+                if (box != nullptr)
+                    box->setButtonText (knob->getTextFromValue ((double) param->get()));
+                refresh();
+                if (onPopOverlay) onPopOverlay();
+            },
+            [this] { if (onPopOverlay) onPopOverlay(); }));
 }
 
 void ParameterPanel::showMidiLearnMenu (juce::AudioParameterFloat* param)
@@ -616,9 +667,20 @@ void ParameterPanel::resized()
         {
             auto& row = sliders[shown[k]];
             row.label->setBounds (x, y, knobCellWidth, 22);
-            row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter + 28);
+            if (row.valueBox != nullptr)
+            {
+                // The knob and its value field split the old 90x118 slider cell:
+                // 90px of rotary + a 26px tap-to-type box, exactly where the
+                // (keyboard-bound) text box used to sit.
+                row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter);
+                row.valueBox->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22 + knobDiameter + 2, knobDiameter, 26);
+            }
+            else
+            {
+                row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter + 28);
+            }
             if (row.syncToggle != nullptr)
-                row.syncToggle->setBounds (x + (knobCellWidth - 72) / 2, y + 22 + knobDiameter + 28, 72, syncToggleHeight);
+                row.syncToggle->setBounds (x + (knobCellWidth - 90) / 2, y + 22 + knobDiameter + 28, 90, syncToggleHeight);
             x += knobCellWidth;
         }
 

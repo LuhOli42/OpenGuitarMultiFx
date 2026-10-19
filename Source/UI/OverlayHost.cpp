@@ -83,7 +83,20 @@ void OverlayHost::mouseUp (const juce::MouseEvent&)
     // Only reached when the click didn't land on the top card (children
     // intercept their own clicks first) -- tap-outside-to-dismiss, like a
     // phone bottom sheet.
-    popOverlay();
+    if (layers.empty())
+        return;
+
+    // A card that marked itself OutsideTapAware gets the tap first: its
+    // cancel path runs (which usually pops it, and may push a further
+    // card), so "tap outside" reads exactly like tapping Cancel. If that
+    // same card is still on top afterwards it had no cancel path to run --
+    // plain pop, as before.
+    auto* top = layers.back().get();
+    if (auto* aware = dynamic_cast<OutsideTapAware*> (top))
+        aware->outsideTapDismissed();
+
+    if (! layers.empty() && layers.back().get() == top)
+        popOverlay();
 }
 
 } // namespace openguitarmultifx
