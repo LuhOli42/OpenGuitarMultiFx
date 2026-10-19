@@ -38,9 +38,22 @@ FX_AUDIT_DIR=/tmp/fx-audit python3 tools/fx-audit/analyze.py   # writes metrics.
 FX_AUDIT_DIR=/tmp/fx-audit python3 tools/fx-audit/run_drive_sweep.py \
     --update-metrics=/tmp/fx-audit/metrics.json
 
+# CPU table -- only on an IDLE box (a concurrent analyze.py inflates rows 10-25 pp)
+BENCH_CSV=/tmp/fx-audit/cpu-bench.csv python3 tools/fx-audit/run_cpu_bench.py
+
+# delta vs the tracked baseline (run BEFORE publishing over it); CPU_CONTROLS =
+# keys whose code did not change, used to normalise for box speed
+CPU_CONTROLS=KeyA,KeyB python3 tools/fx-audit/delta_report.py \
+    tools/fx-audit/metrics.json /tmp/fx-audit/metrics.json \
+    tools/fx-audit/cpu-bench.csv /tmp/fx-audit/cpu-bench.csv > delta.md
+
 # publish: the fresh run's metrics replace the tracked baseline
 cp /tmp/fx-audit/metrics.json tools/fx-audit/metrics.json
+cp /tmp/fx-audit/cpu-bench.csv tools/fx-audit/cpu-bench.csv
 ```
+
+`run_renders.py` / `run_probes.py` append every key from `RenderFx --list`
+that is not in their hand-tuned lists, so new effects are always covered.
 
 `analyze.py` writes fresh `music`/`probes` under `FX_AUDIT_DIR`, so merging
 the sweep into the tracked `metrics.json` directly would leave its music and

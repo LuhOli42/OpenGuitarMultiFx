@@ -43,6 +43,21 @@ Ambient Spring Hall Plate Room Shimmer GatedReverb Reverb Tremolo Chorus Vibrato
 Flanger Phaser Rotary UniVibe PitchMod PitchShift Octaver Harmonizer
 RingMod Hold""".split()
 
+# Keys registered after the Oct-11 catalog come from `RenderFx --list` and are
+# classed by name: drive/amp circuits get the sine+sweep set, dynamics the
+# same, everything else (delay/mod/pitch/synth/Multi-Type) clicks+sweep.
+def _registered_keys():
+    r = subprocess.run([BIN, '--list'], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f'{BIN} --list failed:\n{r.stderr}')
+    return [l.split()[1] for l in r.stdout.splitlines() if l.startswith('FX ')]
+_known = set(LINEAR) | set(DYN) | set(TIME) | {'Cab', 'DynamicCab', 'Looper', 'GateProcessor'}
+for _k in _registered_keys():
+    if _k in _known: continue
+    if 'Compressor' in _k or _k.startswith('MtCmp_'): DYN.append(_k)
+    elif any(t in _k for t in ('Amplifier', 'Fuzz', 'Overdrive', 'Distortion', 'Booster')): LINEAR.append(_k)
+    else: TIME.append(_k)
+
 HOT = {
  'TS808StyleOverdrive':'ts808_drive=0.85','TS9StyleOverdrive':'ts9_drive=0.85','TS10StyleOverdrive':'ts10_drive=0.85',
  'CentaurStyleOverdrive':'centaur_gain=0.85','BD2StyleOverdrive':'bd2_gain=0.85','OD1StyleOverdrive':'od1_drive=0.85',
@@ -60,6 +75,8 @@ HOT = {
  'BassBigMuffStyleFuzz':'bbmp_sustain=0.85','DarkglassB7KStyleOverdrive':'b7k_drive=0.85',
  'ODB3StyleOverdrive':'odb3_gain=0.85','SansAmpBDDIStyleOverdrive':'bddi_drive=0.85',
  'TS9BStyleOverdrive':'ts9b_drive=0.85',
+ 'OctaviaStyleFuzz':'octavia_boost=1.0','SuperFuzzStyleFuzz':'superfuzz_expander=1.0',
+ 'ToneMachineStyleFuzz':'tonemachine_sustain=1.0',
 }
 AMPS = {
  'AC15StyleAmplifier':'a15_volume=0.85','AC30StyleAmplifier':'a30_volume=0.85',
@@ -84,6 +101,7 @@ AMPS = {
  'MesaBass400PlusStyleAmplifier':'mesa400p_volume=0.85','RiveraKnuckleheadStyleAmplifier':'knk_gain=0.85',
  'SVTStyleAmplifier':'svt_gain=0.85','SunnModelTStyleAmplifier':'smt_vol_normal=0.9 smt_vol_brite=0.2',
  'TraceElliotGP12StyleAmplifier':'tegp12_input_gain=0.85','TrainwreckExpressStyleAmplifier':'twx_volume=0.85',
+ 'DiezelStyleAmplifier':'dzl_channel=2 dzl_gain=0.85','JimKelleyStyleAmplifier':'jk_gain=0.85',
 }
 
 def model_args(key):
