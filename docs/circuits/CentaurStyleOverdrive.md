@@ -51,9 +51,17 @@ bypass are not modelled.
   the pedal's design, not a bug.
 - Cost 1.1 us/sample (5% of a core, mono).
 
+## Supply rails (fixed 2026-10-19, OD/dist circuit-fidelity audit)
+The TC1044 charge pump makes +18 V and -9 V from the 9 V battery, but only **IC2** (summing amp + treble stage) runs on
+them; **IC1** (input buffer + gain stage) runs on the plain 9 V rail (ElectroSmash, "Klon Centaur Analysis", section 2:
+"9V: used in the first stages of the circuit (input buffer and op-amp amplifier) ... The second op-amp is powered
+between +18V and -9V, giving a total of 27V of headroom"). The model had both op-amps on one +-7.5 V swing around the
+4.5 V bias (-3 .. 12 V), which gave the gain stage 2.5x too much headroom and the summing amp too little. Now: gain stage
+1.5 .. 7.5 V, IC2 -7.5 .. 16.5 V (a TL072 swings ~1.5 V short of each rail). At high Gain the gain stage now hits its
+9 V rails ahead of the germanium diodes, as ElectroSmash describes ("the signal will hit the power supply rails when
+the gain is set to high values").
+Measured impact on the repo DI and 220 Hz probe: identical below full Gain, max sample difference 0.0011 (-47 dB re
+the 0.25 peak) at full Gain -- the guitar DI barely reaches the 9 V rails, so the change matters for hotter pickups.
+
 ## Not modelled
-Op-amp rail clipping (TL072 on 9 V and, after the diodes, on the 18 V/-9 V
-supply — the charge pump only sets headroom, and with ideal op-amps there is
-none to model; ElectroSmash notes the gain stage does hit its rails at high Gain,
-so extreme settings will be softer here than on the real pedal), the LED, the
-bypass switching, the anti-pop network's contribution when the pedal is off.
+TL072 slew rate (13 V/us), the LED, the bypass switching, the anti-pop network's contribution when the pedal is off.
