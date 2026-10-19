@@ -333,6 +333,11 @@ public:
     }
 
     /** Builds the matrix for `sampleRate` and clears the state. Control thread. */
+    /** The capacitor / inductor integration rule, as NodalCircuit::setIntegrationTheta(): 0.5 = trapezoidal, larger
+        damps the top octave (the netlist's default is 0.6, and a compiled block must integrate as its netlist does or
+        the two differ on every hard edge). */
+    void setTheta (double t) { if (t != theta) { theta = t; dirty = true; } }
+
     void prepare (double sampleRate)
     {
         fs = sampleRate;
@@ -412,8 +417,8 @@ public:
         {
             const Real vc = capIn[(size_t) k] * u + capIn1[(size_t) k] * u1 + dot (capH[(size_t) k].data(), hist.data(), ncPad)
                           - dot (capPort[(size_t) k].data(), ic.data(), npPad);
-            // trapezoid: capacitor h_new = 2 g v - h_old; inductor (history stored negated) h_new = h_old - 2 g v
-            next[(size_t) k] = stateSign[(size_t) k] * (twoG[(size_t) k] * vc - hist[(size_t) k]);
+            // theta-method history: twoG = +-(1 + w) g, stateSign = the history's own weight (see compile)
+            next[(size_t) k] = twoG[(size_t) k] * vc + stateSign[(size_t) k] * hist[(size_t) k];
         }
 
         for (int q = 0; q < numProbes; ++q)
@@ -749,7 +754,7 @@ private:
         for (int k = 0; k < numCaps; ++k)
         {
             auto& c = caps[(size_t) k];
-            c.g = c.inductor ? 1.0 / (2.0 * c.farads * fs) : 2.0 * c.farads * fs;
+            c.g = c.inductor ? theta / (c.farads * fs) : c.farads * fs / theta;
             stamp (c.a, c.b, c.g);
         }
         for (int k = 0; k < numVccs; ++k)
@@ -813,8 +818,11 @@ private:
         for (auto& r : probePort) r.fill (0.0);
         for (int k = 0; k < numCaps; ++k)
         {
-            twoG[(size_t) k] = (Real) (2.0 * caps[(size_t) k].g);
-            stateSign[(size_t) k] = (Real) (caps[(size_t) k].inductor ? -1.0 : 1.0);
+            // theta-method history (i = g v - h): capacitor h' = (1 + w) g v - w h, inductor h' = h - (1 + w) g v,
+            // w = (1 - theta) / theta (NodalCircuit::solveSample); theta = 0.5 is the trapezoid, h' = 2 g v - h
+            const double w = (1.0 - theta) / theta;
+            twoG[(size_t) k] = (Real) ((caps[(size_t) k].inductor ? -1.0 : 1.0) * (1.0 + w) * caps[(size_t) k].g);
+            stateSign[(size_t) k] = (Real) (caps[(size_t) k].inductor ? 1.0 : -w);
         }
 
         // Compile to the state-space form. Every quantity read per sample is d^T v for a difference vector d (a cap's
@@ -890,6 +898,7 @@ private:
     }
 
     double fs = 48000.0;
+    double theta = 0.5;
     int numNodes = 0, numResistors = 0, numCaps = 0, numVccs = 0, numPorts = 0, numProbes = 0;
     std::array<Resistor, MaxResistors> resistors {};
     std::array<Cap, MaxCaps> caps {};

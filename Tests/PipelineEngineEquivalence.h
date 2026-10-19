@@ -169,6 +169,14 @@ inline Verdict compare (const std::function<std::unique_ptr<EffectProcessor> (bo
                  + juce::String (eb[wk] - top, 1) + " dB (re top)");
             auto onset = [top] (const std::vector<double>& e) { for (size_t k = 0; k < e.size(); ++k) if (e[k] > top - 10.0) return (int) k; return -1; };
             const double pd = std::abs (peakDb (out[1]) - peakDb (out[0]));
+            if (pd > 0.6)
+            {
+                auto at = [] (const std::vector<float>& x) { size_t w = 0; for (size_t k = 0; k < x.size(); ++k) if (std::abs (x[k]) > std::abs (x[w])) w = k; return w; };
+                const size_t ka = at (out[0]), kb = at (out[1]);
+                log ("    peaks: netlist " + juce::String (peakDb (out[0]), 2) + " dB at sample " + juce::String ((int) ka) + ", pipeline "
+                     + juce::String (peakDb (out[1]), 2) + " dB at sample " + juce::String ((int) kb) + "; netlist around its peak:"
+                     + [&] { juce::String r; for (size_t k = ka > 3 ? ka - 3 : 0; k < std::min (out[0].size(), ka + 4); ++k) r << " " << juce::String (out[0][k], 3) << "/" << juce::String (out[1][k], 3); return r; }());
+            }
             log ("  " + tag + "bursts " + juce::String (amp) + ": peak " + juce::String (pd, 2) + " dB, envelope " + juce::String (ed, 2) + " dB");
             v.peak = std::max (v.peak, pd);
             v.envelope = std::max (v.envelope, ed);

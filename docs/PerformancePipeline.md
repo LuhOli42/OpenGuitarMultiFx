@@ -131,20 +131,45 @@ levels and two burst levels:
 | Metal Zone | 27.2 -> **6.7** | 0.12 | 0.94 | 0.37 | 1.58 | applied (compiled); the envelope is the recovery after a rail-pinned Dist stage, against **8.97 dB for the reducedOrder model that shipped before** |
 | OCD | 12.0 -> **6.8** | 0.27 | 0.20 | 0.26 | 1.47 | applied (compiled, batch 3) |
 | ODR-1 | 11.1 -> **7.7** | 0.04 | 0.26 | 0.07 | 0.09 | applied (compiled, batch 3) |
-| CrunchBox | 10.1 (unchanged) | 0.07 | 1.32 | 7.1 | 8.3 | compiled (x2.4) but NOT applied: hot-burst peaks / envelopes off by 7-8 dB, the Darkglass symptom; not explained yet |
+| CrunchBox | 10.1 (unchanged) | 0.01 | 0.03 | 0.01 | 3.1 | compiled (x2.6) but NOT applied: one 5 ms frame at -33 dB off by 3 dB; every other metric now matches (the 7 dB peaks before were the netlist, see below) |
 | Tone Bender (ge / si) | 8.9 (unchanged) | - | - | - | - | NOT applied: diverges with linear transistors; with `transistorFull` stable but off by up to 23 dB (ge), broken on the silicon model's one-port transistors, and slower than the netlist (x0.7) |
 | SansAmp BDDI | 6.9 -> **2.7** | 0.19 | 0.21 | 0.22 | 0.36 | applied (compiled, batch 4: five blocks, the last with two inputs) |
-| RAT / RAT 2 / Turbo Rat | 6.4-6.6 (unchanged) | 0.04 | 0.3-1.5 | 2-5 | 1.4-2.4 | compiled (`railsFirst`, x1.9) but NOT applied: hot-burst peaks / envelopes above the bar |
-| DS-1 | 6.4 (unchanged) | 0.5 | 1.6 | 2.5 | 31 | compiled but NOT applied: envelope off on hot bursts (BJT gain stage + saturating op-amp), not explained |
-| Tube Driver | 10.1 (unchanged) | 0.10 | 1.04 | 6.6 | 1.55 | compiled (triode ports, 2026-10-18) but NOT applied: x0.7 against the netlist (x1.0 with a single Newton step, which loses the band match), and driven-burst peaks off by up to 6.6 dB, only at high Drive where the gain-333 op-amp pins its rail |
+| RAT / RAT 2 / Turbo Rat | 6.4-6.6 -> **3.0** | 0.01 | 0.41 | 0.03 | 1.11 | applied (2026-10-19: railsFirst + integrator clamp + the netlist fixes below) |
+| DS-1 | 6.4 (unchanged) | 0.5 | 1.6 | 0.22 | 31 | compiled but NOT applied: the transistor gain stage (linearised in the compiler) behaves differently on hot bursts |
+| Tube Driver | 10.1 (unchanged) | 0.11 | 1.4 | 6.8 | 1.6 | compiled (triode ports) but NOT applied: slower than the netlist (x0.55). Its peak error is the netlist's own convergence defect on triode circuits, which the fix below does not cover yet |
 | HM-2 | 13.4 (unchanged) | 0.14 | 1.22 | 0.16 | 2.29 | NOT applied: matched only with the full two-junction transistor port (`transistorFull`) at 6 Newton steps, which is slower than the netlist (x0.55); fewer steps lose the saturation. No gain, netlist kept |
-| Darkglass B7K | 11.6 (unchanged) | 0.02 | 0.30 | 0.27 | 2.8 | compiled (inductors + two-input EQ block, x1.9 with `railsFirst`) but NOT applied: envelope 2.8 dB at the recovery after the drive stage. (The earlier 11 dB peak gap was the compiler's port order, not the netlist: corrected) |
+| Darkglass B7K | 11.6 -> **5.0** | 0.00 | 0.07 | 0.00 | 0.24 | applied (2026-10-19: railsFirst + integrator clamp + the netlist fixes below) |
 
 All applied ones also pass the steady-state test (`OversampledEffectTests`: DT-1 -115 dB, Metal Zone -128 dB
 non-periodic error) and stay within 0.1 dB of unity with their existing trims (`PedalUnityLevelTests`).
 
 Still above 5 %: the Metal Zone (five op-amp stages, every one of them clips, so all of it must stay oversampled) and the
 DT-1 just over. The remaining cost is mostly the per-port solves of the stages pinned on a rail.
+
+## Three fixes that closed the hot-burst gap (2026-10-19)
+
+1. **Same integration rule as the netlist.** NodalCircuit integrates capacitors with the theta-method at theta = 0.6
+   (`defaultTheta`, damps the top octave); the compiler used the trapezoid (0.5). Every hard edge differed by a sample.
+   `LinearPortNetwork::setTheta` now takes the netlist's theta (`Description::theta`): DT-1 and ODR-1 match the netlist
+   to 0.00 dB on every metric, the SansAmp envelope went 0.36 -> 0.06 dB.
+2. **Op-amp macro integrator clamp** (`CompileOptions::integratorClamp`, per pedal). The netlist clamps the macro's
+   integrator node with two diodes ~0.5 V past the rails, so it leaves a rail at once; the compiler had replaced them with
+   a 470-ohm bleed into a 1-ohm source, which let the integrator wind up tens of volts and take ~100 us to come back.
+   Now the follower stays an exact row and the integrator node gets the rail clamp. On for the Metal Zone, DT-1, ODR-1,
+   SansAmp, RAT, Darkglass (and the measured-only CrunchBox / DS-1 / Tube Driver); off for the OCD (envelope 0.90 dB
+   without, 1.65 with).
+3. **A convergence defect in NodalCircuit itself.** Newton accepted a point when the linearisation leftover was below
+   1e-5 V, but after a step the p-n junction log-limiter had cut, that leftover no longer measures the error, and the only
+   other guard was a 30 V port residual. The RAT's silicon clipper node was accepted at 1.88 V (1.25 V off balance) on
+   polarity flips: a one-sample spike in the netlist, the "2-5 dB peak" the RAT failed on, and the CrunchBox's 7 dB.
+   Such points must now balance to 50 mV (`limitedResidualAccept`), on circuits without tubes (the tube amps' solver
+   budgets were tuned around the old rule). This changes the NETLIST of every diode pedal on hard edges, toward the
+   correct answer; all pedal suites pass.
+
+The other suites were checked like for like (the same filter with the fix on and off): the amp failures a full local run
+shows (AmpFullVsReducedConsistency, AC30 / Astroverb / 5150 / ENGL, the JCM800 and 5150 unity levels) are identical
+without the fix -- they predate it and the CI smoke subset does not run them. The HM-2's measured-only figure depends
+on which suites ran before it in the same process (1.88 dB alone, 41 dB after the pedal suites): shared state to find.
 
 ## Hot-burst envelope mismatches: investigation (2026-10-18)
 

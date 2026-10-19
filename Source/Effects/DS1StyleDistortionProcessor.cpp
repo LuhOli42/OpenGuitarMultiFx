@@ -210,8 +210,10 @@ void DS1StyleDistortionProcessor::prepare (double newSampleRate, int, int)
         ch.fPre.clear(); ch.fPost.clear();
         if (pipelineEngine)
         {
-            const bool ok = ch.fPre.compile (ch.pre, ch.srcIn, { ch.nO }, newSampleRate)
-                         && ch.fPost.compile (ch.post, ch.srcO, { ch.nOut }, newSampleRate);
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            const bool ok = ch.fPre.compile (ch.pre, ch.srcIn, { ch.nO }, newSampleRate, clampOpts)
+                         && ch.fPost.compile (ch.post, ch.srcO, { ch.nOut }, newSampleRate, clampOpts);
             if (! ok) { ch.fPre.clear(); ch.fPost.clear(); }
         }
     }

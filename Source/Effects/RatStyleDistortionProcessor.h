@@ -39,8 +39,9 @@ public:
     void reset() override { forceReprepare(); }
 
     /** Pipeline engine: every block compiled into a linear network + fixed-cost ports at its DC point
-        (docs/PerformancePipeline.md). OFF by default: with railsFirst the three models match level / band (0.04 /
-        0.3-1.5 dB, x1.9) but miss peaks by 2-5 dB and the 5 ms envelope by 1.4-2.4 dB on hot bursts; not yet at the bar. */
+        (docs/PerformancePipeline.md). ON by default since 2026-10-19: with the netlist's own integration rule, the op-amp
+        integrator clamp and railsFirst the three models pass the equivalence test (peaks 0.03 dB, envelope <= 1.1 dB, x2.0).
+        The 2-5 dB peaks measured before were the NETLIST's (a clipper node accepted at 1.88 V, see NodalCircuit). */
     void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
@@ -120,7 +121,7 @@ private:
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;
     DualMonoShortcut shortcut;
-    bool pipelineEngine = false;
+    bool pipelineEngine = true;
 
     static constexpr int controlInterval = 16; // samples between pot -> resistance updates
 };

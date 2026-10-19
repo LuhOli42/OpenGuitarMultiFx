@@ -227,8 +227,9 @@ void OCDStyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         ch.fA.clear(); ch.fB.clear();
         if (pipelineEngine)
         {
-            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1, ch.nClip }, newSampleRate)
-                         && ch.fB.compile (ch.b, ch.srcClip, { ch.nOut }, newSampleRate);
+            pipeline::CompileOptions opts; // integratorClamp stays off: envelope 0.90 dB with the 470-ohm bleed, 1.65 with the clamp
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1, ch.nClip }, newSampleRate, opts)
+                         && ch.fB.compile (ch.b, ch.srcClip, { ch.nOut }, newSampleRate, opts);
             if (! ok) { ch.fA.clear(); ch.fB.clear(); }
         }
     }

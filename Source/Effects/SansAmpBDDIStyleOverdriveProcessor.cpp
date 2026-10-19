@@ -311,11 +311,13 @@ void SansAmpBDDIStyleOverdriveProcessor::prepare (double newSampleRate, int, int
         ch.fA.clear(); ch.fB.clear(); ch.fC.clear(); ch.fD.clear(); ch.fE.clear();
         if (pipelineEngine)
         {
-            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nNotch, ch.nBuf }, newSampleRate)
-                         && ch.fB.compile (ch.b, ch.srcB, { ch.nPres }, newSampleRate)
-                         && ch.fC.compile (ch.c, ch.srcC, { ch.nDrive }, newSampleRate)
-                         && ch.fD.compile (ch.d, ch.srcD, { ch.nCab }, newSampleRate)
-                         && ch.fE.compile (ch.e, ch.srcDry, ch.srcWet, { ch.nOut }, newSampleRate);
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nNotch, ch.nBuf }, newSampleRate, clampOpts)
+                         && ch.fB.compile (ch.b, ch.srcB, { ch.nPres }, newSampleRate, clampOpts)
+                         && ch.fC.compile (ch.c, ch.srcC, { ch.nDrive }, newSampleRate, clampOpts)
+                         && ch.fD.compile (ch.d, ch.srcD, { ch.nCab }, newSampleRate, clampOpts)
+                         && ch.fE.compile (ch.e, ch.srcDry, ch.srcWet, { ch.nOut }, newSampleRate, clampOpts);
             if (! ok) { ch.fA.clear(); ch.fB.clear(); ch.fC.clear(); ch.fD.clear(); ch.fE.clear(); }
         }
     }

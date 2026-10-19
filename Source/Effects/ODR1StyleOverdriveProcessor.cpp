@@ -263,9 +263,11 @@ void ODR1StyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         ch.fA.clear(); ch.fB1.clear(); ch.fB2.clear();
         if (pipelineEngine)
         {
-            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate)
-                         && ch.fB1.compile (ch.b1, ch.srcOp1, { ch.nOp2 }, newSampleRate)
-                         && ch.fB2.compile (ch.b2, ch.srcOp2, { ch.nOut }, newSampleRate);
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate, clampOpts)
+                         && ch.fB1.compile (ch.b1, ch.srcOp1, { ch.nOp2 }, newSampleRate, clampOpts)
+                         && ch.fB2.compile (ch.b2, ch.srcOp2, { ch.nOut }, newSampleRate, clampOpts);
             if (! ok) { ch.fA.clear(); ch.fB1.clear(); ch.fB2.clear(); }
         }
     }

@@ -194,6 +194,7 @@ void RatStyleDistortionProcessor::prepare (double newSampleRate, int, int)
         if (pipelineEngine)
         {
             pipeline::CompileOptions railsFirstOpts;
+            railsFirstOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
             railsFirstOpts.railsFirst = true; // the clipper hangs off a rail-pinned op-amp (docs/PerformancePipeline.md)
             const bool ok = ch.fC.compile (ch.c, ch.srcIn, { ch.nOut }, newSampleRate, railsFirstOpts);
             if (! ok) { ch.fC.clear(); }

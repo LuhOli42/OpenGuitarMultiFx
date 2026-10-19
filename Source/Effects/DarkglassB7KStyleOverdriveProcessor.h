@@ -26,9 +26,8 @@ class DarkglassB7KStyleOverdriveProcessor : public EffectProcessor
 public:
     /** Pipeline engine: the four blocks compiled into linear networks + fixed-cost ports at their DC point
         (docs/PerformancePipeline.md; the EQ block takes the dry and the driven signal as two inputs, the EQ gyrators are
-        inductors). OFF by default. Most of the earlier hot-burst mismatch (peaks 11 dB) was the COMPILER's port order,
-        not the netlist: with railsFirst the peaks match (0.27 dB); what is left is the 5 ms envelope, 2.8 dB at the
-        recovery after a rail-pinned drive stage, above the 1.5 dB bar. */
+        inductors). ON by default since 2026-10-19: with railsFirst (port order), the netlist's integration rule and the
+        op-amp integrator clamp it passes the equivalence test (envelope 0.24 dB, x1.9). */
     void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
 
     DarkglassB7KStyleOverdriveProcessor();
@@ -75,7 +74,7 @@ private:
 
     void buildChannel (Channel& ch);
     void updatePots();
-    bool pipelineEngine = false;
+    bool pipelineEngine = true;
 
     std::array<Channel, 2> channels;
 

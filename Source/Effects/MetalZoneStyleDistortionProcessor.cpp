@@ -1274,10 +1274,12 @@ void MetalZoneStyleDistortionProcessor::prepare (double newSampleRate, int, int)
             }
         if (pipelineEngine && ch.reduced == nullptr)
         {
-            ch.fast[0].compile (ch.blk[0], ch.srcIn, { ch.out[0] }, newSampleRate);
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            ch.fast[0].compile (ch.blk[0], ch.srcIn, { ch.out[0] }, newSampleRate, clampOpts);
             for (int b = 1; b < numBlocks - 1; ++b)
-                ch.fast[(size_t) b].compile (ch.blk[(size_t) b], ch.srcPrev[(size_t) b], { ch.out[(size_t) b] }, newSampleRate);
-            ch.fast[4].compile (ch.blk[4], ch.srcPrev[4], { ch.out[4], ch.nOut }, newSampleRate);
+                ch.fast[(size_t) b].compile (ch.blk[(size_t) b], ch.srcPrev[(size_t) b], { ch.out[(size_t) b] }, newSampleRate, clampOpts);
+            ch.fast[4].compile (ch.blk[4], ch.srcPrev[4], { ch.out[4], ch.nOut }, newSampleRate, clampOpts);
         }
     }
 

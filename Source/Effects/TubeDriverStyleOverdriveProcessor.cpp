@@ -222,8 +222,10 @@ void TubeDriverStyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         ch.fA.clear(); ch.fB.clear();
         if (pipelineEngine)
         {
-            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp2 }, newSampleRate)
-                         && ch.fB.compile (ch.b, ch.srcOp, { ch.nOut }, newSampleRate);
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp2 }, newSampleRate, clampOpts)
+                         && ch.fB.compile (ch.b, ch.srcOp, { ch.nOut }, newSampleRate, clampOpts);
             if (! ok) { ch.fA.clear(); ch.fB.clear(); }
         }
     }

@@ -195,8 +195,10 @@ void DT1StyleDistortionProcessor::prepare (double newSampleRate, int, int)
         ch.fastB.clear();
         if (pipelineEngine)
         {
-            ch.fastA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate);
-            ch.fastB.compile (ch.b, ch.srcOp1, { ch.nOut }, newSampleRate);
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            ch.fastA.compile (ch.a, ch.srcIn, { ch.nOp1 }, newSampleRate, clampOpts);
+            ch.fastB.compile (ch.b, ch.srcOp1, { ch.nOut }, newSampleRate, clampOpts);
         }
     }
 
