@@ -316,7 +316,8 @@ void CentaurStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
 
             ch.block0.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.block0.solveSample();
-            const double B = ch.block0.voltage (ch.nodeA);
+            // IC1_A shares IC1's 9 V supply: a TL072 follower cannot swing past 1.5 .. 7.5 V.
+            const double B = juce::jlimit (1.5, 7.5, ch.block0.voltage (ch.nodeA));
 
             ch.block1.setSource (ch.srcB1, B);
             ok = ch.block1.solveSample() && ok;
