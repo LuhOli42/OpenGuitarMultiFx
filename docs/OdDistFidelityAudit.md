@@ -5,8 +5,14 @@ Same 3-layer method as the amp audit (PRs #99-#111): **topology** (netlist vs pu
 `Tests/fixtures/di/guitar-di.wav` -- `bass-di.wav` for the bass pedals -- and `probe-sine220.wav`, `--quality=high`).
 Only verifiably wrong things were changed. PedalUnityLevel trims were not touched.
 
-Scope = the OD/dist pedals in `EffectRegistry.cpp`: TS808/TS9/TS10/TS9B, RAT/RAT 2/Turbo RAT, Centaur, ODR-1,
-Guv'nor, Tube Driver, Darkglass B7K. **No Shredmaster is registered**, so none was audited (or invented).
+Scope = the families named for this batch (TubeScreamer, RAT, Klon, ODR-1, Guv'nor, Shredmaster, Tube Driver,
+Darkglass), restricted to models registered in `EffectRegistry.cpp`: TS808/TS9/TS10/TS9B, RAT/RAT 2/Turbo RAT,
+Centaur, ODR-1, Guv'nor, Tube Driver, Darkglass B7K. **No Shredmaster is registered**, so none was audited (or invented).
+
+**Not covered here** (registered OD/dist/fuzz models outside those families, left for a later batch): BD-2, Blues
+Breaker, Crunch Box, DOD 250, DS-1, DT-1, Distortion+, HM-2, Metal Zone, OCD, OD-1, ODB-3, Overdriver, SansAmp BDDI,
+Zendrive, and the fuzzes (Big Muff family, Fuzz Face family, Tone Bender family, Green Ringer, Octavia, Super Fuzz,
+Tone Machine).
 
 ## Findings
 
