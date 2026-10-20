@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace openguitarmultifx
@@ -90,6 +91,7 @@ private:
     void showPage (int page);
     std::vector<size_t> visibleSliders() const;
     void cycleTempoSync (juce::AudioParameterFloat* param);
+    void showValueKeypadFor (juce::Slider* knob);
 
     EffectProcessor* current = nullptr;
     juce::File modelsDir;
@@ -129,6 +131,103 @@ private:
         }
     };
 
+    /** A rotary knob with a hidden fine-tune drag (audit #93 item 1): hold
+        it for the app's usual 550 ms and the drag drops to ~1/8 speed for
+        the rest of that gesture -- a fingertip can land an exact value
+        without a keyboard. A brighter ring is the only cue; like MIDI
+        Learn it's a deliberate gesture, not persistent chrome. When armed,
+        the drag re-bases at the current pointer and value so
+        fine motion continues from the coarse-drag position without a jump. */
+    class FineTuneSlider : public juce::Slider,
+                           private juce::Timer
+    {
+    public:
+        using juce::Slider::Slider;
+
+        void mouseDown (const juce::MouseEvent& event) override
+        {
+            lastDrag.reset();
+            juce::Slider::mouseDown (event);
+            startTimer (finePressMs);
+        }
+
+        void mouseDrag (const juce::MouseEvent& event) override
+        {
+            lastDrag.emplace (event);
+            juce::Slider::mouseDrag (event);
+        }
+
+        void mouseUp (const juce::MouseEvent& event) override
+        {
+            lastDrag.reset();
+            endFineDrag();
+            juce::Slider::mouseUp (event);
+        }
+
+    private:
+        void timerCallback() override
+        {
+            stopTimer();
+            if (! isMouseButtonDown())
+                return;
+            coarseSensitivity = getMouseDragSensitivity();
+            setMouseDragSensitivity (coarseSensitivity * fineFactor);
+            fineDragArmed = true;
+            if (lastDrag)
+                juce::Slider::mouseDown (*lastDrag);
+            repaint();
+        }
+
+        void endFineDrag()
+        {
+            stopTimer();
+            if (fineDragArmed)
+            {
+                fineDragArmed = false;
+                setMouseDragSensitivity (coarseSensitivity);
+                repaint();
+            }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            juce::Slider::paint (g);
+            if (fineDragArmed)
+            {
+                g.setColour (findColour (juce::Slider::rotarySliderFillColourId).brighter (0.6f));
+                g.drawEllipse (getLocalBounds().toFloat().reduced (1.5f), 2.0f);
+            }
+        }
+
+        bool fineDragArmed = false;
+        int coarseSensitivity = 250;
+        std::optional<juce::MouseEvent> lastDrag;
+        static constexpr int finePressMs = 550; // same duration as LongPressLabel / SnapshotBar
+        static constexpr int fineFactor = 8;
+    };
+
+    /** The value readout under a knob, drawn like the JUCE text box it
+        replaced (dark field + centred value) but tap-to-open the on-screen
+        keypad -- the target device has no OS keyboard for the original
+        editable box (audit #93 item 1). */
+    class ValueFieldButton : public juce::Button
+    {
+    public:
+        ValueFieldButton() : juce::Button ({}) {}
+
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+        {
+            auto bounds = getLocalBounds().toFloat();
+            g.setColour (juce::Colour (0xff0f0f0f));
+            g.fillRoundedRectangle (bounds, 4.0f);
+            g.setColour (juce::Colours::white.withAlpha (down ? 0.45f : highlighted ? 0.35f : 0.22f));
+            g.drawRoundedRectangle (bounds.reduced (0.5f), 4.0f, 1.0f);
+            g.setColour (juce::Colours::white.withAlpha (down ? 1.0f : 0.9f));
+            g.setFont (juce::Font (15.0f));
+            g.drawText (getButtonText(), bounds.toNearestInt(), juce::Justification::centred);
+        }
+    };
+
     struct SliderRow
     {
         /** The value/param model, ALWAYS built and wired exactly as before (setRange/setValue/onValueChange) --
@@ -142,6 +241,9 @@ private:
         std::unique_ptr<SelectorSwitch> selector;
 
         std::unique_ptr<LongPressLabel> label;
+        /** The tap-to-type value readout under the knob (see ValueFieldButton);
+            only on rows showing a real knob -- selector rows draw their own labels. */
+        std::unique_ptr<ValueFieldButton> valueBox;
         juce::AudioParameterFloat* param = nullptr;
         int page = 0;
 

@@ -1,4 +1,4 @@
-#include "Effects/HarmonizerProcessor.h"
+#include "Effects/Pitch/HarmonizerProcessor.h"
 
 #include <juce_core/juce_core.h>
 

@@ -55,6 +55,12 @@ public:
     /** The user picked a sample rate: the host restarts the device at it and returns an error message (empty on success). */
     std::function<juce::String (double)> onSampleRateChanged;
 
+    /** The user tapped "Retry audio device" while no device is open (the NO
+        AUDIO DEVICE state's recovery action -- audit #93 item 2): the host
+        re-runs the device open and returns its error (empty on success,
+        which also re-shows this section and hides the button again). */
+    std::function<juce::String()> onRetryDevice;
+
 private:
     void refreshLoginState();
     void doLogin();
@@ -84,6 +90,9 @@ private:
     juce::Array<double> rateValues;
     double currentRate = 0.0;
     juce::Label rateHintLabel;
+    /** Only visible while the device reports no usable rate -- the state a
+        failed device open leaves this section in. */
+    juce::TextButton retryDeviceButton { "Retry audio device" };
     juce::Label tone3000SectionLabel { {}, "TONE3000 account" };
 
     juce::Label clientIdLabel { {}, "client_id" };

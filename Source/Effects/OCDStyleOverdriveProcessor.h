@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -32,6 +33,10 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
 
+    /** Pipeline engine (default): every block compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). false = the Newton netlist, the reference for the tests. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
+
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "OCD"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2f8f5b); }
@@ -53,6 +58,7 @@ private:
     struct Channel
     {
         NodalCircuit a, b;
+        pipeline::CompiledCircuit fA, fB;
 
         int srcIn = 0;                                   // a: input
         NodalCircuit::Node nOp1 = 0, nClip = 0;          // a: stage-1 output, clipper node
@@ -99,6 +105,7 @@ private:
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = true;
 
     static constexpr int controlInterval = 16; // samples between pot -> resistance updates
 };

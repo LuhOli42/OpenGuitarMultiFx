@@ -34,6 +34,8 @@ void SnapshotBar::setDisplayTypeface (juce::Typeface::Ptr typeface)
 
 int SnapshotBar::cellIndexAt (juce::Point<int> position) const
 {
+    if (position.y < hintHeight)
+        return -1; // the caption strip isn't a cell
     const int index = position.x * snapshotxml::maxSnapshots / juce::jmax (1, getWidth());
     return index >= 0 && index < snapshotxml::maxSnapshots ? index : -1;
 }
@@ -69,11 +71,20 @@ void SnapshotBar::mouseUp (const juce::MouseEvent& event)
 
 void SnapshotBar::paint (juce::Graphics& g)
 {
+    // First-run discoverability for the hidden long-press (audit #93 item 3),
+    // one dim line over the cells -- gone from muscle-memory territory.
+    g.setColour (juce::Colours::grey.withAlpha (0.55f));
+    g.setFont (juce::Font (juce::FontOptions (11.0f)));
+    g.drawText ("tap: recall -- hold: edit", getLocalBounds().removeFromTop (hintHeight),
+                juce::Justification::centred);
+
+    const float cellsTop = (float) hintHeight;
     const float cellWidth = (float) getWidth() / (float) snapshotxml::maxSnapshots;
 
     for (int i = 0; i < snapshotxml::maxSnapshots; ++i)
     {
-        auto cell = juce::Rectangle<float> ((float) i * cellWidth, 0.0f, cellWidth, (float) getHeight())
+        auto cell = juce::Rectangle<float> ((float) i * cellWidth, cellsTop, cellWidth,
+                                            (float) getHeight() - cellsTop)
                         .reduced (2.0f);
 
         const auto colour = cellColours[(size_t) i].isTransparent() ? snapshotxml::defaultColourFor (i) : cellColours[(size_t) i];

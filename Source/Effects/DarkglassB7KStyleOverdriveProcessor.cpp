@@ -169,11 +169,11 @@ void DarkglassB7KStyleOverdriveProcessor::buildChannel (Channel& ch)
             else
             {
                 // Bass + peaking mids: series-C + gyrator resonators (GE7 topology). The bass band is a
-                // broad ~90 Hz resonator (the 100 Hz bass band's quasi-shelf), the mids peak at ~1 kHz
-                // and ~1.2 kHz (the real pedal's 1 kHz / 3.3 kHz centres, constrained by this network's
-                // resonance-vs-LP-corner range -- see docs/circuits/DarkglassB7KStyleOverdrive.md).
+                // broad ~85 Hz resonator (the 100 Hz bass band's quasi-shelf), the mids resonate at
+                // 1/(2 pi sqrt(Cs Cgyr Rgyr Rloss)) = 0.96 kHz and 2.8 kHz: the B7K's published 1 kHz Lo Mid
+                // and 2.8 kHz Hi Mid (docs/circuits/DarkglassB7KStyleOverdrive.md).
                 const double cs    = k == 0 ? 4.7e-6  : k == 1 ? 0.1e-6  : 0.039e-6;
-                const double cGyr  = k == 0 ? 42.9e-9 : k == 1 ? 8.2e-9  : 2.2e-9;
+                const double cGyr  = k == 0 ? 42.9e-9 : k == 1 ? 8.2e-9  : 3.0e-9;
                 const double rGyr  = k == 0 ? 47.0e3  : k == 1 ? 100.0e3 : 82.0e3;
                 const auto x = c.addNode(), y = c.addNode();
                 c.addCapacitor (wiper, x, cs);
@@ -242,6 +242,25 @@ void DarkglassB7KStyleOverdriveProcessor::updatePots()
         }
         ch.d.setResistance (ch.rVolTop, 50.0e3 * (1.0 - level));
         ch.d.setResistance (ch.rVolBottom, 50.0e3 * level);
+        if (ch.fa.compiled())
+        {
+            ch.fa.setResistance (ch.rFb, 22.0e3 + drive * 200.0e3);
+            ch.fa.setResistance (ch.rGrunt, rGr);
+            ch.fa.setResistance (ch.rAttack, rAtt);
+            ch.fa.setCapacitance (ch.cAttack, cAtt);
+            ch.fa.setCapacitance (ch.cShunt, cSh);
+            ch.feq.setResistance (ch.rDryIn, 470.0 + blend * 47.0e3);
+            ch.feq.setResistance (ch.rWetIn, 470.0 + (1.0 - blend) * 47.0e3);
+            for (int k = 0; k < numBands; ++k)
+            {
+                const double u = clampFraction ((double) smoothedBands[(size_t) k].getCurrentValue());
+                ch.feq.setResistance (ch.rUp[k], juce::jmax (10.0, 10.0e3 * u));
+                ch.feq.setResistance (ch.rDown[k], juce::jmax (10.0, 10.0e3 * (1.0 - u)));
+            }
+            ch.fd.setResistance (ch.rVolTop, 50.0e3 * (1.0 - level));
+            ch.fd.setResistance (ch.rVolBottom, 50.0e3 * level);
+            ch.fa.update(); ch.feq.update(); ch.fd.update();
+        }
     }
     appliedGrunt = grunt;
     appliedAttack = attack;
@@ -284,7 +303,20 @@ void DarkglassB7KStyleOverdriveProcessor::prepare (double newSampleRate, int, in
         dcOk = ch.eq.prepare (newSampleRate) && dcOk;
         ch.d.setSource (ch.srcD, ch.eq.voltage (ch.nEq));
         dcOk = ch.d.prepare (newSampleRate) && dcOk;
+        ch.fa.clear(); ch.fb.clear(); ch.feq.clear(); ch.fd.clear();
+        if (pipelineEngine)
+        {
+            pipeline::CompileOptions railsFirstOpts;
+            railsFirstOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            railsFirstOpts.railsFirst = true; // the clipper hangs off a rail-pinned op-amp (docs/PerformancePipeline.md)
+            const bool ok = ch.fa.compile (ch.a, ch.srcIn, { ch.nDrive, ch.nBuf }, newSampleRate, railsFirstOpts)
+                         && ch.fb.compile (ch.b, ch.srcB, { ch.nClip }, newSampleRate, railsFirstOpts)
+                         && ch.feq.compile (ch.eq, ch.srcDry, ch.srcWet, { ch.nEq }, newSampleRate, railsFirstOpts)
+                         && ch.fd.compile (ch.d, ch.srcD, { ch.nOut }, newSampleRate, railsFirstOpts);
+            if (! ok) { ch.fa.clear(); ch.fb.clear(); ch.feq.clear(); ch.fd.clear(); }
+        }
     }
+    if (pipelineEngine) updatePots(); // the compiled networks pick up the pots
 
     controlCounter = 0;
     sampleCount = 0;
@@ -327,6 +359,21 @@ void DarkglassB7KStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buf
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fa.compiled())
+            {
+                ch.fa.setSource (ch.srcIn, (double) data[i]);
+                ch.fa.solveSample();
+                ch.fb.setSource (ch.srcB, ch.fa.voltage (ch.nDrive));
+                ch.fb.solveSample();
+                ch.feq.setSource (ch.srcDry, ch.fa.voltage (ch.nBuf));
+                ch.feq.setSource (ch.srcWet, ch.fb.voltage (ch.nClip));
+                ch.feq.solveSample();
+                ch.fd.setSource (ch.srcD, ch.feq.voltage (ch.nEq));
+                ch.fd.solveSample();
+                data[i] = (float) ch.fd.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.a.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.a.solveSample();
             ch.b.setSource (ch.srcB, ch.a.voltage (ch.nDrive));

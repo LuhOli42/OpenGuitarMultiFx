@@ -42,3 +42,8 @@ cabinet-sim filters -> Blend of dry and emulated -> Baxandall Bass/Treble -> Lev
 - The real cab-sim section is two second-order LPFs + a bridged-T; the model keeps the 450 Hz notch and
   approximates the LP stack with two passive RC poles (~-12 dB/oct effective vs -24).
 - TLC2264 modelled by the project's TL072-class macro shape with a lower GBW (0.7 MHz).
+
+## Pipeline engine (default since 2026-10-18)
+The five blocks compiled with `pipeline::CompiledCircuit` (docs/PerformancePipeline.md; the output block takes the dry
+and the driven signal as two inputs): 6.9 % -> 2.7 % of a core; against the netlist level 0.19 dB, band 0.21 dB, peak
+0.22 dB, envelope 0.36 dB; unity +0.04 dB. `setPipelineEngine (false)` = the netlist (the circuit tests use it).

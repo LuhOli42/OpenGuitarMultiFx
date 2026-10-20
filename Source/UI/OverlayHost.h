@@ -24,6 +24,25 @@ namespace openguitarmultifx
     Tapping outside the top card dismisses just that card, same as a phone
     bottom sheet.
 */
+
+/** Optional interface for a card pushed onto OverlayHost. When the top
+    card implements this, an outside tap is offered to it first: a
+    destructive confirm (or any card with a cancel path) can run that path
+    instead of vanishing silently -- "tap outside to cancel" then means
+    the same thing as tapping the card's own Cancel button, including any
+    side effects that path has. Cards that don't implement it (or don't
+    consume the tap) get the host's plain pop, unchanged. */
+class OutsideTapAware
+{
+public:
+    virtual ~OutsideTapAware() = default;
+
+    /** Called on an outside tap. The card may close itself (its cancel
+        handler typically pops it) or push a further card; the host pops
+        it only if it's still on top afterwards. */
+    virtual void outsideTapDismissed() = 0;
+};
+
 class OverlayHost : public juce::Component
 {
 public:

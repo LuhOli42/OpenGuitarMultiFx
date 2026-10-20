@@ -376,7 +376,23 @@ private:
     juce::TextButton quickSaveButton { "Save" };
     juce::Label titleLabel { {}, "No preset loaded" };
     juce::Label cpuLabel;
-    juce::TextButton settingsButton { juce::String::fromUTF8 ("\xe2\x8b\xae") }; // vertical ellipsis "..."
+    /** The retry action next to the cpuLabel's NO AUDIO DEVICE warning
+        (audit #93 item 2) -- hidden while a device is open, see
+        timerCallback()/resized(). */
+    juce::TextButton retryAudioButton { "Retry" };
+
+    /** Settings gear button, drawn (audit #93 item 6): the "..." glyph it
+        replaced read as "more stuff", not "Settings", and leaned on a
+        system-font glyph the final device build doesn't even have. Chrome
+        (fill + accent border) still comes from the LookAndFeel's
+        drawButtonBackground; only the cog mark is drawn on top. */
+    class GearButton : public juce::Button
+    {
+    public:
+        GearButton() : juce::Button ({}) {}
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
+    };
+    GearButton settingsButton;
 
     // Every popup that used to be a separate OS window (TONE3000 login,
     // search, installed-model list) is a card drawn on top of this window

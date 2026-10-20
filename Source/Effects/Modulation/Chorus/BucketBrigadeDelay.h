@@ -72,15 +72,20 @@ public:
         // a chorus clock puts several edges in every audio sample and std::exp dominated the cost.
         if (nextEdge < 1.0 || ((edgeIndex & 1) != 0 && nextEdge <= 1.0))
         {
+            // Input sections are only read on even edges and output sections only driven on odd ones, so each set is
+            // stepped two edges at a time (a flanger's clock puts dozens of edges in every audio sample).
+            const bool evenNext = (edgeIndex & 1) == 0;
+            const double firstEven = evenNext ? nextEdge : nextEdge + edgeStep;
+            const double firstOdd = evenNext ? nextEdge + edgeStep : nextEdge;
             for (auto& s : in)
             {
-                s.e = std::exp (s.pTs * nextEdge);
-                s.step = std::exp (s.pTs * edgeStep);
+                s.e = std::exp (s.pTs * firstEven);
+                s.step = std::exp (s.pTs * (2.0 * edgeStep));
             }
             for (auto& s : out)
             {
-                s.e = std::exp (s.pTs * (1.0 - nextEdge));
-                s.step = std::exp (-s.pTs * edgeStep);
+                s.e = std::exp (s.pTs * (1.0 - firstOdd));
+                s.step = std::exp (-s.pTs * (2.0 * edgeStep));
             }
 
             while (nextEdge < 1.0 || ((edgeIndex & 1) != 0 && nextEdge <= 1.0))
@@ -89,9 +94,15 @@ public:
                 {
                     // Input transistor closes: sample the input filter's output at this instant.
                     double v = 0.0;
-                    for (const auto& s : in)
+                    for (auto& s : in)
+                    {
                         v += s.weight * (s.g * s.e * s.x).real();
-                    queue[head] = v;
+                        s.e *= s.step;
+                    }
+                    if (quantStep > 0.0) // a digital delay's converter (the same queue at a variable sample rate)
+                        v = quantStep * std::round (v / quantStep);
+                    if (! frozen)
+                        queue[head] = v;
                     if (++head >= queue.size())
                         head = 0;
                 }
@@ -102,12 +113,11 @@ public:
                     const double delta = yBbd - yOld;
                     yOld = yBbd;
                     for (auto& s : out)
+                    {
                         s.x += s.g * s.e * delta;
+                        s.e *= s.step;
+                    }
                 }
-                for (auto& s : in)
-                    s.e *= s.step;
-                for (auto& s : out)
-                    s.e *= s.step;
                 ++edgeIndex;
                 nextEdge += edgeStep;
             }
@@ -126,6 +136,12 @@ public:
         return y;
     }
 
+    /** Round every stored sample to this step (0 = off): models a digital delay's ADC (Boss DD-2: 12 bits). */
+    void setQuantization (double step) noexcept { quantStep = step; }
+
+    /** Hold: stop writing, so the stored samples recirculate unchanged (a digital delay's Hold mode). */
+    void setFrozen (bool shouldFreeze) noexcept { frozen = shouldFreeze; }
+
     /** The chip's delay at a constant clock: N/2 clock periods. */
     double delaySeconds (double clockHz) const noexcept { return (double) queue.size() / clockHz; }
 
@@ -139,9 +155,23 @@ private:
         double weight = 1.0; // 2 for a pole standing in for its conjugate pair (the pair's states are conjugates)
     };
 
-    void setupSide (const Filter& f, std::vector<Section>& sections, bool isInput)
+    void setupSide (const Filter& fIn, std::vector<Section>& sections, bool isInput)
     {
         sections.clear();
+        // The partial fractions need simple poles. A real circuit can have a double one exactly (a Sallen-Key with
+        // equal capacitors and resistors has Q = 0.5: one real pole twice), which would put (p_i - p_j) ~ 0 under the
+        // residues; split such pairs by +-0.5 % -- well inside the parts' tolerance.
+        Filter f = fIn;
+        for (size_t i = 0; i < f.poles.size(); ++i)
+            for (size_t j = i + 1; j < f.poles.size(); ++j)
+                if (std::abs (f.poles[i] - f.poles[j]) < 1.0e-2 * std::abs (f.poles[i])
+                    && std::abs (f.poles[i].imag()) < 1.0e-2 * std::abs (f.poles[i]))
+                {
+                    // A numerically-found double real pole comes back as p +- (tiny) j: make it two real poles.
+                    const double re = 0.5 * (f.poles[i].real() + f.poles[j].real());
+                    f.poles[i] = Complex (re * 1.005, 0.0);
+                    f.poles[j] = Complex (re * 0.995, 0.0);
+                }
         const size_t m = f.poles.size();
         // H(s) = K prod(s - z) / prod(s - p_i), K chosen for the requested DC gain: H(0) = K prod(-z) / prod(-p_i).
         Complex prodNeg = 1.0, zeroNeg = 1.0;
@@ -199,6 +229,8 @@ private:
     double nextEdge = 0.0;
     long long edgeIndex = 0;
     double yOld = 0.0;
+    double quantStep = 0.0;
+    bool frozen = false;
 };
 
 } // namespace openguitarmultifx

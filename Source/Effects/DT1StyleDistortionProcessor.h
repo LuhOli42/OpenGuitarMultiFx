@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -34,6 +35,10 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
 
+    /** Pipeline engine (default): both blocks compiled into linear networks + fixed-cost ports at their DC point
+        (docs/PerformancePipeline.md). false = the Newton netlist, the reference for the tests. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
+
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "DT-1"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffd1452f); }
@@ -53,6 +58,7 @@ private:
     struct Channel
     {
         NodalCircuit a, b;
+        pipeline::CompiledCircuit fastA, fastB;
         int srcIn = 0, srcOp1 = 0;
         NodalCircuit::Node nOp1 = 0, nOp2 = 0, nOut = 0;
         int rDistFeedback = 0, rDistSeries = 0;       // the Distortion pot's two segments
@@ -65,6 +71,7 @@ private:
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = true;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* distortionParam = nullptr;

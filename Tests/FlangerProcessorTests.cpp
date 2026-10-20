@@ -1,4 +1,4 @@
-#include "Effects/FlangerProcessor.h"
+#include "Effects/Modulation/Flanger/FlangerProcessor.h"
 
 #include <juce_core/juce_core.h>
 

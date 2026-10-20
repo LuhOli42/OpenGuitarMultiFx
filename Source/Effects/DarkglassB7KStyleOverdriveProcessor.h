@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -23,6 +24,12 @@ namespace openguitarmultifx
 class DarkglassB7KStyleOverdriveProcessor : public EffectProcessor
 {
 public:
+    /** Pipeline engine: the four blocks compiled into linear networks + fixed-cost ports at their DC point
+        (docs/PerformancePipeline.md; the EQ block takes the dry and the driven signal as two inputs, the EQ gyrators are
+        inductors). ON by default since 2026-10-19: with railsFirst (port order), the netlist's integration rule and the
+        op-amp integrator clamp it passes the equivalence test (envelope 0.24 dB, x1.9). */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
+
     DarkglassB7KStyleOverdriveProcessor();
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
@@ -47,6 +54,7 @@ private:
     struct Channel
     {
         NodalCircuit a, b, eq, d;
+        pipeline::CompiledCircuit fa, fb, feq, fd;
         int srcIn = 0;
         int srcB = 0;
         int srcDry = 0, srcWet = 0;
@@ -66,6 +74,7 @@ private:
 
     void buildChannel (Channel& ch);
     void updatePots();
+    bool pipelineEngine = true;
 
     std::array<Channel, 2> channels;
 

@@ -66,3 +66,8 @@ With the Clipping switch open (LED mode) the MOSFETs' common node floats between
 * The other versions' DIP options (Ge diodes, the extra 10 nF hi-cut, 100 nF bass cap, 22 nF tone cap) and their pot values (v1.1-1.2: Drive
   500kA, Tone 25kA; Volume 100kA/500kB in v1.3-1.5): these would be model parameters if wanted; the Aion table lists them.
 * The TL082's real output stage, slew rate (13 V/us) and the "18 V" mode. The v2 (2017) circuit, which is "in-depth" different (AIND).
+
+## Pipeline engine (default since 2026-10-18)
+Both blocks compiled with `pipeline::CompiledCircuit` (docs/PerformancePipeline.md): 12.0 % -> 6.8 % of a core; against
+the netlist level 0.27 dB, band 0.20 dB, peak 0.26 dB, envelope 1.47 dB; unity +0.09 dB with the existing trim.
+`setPipelineEngine (false)` = the netlist (the circuit tests use it).

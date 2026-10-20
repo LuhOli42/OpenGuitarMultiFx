@@ -165,6 +165,7 @@ public:
         lastSolveOk = false; // a restored state has not just been solved: force one real solve first
         settleCount = 0;
     }
+    static inline double limitedResidualAccept = 0.05; // volts: the same, for a point reached by a limited step (see newtonPortsFrom)
     static inline double portResidualAccept = 30.0; // volts: the largest port-equation error a converged point may carry (garbage is hundreds; a real point is micro-volts)
     void setIntegrationTheta (double newTheta) noexcept { theta = newTheta; }
 
@@ -857,6 +858,83 @@ public:
         useX = false;
         lastSolveOk = true;
         return true;
+    }
+
+    /** A read-only export of the netlist at its current operating point (call after prepare()), for compiling it into
+        a pipeline::LinearPortNetwork (Source/Effects/Pipeline/CompiledCircuit.h). Control thread; allocates. */
+    struct Description
+    {
+        struct R { Node a, b; double ohms; };
+        struct C { Node a, b; double farads; bool inductor; };
+        struct S { Node node; double volts; bool current; };
+        struct OpRow { Node plus, minus, out; double invGain, cm; };
+        struct Rail { int row; double lo, hi; };
+        struct D { Node a, k; double is, nVt; };
+        struct Q { Node c, b, e; bool pnp; double iSat; double J[3][3]; EbersMollBJT model; double vb, ve, vc; bool onePort; };
+        struct F { Node d, g, s; double dD, dS; bool onePort; };
+        struct T { Node p, g, k; KorenTriode model; double vp, vg, vk; };
+        int nodeCount = 0;
+        std::vector<double> dc;          // DC voltage per node (index 0 = ground)
+        std::vector<R> resistors;        // same order as addResistor handles
+        std::vector<C> capacitors;
+        std::vector<S> sources;          // same order as addSource handles
+        std::vector<OpRow> opRows;
+        std::vector<Rail> rails;         // saturating / rail-limited op-amp outputs (row index into opRows)
+        std::vector<D> diodes;
+        std::vector<Q> bjts;
+        std::vector<F> jfets;
+        std::vector<T> triodes;
+        bool supported = true;           // false: an element the compiler cannot express (tubes, coupled inductors)
+        double theta = 0.5;              // the capacitor / inductor integration rule (setIntegrationTheta)
+    };
+
+    void describe (Description& d) const
+    {
+        d = {};
+        d.nodeCount = nodeCount;
+        d.theta = theta;
+        d.dc.assign ((size_t) nodeCount + 1, 0.0);
+        for (int n = 1; n <= nodeCount; ++n) d.dc[(size_t) n] = voltage (n);
+        for (const auto& r : resistors) d.resistors.push_back ({ r.a, r.b, 1.0 / r.g });
+        for (const auto& c : capacitors)
+        {
+            if (c.group < 0) { d.capacitors.push_back ({ c.a, c.b, c.farads, false }); continue; }
+            const auto& grp = inductorGroups[(size_t) c.group];
+            // a single winding exports its inductance (in the value field); coupled windings are not expressible
+            d.capacitors.push_back ({ c.a, c.b, grp.n == 1 && grp.inverse[0] != 0.0 ? 1.0 / grp.inverse[0] : 0.0, true });
+            if (grp.n != 1) d.supported = false;
+        }
+        for (const auto& src : sources) d.sources.push_back ({ src.node, src.volts, src.current });
+        for (const auto& op : opAmps) d.opRows.push_back ({ op.plus, op.minus, op.out, op.invGain, op.cm });
+        if (satOpIndex >= 0) d.rails.push_back ({ satOpIndex, satSpec.lowRail, satSpec.highRail });
+        for (const auto& rd : railDevices)
+            for (int k = 0; k < (int) opAmps.size(); ++k)
+                if (opAmps[(size_t) k].out == rd.out && k != satOpIndex) { d.rails.push_back ({ k, rd.lo, rd.hi }); break; }
+        for (const auto& di : diodes) d.diodes.push_back ({ di.a, di.k, di.Is, di.nVt });
+        for (const auto& q : bjts)
+        {
+            Description::Q e { q.c, q.b, q.e, q.pnp, q.iSat, {}, q.model, voltage (q.b), voltage (q.e), voltage (q.c), q.iSat > 0.0 };
+            const double sg = q.pnp ? -1.0 : 1.0;
+            const auto op = e.onePort ? q.model.evaluate (sg * (e.vb - e.ve), 0.0, sg * (e.vb - e.ve) + 5.0)
+                                      : q.model.evaluate (sg * e.vb, sg * e.ve, sg * e.vc);
+            const double J[3][3] = { { -op.diC_dvbc, op.diC_dvbe + op.diC_dvbc, -op.diC_dvbe },
+                                     { -op.diB_dvbc, op.diB_dvbe + op.diB_dvbc, -op.diB_dvbe },
+                                     { -op.diE_dvbc, op.diE_dvbe + op.diE_dvbc, -op.diE_dvbe } };
+            for (int r = 0; r < 3; ++r)
+                for (int c = 0; c < 3; ++c)
+                    e.J[r][c] = J[r][c];
+            d.bjts.push_back (e);
+        }
+        for (const auto& j : jfets)
+        {
+            double iD = 0.0, dD = 0.0, dS = 0.0;
+            if (j.assumedVds > 0.0) j.model.evaluate (voltage (j.g) - voltage (j.s), j.assumedVds, 0.0, iD, dD, dS);
+            else j.model.evaluate (voltage (j.g), voltage (j.d), voltage (j.s), iD, dD, dS);
+            d.jfets.push_back ({ j.d, j.g, j.s, dD, dS, j.assumedVds > 0.0 });
+        }
+        for (const auto& t : triodes) d.triodes.push_back ({ t.p, t.g, t.k, t.model, voltage (t.p), voltage (t.g), voltage (t.k) });
+        if (! pentodes.empty())
+            d.supported = false;
     }
 
     double voltage (Node node) const noexcept
@@ -2294,7 +2372,7 @@ private:
             // plain Newton step from a low-current start overshoots by orders of magnitude, then sheds only
             // ~Vt per iteration on the way back.
             double proposed[maxPortsV], rawStep[maxPortsV];
-            bool limited = false;
+            bool limited = false, junctionLimited = false; // junctionLimited: the p-n log limit cut this step
             double maxStep = 0.0;
             // The fraction of its Newton step that the forward-junction limiter let through, at its smallest over all
             // ports. Junctions coupled through the network (the two clamp diodes of an op-amp macro-model: u_a + u_b is a
@@ -2313,7 +2391,10 @@ private:
                         ? limitJunction (unew, std::max (u[j], 0.0), junction[j].vt, junction[j].vcrit)
                         : -limitJunction (-unew, std::max (-u[j], 0.0), junction[j].vt2, junction[j].vcrit2);
                     if (limitedValue != unew)
+                    {
                         limited = true;
+                        junctionLimited = true;
+                    }
                     unew = limitedValue;
                 }
                 else if (junction[j].isJunction)
@@ -2322,6 +2403,7 @@ private:
                     if (limitedValue != unew)
                     {
                         limited = true;
+                        junctionLimited = true;
                         if (rawStep[j] > 1.0e-9 && limitedValue > u[j])
                             forwardFraction = std::min (forwardFraction, (limitedValue - u[j]) / rawStep[j]);
                     }
@@ -2445,7 +2527,13 @@ private:
                         f += Km[j][k] * curNext[k];
                     worstPortError = std::max (worstPortError, std::abs (f) / (1.0 + 1.0e-3 * std::abs (u[j])));
                 }
-                converged = worstPortError < portResidualAccept;
+                // After a step the p-n junction log-limit cut, the Newton step did not solve the linearised equations, so
+                // nodeError -- the linearisation's leftover -- no longer measures the error and the port equations themselves
+                // must balance (to 50 mV). Found on the RAT (2026-10-18): a silicon clipper node accepted at 1.88 V
+                // after 4 iterations, 1.25 V off balance (inside the 30 V guard), heard as a one-sample spike on every hard
+                // polarity flip. Not applied to tube circuits, whose solver budgets were tuned around the looser rule.
+                const bool strict = junctionLimited && triodes.empty() && pentodes.empty();
+                converged = worstPortError < (strict ? limitedResidualAccept : portResidualAccept);
             }
             previousStep = maxStep;
 

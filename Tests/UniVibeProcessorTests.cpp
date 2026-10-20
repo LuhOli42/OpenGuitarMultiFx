@@ -1,4 +1,4 @@
-#include "Effects/UniVibeProcessor.h"
+#include "Effects/Modulation/Phaser/UniVibeProcessor.h"
 
 #include <juce_core/juce_core.h>
 

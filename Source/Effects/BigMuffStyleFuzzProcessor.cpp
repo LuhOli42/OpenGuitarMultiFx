@@ -92,8 +92,9 @@ const BigMuffStyleFuzzProcessor::ModelSpec& BigMuffStyleFuzzProcessor::specFor (
     return us;
 }
 
-BigMuffStyleFuzzProcessor::BigMuffStyleFuzzProcessor (Model m)
-    : model (m), spec (specFor (m))
+BigMuffStyleFuzzProcessor::BigMuffStyleFuzzProcessor (Model m, bool pipeline)
+    : model (m), spec (specFor (m)), pipelineEngine (pipeline),
+      displayName (specFor (m).displayName) // not `spec`: displayName is declared (so initialised) before it
 {
     const juce::String p (spec.idPrefix);
     auto sustain = std::make_unique<juce::AudioParameterFloat> (
@@ -217,6 +218,171 @@ void BigMuffStyleFuzzProcessor::buildChannel (Channel& ch)
     c.setInitialGuess (c4, 4.5);
 }
 
+namespace
+{
+    constexpr double vt = 25.85e-3, bjtIs = 1.0e-14;
+
+    struct OperatingPoint { double ic, vc, ve; };
+
+    /** DC point of a shunt-feedback common-emitter stage: Rf collector-to-base, Rb base-to-ground, Rc, Re. Control thread. */
+    OperatingPoint shuntFeedbackPoint (double rf, double rb, double rc, double re, double beta)
+    {
+        double ic = 0.5e-3, vc = 4.5, ve = 0.0;
+        for (int it = 0; it < 200; ++it)
+        {
+            const double vbe = vt * std::log (ic / bjtIs);
+            ve = ic * (1.0 + 1.0 / beta) * re;
+            const double vb = vbe + ve;
+            const double iFeedback = ic / beta + vb / rb;
+            vc = vb + iFeedback * rf;
+            const double icNew = juce::jmax (1.0e-8, (v9 - vc) / rc - iFeedback);
+            ic = 0.7 * ic + 0.3 * icNew;
+        }
+        return { ic, vc, ve };
+    }
+
+    /** DC point of a divider-biased stage (Thevenin vth / rth into the base). */
+    OperatingPoint dividerPoint (double vth, double rth, double rc, double re, double beta)
+    {
+        double ic = 0.5e-3, ve = 0.0;
+        for (int it = 0; it < 200; ++it)
+        {
+            const double vbe = vt * std::log (ic / bjtIs);
+            const double vb = vth - ic / beta * rth;
+            ve = vb - vbe;
+            const double icNew = juce::jmax (1.0e-8, ve / re * beta / (beta + 1.0));
+            ic = 0.7 * ic + 0.3 * icNew;
+        }
+        return { ic, v9 - ic * rc, ve };
+    }
+}
+
+void BigMuffStyleFuzzProcessor::buildPipeChannel (PipeChannel& ch)
+{
+    auto& n = ch.net;
+    const auto gnd = PipeNet::ground;
+    constexpr double vceSat = 0.2;
+    constexpr double clampIs = 1.0e-4, clampKnee = 0.2;
+
+    // A transistor at its operating point: hybrid-pi without r_o, emitter degeneration folded in (exact for the
+    // linear part: no capacitor at the emitter): input resistance r_pi + (beta+1) Re, transconductance
+    // gm / (1 + gm Re (beta+1)/beta). The swing limits come from the same DC point.
+    // The exponential itself: with the emitter degeneration, the collector's AC current for a base AC voltage v solves
+    // v = Vt ln(1 + i / Ic) + Re (beta+1)/beta i. The linear VCCS covers its slope at the bias point; the transfer port
+    // adds the rest (tabulated once here), which is where the stages' even harmonics come from.
+    int curveIndex = 0;
+    auto transistor = [&] (PipeNet::Node b, PipeNet::Node c, const OperatingPoint& op, double re, bool swingLimit, bool exponential) {
+        const double gm = op.ic / vt, rpi = spec.beta / gm;
+        const double reEff = re * (spec.beta + 1.0) / spec.beta;
+        const double gmEff = gm / (1.0 + gm * reEff);
+        n.addResistor (b, gnd, rpi + (spec.beta + 1.0) * re);
+        n.addVccs (c, gnd, b, gnd, gmEff);
+        if (exponential)
+        {
+        auto& curve = pipeTables.transistors[(size_t) curveIndex++];
+        const double ic = op.ic;
+        curve.build (-0.6, 0.6, [&] (double v) {
+            double i = gmEff * v; // Newton on i, kept above cutoff (-Ic)
+            for (int it = 0; it < 60; ++it)
+            {
+                i = juce::jmax (-ic * (1.0 - 1e-9), i);
+                const double f = vt * std::log1p (i / ic) + reEff * i - v;
+                i -= f / (vt / (ic + i) + reEff);
+            }
+            return juce::jmax (-ic, i) - gmEff * v;
+        });
+        n.addTransferPort (b, gnd, c, gnd, &curve);
+        }
+        if (swingLimit) // the clipping stages' diodes hold their collectors well inside the rails: no limit port there
+            n.addClamp (c, gnd, v9 - op.vc, op.vc - op.ve - vceSat, clampIs, clampKnee);
+    };
+
+    const auto opIn = shuntFeedbackPoint (rFeedback, spec.rInBase, spec.rCollector, spec.rEmitter1, spec.beta);
+    const auto opClip = shuntFeedbackPoint (rFeedback, rClipBase, spec.rCollector, spec.rEmitterClip, spec.beta);
+    const double rth4 = spec.rOutBaseTop * rOutBaseBottom / (spec.rOutBaseTop + rOutBaseBottom);
+    const auto opOut = dividerPoint (v9 * rOutBaseBottom / (spec.rOutBaseTop + rOutBaseBottom), rth4,
+                                     spec.rOutCollector, spec.rOutEmitter, spec.beta);
+
+    // The clipping diodes' characteristic, tabulated once: I = 2 Is sinh(v / nVt) and its slope over +-0.9 V (beyond
+    // that the pair would carry amps).
+    pipeTables.diode.build (-0.9, 0.9,
+                         [] (double v) { return 2.0 * siIs * std::sinh (v / siNVt); },
+                         [] (double v) { return 2.0 * siIs / siNVt * std::cosh (v / siNVt); });
+
+    // stage 1
+    const auto a1 = n.addNode(), b1 = n.addNode(), c1 = n.addNode();
+    n.setInputNode (a1, spec.rIn);
+    n.addCapacitor (a1, b1, spec.cIn);
+    n.addResistor (b1, gnd, spec.rInBase);
+    n.addResistor (b1, c1, rFeedback);
+    n.addCapacitor (b1, c1, spec.cFeedback);
+    n.addResistor (c1, gnd, spec.rCollector);
+    transistor (b1, c1, opIn, spec.rEmitter1, true, true);
+
+    // Sustain (R23 folded into the bottom leg)
+    const auto susTop = n.addNode(), susW = n.addNode();
+    n.addCapacitor (c1, susTop, spec.cStageOut);
+    ch.rSustainTop = n.addResistor (susTop, susW, sustainPot * 0.5);
+    ch.rSustainBottom = n.addResistor (susW, gnd, sustainPot * 0.5 + rSustainBottom);
+
+    // the two clipping stages
+    PipeNet::Node previous = susW;
+    for (int stage = 0; stage < 2; ++stage)
+    {
+        const auto sIn = n.addNode(), b = n.addNode(), col = n.addNode(), dmid = n.addNode();
+        n.addCapacitor (previous, sIn, cStageCouple);
+        n.addResistor (sIn, b, rStageIn);
+        n.addResistor (b, gnd, rClipBase);
+        n.addResistor (b, col, rFeedback);
+        n.addCapacitor (b, col, spec.cFeedback);
+        n.addCapacitor (b, dmid, spec.cClipSeries);
+        n.addDiodePair (dmid, col, siIs, siNVt, &pipeTables.diode);
+        n.addCapacitor (dmid, col, 2 * 2.0e-12); // the two diodes' junction capacitance (NodalCircuit::addDiode's 2 pF each)
+        n.addResistor (col, gnd, spec.rCollector);
+        transistor (b, col, opClip, spec.rEmitterClip, false, true);
+        previous = col;
+    }
+
+    // tone stack
+    const auto tTreble = n.addNode(), tBass = n.addNode(), tW = n.addNode();
+    n.addCapacitor (previous, tTreble, spec.cToneTreble);
+    n.addResistor (tTreble, gnd, rToneTrebleShunt);
+    n.addResistor (previous, tBass, spec.rToneBass);
+    n.addCapacitor (tBass, gnd, cToneBassShunt);
+    ch.rToneTreble = n.addResistor (tTreble, tW, tonePot * 0.5);
+    ch.rToneBass = n.addResistor (tW, tBass, tonePot * 0.5);
+
+    // output stage
+    const auto b4 = n.addNode(), c4 = n.addNode();
+    n.addCapacitor (tW, b4, cToneOut);
+    n.addResistor (b4, gnd, rth4);
+    n.addResistor (c4, gnd, spec.rOutCollector);
+    transistor (b4, c4, opOut, spec.rOutEmitter, true, false); // after the tone stack: small signal, the slope is enough
+
+    const auto volTop = n.addNode(), volW = n.addNode();
+    n.addCapacitor (c4, volTop, cOutCouple);
+    ch.rVolumeTop = n.addResistor (volTop, volW, volumePot * 0.5);
+    ch.rVolumeBottom = n.addResistor (volW, gnd, volumePot * 0.5);
+    n.addResistor (volW, gnd, outputLoadResistance);
+    ch.out = n.addProbe (volW);
+}
+
+void BigMuffStyleFuzzProcessor::updatePipePots (double sustain, double tone, double volume)
+{
+    const auto clampFraction = [] (double x) { return juce::jlimit (0.001, 0.999, x); };
+    const double s = clampFraction (sustain), t = clampFraction (tone), v = clampFraction (volume);
+    for (auto& ch : pipeChannels)
+    {
+        ch.net.setResistance (ch.rSustainTop, sustainPot * (1.0 - s));
+        ch.net.setResistance (ch.rSustainBottom, sustainPot * s + rSustainBottom);
+        ch.net.setResistance (ch.rToneTreble, tonePot * (1.0 - t));
+        ch.net.setResistance (ch.rToneBass, tonePot * t);
+        ch.net.setResistance (ch.rVolumeTop, volumePot * (1.0 - v));
+        ch.net.setResistance (ch.rVolumeBottom, volumePot * v);
+        ch.net.update();
+    }
+}
+
 void BigMuffStyleFuzzProcessor::updatePots (double sustain, double tone, double volume)
 {
     const auto clampFraction = [] (double x) { return juce::jlimit (0.001, 0.999, x); };
@@ -240,11 +406,20 @@ void BigMuffStyleFuzzProcessor::prepare (double newSampleRate, int, int)
         return;
     sampleRate = newSampleRate;
 
-    for (auto& ch : channels)
+    if (pipelineEngine)
     {
-        ch = Channel {};
-        buildChannel (ch);
+        for (auto& ch : pipeChannels)
+        {
+            ch = PipeChannel {};
+            buildPipeChannel (ch);
+        }
     }
+    else
+        for (auto& ch : channels)
+        {
+            ch = Channel {};
+            buildChannel (ch);
+        }
 
     smoothedSustain.reset (newSampleRate, 0.02);
     smoothedSustain.setCurrentAndTargetValue (sustainParam->get());
@@ -253,11 +428,19 @@ void BigMuffStyleFuzzProcessor::prepare (double newSampleRate, int, int)
     smoothedVolume.reset (newSampleRate, 0.02);
     smoothedVolume.setCurrentAndTargetValue (volumeParam->get());
 
-    updatePots (sustainParam->get(), toneParam->get(), volumeParam->get());
-
     dcOk = true;
-    for (auto& ch : channels)
-        dcOk = ch.c.prepare (newSampleRate) && dcOk;
+    if (pipelineEngine)
+    {
+        for (auto& ch : pipeChannels)
+            ch.net.prepare (newSampleRate);
+        updatePipePots (sustainParam->get(), toneParam->get(), volumeParam->get());
+    }
+    else
+    {
+        updatePots (sustainParam->get(), toneParam->get(), volumeParam->get());
+        for (auto& ch : channels)
+            dcOk = ch.c.prepare (newSampleRate) && dcOk;
+    }
 
     controlCounter = 0;
     sampleCount = 0;
@@ -276,6 +459,11 @@ void BigMuffStyleFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
         return;
 
     const int numSamples = buffer.getNumSamples();
+    if (pipelineEngine)
+    {
+        processPipeline (buffer);
+        return;
+    }
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
 
     smoothedSustain.setTargetValue (sustainParam->get());
@@ -312,6 +500,37 @@ void BigMuffStyleFuzzProcessor::process (juce::AudioBuffer<float>& buffer)
         }
     }
 
+    shortcut.end (buffer);
+}
+
+void BigMuffStyleFuzzProcessor::processPipeline (juce::AudioBuffer<float>& buffer)
+{
+    const int numSamples = buffer.getNumSamples();
+    const int solveChannels = shortcut.begin (pipeChannels, buffer, sampleRate);
+
+    smoothedSustain.setTargetValue (sustainParam->get());
+    smoothedTone.setTargetValue (toneParam->get());
+    smoothedVolume.setTargetValue (volumeParam->get());
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float s = smoothedSustain.getNextValue();
+        const float t = smoothedTone.getNextValue();
+        const float v = smoothedVolume.getNextValue();
+        if (++controlCounter >= controlInterval)
+        {
+            controlCounter = 0;
+            updatePipePots (s, t, v);
+        }
+        for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
+        {
+            auto& ch = pipeChannels[(size_t) chIdx];
+            auto* data = buffer.getWritePointer (chIdx);
+            ch.net.setInput ((double) data[i]);
+            ch.net.process();
+            data[i] = (float) ch.net.probe (ch.out);
+        }
+    }
     shortcut.end (buffer);
 }
 

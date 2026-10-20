@@ -244,6 +244,92 @@ op-amps clip at their rails. Algorithmic ensembles (no circuit) share `EnsembleD
 `TriangleLfo` from its Schmitt/integrator parts, and derive the clock from the timing R/C with `rcChargePeriod` before
 reaching for a calibrated law. The JC-120's built-in chorus predates this and still has its own BBD approximation.
 
+## BBD flangers (`BbdFlangerProcessor` — one engine, one spec per pedal)
+
+Same building blocks as the BBD choruses above (BucketBrigadeDelay, `analog::` filter design, TriangleLfo), plus
+`Modulation/Flanger/DiodeLimiters.h`: the diode limiters these pedals put in the regeneration path, solved exactly
+(Newton on the diode voltage) — `FeedbackLimiter` (Rf || (Rs + anti-parallel pair) in an inverting summer: MXR, BF-2)
+and `ShuntClipper` (Rs into a pair to ground: FX75, Tycobrahe's germanium pair). Each pedal is a `case` in
+`BbdFlangerProcessor::prepare()` with its schematic's values.
+
+| Pedal | Doc | BBD | Delay window (source) |
+|---|---|---|---|
+| MXR M117 | [MXR117Flanger.md](MXR117Flanger.md) | SAD1024 | 0.35–7 ms (calibrated) |
+| Electric Mistress | [ElectricMistressFlanger.md](ElectricMistressFlanger.md) | SAD1024A, almost unfiltered | 0.4–8 ms (calibrated) |
+| BF-2 | [BF2Flanger.md](BF2Flanger.md) | MN3207 | 1–13 ms (calibrated) |
+| A/DA | [ADAFlanger.md](ADAFlanger.md) | (spec only) | 0.4–15 ms (published) |
+| Pedalflanger (Tycobrahe) | [TycobraheFlanger.md](TycobraheFlanger.md) | MN3001 | 0.5–5 ms (**drawing's clock annotation**) |
+| Echo Flanger | [EchoFlanger.md](EchoFlanger.md) | 2–3 × SAD1024A + NE570 | 0.5–10 ms; Slapback ×8.4 |
+| FX75 | [FX75Flanger.md](FX75Flanger.md) | MN3007 | 0.8–10 ms (calibrated) |
+| FL-301 | [FL301Flanger.md](FL301Flanger.md) | MN3007 | 1–13 ms (calibrated) |
+
+Algorithms: [AlgorithmicFlangers.md](AlgorithmicFlangers.md) (through-zero, barberpole, Instant, envelope).
+
+**Known gap for this family:** none of the clock VCOs is modelled from parts (their transistor current sources are not
+legible enough on these drawings); the window is mapped exponentially across Manual + Width × LFO.
+
+## Delays (`BbdDelayProcessor`, `TapeEchoProcessor`, `AlgorithmicDelayProcessor`)
+
+The BBD delays reuse the chorus/flanger building blocks (BucketBrigadeDelay with the schematic's filters, `Ne570`
+compander — every one of these pedals has one — rails as the regeneration limit). Delay time = linear in the Delay pot's
+resistance (RC clock), between each pedal's published range. The Boss DD-2 runs on the same queue: its 12-bit converter
+and DRAM at a variable sample rate ARE a sampled queue with sample-and-hold (`BucketBrigadeDelay::setQuantization`,
+`setFrozen` for Hold).
+
+| Unit | Doc | Line | Range |
+|---|---|---|---|
+| Boss DM-2 | [DM2Delay.md](DM2Delay.md) | MN3005 | 20–300 ms |
+| EHX Deluxe Memory Man | [MemoryManDelay.md](MemoryManDelay.md) | 2 × MN3005 | 30–550 ms |
+| MXR M118 | [MXR118Delay.md](MXR118Delay.md) | 6 × SAD1024 section | 30–300 ms |
+| Ibanez AD9 | [AD9Delay.md](AD9Delay.md) | MN3205 | 10–300 ms |
+| Ibanez AD80 | [AD80Delay.md](AD80Delay.md) | MN3005 | 15–330 ms |
+| DOD FX90 | [FX90Delay.md](FX90Delay.md) | MN3005 | 20–400 ms |
+| Arion SAD-1 | [SAD1Delay.md](SAD1Delay.md) | MN3205, stereo | 20–300 ms |
+| Boss DD-2 | [DD2Delay.md](DD2Delay.md) | 12-bit RAM | 12.5 ms – 800 ms (S/M/L) + Hold |
+
+Tape/drum: [TapeEchoes.md](TapeEchoes.md) (Space Echo, Echoplex EP-3, Echorec — behavioural). Algorithms:
+[AlgorithmicDelays.md](AlgorithmicDelays.md).
+
+## Phasers (`PhaserPedalProcessor`, `AlgorithmicPhaserProcessor`)
+
+First-order all-pass stages in TPT form (`Modulation/Phaser/PhaserParts.h`) with the pedal's capacitors and its
+voltage-controlled resistance: **JFET** (Phase 90/45, PS-1, PT-909, Micro Fazer — ohmic-region square law with the Vds
+term), **OTA** (Small Stone, exponential gm), **LDR** (Uni-Vibe's lamp + CdS cells, the Bi-Phase's LED opto cells).
+
+| Pedal | Doc | Stages / element |
+|---|---|---|
+| MXR Phase 90 | [Phase90Phaser.md](Phase90Phaser.md) | 4 × JFET, Script / Block (R28) |
+| MXR Phase 45 | [Phase45Phaser.md](Phase45Phaser.md) | 2 × JFET |
+| EHX Small Stone | [SmallStonePhaser.md](SmallStonePhaser.md) | 4 × OTA, Color |
+| Maestro/Oberheim PS-1 | [PS1Phaser.md](PS1Phaser.md) | 6 × JFET, 3 speeds |
+| Mu-Tron Bi-Phase | [BiPhasePhaser.md](BiPhasePhaser.md) | 2 × 6 opto, stereo / series |
+| Uni-Vibe 905 | [UniVibe905Phaser.md](UniVibe905Phaser.md) | 4 × LDR + lamp, unequal caps |
+| Ibanez PT-909 | [PT909Phaser.md](PT909Phaser.md) | 4 × JFET, feedback |
+| Univox Micro Fazer | [MicroFazerPhaser.md](MicroFazerPhaser.md) | 4 × JFET |
+
+Algorithms: [AlgorithmicPhasers.md](AlgorithmicPhasers.md).
+
+## Vibratos (`VibratoPedalProcessor`, `AlgorithmicVibratoProcessor`)
+
+| Unit | Doc | How |
+|---|---|---|
+| Boss VB-2 | [VB2Vibrato.md](VB2Vibrato.md) | BBD (shared), sine LFO, Rise Time |
+| Magnatone 280 | [MagnatoneVibrato.md](MagnatoneVibrato.md) | varistor-swung phase network (all-pass sections), stereo |
+| EHX Clone Theory | [CloneTheoryVibrato.md](CloneTheoryVibrato.md) | BBD, Chorus-Vibrato blend, Vibraflange |
+| Hammond scanner | [ScannerVibrato.md](ScannerVibrato.md) | LC line + scanner, V1-3 / C1-3 |
+
+Algorithms: [AlgorithmicVibratos.md](AlgorithmicVibratos.md). (The CE-1, Memory Man and Uni-Vibe 905 have their own
+vibrato modes, documented with them.)
+
+## Octave and synth (`OctaveFuzzProcessor`, `DividerOctaverProcessor`, `GuitarSynthProcessor`, `AlgorithmicPitchProcessor`)
+
+Octave up = a phase splitter whose two halves are recombined -- by a diode per half (Octavia, Green Ringer, Tone Machine)
+or by a tied-collector transistor pair, cosh(v / Vt) (Super-Fuzz); netlists on NodalCircuit, operating points checked
+against the drawings' marked voltages ([OctaveFuzzes.md](OctaveFuzzes.md)); octave down =
+a level-tracking comparator clocking 4013 flip-flops that chop the signal or gate a square ([DividerOctavers.md](DividerOctavers.md),
+alongside the Boss OC-2); synths = those voices into a swept resonant VCF ([GuitarSynths.md](GuitarSynths.md)); algorithms
+([AlgorithmicPitch.md](AlgorithmicPitch.md)). Browser chips: **Octave**, **Synth**, **Pitch**.
+
 ## Cross-cutting: oversampling
 Every clipping pedal that measured audibly aliased at 1x runs through `OversampledEffect`
 (2x, DS-1 4x); the table, the method and the CPU trade-off are in

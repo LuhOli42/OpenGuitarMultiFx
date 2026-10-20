@@ -80,8 +80,11 @@ public:
         std::vector<std::pair<double, juce::String>> results;
         struct Row { double playing, tail; juce::String key; };
         std::vector<Row> rows;
+        const auto only = juce::SystemStats::getEnvironmentVariable ("BENCH_FILTER", {});
         for (auto key : registry.getRegisteredNames())
         {
+            if (only.isNotEmpty() && ! juce::StringArray::fromTokens (only, ",", "").contains (key) && ! key.startsWith (only))
+                continue;
             auto fx = registry.create (key);
             fx->prepare (sr, block, 2);
             if (auto* nam = dynamic_cast<NAMProcessor*> (fx.get()))

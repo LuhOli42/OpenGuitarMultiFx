@@ -66,6 +66,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RockerverbStyleAmplifierProcessorTests.cpp
   SVTStyleAmplifierProcessorTests.cpp
   CarrRamblerStyleAmplifierProcessorTests.cpp
+  JimKelleyStyleAmplifierProcessorTests.cpp
   DividedBy13FTR37StyleAmplifierProcessorTests.cpp
   DumbleSteelStringStyleAmplifierProcessorTests.cpp
   SunnModelTStyleAmplifierProcessorTests.cpp
@@ -78,6 +79,11 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   ChannelKnobMemoryTests.cpp
   BucketBrigadeDelayTests.cpp
   ChorusPedalTests.cpp
+  FlangerPedalTests.cpp
+  DelayPedalTests.cpp
+  PhaserPedalTests.cpp
+  VibratoPedalTests.cpp
+  OctaveSynthTests.cpp
   PresetChainBench.cpp
   CentaurStyleOverdriveProcessorTests.cpp
   BD2StyleOverdriveProcessorTests.cpp
@@ -145,6 +151,8 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   UniVibeProcessorTests.cpp
   PitchModProcessorTests.cpp
   FastMathTests.cpp
+  GuitarSynthTests.cpp
+  PipelineEquivalenceTests.cpp
   PitchShiftProcessorTests.cpp
   OctaverProcessorTests.cpp
   HarmonizerProcessorTests.cpp

@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -48,6 +49,11 @@ public:
         chain. On by default: the reduced render is ~30% cheaper than the netlist it replaces while
         staying inside the ReducedOrderEquivalence bounds. */
     static inline bool reducedOrder = true;
+
+    /** Pipeline engine (default): each of the five blocks compiled into a linear network + fixed-cost ports at its DC
+        point (docs/PerformancePipeline.md); overrides reducedOrder. false = the netlist (and reducedOrder) as before,
+        the reference for the tests. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8a8f99); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
 
@@ -73,6 +79,7 @@ private:
         Channel& operator= (const Channel&); // DualMono state sync; clones `reduced` in place (no alloc once built)
 
         std::array<NodalCircuit, numBlocks> blk;
+        std::array<pipeline::CompiledCircuit, numBlocks> fast;
         std::unique_ptr<ReducedFrontEnd> reduced; // non-null <=> this channel runs the behavioural front-end
         int srcIn = 0;
         std::array<int, numBlocks> srcPrev {}; // blocks 1..5: the previous block's output
@@ -87,6 +94,7 @@ private:
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = true;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* distParam = nullptr;

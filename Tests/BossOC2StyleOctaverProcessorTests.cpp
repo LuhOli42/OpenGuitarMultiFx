@@ -1,4 +1,4 @@
-#include "Effects/BossOC2StyleOctaverProcessor.h"
+#include "Effects/Pitch/BossOC2StyleOctaverProcessor.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>

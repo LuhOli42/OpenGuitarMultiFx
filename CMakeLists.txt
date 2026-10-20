@@ -160,6 +160,15 @@ set(OGMFX_CORE_SOURCES
   Source/Engine/ParameterManager.cpp
   Source/Effects/NoiseGates/GateProcessor.cpp
   Source/Effects/CompressorProcessor.cpp
+  Source/Effects/MultiType/MultiTypeDelayProcessor.cpp
+  Source/Effects/MultiType/MultiTypeReverbProcessor.cpp
+  Source/Effects/MultiType/MultiTypeModulationProcessors.cpp
+  Source/Effects/MultiType/MultiTypeCompressorProcessor.cpp
+  Source/Effects/MultiType/MultiTypePitchProcessor.cpp
+  Source/Effects/GuitarSynth/GuitarToBassProcessor.cpp
+  Source/Effects/GuitarSynth/SubOctaveSynthProcessor.cpp
+  Source/Effects/GuitarSynth/TrackedSynthProcessor.cpp
+  Source/Effects/GuitarSynth/SpectralMorphProcessor.cpp
   Source/Effects/PositiveGroundBoosterProcessor.cpp
   Source/Effects/DS1StyleDistortionProcessor.cpp
   Source/Effects/OD1StyleOverdriveProcessor.cpp
@@ -173,7 +182,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/BassBigMuffStyleFuzzProcessor.cpp
   Source/Effects/DarkglassB7KStyleOverdriveProcessor.cpp
   Source/Effects/SansAmpBDDIStyleOverdriveProcessor.cpp
-  Source/Effects/BossOC2StyleOctaverProcessor.cpp
+  Source/Effects/Pitch/BossOC2StyleOctaverProcessor.cpp
   Source/Effects/DT1StyleDistortionProcessor.cpp
   Source/Effects/ODR1StyleOverdriveProcessor.cpp
   Source/Effects/OverdriverStyleOverdriveProcessor.cpp
@@ -231,6 +240,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/RiveraKnuckleheadStyleAmplifierProcessor.cpp
   Source/Effects/DiezelStyleAmplifierProcessor.cpp
   Source/Effects/CarrRamblerStyleAmplifierProcessor.cpp
+  Source/Effects/JimKelleyStyleAmplifierProcessor.cpp
   Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
   Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp
   Source/Effects/SunnModelTStyleAmplifierProcessor.cpp
@@ -267,15 +277,28 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/Modulation/Chorus/SCH1StyleChorusProcessor.cpp
   Source/Effects/Modulation/Chorus/TriChorusProcessor.cpp
   Source/Effects/Modulation/Chorus/StringEnsembleProcessor.cpp
-  Source/Effects/VibratoProcessor.cpp
-  Source/Effects/FlangerProcessor.cpp
-  Source/Effects/PhaserProcessor.cpp
+  Source/Effects/Modulation/Vibrato/VibratoProcessor.cpp
+  Source/Effects/Modulation/Vibrato/VibratoPedalProcessor.cpp
+  Source/Effects/Modulation/Vibrato/AlgorithmicVibratoProcessor.cpp
+  Source/Effects/Modulation/Flanger/FlangerProcessor.cpp
+  Source/Effects/Modulation/Flanger/BbdFlangerProcessor.cpp
+  Source/Effects/Modulation/Flanger/AlgorithmicFlangerProcessor.cpp
+  Source/Effects/Delay/BbdDelayProcessor.cpp
+  Source/Effects/Delay/TapeEchoProcessor.cpp
+  Source/Effects/Delay/AlgorithmicDelayProcessor.cpp
+  Source/Effects/Modulation/Phaser/PhaserProcessor.cpp
+  Source/Effects/Modulation/Phaser/PhaserPedalProcessor.cpp
+  Source/Effects/Modulation/Phaser/AlgorithmicPhaserProcessor.cpp
   Source/Effects/RotaryProcessor.cpp
-  Source/Effects/UniVibeProcessor.cpp
+  Source/Effects/Modulation/Phaser/UniVibeProcessor.cpp
   Source/Effects/PitchModProcessor.cpp
-  Source/Effects/PitchShiftProcessor.cpp
-  Source/Effects/OctaverProcessor.cpp
-  Source/Effects/HarmonizerProcessor.cpp
+  Source/Effects/Pitch/PitchShiftProcessor.cpp
+  Source/Effects/Pitch/OctaverProcessor.cpp
+  Source/Effects/Pitch/HarmonizerProcessor.cpp
+  Source/Effects/Pitch/OctaveFuzzProcessor.cpp
+  Source/Effects/Pitch/DividerOctaverProcessor.cpp
+  Source/Effects/Pitch/GuitarSynthProcessor.cpp
+  Source/Effects/Pitch/AlgorithmicPitchProcessor.cpp
   Source/Effects/LooperProcessor.cpp
   Source/Presets/PresetManager.cpp
   Source/Presets/PresetLibrary.cpp

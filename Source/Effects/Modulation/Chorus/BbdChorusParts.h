@@ -162,7 +162,7 @@ public:
     {
         a = 1.0 - std::exp (-1.0 / (10.0e3 * rectifierCapFarads * sampleRate));
         unity = unityRectifiedVolts;
-        floor = 0.01 * unityRectifiedVolts; // ~40 dB of range below unity before the gain stops rising
+        floor = 0.05 * unityRectifiedVolts; // ~26 dB of upward gain at most, about what the delta-G cell gives in these circuits
         reset();
     }
     void reset() noexcept { env = unity; }
@@ -171,6 +171,14 @@ public:
     {
         const double y = x * unity / std::max (env, floor);
         env += a * (std::abs (y) - env);
+        return y;
+    }
+
+    /** A plain downward compressor on the same rectifier: unity below `unityVolts`, 2:1 above it (no upward gain). */
+    double compressDown (double x) noexcept
+    {
+        const double y = x * std::min (1.0, std::sqrt (unity / std::max (env, floor)));
+        env += a * (std::abs (x) - env);
         return y;
     }
 

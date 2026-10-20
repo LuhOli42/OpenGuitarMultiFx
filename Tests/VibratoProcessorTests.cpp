@@ -1,4 +1,4 @@
-#include "Effects/VibratoProcessor.h"
+#include "Effects/Modulation/Vibrato/VibratoProcessor.h"
 
 #include <juce_core/juce_core.h>
 

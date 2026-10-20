@@ -244,16 +244,27 @@ void SansAmpBDDIStyleOverdriveProcessor::updatePots()
     {
         // presence: wiper toward (-) raises gain and the knee (GE7 Level-stage mapping)
         ch.b.setResistance (ch.rPresUp, juce::jmax (10.0, 10.0e3 * (1.0 - pres)));
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rPresUp, juce::jmax (10.0, 10.0e3 * (1.0 - pres)));
         ch.b.setResistance (ch.rPresDown, juce::jmax (10.0, 10.0e3 * pres));
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rPresDown, juce::jmax (10.0, 10.0e3 * pres));
         ch.c.setResistance (ch.rFb, 4.7e3 + drive * 95.3e3);
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rFb, 4.7e3 + drive * 95.3e3);
         ch.e.setResistance (ch.rDryIn, 470.0 + blend * 47.0e3);
+        if (ch.fE.compiled()) ch.fE.setResistance (ch.rDryIn, 470.0 + blend * 47.0e3);
         ch.e.setResistance (ch.rWetIn, 470.0 + (1.0 - blend) * 47.0e3);
+        if (ch.fE.compiled()) ch.fE.setResistance (ch.rWetIn, 470.0 + (1.0 - blend) * 47.0e3);
         ch.e.setResistance (ch.rBassUp, juce::jmax (10.0, 10.0e3 * bass));
+        if (ch.fE.compiled()) ch.fE.setResistance (ch.rBassUp, juce::jmax (10.0, 10.0e3 * bass));
         ch.e.setResistance (ch.rBassDown, juce::jmax (10.0, 10.0e3 * (1.0 - bass)));
+        if (ch.fE.compiled()) ch.fE.setResistance (ch.rBassDown, juce::jmax (10.0, 10.0e3 * (1.0 - bass)));
         ch.e.setResistance (ch.rTrebleUp, juce::jmax (10.0, 10.0e3 * treble));
+        if (ch.fE.compiled()) ch.fE.setResistance (ch.rTrebleUp, juce::jmax (10.0, 10.0e3 * treble));
         ch.e.setResistance (ch.rTrebleDown, juce::jmax (10.0, 10.0e3 * (1.0 - treble)));
+        if (ch.fE.compiled()) ch.fE.setResistance (ch.rTrebleDown, juce::jmax (10.0, 10.0e3 * (1.0 - treble)));
         ch.e.setResistance (ch.rVolTop, 50.0e3 * (1.0 - level));
+        if (ch.fE.compiled()) ch.fE.setResistance (ch.rVolTop, 50.0e3 * (1.0 - level));
         ch.e.setResistance (ch.rVolBottom, 50.0e3 * level);
+        if (ch.fE.compiled()) ch.fE.setResistance (ch.rVolBottom, 50.0e3 * level);
     }
 }
 
@@ -297,6 +308,18 @@ void SansAmpBDDIStyleOverdriveProcessor::prepare (double newSampleRate, int, int
         ch.e.setSource (ch.srcDry, ch.a.voltage (ch.nBuf));
         ch.e.setSource (ch.srcWet, ch.d.voltage (ch.nCab));
         dcOk = ch.e.prepare (newSampleRate) && dcOk;
+        ch.fA.clear(); ch.fB.clear(); ch.fC.clear(); ch.fD.clear(); ch.fE.clear();
+        if (pipelineEngine)
+        {
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nNotch, ch.nBuf }, newSampleRate, clampOpts)
+                         && ch.fB.compile (ch.b, ch.srcB, { ch.nPres }, newSampleRate, clampOpts)
+                         && ch.fC.compile (ch.c, ch.srcC, { ch.nDrive }, newSampleRate, clampOpts)
+                         && ch.fD.compile (ch.d, ch.srcD, { ch.nCab }, newSampleRate, clampOpts)
+                         && ch.fE.compile (ch.e, ch.srcDry, ch.srcWet, { ch.nOut }, newSampleRate, clampOpts);
+            if (! ok) { ch.fA.clear(); ch.fB.clear(); ch.fC.clear(); ch.fD.clear(); ch.fE.clear(); }
+        }
     }
 
     controlCounter = 0;
@@ -331,13 +354,32 @@ void SansAmpBDDIStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buff
             smoothedLevel.setTargetValue (levelParam->get());
             smoothedLevel.skip (controlInterval);
             updatePots();
-        }
+
+            for (auto& chu : channels) { chu.fA.update(); chu.fB.update(); chu.fC.update(); chu.fD.update(); chu.fE.update(); }
+       }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fA.compiled())
+            {
+                ch.fA.setSource (ch.srcIn, (double) data[i]);
+                ch.fA.solveSample();
+                ch.fB.setSource (ch.srcB, ch.fA.voltage (ch.nNotch));
+                ch.fB.solveSample();
+                ch.fC.setSource (ch.srcC, ch.fB.voltage (ch.nPres));
+                ch.fC.solveSample();
+                ch.fD.setSource (ch.srcD, ch.fC.voltage (ch.nDrive));
+                ch.fD.solveSample();
+                ch.fE.setSource (ch.srcDry, ch.fA.voltage (ch.nBuf));
+                ch.fE.setSource (ch.srcWet, ch.fD.voltage (ch.nCab));
+                ch.fE.solveSample();
+                data[i] = (float) ch.fE.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.a.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.a.solveSample();
             ch.b.setSource (ch.srcB, ch.a.voltage (ch.nNotch));

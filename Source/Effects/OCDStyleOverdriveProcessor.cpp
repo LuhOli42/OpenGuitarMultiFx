@@ -171,9 +171,13 @@ void OCDStyleOverdriveProcessor::updatePots (double driveKnob, double toneKnob, 
     for (auto& ch : channels)
     {
         ch.a.setResistance (ch.rDrive, rDrive);
+        if (ch.fA.compiled()) ch.fA.setResistance (ch.rDrive, rDrive);
         ch.b.setResistance (ch.rTone, rTone);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rTone, rTone);
         ch.b.setResistance (ch.rLevelTop, lTop);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rLevelTop, lTop);
         ch.b.setResistance (ch.rLevelBottom, lBottom);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rLevelBottom, lBottom);
     }
 }
 
@@ -185,7 +189,9 @@ void OCDStyleOverdriveProcessor::updateSwitches()
     for (auto& ch : channels)
     {
         ch.a.setResistance (ch.rClipSwitch, led ? switchOpenOhms : switchClosedOhms);
+        if (ch.fA.compiled()) ch.fA.setResistance (ch.rClipSwitch, led ? switchOpenOhms : switchClosedOhms);
         ch.b.setResistance (ch.rHp, highPeak ? switchClosedOhms : switchOpenOhms);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rHp, highPeak ? switchClosedOhms : switchOpenOhms);
     }
 }
 
@@ -218,6 +224,14 @@ void OCDStyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.a.prepare (newSampleRate) && dcOk;
         ch.b.setSource (ch.srcClip, ch.a.voltage (ch.nClip));
         dcOk = ch.b.prepare (newSampleRate) && dcOk;
+        ch.fA.clear(); ch.fB.clear();
+        if (pipelineEngine)
+        {
+            pipeline::CompileOptions opts; // integratorClamp stays off: envelope 0.90 dB with the 470-ohm bleed, 1.65 with the clamp
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp1, ch.nClip }, newSampleRate, opts)
+                         && ch.fB.compile (ch.b, ch.srcClip, { ch.nOut }, newSampleRate, opts);
+            if (! ok) { ch.fA.clear(); ch.fB.clear(); }
+        }
     }
 
     controlCounter = 0;
@@ -249,6 +263,7 @@ void OCDStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             controlCounter = 0;
             updatePots (d, t, l);
             updateSwitches();
+            for (auto& chu : channels) { chu.fA.update(); chu.fB.update(); }
         }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
@@ -256,6 +271,16 @@ void OCDStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fA.compiled())
+            {
+                ch.fA.setSource (ch.srcIn, (double) data[i]);
+                ch.fA.solveSample();
+                ch.fB.setSource (ch.srcClip, ch.fA.voltage (ch.nClip));
+                ch.fB.solveSample();
+                data[i] = (float) ch.fB.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.a.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.a.solveSample();
 

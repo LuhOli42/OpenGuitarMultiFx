@@ -84,13 +84,18 @@ void CentaurStyleOverdriveProcessor::buildChannel (Channel& ch, double /*sr*/)
         c.addCapacitor (h, inv, 82.0e-9);       // C7
         c.addResistor (inv, o1, 422.0e3);       // R12
         c.addCapacitor (inv, o1, 390.0e-12);    // C8
-        // TL072 on the Klon's +-9 V rails (a charge pump makes them from the 9 V battery), about 1.5 V short of each:
-        // at full Gain a guitar drives this stage past +-7.5 V, and unlike the summing amp (27 V of headroom) it does
-        // not have the room, so it runs into its rails before the germanium diodes after it clip.
+        // IC1 (input buffer + this gain stage) runs on the plain 9 V battery rail (ElectroSmash's Klon analysis: "9V: used
+        // in the first stages"); a TL072 swings to about 1.5 V short of each rail, so this stage clips at 1.5 .. 7.5 V
+        // (+-3 V around the bias) -- at high Gain it hits those rails before the germanium diodes after it.
         NodalCircuit::OpAmpSpec tl072;
-        tl072.lowRail = vBias - 7.5;
-        tl072.highRail = vBias + 7.5;
+        tl072.lowRail = 1.5;
+        tl072.highRail = 7.5;
         c.addSaturatingOpAmp (g, inv, o1, tl072);
+
+        // IC2 (summing amp + treble stage) runs on the charge pump's +18 V / -9 V (27 V of headroom): -7.5 .. 16.5 V.
+        NodalCircuit::OpAmpSpec tl072Hv;
+        tl072Hv.lowRail = -9.0 + 1.5;
+        tl072Hv.highRail = 18.0 - 1.5;
 
         // Germanium clipper after the gain stage: C9 -> R13 -> antiparallel diodes to GND.
         c.addCapacitor (o1, c9o, 1.0e-6);       // C9
@@ -122,9 +127,9 @@ void CentaurStyleOverdriveProcessor::buildChannel (Channel& ch, double /*sr*/)
         ch.rBGVB = c.addResistor (BG, vb, 50.0e3); // gang 2: wiper -> pin3
 
         // Summing amplifier (IC2_A), inverting, (+) on 4.5 V. The 2 k feed-forward legs (R17/R18) give it up to
-        // ~392k/2k = 196 on their nodes, so driven hard it too runs into the same TL072 rails as the gain stage --
-        // the real pedal clips here as well; rail-limited, not ideal.
-        c.addRailLimitedOpAmp (vb, s, u, tl072);
+        // ~392k/2k = 196 on their nodes, so driven hard it can still reach IC2's (much wider) +18 / -9 V rails;
+        // rail-limited, not ideal.
+        c.addRailLimitedOpAmp (vb, s, u, tl072Hv);
         c.addResistor (s, u, 392.0e3);          // R20
         c.addCapacitor (s, u, 820.0e-12);       // C13
 
@@ -145,11 +150,11 @@ void CentaurStyleOverdriveProcessor::buildChannel (Channel& ch, double /*sr*/)
         ch.srcB2 = c.addSource (B, vBias);
         ch.srcU = c.addSource (un, vBias);
 
-        // Active treble stage (IC2_B, inverting): its input is the summing amp's output, which driven hard is
-        // already at the rails, so this stage too is rail-limited on the same +-9 V supply.
+        // Active treble stage (IC2_B, inverting): the other half of IC2, on the same +18 / -9 V charge-pump rails as
+        // the summing amp.
         NodalCircuit::OpAmpSpec tl072;
-        tl072.lowRail = vBias - 7.5;
-        tl072.highRail = vBias + 7.5;
+        tl072.lowRail = -9.0 + 1.5;
+        tl072.highRail = 18.0 - 1.5;
         c.addResistor (un, v, 100.0e3);            // R22
         c.addResistor (v, w, 100.0e3);             // R24
         c.addRailLimitedOpAmp (vb, v, w, tl072);
@@ -311,7 +316,8 @@ void CentaurStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffer)
 
             ch.block0.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.block0.solveSample();
-            const double B = ch.block0.voltage (ch.nodeA);
+            // IC1_A shares IC1's 9 V supply: a TL072 follower cannot swing past 1.5 .. 7.5 V.
+            const double B = juce::jlimit (1.5, 7.5, ch.block0.voltage (ch.nodeA));
 
             ch.block1.setSource (ch.srcB1, B);
             ok = ch.block1.solveSample() && ok;
