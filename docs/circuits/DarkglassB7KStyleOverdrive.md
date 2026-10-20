@@ -16,9 +16,12 @@ drive stage -> 4049 CMOS-inverter clipping (the "Microtubes" engine) -> clean/we
 
 ## What is modelled (block A..D netlists)
 
-- **A**: input coupling + follower, then three pre-clip shaping networks: Grunt (a switched series-RC
-  HF-bleed -> relative bass boost), Attack (3-way: series-R+shunt-C treble cut / flat / bright-cap
-  treble shelf), and the drive op-amp (saturating TL072 macro, gain ~6x..100x on the Drive pot).
+- **A**: input coupling + follower, then an estimated 2.2 kΩ series feed resistor into the pre-clip shaping
+  networks (the dry path still taps the buffer output). Grunt is an estimated 0.15 µF + switched-resistor
+  series-RC shunt at the drive input, bleeding highs for relative bass boost; the strongest-bleed 4.7 kΩ
+  position has a corner near 226 Hz. Attack (3-way: series-R + shunt-C treble cut / flat / bright-cap
+  treble shelf) follows the feed resistor, then the drive op-amp (saturating TL072 macro, gain ~6x..100x
+  on the Drive pot).
 - **B**: the CMOS clipper -- an inverting stage on the 4049-style macro (10k in / 220k fb, rails
   0.4..8.6 V = near rail-to-rail CMOS swing) plus the anti-parallel silicon diode shunt to the bias.
 - **C**: Blend (each leg through half a 47k track into the summing node) + 4-band EQ built on the
@@ -42,21 +45,19 @@ measurement shows was never the case); its gyrator capacitor is retuned so 1/(2 
 - The real EQ uses dedicated gyrator op-amps per band inside the feedback of one summing amp; the
   model uses the project's folded-inductor equivalent of the same network (same impedance, fewer nodes).
 - Band sweep range is ~ +/-15 dB (the GE7-style network's natural depth) vs the quoted +/-12 dB.
-- The exact Grunt/Attack RC values are not published; they are voiced to the documented direction
-  (bass-shelf amount / treble cut-flat-boost) rather than traced values.
+- The Grunt/Attack RC values and the 2.2 kΩ feed resistor are estimates, not published/traced values; they
+  are voiced to the documented direction (bass-shelf amount / treble cut-flat-boost).
 
-## Pipeline engine: compiled, not applied (2026-10-18)
-`pipeline::CompiledCircuit` compiles all four blocks (the EQ gyrators as inductors, the EQ block with two inputs). Against
-the netlist: level 0.06 dB, small-signal band 0.1 dB, x1.7 faster; on hot bursts the netlist throws one-sample spikes at
-the clipper (2.3 V on a silicon pair to the bias, sample 30318 of the burst test; the compiled engine goes -0.50 then
--0.67 V there), so peak / envelope cannot be compared. It is NOT the e^40 cap on NodalCircuit's diode exponential:
-replacing it with SPICE-style linear continuation left the spike identical (11.26 dB). Most likely the netlist's
-step-limited (pnjlim) Newton accepting an unconverged point at the reversal. `pipelineEngine` stays false until that
-is explained.
+## Pipeline engine: applied (2026-10-19)
+`pipeline::CompiledCircuit` compiles all four blocks (the EQ gyrators as inductors, the EQ block with two inputs) and is
+the default engine since PR #132: level 0.00 dB, band 0.07 dB, peak 0.00 dB, 5 ms envelope 0.24 dB against the netlist,
+11.6 -> 5.0 % of a core. `setPipelineEngine (false)` switches back to the netlist.
 
-### Correction (2026-10-18, later)
-The hot-burst peak mismatch above was mostly the compiler's, not the netlist's: Gauss-Seidel solved the clipper's diode
-port before the drive op-amp's rail limit, and that limit (a 1-ohm source when pinned) carries large currents, so the
-diode worked from a stale value. With `railsFirst` the peaks match (0.27 dB) and band is 0.30 dB; the 5 ms envelope is
-2.8 dB off at the recovery after the drive stage, above the 1.5 dB bar, so it stays off. The netlist's one-sample
-excursion seen at sample 30318 is real in the netlist output but is not what the peak metric was measuring.
+How it got there (docs/PerformancePipeline.md, "Three fixes"):
+- `railsFirst`: Gauss-Seidel solved the clipper's diode port before the drive op-amp's rail limit and worked from a
+  stale value (the 11 dB peak gap first seen);
+- the compiler now integrates with the netlist's theta (0.6) and clamps the op-amp macro's integrator node like the
+  netlist's diodes (the 2.8 dB envelope at the recovery after the drive stage);
+- the netlist's one-sample spike at the clipper (2.3 V on a silicon pair, sample 30318 of the burst test) WAS the
+  step-limited Newton accepting an unconverged point, as first suspected here: NodalCircuit now requires such a point
+  to balance to 50 mV. It was not the e^40 cap on the diode exponential (replacing it changed nothing).

@@ -250,6 +250,61 @@ public:
                     migrated = v;
             expectEquals ((double) migrated, 1.0);
         }
+
+        beginTest ("Focus lifts bass without shifting PI cathode DC");
+        {
+            const auto cathodeAt = [] (float focus)
+            {
+                Amp amp;
+                setParam (amp, juce::String (px) + "focus", focus);
+                amp.prepare (sr, 128, 1);
+                return amp.debugVoltage (P::piCathode);
+            };
+            const double piK0 = cathodeAt (0.0f);
+            const double piK1 = cathodeAt (1.0f);
+            const double dcDeltaPercent = std::abs (piK1 - piK0) / juce::jmax (1.0e-9, std::abs (piK0)) * 100.0;
+            logMessage ("PI cathode DC Focus 0 / 1: " + juce::String (piK0, 5) + " / " + juce::String (piK1, 5)
+                        + " V (" + juce::String (dcDeltaPercent, 3) + "% change)");
+            expectLessThan (dcDeltaPercent, 2.0);
+
+            const auto response = [] (float focus, double hz)
+            {
+                Amp amp;
+                setParam (amp, juce::String (px) + "channel", 0.0f);
+                setParam (amp, juce::String (px) + "volume", 0.25f);
+                setParam (amp, juce::String (px) + "gain", 0.25f);
+                setParam (amp, juce::String (px) + "focus", focus);
+                return sineRms (amp, hz, 0.01);
+            };
+            const double full80_0 = response (0.0f, 80.0);
+            const double full80_1 = response (1.0f, 80.0);
+            const double full3k_0 = response (0.0f, 3000.0);
+            const double full3k_1 = response (1.0f, 3000.0);
+            const double fullLift80Db = 20.0 * std::log10 (full80_1 / full80_0);
+            const double fullDelta3kDb = 20.0 * std::log10 (full3k_1 / full3k_0);
+            logMessage ("full-order Focus 0 / 1 RMS: 80 Hz " + juce::String (full80_0, 7) + " / "
+                        + juce::String (full80_1, 7) + " V, 3 kHz " + juce::String (full3k_0, 7) + " / "
+                        + juce::String (full3k_1, 7) + " V; changes " + juce::String (fullLift80Db, 3)
+                        + " / " + juce::String (fullDelta3kDb, 3) + " dB");
+            expectGreaterThan (fullLift80Db, 2.0);
+            expectLessThan (std::abs (fullDelta3kDb), 1.0);
+
+            const bool wasReduced = Amp::reducedOrder;
+            Amp::reducedOrder = true;
+            const double reduced80_0 = response (0.0f, 80.0);
+            const double reduced80_1 = response (1.0f, 80.0);
+            const double reduced3k_0 = response (0.0f, 3000.0);
+            const double reduced3k_1 = response (1.0f, 3000.0);
+            Amp::reducedOrder = wasReduced;
+            const double reducedLift80Db = 20.0 * std::log10 (reduced80_1 / reduced80_0);
+            const double reducedDelta3kDb = 20.0 * std::log10 (reduced3k_1 / reduced3k_0);
+            logMessage ("reduced-order Focus 0 / 1 RMS: 80 Hz " + juce::String (reduced80_0, 7) + " / "
+                        + juce::String (reduced80_1, 7) + " V, 3 kHz " + juce::String (reduced3k_0, 7) + " / "
+                        + juce::String (reduced3k_1, 7) + " V; changes " + juce::String (reducedLift80Db, 3)
+                        + " / " + juce::String (reducedDelta3kDb, 3) + " dB");
+            expectGreaterThan (reducedLift80Db, 1.0);
+            expectLessThan (std::abs (reducedDelta3kDb), 1.0);
+        }
     }
 };
 
