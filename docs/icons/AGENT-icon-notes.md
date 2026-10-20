@@ -134,7 +134,7 @@ palette now for effects that don't exist yet.
 
 | Processor (chain role) | Category | SVG asset | File |
 |---|---|---|---|
-| GateProcessor | Dinamica → Noise Gate | `Assets/Icons/gate.svg` | `Source/Effects/GateProcessor.cpp` |
+| GateProcessor | Dinamica → Noise Gate | `Assets/Icons/gate.svg` (wave burst between two gate bars, flat line outside) | `Source/Effects/NoiseGates/GateProcessor.cpp` |
 | CompressorProcessor | Dinamica → Compressor | `Assets/Icons/pulse.svg` (heartbeat/ECG trace) | `Source/Effects/CompressorProcessor.cpp` |
 | (the generic tanh `OverdriveProcessor` was removed 2026-09-21 -- it modelled no pedal) | Drive → Overdrive | `Assets/Icons/overdrive.svg` (soft-clipped waveform, ~1.5 cycles) is still the glyph of every "-Style Overdrive" | |
 | *Distortion glyph (2026-09-21)* | Drive → Distortion | `Assets/Icons/distortion.svg`: the same 1.5-cycle wave with **flat, hard-clipped tops and steep sides** -- between the overdrive's rounded wave and `fuzz.svg`'s square one | used by every "-Style Distortion" |
@@ -181,7 +181,8 @@ palette now for effects that don't exist yet.
 | RatStyleDistortionProcessor's other models ("RAT 2-Style Distortion", "Turbo RAT-Style Distortion"), CrunchBoxStyleDistortionProcessor ("Crunch Box-Style Distortion") | Drive → Distortion | `Assets/Icons/distortion.svg` | `Source/Effects/RatStyleDistortionProcessor.cpp`, `CrunchBoxStyleDistortionProcessor.cpp` |
 | ZendriveStyleOverdriveProcessor ("Zendrive-Style Overdrive") / OCDStyleOverdriveProcessor ("OCD-Style Overdrive") | Drive → Overdrive | `Assets/Icons/overdrive.svg` | `Source/Effects/ZendriveStyleOverdriveProcessor.cpp`, `OCDStyleOverdriveProcessor.cpp` |
 | Dyna Comp / Ross / Orange Squeezer / dbx 160 / G-Series bus / 1176 / LA-2A "-Style Compressor" processors | Dinamica → Compressor | `Assets/Icons/pulse.svg` reused (placeholder until distinct glyphs exist) | `Source/Effects/*StyleCompressorProcessor.cpp` |
-| DS201StyleNoiseGateProcessor / NS2StyleNoiseSuppressorProcessor | Dinamica → Noise Gate | `Assets/Icons/gate.svg` | `Source/Effects/DS201StyleNoiseGateProcessor.cpp`, `NS2StyleNoiseSuppressorProcessor.cpp` |
+| DS201StyleNoiseGateProcessor | Dinamica → Noise Gate | `Assets/Icons/ds201_gate.svg` (attack/hold/decay envelope over a dotted threshold line) | `Source/Effects/NoiseGates/DS201StyleNoiseGateProcessor.cpp` |
+| NS2StyleNoiseSuppressorProcessor | Dinamica → Noise Gate | `Assets/Icons/ns2_suppressor.svg` (downward-expander transfer curve on L axes) | `Source/Effects/NoiseGates/NS2StyleNoiseSuppressorProcessor.cpp` |
 | GE7StyleEqualizerProcessor / GEB7StyleEqualizerProcessor / ParametricEQProcessor | Filtro/FX → EQ | `Assets/Icons/eq.svg` (added 2026-10-12: three vertical sliders at varied heights; the sheet never had an EQ glyph, so this was designed in the set's own style — was `pulse.svg` as a placeholder) | `Source/Effects/GE7StyleEqualizerProcessor.cpp`, `GEB7StyleEqualizerProcessor.cpp`, `ParametricEQProcessor.cpp` |
 | RingModProcessor | Filtro/FX → Ring Mod | `Assets/Icons/ring_mod.svg` (added 2026-10-12: two interlocked rings — literal "ring" modulator — was `tremolo.svg` as a placeholder) | `Source/Effects/RingModProcessor.cpp` |
 | BassmanStyleAmplifierProcessor ("Bassman-Style Amplifier") | Amplifiers | `Assets/Icons/amp.svg` (added 2026-10-11: amp-head-with-knob-dots over a speaker cab, the set's first tube-amp glyph -- the sheet never had one, so this was designed in the set's own style rather than transcribed. Shared by EVERY modelled amp, guitar and bass) | `Source/Effects/BassmanStyleAmplifierProcessor.cpp` |
