@@ -21,7 +21,16 @@ namespace openguitarmultifx
     colour rather than a generic button highlight.
 
     Every cell is touch::minTapTarget wide -- the bar should be given
-    8 * touch::minTapTarget of width by whoever lays it out.
+    8 * touch::minTapTarget of width by whoever lays it out, and
+    touch::minTapTarget + hintHeight of height (cells on the bottom, the
+    discoverability caption on top).
+
+    The hint line (audit #93 item 3): the long-press-edit gesture used to
+    be entirely invisible -- same hidden-gesture pattern MIDI Learn and
+    the preset browser use, but those at least had nowhere else to
+    advertise it. A caption this small is read-once chrome, not a
+    persistent control, so it gets one line at the top rather than a
+    competing button row.
 */
 class SnapshotBar : public juce::Component,
                     private juce::Timer
@@ -51,6 +60,9 @@ public:
     std::function<void (int)> onSnapshotLongPressed;
 
     static constexpr int longPressMs = 550;
+
+    /** Height of the "tap -- hold" caption strip above the cells. */
+    static constexpr int hintHeight = 16;
 
 private:
     int cellIndexAt (juce::Point<int> position) const;

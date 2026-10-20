@@ -106,6 +106,7 @@ public:
         const bool defaultReduced = Pedal::reducedOrder;
         Pedal::reducedOrder = reduced;
         Pedal pedal;
+        if constexpr (requires { pedal.setPipelineEngine (false); }) pedal.setPipelineEngine (false); // compare netlist variants, not the pipeline
         setParams (pedal, knobs);
         pedal.prepare (sr, 256, 1);
         const double twoPi = 2.0 * juce::MathConstants<double>::pi;
@@ -203,6 +204,7 @@ public:
         {
             Pedal::reducedOrder = variant == 1;
             Pedal pedal;
+            if constexpr (requires { pedal.setPipelineEngine (false); }) pedal.setPipelineEngine (false); // compare netlist variants, not the pipeline
             setParams (pedal, knobs);
             pedal.prepare (sr, 256, 1);
             (variant == 0 ? a : b) = render (pedal, rms, 3.0);

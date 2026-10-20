@@ -154,9 +154,13 @@ void RatStyleDistortionProcessor::updatePots (double distortionKnob, double filt
     for (auto& ch : channels)
     {
         ch.c.setResistance (ch.rGain, rGain);
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rGain, rGain);
         ch.c.setResistance (ch.rFilter, rFilter);
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rFilter, rFilter);
         ch.c.setResistance (ch.rLevelTop, lTop);
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rLevelTop, lTop);
         ch.c.setResistance (ch.rLevelBottom, lBottom);
+        if (ch.fC.compiled()) ch.fC.setResistance (ch.rLevelBottom, lBottom);
     }
 }
 
@@ -184,7 +188,18 @@ void RatStyleDistortionProcessor::prepare (double newSampleRate, int, int)
 
     dcOk = true;
     for (auto& ch : channels)
+    {
         dcOk = ch.c.prepare (newSampleRate) && dcOk;
+        ch.fC.clear();
+        if (pipelineEngine)
+        {
+            pipeline::CompileOptions railsFirstOpts;
+            railsFirstOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            railsFirstOpts.railsFirst = true; // the clipper hangs off a rail-pinned op-amp (docs/PerformancePipeline.md)
+            const bool ok = ch.fC.compile (ch.c, ch.srcIn, { ch.nOut }, newSampleRate, railsFirstOpts);
+            if (! ok) { ch.fC.clear(); }
+        }
+    }
 
     controlCounter = 0;
     sampleCount = 0;
@@ -214,13 +229,23 @@ void RatStyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             controlCounter = 0;
             updatePots (d, f, v);
-        }
+
+            for (auto& chu : channels) { chu.fC.update(); }
+       }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fC.compiled())
+            {
+                ch.fC.setSource (ch.srcIn, (double) data[i]);
+                ch.fC.solveSample();
+                data[i] = (float) ch.fC.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.c.setSource (ch.srcIn, (double) data[i]);
             const bool ok = ch.c.solveSample();
             data[i] = (float) ch.c.voltage (ch.nOut);

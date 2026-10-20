@@ -88,6 +88,7 @@ public:
         beginTest ("DC operating point converges: op-amp output at the 4.5 V bias, diode node at 0 V");
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             expect (p.dcConverged());
             logMessage ("op-amp out " + juce::String (p.debugOpAmpOut(), 4) + " V, diode node " + juce::String (p.debugDiodeNode(), 5) + " V");
@@ -98,6 +99,7 @@ public:
         beginTest ("silence in: finite, settled near silence, no solver failures");
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             juce::AudioBuffer<float> buf (1, 512);
             for (int b = 0; b < 20; ++b)
@@ -118,6 +120,7 @@ public:
             for (double f : { 100.0, 1000.0, 4000.0 })
             {
                 RatStyleDistortionProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setKnobs (p, knob, 0.0f, 0.5f);
                 const double amp = knob < 0.5f ? 0.0002 : 0.00005;
@@ -132,6 +135,7 @@ public:
         beginTest ("the silicon diodes clip at their knee (~0.5-0.8 V), symmetrically");
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setKnobs (p, 1.0f, 0.0f, 1.0f);
             const auto m = runSine (p, 440.0, 0.1);
@@ -144,6 +148,7 @@ public:
         beginTest ("hard clipping does not delay the op-amp: its output crosses the bias within ~2 samples of the input");
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setKnobs (p, 1.0f, 0.5f, 0.5f);
             const double freq = 440.0;
@@ -183,10 +188,12 @@ public:
             auto ratio = [] (float filter)
             {
                 RatStyleDistortionProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setKnobs (p, 0.2f, filter, 1.0f);
                 const double hi = runSine (p, 5000.0, 0.0002).out;
                 RatStyleDistortionProcessor q;
+                q.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 q.prepare (sr, 512, 1);
                 setKnobs (q, 0.2f, filter, 1.0f);
                 const double lo = runSine (q, 200.0, 0.0002).out;
@@ -200,6 +207,7 @@ public:
         beginTest ("Distortion at its minimum still passes the signal (unity gain, then the diodes' knee)");
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setKnobs (p, 0.0f, 0.328f, 0.542f);
             const double out = runSine (p, 440.0, 0.13).out;
@@ -213,6 +221,7 @@ public:
             for (float v : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
             {
                 RatStyleDistortionProcessor p;
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setKnobs (p, 0.6f, 0.3f, v);
                 const double out = runSine (p, 440.0, 0.05).out;
@@ -225,6 +234,7 @@ public:
         for (float d : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setKnobs (p, d, 0.0f, 1.0f);
             const auto m = runSine (p, 220.0, 0.5, 0.3, 0.1);
@@ -236,6 +246,7 @@ public:
         beginTest ("stereo: identical input gives identical channels; different input keeps them independent");
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 2);
             setKnobs (p, 0.7f, 0.3f, 0.8f);
             juce::AudioBuffer<float> buf (2, 512);
@@ -265,6 +276,7 @@ public:
         for (int seed = 1234; seed < 1238; ++seed)
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 128, 2);
             expectEquals (runPedalStress (p, 12.0, seed), 0);
             expectLessThan (p.getSolveFailureRate(), 1.0e-5);
@@ -273,6 +285,7 @@ public:
         beginTest ("cost (informational)");
         {
             RatStyleDistortionProcessor p;
+            p.setPipelineEngine (false); // circuit-model test: probes internal nodes
             p.prepare (sr, 512, 1);
             setKnobs (p, 0.8f, 0.3f, 0.7f);
             juce::AudioBuffer<float> buf (1, 512);
@@ -343,6 +356,7 @@ public:
             beginTest (name + ": DC operating point, display name and the RAT 2 / Turbo differences from the original");
             {
                 RatStyleDistortionProcessor p (v.model);
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 expect (p.dcConverged());
                 expectWithinAbsoluteError (p.debugOpAmpOut(), 4.5, 0.02);
@@ -355,6 +369,7 @@ public:
                 for (double f : { 100.0, 1000.0, 4000.0 })
                 {
                     RatStyleDistortionProcessor p (v.model);
+                    p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                     p.prepare (sr, 512, 1);
                     setParams (p, { knob, 0.0f, 0.5f });
                     const double amp = knob < 0.5f ? 0.0002 : 0.00005;
@@ -369,6 +384,7 @@ public:
             beginTest (name + ": the clipping diodes' level");
             {
                 RatStyleDistortionProcessor p (v.model);
+                p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                 p.prepare (sr, 512, 1);
                 setParams (p, { 1.0f, 0.0f, 1.0f });
                 const auto m = run (p, 440.0, 0.1);
@@ -383,6 +399,7 @@ public:
                 for (float d : { 0.0f, 0.5f, 1.0f })
                 {
                     RatStyleDistortionProcessor p (v.model);
+                    p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                     p.prepare (sr, 512, 1);
                     setParams (p, { d, 0.0f, 1.0f });
                     const auto m = run (p, 220.0, 0.5, 0.3, 0.1);
@@ -393,6 +410,7 @@ public:
                 for (int seed = 4321; seed < 4323; ++seed)
                 {
                     RatStyleDistortionProcessor p (v.model);
+                    p.setPipelineEngine (false); // circuit-model test: probes internal nodes
                     p.prepare (sr, 128, 2);
                     expectEquals (runPedalStress (p, 10.0, seed), 0);
                     expectLessThan (p.getSolveFailureRate(), 1.0e-5);

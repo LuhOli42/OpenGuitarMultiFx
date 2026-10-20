@@ -25,6 +25,7 @@
 #include "Effects/SansAmpBDDIStyleOverdriveProcessor.h"
 #include "Effects/DarkglassB7KStyleOverdriveProcessor.h"
 #include "Effects/BassBigMuffStyleFuzzProcessor.h"
+#include "Effects/Pitch/OctaveFuzzProcessor.h"
 
 #include <juce_core/juce_core.h>
 
@@ -304,6 +305,7 @@ public:
                               return std::make_unique<HM2StyleDistortionProcessor>(); } },
                 { "BD-2", [] { return std::make_unique<BD2StyleOverdriveProcessor>(); } },
                 { "Big Muff Sovtek", [] { return std::make_unique<BigMuffStyleFuzzProcessor> (BigMuffStyleFuzzProcessor::Model::sovtekFirstEdition); } },
+                { "Tone Machine", [] { return std::make_unique<OctaveFuzzProcessor> (OctaveFuzzModel::toneMachine); } },
                 { "Bass Big Muff", [] { BassBigMuffStyleFuzzProcessor::reducedOrder = true; // shipped eco path
                                         return std::make_unique<BassBigMuffStyleFuzzProcessor>(); } },
                 { "SansAmp BDDI", [] { return std::make_unique<SansAmpBDDIStyleOverdriveProcessor>(); } },

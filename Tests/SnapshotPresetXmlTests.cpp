@@ -1,6 +1,6 @@
 #include "UI/SnapshotPresetXml.h"
 #include "Effects/TremoloProcessor.h"
-#include "Effects/GateProcessor.h"
+#include "Effects/NoiseGates/GateProcessor.h"
 
 namespace openguitarmultifx
 {

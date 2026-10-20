@@ -167,3 +167,10 @@ prints the new number.
 * The output sees an assumed 1 MΩ amplifier input, the same assumption the DS-1 model makes.
 * Not modelled: the bypass switching, the LED and its resistor, and (on the Russian) the fact that the pots were
   sometimes 150k instead of 100k.
+
+## Pipeline engine (default since 2026-10-17)
+The three registered Big Muffs run `BigMuffStyleFuzzProcessor (model, true)`: the same circuit on
+`pipeline::LinearPortNetwork` instead of the Newton netlist, which stays in the class as the test reference. Method,
+what was kept and dropped, the equivalence and transient numbers and the cost per step are in
+[`docs/PerformancePipeline.md`](../PerformancePipeline.md). In short: **11.1 % -> 4.9 % of a core**, level 0.78 dB,
+worst octave band 0.73 dB, peaks 0.38 dB, unity level within 0.08 dB with the existing trims.

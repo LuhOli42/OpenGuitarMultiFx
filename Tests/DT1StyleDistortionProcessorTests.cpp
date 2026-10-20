@@ -101,6 +101,7 @@ public:
         beginTest ("DC operating point: both op-amp outputs sit at the 4.5 V bias, both blocks converged");
         {
             DT1StyleDistortionProcessor p;
+            p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
             p.prepare (sr, 128, 1);
             expect (p.dcConverged(), "DC solve converged");
             logMessage ("stage 1 out " + juce::String (p.debugStage1Out(), 3) + " V, stage 2 out " + juce::String (p.debugStage2Out(), 3) + " V");
@@ -115,6 +116,7 @@ public:
                 for (double f : { 300.0, 1000.0, 3000.0 })
                 {
                     DT1StyleDistortionProcessor p;
+                    p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
                     p.prepare (sr, 128, 1);
                     setKnobs (p, d, 0.5f, 1.0f);
                     const double amp = 0.0005;
@@ -132,6 +134,7 @@ public:
         beginTest ("stage 1 clips softly on its two red LEDs (~1.7-2 V), symmetrically");
         {
             DT1StyleDistortionProcessor p;
+            p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
             p.prepare (sr, 128, 1);
             setKnobs (p, 1.0f, 0.5f, 1.0f);
             const auto e = stageExtremes (p, 220.0, 0.05, [] (DT1StyleDistortionProcessor& q) { return q.debugStage1Out(); });
@@ -144,6 +147,7 @@ public:
         beginTest ("stage 2 clips ASYMMETRICALLY: one 4148 one way (~-0.6 V), two in series the other (~+1.2 V)");
         {
             DT1StyleDistortionProcessor p;
+            p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
             p.prepare (sr, 128, 1);
             setKnobs (p, 1.0f, 0.5f, 1.0f);
             const auto e = stageExtremes (p, 220.0, 0.05, [] (DT1StyleDistortionProcessor& q) { return q.debugStage2Out(); });
@@ -194,6 +198,7 @@ public:
         beginTest ("hot input and random knob moves: finite, and the solver never fails");
         {
             DT1StyleDistortionProcessor p;
+            p.setPipelineEngine (false); // these tests probe the circuit model itself (the pipeline's reference)
             p.prepare (sr, 128, 2);
             juce::Random rng (2029);
             juce::AudioBuffer<float> buf (2, 128);

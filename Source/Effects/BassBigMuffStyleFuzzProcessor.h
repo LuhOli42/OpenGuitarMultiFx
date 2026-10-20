@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DualMono.h"
+#include "Pipeline/CompiledCircuit.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
 
@@ -49,10 +50,16 @@ public:
         ReducedOrderEquivalenceTests. */
     static inline bool reducedOrder = false;
 
+    /** Pipeline engine (default): the netlist compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). false = the Newton netlist, kept as the reference for the tests. Call before
+        prepare(). */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
+
 private:
     struct Channel
     {
         NodalCircuit c;
+        pipeline::CompiledCircuit fast;
         int srcIn = 0;
         NodalCircuit::Node nCollector[4] {};
         NodalCircuit::Node nOut = 0;
@@ -93,6 +100,7 @@ private:
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = true;
 
     static constexpr int controlInterval = 16;
 };

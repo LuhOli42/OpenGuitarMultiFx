@@ -277,6 +277,14 @@ void HM2StyleDistortionProcessor::updatePots (double dist, double low, double hi
         ch.b3.setResistance (ch.rHighN, highN);
         ch.b3.setResistance (ch.rLevelTop, lTop);
         ch.b3.setResistance (ch.rLevelBottom, lBottom);
+        if (ch.f1.compiled())
+        {
+            ch.f1.setResistance (ch.rDistA, rA); ch.f1.setResistance (ch.rDistB, rB);
+            ch.f3.setResistance (ch.rLowF, lowF); ch.f3.setResistance (ch.rLowN, lowN);
+            ch.f3.setResistance (ch.rHighF, highF); ch.f3.setResistance (ch.rHighN, highN);
+            ch.f3.setResistance (ch.rLevelTop, lTop); ch.f3.setResistance (ch.rLevelBottom, lBottom);
+            ch.f1.update(); ch.f3.update();
+        }
     }
 }
 
@@ -311,6 +319,15 @@ void HM2StyleDistortionProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.b2.prepare (newSampleRate) && dcOk;
         ch.b3.setSource (ch.srcFin, ch.b2.voltage (ch.nP));
         dcOk = ch.b3.prepare (newSampleRate) && dcOk;
+        ch.f1.clear(); ch.f2.clear(); ch.f3.clear();
+        if (pipelineEngine)
+        {
+            pipeline::CompileOptions withTransistors;
+            withTransistors.transistorFull = true; // the gain stages saturate deeply: that IS the HM-2's distortion
+            ch.f1.compile (ch.b1, ch.srcIn, { ch.nO1 }, newSampleRate, withTransistors);
+            ch.f2.compile (ch.b2, ch.srcO1, { ch.nP }, newSampleRate);
+            ch.f3.compile (ch.b3, ch.srcFin, { ch.nOut }, newSampleRate);
+        }
     }
 
     controlCounter = 0;
@@ -385,6 +402,18 @@ void HM2StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.f1.compiled())
+            {
+                ch.f1.setSource (ch.srcIn, (double) data[i]);
+                ch.f1.solveSample();
+                ch.f2.setSource (ch.srcO1, ch.f1.voltage (ch.nO1));
+                ch.f2.solveSample();
+                ch.f3.setSource (ch.srcFin, ch.f2.voltage (ch.nP));
+                ch.f3.solveSample();
+                data[i] = (float) ch.f3.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.b1.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.b1.solveSample();
             if (! ok && chIdx == 0) ++perBlockFailures[0];

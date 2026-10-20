@@ -54,12 +54,36 @@ AudioEngine::~AudioEngine()
 
 bool AudioEngine::start()
 {
+    const auto err = openDevice();
+
+    // Callback + sweep timer run even when the open failed: the UI then
+    // shows NO AUDIO DEVICE with a Retry action (audit #93 item 2) and
+    // retryDevice() re-runs openDevice() without a full restart. The
+    // callback on a null current device simply receives no callbacks.
+    deviceManager.addAudioCallback (this);
+    startTimer (100); // DeferredReclaimer sweep at 10Hz -- comfortably above the 500ms safety margin
+    return err.isEmpty();
+}
+
+juce::String AudioEngine::retryDevice()
+{
+    // A no-op while a device is open -- the point is recovering a FAILED
+    // open (interface plugged in late, device missing at boot), not
+    // interrupting whatever is currently playing with a re-initialise.
+    if (deviceManager.getCurrentAudioDevice() != nullptr)
+        return {};
+
+    return openDevice();
+}
+
+juce::String AudioEngine::openDevice()
+{
     const auto err = deviceManager.initialiseWithDefaultDevices (1, 2);
 
     if (err.isNotEmpty())
     {
         juce::Logger::writeToLog ("AudioEngine: failed to open device -- " + err);
-        return false;
+        return err;
     }
 
     // JUCE's ALSA backend defaults to whatever the system calls "default",
@@ -174,9 +198,7 @@ bool AudioEngine::start()
                                    + juce::String (device->getInputChannelNames().size()) + " input(s), "
                                    + juce::String (device->getOutputChannelNames().size()) + " output(s)");
 
-    deviceManager.addAudioCallback (this);
-    startTimer (100); // DeferredReclaimer sweep at 10Hz -- comfortably above the 500ms safety margin
-    return true;
+    return {};
 }
 
 juce::Array<double> AudioEngine::getAvailableSampleRates() const

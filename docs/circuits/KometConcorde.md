@@ -18,8 +18,7 @@ different and how well each difference is documented).
   listing the Concorde's differences from the K60: diode rectified, same power transformer, **4k8 output
   transformer**, remove the 220k after the .1 uF on the fast/gradual switch, and **use V2's spare triode as a cathode follower**
   (V2A plate direct to V2B grid, 100k cathode resistor to ground, the follower feeding the .022 uF / 220k at the PI's input).
-- Fractal Audio forum, "Comet Concourse" (Komet Concorde) model thread:
-  <https://forum.fractalaudio.com/threads/fractal-audio-amp-models-comet-concourse-komet-concorde.112872/> -- no reverb, master,
+- Public forum thread on the Komet Concorde: no reverb, master,
   loop or footswitch; all-tube signal path.
 
 There is **no complete public Concorde schematic**. Documented = Komet's own statements + the builder's list above. Everything

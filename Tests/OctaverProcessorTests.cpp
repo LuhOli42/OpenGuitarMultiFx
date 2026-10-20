@@ -1,4 +1,4 @@
-#include "Effects/OctaverProcessor.h"
+#include "Effects/Pitch/OctaverProcessor.h"
 
 #include <juce_core/juce_core.h>
 

@@ -166,10 +166,15 @@ void DS1StyleDistortionProcessor::updatePots (double driveKnob, double toneKnob,
     for (auto& ch : channels)
     {
         ch.pre.setResistance (ch.rDrive, rDrive);
+        if (ch.fPre.compiled()) ch.fPre.setResistance (ch.rDrive, rDrive);
         ch.post.setResistance (ch.rToneA, rToneA);
+        if (ch.fPost.compiled()) ch.fPost.setResistance (ch.rToneA, rToneA);
         ch.post.setResistance (ch.rToneB, rToneB);
+        if (ch.fPost.compiled()) ch.fPost.setResistance (ch.rToneB, rToneB);
         ch.post.setResistance (ch.rLevelTop, rLevelTop);
+        if (ch.fPost.compiled()) ch.fPost.setResistance (ch.rLevelTop, rLevelTop);
         ch.post.setResistance (ch.rLevelBottom, rLevelBottom);
+        if (ch.fPost.compiled()) ch.fPost.setResistance (ch.rLevelBottom, rLevelBottom);
     }
 }
 
@@ -202,6 +207,15 @@ void DS1StyleDistortionProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.pre.prepare (newSampleRate) && dcOk;
         ch.post.setSource (ch.srcO, ch.pre.voltage (ch.nO));
         dcOk = ch.post.prepare (newSampleRate) && dcOk;
+        ch.fPre.clear(); ch.fPost.clear();
+        if (pipelineEngine)
+        {
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            const bool ok = ch.fPre.compile (ch.pre, ch.srcIn, { ch.nO }, newSampleRate, clampOpts)
+                         && ch.fPost.compile (ch.post, ch.srcO, { ch.nOut }, newSampleRate, clampOpts);
+            if (! ok) { ch.fPre.clear(); ch.fPost.clear(); }
+        }
     }
 
     controlCounter = 0;
@@ -263,13 +277,25 @@ void DS1StyleDistortionProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             controlCounter = 0;
             updatePots (d, t, l);
-        }
+
+            for (auto& chu : channels) { chu.fPre.update(); chu.fPost.update(); }
+       }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fPre.compiled())
+            {
+                ch.fPre.setSource (ch.srcIn, (double) data[i]);
+                ch.fPre.solveSample();
+                ch.fPost.setSource (ch.srcO, ch.fPre.voltage (ch.nO));
+                ch.fPost.solveSample();
+                data[i] = (float) ch.fPost.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.pre.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.pre.solveSample();
 

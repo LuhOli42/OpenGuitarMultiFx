@@ -176,11 +176,17 @@ void TubeDriverStyleOverdriveProcessor::updatePots (double drive, double hi, dou
     for (auto& ch : channels)
     {
         ch.a.setResistance (ch.rDrive, rDrive);
+        if (ch.fA.compiled()) ch.fA.setResistance (ch.rDrive, rDrive);
         ch.b.setResistance (ch.rHiTop, hiTop);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rHiTop, hiTop);
         ch.b.setResistance (ch.rHiBottom, hiBottom);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rHiBottom, hiBottom);
         ch.b.setResistance (ch.rLo, rLo);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rLo, rLo);
         ch.b.setResistance (ch.rLevelTop, lTop);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rLevelTop, lTop);
         ch.b.setResistance (ch.rLevelBottom, lBottom);
+        if (ch.fB.compiled()) ch.fB.setResistance (ch.rLevelBottom, lBottom);
     }
 }
 
@@ -213,6 +219,15 @@ void TubeDriverStyleOverdriveProcessor::prepare (double newSampleRate, int, int)
         dcOk = ch.a.prepare (newSampleRate) && dcOk;
         ch.b.setSource (ch.srcOp, ch.a.voltage (ch.nOp2));
         dcOk = ch.b.prepare (newSampleRate) && dcOk;
+        ch.fA.clear(); ch.fB.clear();
+        if (pipelineEngine)
+        {
+            pipeline::CompileOptions clampOpts;
+            clampOpts.integratorClamp = true; // op-amp macros recover from the rail like the netlist (docs/PerformancePipeline.md)
+            const bool ok = ch.fA.compile (ch.a, ch.srcIn, { ch.nOp2 }, newSampleRate, clampOpts)
+                         && ch.fB.compile (ch.b, ch.srcOp, { ch.nOut }, newSampleRate, clampOpts);
+            if (! ok) { ch.fA.clear(); ch.fB.clear(); }
+        }
     }
 
     controlCounter = 0;
@@ -245,13 +260,25 @@ void TubeDriverStyleOverdriveProcessor::process (juce::AudioBuffer<float>& buffe
         {
             controlCounter = 0;
             updatePots (d, h, lo, lv);
-        }
+
+            for (auto& chu : channels) { chu.fA.update(); chu.fB.update(); }
+       }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
+            if (ch.fA.compiled())
+            {
+                ch.fA.setSource (ch.srcIn, (double) data[i]);
+                ch.fA.solveSample();
+                ch.fB.setSource (ch.srcOp, ch.fA.voltage (ch.nOp2));
+                ch.fB.solveSample();
+                data[i] = (float) ch.fB.voltage (ch.nOut);
+                if (chIdx == 0) ++sampleCount;
+                continue;
+            }
             ch.a.setSource (ch.srcIn, (double) data[i]);
             bool ok = ch.a.solveSample();
 

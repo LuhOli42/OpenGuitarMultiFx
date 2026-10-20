@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -36,6 +37,12 @@ public:
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
+
+    /** Pipeline engine: every block compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). ON by default since 2026-10-19: with the netlist's own integration rule, the op-amp
+        integrator clamp and railsFirst the three models pass the equivalence test (peaks 0.03 dB, envelope <= 1.1 dB, x2.0).
+        The 2-5 dB peaks measured before were the NETLIST's (a clipper node accepted at 1.88 V, see NodalCircuit). */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return spec.displayName; }
@@ -73,6 +80,7 @@ private:
     struct Channel
     {
         NodalCircuit c;
+        pipeline::CompiledCircuit fC;
 
         int srcIn = 0;
         NodalCircuit::Node nOpOut = 0, nDiodes = 0, nFilter = 0, nOut = 0;
@@ -113,6 +121,7 @@ private:
     long long sampleCount = 0, failureCount = 0;
     bool dcOk = false;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = true;
 
     static constexpr int controlInterval = 16; // samples between pot -> resistance updates
 };

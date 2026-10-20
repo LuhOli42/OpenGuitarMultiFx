@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "Pipeline/CompiledCircuit.h"
 
 #include <array>
 
@@ -38,6 +39,10 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
 
+    /** Pipeline engine (default): every block compiled into a linear network + fixed-cost ports at its DC point
+        (docs/PerformancePipeline.md). false = the Newton netlist, the reference for the tests. */
+    void setPipelineEngine (bool on) { pipelineEngine = on; forceReprepare(); }
+
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "ODR-1"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff3f8f4f); }
@@ -68,6 +73,7 @@ private:
     struct Channel
     {
         NodalCircuit a, b1, b2;
+        pipeline::CompiledCircuit fA, fB1, fB2;
         int srcIn = 0, srcOp1 = 0, srcOp2 = 0;
         NodalCircuit::Node nOp1 = 0, nOp2 = 0, nOp3 = 0, nOut = 0;
         int rDriveOut = 0, rDriveIn = 0;             // the Drive pot's two segments (a)
@@ -80,6 +86,7 @@ private:
 
     std::array<Channel, 2> channels;
     DualMonoShortcut shortcut;
+    bool pipelineEngine = true;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     juce::AudioParameterFloat* driveParam = nullptr;
