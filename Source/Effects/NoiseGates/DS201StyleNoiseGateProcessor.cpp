@@ -175,7 +175,7 @@ void DS201StyleNoiseGateProcessor::process (juce::AudioBuffer<float>& buffer)
 
 void DS201StyleNoiseGateProcessor::drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const
 {
-    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::gate_svg, IconData::gate_svgSize);
+    static const std::unique_ptr<juce::Drawable> svg = icon::loadSvg (IconData::ds201_gate_svg, IconData::ds201_gate_svgSize);
     icon::drawSvg (g, b, svg.get());
 }
 

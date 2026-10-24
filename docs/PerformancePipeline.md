@@ -138,7 +138,7 @@ levels and two burst levels:
 | DS-1 | 6.4 (unchanged) | 0.5 | 1.6 | 0.22 | 31 | compiled but NOT applied: the transistor gain stage (linearised in the compiler) behaves differently on hot bursts |
 | Tube Driver | 10.1 (unchanged) | 0.11 | 1.4 | 6.8 | 1.6 | compiled (triode ports) but NOT applied: slower than the netlist (x0.55). Its peak error is the netlist's own convergence defect on triode circuits, which the fix below does not cover yet |
 | HM-2 | 13.4 (unchanged) | 0.14 | 1.22 | 0.16 | 2.29 | NOT applied: matched only with the full two-junction transistor port (`transistorFull`) at 6 Newton steps, which is slower than the netlist (x0.55); fewer steps lose the saturation. No gain, netlist kept |
-| Darkglass B7K | 11.6 -> **5.0** | 0.00 | 0.07 | 0.00 | 0.24 | applied (2026-10-19: railsFirst + integrator clamp + the netlist fixes below) |
+| Darkglass B7K | 11.6 -> **5.0** | 0.00 | 0.05 | 0.00 | 0.20 | applied (2026-10-19: railsFirst + integrator clamp + the netlist fixes below). Re-run 2026-10-20 after #117 changed its netlist (2.2K feed + 0.15 uF Grunt): still passes, same cost |
 
 All applied ones also pass the steady-state test (`OversampledEffectTests`: DT-1 -115 dB, Metal Zone -128 dB
 non-periodic error) and stay within 0.1 dB of unity with their existing trims (`PedalUnityLevelTests`).
@@ -170,6 +170,13 @@ The other suites were checked like for like (the same filter with the fix on and
 shows (AmpFullVsReducedConsistency, AC30 / Astroverb / 5150 / ENGL, the JCM800 and 5150 unity levels) are identical
 without the fix -- they predate it and the CI smoke subset does not run them. The HM-2's measured-only figure depends
 on which suites ran before it in the same process (1.88 dB alone, 41 dB after the pedal suites): shared state to find.
+
+## Rule: a netlist change re-runs its equivalence
+
+A compiled pedal is only as right as the netlist it was compiled from, and the compile happens at runtime from that
+netlist, so a circuit fix (a new resistor, a changed cap) flows into the pipeline automatically -- but the acceptance
+does not. Any PR that touches the netlist of a pedal with `pipelineEngine = true` re-runs its `CompiledPipeline` test
+and the bench before merging (first case: #117, the B7K's Grunt network).
 
 ## Hot-burst envelope mismatches: investigation (2026-10-18)
 

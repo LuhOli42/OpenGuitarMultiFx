@@ -494,17 +494,17 @@ void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
         }
 
         // Global NFB: 47k (R201) from the speaker terminal into the PI tail's feedback node. Presence (VR112 25k +
-        // C203 .1 uF) shunts feedback at HF; Focus (VR111 250k) shunts it at LF through a series inductor.
-        // A series cap would do the opposite (shunt opens at LF) — a series L rises with frequency, so only
-        // the low band is lifted. Knob up = less R = more feedback lifted = more lows in the output.
+        // C203 .1 uF) shunts feedback at HF; Focus (VR111 250k) and a 2.2 uF cap are in series with a behavioral
+        // inductor to form a low-frequency resonant shunt. The capacitor blocks DC; knob up = less R = more lows lifted.
         c.addResistor (ch.wOut, fp, 47.0e3);
         {
             const auto pr = c.addNode();
             ch.rPresence = c.addResistor (fp, pr, 15.0e3);
             c.addCapacitor (pr, gnd, 0.1e-6);
-            const auto fo = c.addNode();
+            const auto fo = c.addNode(), fo2 = c.addNode();
             ch.rFocus = c.addResistor (fp, fo, 60.0e3);
-            c.addCoupledInductors ({ { fo, gnd } }, { 60.0 });
+            c.addCapacitor (fo, fo2, 2.2e-6);
+            c.addCoupledInductors ({ { fo2, gnd } }, { 10.0 });
         }
         c.setInitialGuess (a1, railPlatesNominal);
         c.setInitialGuess (a2, railPlatesNominal);

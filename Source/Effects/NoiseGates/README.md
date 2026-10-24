@@ -9,6 +9,7 @@ so the Add Effect browser groups them under Dynamics → the "Gate" chip.
 ### Noise Gate — `GateProcessor` (`GateProcessor.{h,cpp}`)
 
 - Registry key: `NoiseGate`; display name: "Noise Gate".
+- Icon: `Assets/Icons/gate.svg`.
 - Parameters:
   - `gate_threshold` — Threshold: −80..0 dB, default −50 dB.
   - `gate_attack` — Attack: 0.1..50 ms (skew 0.4), default 1 ms.
@@ -28,6 +29,7 @@ so the Add Effect browser groups them under Dynamics → the "Gate" chip.
 ### DS201 — `DS201StyleNoiseGateProcessor` (`DS201StyleNoiseGateProcessor.{h,cpp}`)
 
 - Registry key: `DS201StyleNoiseGate`; display name: "DS201".
+- Icon: `Assets/Icons/ds201_gate.svg`.
 - Parameters:
   - `ds201_threshold` — Threshold: −72..−18 dB, default −50 dB.
   - `ds201_range` — Range: −80..0 dB, default −80 dB.
@@ -49,6 +51,7 @@ so the Add Effect browser groups them under Dynamics → the "Gate" chip.
 ### NS-2 — `NS2StyleNoiseSuppressorProcessor` (`NS2StyleNoiseSuppressorProcessor.{h,cpp}`)
 
 - Registry key: `NS2StyleNoiseSuppressor`; display name: "NS-2".
+- Icon: `Assets/Icons/ns2_suppressor.svg`.
 - Parameters:
   - `ns2_threshold` — Threshold: −80..−30 dB, default −60 dB.
   - `ns2_decay` — Decay: 0..1 (normalised knob), default 0.3.
