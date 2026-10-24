@@ -1070,10 +1070,17 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         {
             ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.5);
+            ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.5);
         }
+        // The blocks' last DC solves saw the previous pass's rails; the final supply solve moved them a little and the
+        // rail step through this much gain was a startup thump (ENGL 0.65, 2026-10-24). Solve them again at the rails
+        // they will run on.
+        dcOk = ch.power.prepare (newSampleRate) && dcOk;
         if (reducedOrder)
         {
             ch.preReduced.setSource (ch.prSrcRail, ch.supply.voltage (ch.sE));
+            dcOk = ch.preReduced.prepare (newSampleRate) && dcOk;
             ch.preReduced.saveDynamicState (ch.preReducedRest);
             // Seed the bass-trim HP at the resting delta so its first samples don't emit a step.
 
@@ -1082,6 +1089,7 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         {
             ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sD));
             ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sE));
+            dcOk = ch.pre.prepare (newSampleRate) && dcOk;
             ch.pre.saveDynamicState (ch.preRest);
         }
         ch.power.saveDynamicState (ch.powerRest);
