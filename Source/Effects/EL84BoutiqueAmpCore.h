@@ -53,6 +53,7 @@ private:
         NodalCircuit pre, pre2, power, supply;
         NodalCircuit::DynamicState preRest, pre2Rest, powerRest, supplyRest;
         int preInput = 0, preInput2 = 0, preRail = 0, preRail2 = 0;
+        int preRailA = -1; // Astroverb: the 272 V node (cathode follower plate) one 10k above the preamp's 258 V node
         int preVolumeTop = -1, preVolumeBottom = -1, preVolume2Top = -1, preVolume2Bottom = -1;
         int rTrebleTop = -1, rTrebleBottom = -1, rBassTop = -1, rBassBottom = -1, rMid = -1;
         int rEdge = -1, rGainShunt = -1, toneCap = -1, rCut = -1, rPresence = -1;

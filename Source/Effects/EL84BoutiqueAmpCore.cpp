@@ -436,23 +436,71 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         return;
     }
 
-    // Soldano Astroverb 16 (factory schematic): V1a -> V1b -> V2a -> V2b -> V3a
-    // (all 220k plates) -> V3b DC-coupled follower -> TMB -> 10k -> VOLUME.
-    // Cathodes: 820R + 1uF on V1/V2a's input stages, V2b is the cold clipper
-    // (10k + 100uF), V3a 10k + 1uF. The 1M PREAMP pot sits after V1b.
+    // Soldano Astroverb 16, factory schematic (docs/circuits/SoldanoAstroverb16.md):
+    //   jack -> 69k stopper (1M to ground) -> V1a (220k, 1k8 + 1uF) -> 22nF -> 1M -> PREAMP 1M pot -> V1b (100k, 2k2
+    //   unbypassed) -> 22nF -> 1M || 22nF -> 220k -> V2a grid (330k leak) -> V2a (220k, 1k8 + 1uF) -> 22nF -> 680k /
+    //   15k divider -> V2b, paralleled with V3a (the reverb-return mixer, its grid on the omitted reverb pot) on a shared
+    //   100k plate and 1k + 100uF cathode -> DC-coupled V3b cathode follower (plate on the 272 V node) -> TMB.
+    // The preamp stages hang on the 258 V node (33uF, one 10k below the 272 V node); the drawing's "1k" at V3b's
+    // cathode cannot carry its 153 V and is read as the usual 100k (the forum notes this drawing has wrong values).
+    // Replaces an estimated five-stage 220k cascade with a 10k/100uF "cold clipper" that is not in the amp: its
+    // extra gain made the preamp motorboat through the supply and the solver storm (2026-10-24).
     {
-        auto first = addTriode (in, 220.0e3, 820.0, 1.0e-6, 0.022e-6, true);
-        auto second = addTriode (first.second, 220.0e3, 820.0, 1.0e-6, 0.022e-6, true);
-        const auto preampOut = c.addNode();
-        ch.preVolumeTop = c.addResistor (second.second, preampOut, 1.0e6);
-        ch.preVolumeBottom = c.addResistor (preampOut, gnd, 1.0e6);
-        auto third = addTriode (preampOut, 220.0e3, 820.0, 1.0e-6, 0.022e-6, true);
-        auto fourth = addTriode (third.second, 220.0e3, 10.0e3, 100.0e-6, 0.022e-6, true);
-        auto fifth = addTriode (fourth.second, 220.0e3, 10.0e3, 1.0e-6, 0.022e-6, true);
+        const auto railA = c.addNode();
+        ch.preRailA = c.addSource (railA, railNominal * 0.725 * 272.0 / 258.0);
+        const auto stage = [&] (NodalCircuit::Node grid, NodalCircuit::Node plateRail, double plateR, double cathodeR,
+                                double cathodeC, double plateGuess, double cathodeGuess)
+        {
+            const auto cathode = c.addNode(), plate = c.addNode();
+            c.addTriode (plate, grid, cathode, tubes.triode);
+            c.addResistor (plateRail, plate, plateR);
+            c.addResistor (cathode, gnd, cathodeR);
+            if (cathodeC > 0.0)
+                c.addCapacitor (cathode, gnd, cathodeC);
+            c.setInitialGuess (plate, plateGuess);
+            c.setInitialGuess (cathode, cathodeGuess);
+            return plate;
+        };
+
+        const auto g1a = c.addNode();
+        c.addResistor (in, gnd, 1.0e6);
+        c.addResistor (in, g1a, 69.0e3);
+        const auto p1a = stage (g1a, rail, 220.0e3, 1.8e3, 1.0e-6, 134.0, 1.0);
+
+        const auto c1 = c.addNode(), potTop = c.addNode(), g1b = c.addNode();
+        c.addCapacitor (p1a, c1, 22.0e-9);
+        c.addResistor (c1, potTop, 1.0e6);
+        ch.preVolumeTop = c.addResistor (potTop, g1b, 1.0e6);
+        ch.preVolumeBottom = c.addResistor (g1b, gnd, 1.0e6);
+        const auto p1b = stage (g1b, rail, 100.0e3, 2.2e3, 0.0, 182.0, 1.6);
+
+        const auto c2 = c.addNode(), x2 = c.addNode(), g2a = c.addNode();
+        c.addCapacitor (p1b, c2, 22.0e-9);
+        c.addResistor (c2, x2, 1.0e6);
+        c.addCapacitor (c2, x2, 22.0e-9);
+        c.addResistor (x2, g2a, 220.0e3);
+        c.addResistor (g2a, gnd, 330.0e3);
+        const auto p2a = stage (g2a, rail, 220.0e3, 1.8e3, 1.0e-6, 187.0, 1.5);
+
+        const auto c3 = c.addNode(), g2b = c.addNode(), g3a = c.addNode();
+        c.addCapacitor (p2a, c3, 22.0e-9);
+        c.addResistor (c3, g2b, 680.0e3);
+        c.addResistor (g2b, gnd, 15.0e3);
+        c.addResistor (g3a, gnd, 250.0e3); // V3a grid: the REVERB pot (reverb omitted, the return at rest)
+        const auto mixPlate = c.addNode(), mixCathode = c.addNode();
+        c.addTriode (mixPlate, g2b, mixCathode, tubes.triode);
+        c.addTriode (mixPlate, g3a, mixCathode, tubes.triode);
+        c.addResistor (rail, mixPlate, 100.0e3);
+        c.addResistor (mixCathode, gnd, 1.0e3);
+        c.addCapacitor (mixCathode, gnd, 100.0e-6);
+        c.setInitialGuess (mixPlate, 152.0);
+        c.setInitialGuess (mixCathode, 1.2);
+
         const auto follower = c.addNode();
-        c.addFollower (fifth.first, follower, 1.5);
+        c.addTriode (railA, mixPlate, follower, tubes.triode);
         c.addResistor (follower, gnd, 100.0e3);
-        ch.prePlate = first.first;
+        c.setInitialGuess (follower, 153.0);
+        ch.prePlate = p1a;
         ch.preOut = follower;
     }
 
@@ -466,8 +514,8 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         c.addCapacitor (b, d, 0.022e-6);
         c.addCapacitor (b, e, 0.022e-6);
         ch.toneOut = c.addNode();
-        ch.rTrebleTop = c.addResistor (a, ch.toneOut, 220.0e3);
-        ch.rTrebleBottom = c.addResistor (ch.toneOut, d, 220.0e3);
+        ch.rTrebleTop = c.addResistor (a, ch.toneOut, 250.0e3);
+        ch.rTrebleBottom = c.addResistor (ch.toneOut, d, 250.0e3);
         ch.rBassTop = c.addResistor (d, e, 1.0e6);
         ch.rBassBottom = c.addResistor (e, f, 1.0e6);
         c.addResistor (f, gnd, 10.0e3);
@@ -674,6 +722,8 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     const double bias = smoothedParam (ch, 1, biasParam, 0.5);
     const double feel = smoothedParam (ch, 2, feelParam, 1.0);
     ch.pre.setSource (ch.preRail, ch.preRailFiltered > 0.0 ? ch.preRailFiltered : railNominal * 0.725);
+    if (ch.preRailA >= 0)
+        ch.pre.setSource (ch.preRailA, (ch.preRailFiltered > 0.0 ? ch.preRailFiltered : railNominal * 0.725) * 272.0 / 258.0);
 
     if (model == Model::matchlessHC30)
     {
@@ -727,7 +777,7 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         // Preamp and Volume: audio taper like the other gain/volume controls in the project.
         setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 13, preampParam, 0.5)));
         setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, pots::audio (smoothedParam (ch, 3, volume1Param, 0.5)));
-        setPot (ch.pre, ch.rTrebleTop, ch.rTrebleBottom, 220.0e3, treble);
+        setPot (ch.pre, ch.rTrebleTop, ch.rTrebleBottom, 250.0e3, treble); // TREBLE 250k (factory schematic)
         setPot (ch.pre, ch.rBassTop, ch.rBassBottom, 1.0e6, bass);
         if (ch.rMid >= 0) ch.pre.setResistance (ch.rMid, boundedPot (1.0 - smoothedParam (ch, 11, midParam, 0.5), 25.0e3));
         if (! reducedOrder)
@@ -805,6 +855,8 @@ void EL84BoutiqueAmpCore::updateSupply (Channel& ch)
     const double tau = 22.0e3 * 16.0e-6;
     ch.preRailFiltered += (1.0 - std::exp (-dt / tau)) * (rail * 0.725 - ch.preRailFiltered);
     ch.pre.setSource (ch.preRail, ch.preRailFiltered);
+    if (ch.preRailA >= 0)
+        ch.pre.setSource (ch.preRailA, ch.preRailFiltered * 272.0 / 258.0);
     if (hasSecondPreamp())
         ch.pre2.setSource (ch.preRail2, ch.preRailFiltered);
 }
