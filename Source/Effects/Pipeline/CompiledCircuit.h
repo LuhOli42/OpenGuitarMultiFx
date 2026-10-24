@@ -367,6 +367,7 @@ public:
     void clear() { net.reset(); }
     juce::String stats() const { return net != nullptr ? net->stats() : juce::String ("not compiled"); }
     void update() { if (net != nullptr) net->update(); } // safe on a block running the netlist
+    void rebuildNow() { if (net != nullptr) net->rebuildNow(); } // tests: full inversion, no rank-1 updates
     bool solveSample() noexcept { net->process(); return true; }
     double voltage (Node n) const noexcept
     {

@@ -328,6 +328,53 @@ public:
             return [factory] (bool pipe) { auto p = factory(); p->setPipelineEngine (pipe); return std::unique_ptr<EffectProcessor> (std::move (p)); };
         };
 
+        beginTest ("pot moves: rank-1 inverse updates match a full rebuild every tick");
+        {
+            // an inverting op-amp stage with a pot in its feedback and in its input leg, into a diode pair: a sweeping
+            // pot changes two resistors every 16 samples, for 2 s
+            NodalCircuit c;
+            const auto gnd = NodalCircuit::ground;
+            const auto in = c.addNode(), a = c.addNode(), minus = c.addNode(), out = c.addNode(), d = c.addNode(), nb = c.addNode();
+            c.addSource (nb, 4.5);
+            const int src = c.addSource (in, 4.5);
+            c.addCapacitor (in, a, 100.0e-9);
+            const int rIn = c.addResistor (a, minus, 10.0e3);
+            const int rFb = c.addResistor (minus, out, 100.0e3);
+            c.addCapacitor (minus, out, 100.0e-12);
+            c.addOpAmp (nb, minus, out);
+            c.addResistor (out, d, 4.7e3);
+            c.addDiode (d, nb, 2.52e-9, 1.752 * 25.85e-3);
+            c.addDiode (nb, d, 2.52e-9, 1.752 * 25.85e-3);
+            c.addCapacitor (d, gnd, 10.0e-9);
+            expect (c.prepare (48000.0));
+            pipeline::CompiledCircuit inc, ref;
+            expect (inc.compile (c, src, { d }, 48000.0) && ref.compile (c, src, { d }, 48000.0));
+            double worst = 0.0, peak = 0.0;
+            for (int i = 0; i < 96000; ++i)
+            {
+                if (i % 16 == 0)
+                {
+                    const double k = 0.5 + 0.49 * std::sin (2.0 * 3.141592653589793 * 3.0 * i / 48000.0);
+                    for (auto* f : { &inc, &ref })
+                    {
+                        f->setResistance (rFb, 1.0e3 + 500.0e3 * k);
+                        f->setResistance (rIn, 1.0e3 + 20.0e3 * (1.0 - k));
+                    }
+                    inc.update();
+                    ref.update();
+                    ref.rebuildNow();
+                }
+                const double x = 4.5 + 0.3 * std::sin (2.0 * 3.141592653589793 * 220.0 * i / 48000.0);
+                inc.setSource (src, x); inc.solveSample();
+                ref.setSource (src, x); ref.solveSample();
+                worst = std::max (worst, std::abs (inc.voltage (d) - ref.voltage (d)));
+                peak = std::max (peak, std::abs (ref.voltage (d) - 4.5));
+            }
+            log ("  rank-1 vs rebuild: worst " + juce::String (worst, 9) + " V of a " + juce::String (peak, 3) + " V swing");
+            expect (peak > 0.3, "the stage clips");
+            expectLessThan (worst, 1.0e-4);
+        }
+
         beginTest ("OCD: compiled pipeline vs netlist");
         expectAccepted (pipelinetest::compare (make ([] { return std::make_unique<OCDStyleOverdriveProcessor>(); }),
             { { { "ocd_drive", 0.2f }, { "ocd_tone", 0.5f }, { "ocd_volume", 0.5f }, { "ocd_clipping", 0.0f }, { "ocd_peak", 0.0f } },

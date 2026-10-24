@@ -78,7 +78,7 @@ public:
         constexpr int block = 128;
         const bool flush = juce::SystemStats::getEnvironmentVariable ("BENCH_FTZ", {}).isNotEmpty();
         std::vector<std::pair<double, juce::String>> results;
-        struct Row { double playing, tail; juce::String key; };
+        struct Row { double playing, tail; juce::String key; double worstBlock = 0.0; };
         std::vector<Row> rows;
         const auto only = juce::SystemStats::getEnvironmentVariable ("BENCH_FILTER", {});
         for (auto key : registry.getRegisteredNames())
@@ -104,12 +104,24 @@ public:
             juce::AudioBuffer<float> buf (2, block);
             const double twoPi = 2.0 * juce::MathConstants<double>::pi;
             long long n = 0;
+            // BENCH_SWEEP=1: every float knob keeps moving (0.5 +- 0.4, 0.5 Hz, staggered), the way a turned knob, an
+            // expression pedal or a snapshot ramp drives them -- what a compiled circuit pays to re-prepare per pot move.
+            const bool sweep = juce::SystemStats::getEnvironmentVariable ("BENCH_SWEEP", {}).isNotEmpty();
+            std::vector<juce::AudioParameterFloat*> knobs;
+            if (sweep && fx->getParameters() != nullptr)
+                for (auto* prm : fx->getParameters()->getParameters (true))
+                    if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (prm))
+                        if (f->getNormalisableRange().interval < 1.0f)
+                            knobs.push_back (f);
+            double worstBlock = 0.0;
             const auto run = [&] (double seconds, bool signal)
             {
                 double sec = 0.0;
                 const int blocks = (int) (seconds * sr / block);
                 for (int b = 0; b < blocks; ++b)
                 {
+                    for (size_t k = 0; k < knobs.size(); ++k)
+                        knobs[k]->setValueNotifyingHost ((float) (0.5 + 0.4 * std::sin (twoPi * 0.5 * (double) n / sr + (double) k)));
                     for (int i = 0; i < block; ++i, ++n)
                     {
                         double v = 0.0;
@@ -124,7 +136,9 @@ public:
                         ftz = std::make_unique<juce::ScopedNoDenormals>();
                     const auto t0 = std::chrono::steady_clock::now();
                     fx->process (buf);
-                    sec += std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+                    const double dt = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+                    sec += dt;
+                    if (signal) worstBlock = std::max (worstBlock, 100.0 * dt * sr / block);
                 }
                 return 100.0 * sec / seconds;
             };
@@ -132,13 +146,14 @@ public:
             const double playing = run (2.0, true);
             run (0.3, false); // let the burst end
             const double tail = run (6.0, false); // digital silence: what decaying tails cost
-            rows.push_back ({ playing, tail, key });
+            rows.push_back ({ playing, tail, key, worstBlock });
         }
         std::sort (rows.begin(), rows.end(), [] (auto& a, auto& b) { return a.playing + a.tail > b.playing + b.tail; });
         logMessage (juce::String (flush ? "FTZ on" : "FTZ off") + ": playing % / silent tail %");
         for (auto& r : rows)
             if (r.playing + r.tail > 0.05)
-                logMessage (juce::String (r.playing, 2).paddedLeft (' ', 7) + " /" + juce::String (r.tail, 2).paddedLeft (' ', 7) + "  " + r.key);
+                logMessage (juce::String (r.playing, 2).paddedLeft (' ', 7) + " /" + juce::String (r.tail, 2).paddedLeft (' ', 7)
+                            + "  worst block " + juce::String (r.worstBlock, 1).paddedLeft (' ', 6) + " %  " + r.key);
         return;
         std::sort (results.begin(), results.end(), [] (auto& a, auto& b) { return a.first > b.first; });
         for (auto& r : results)

@@ -166,7 +166,7 @@ public:
     void setResistance (int id, double ohms)
     {
         auto& r = resistors[(size_t) id];
-        if (r.ohms != ohms) { r.ohms = ohms; dirty = true; }
+        if (r.ohms != ohms) { r.ohms = ohms; resistorsDirty = true; }
     }
 
     int addCapacitor (Node a, Node b, double farads)
@@ -354,8 +354,18 @@ public:
         probeValue.fill (0.0);
     }
 
-    /** Recompute the inverse if a resistance changed. Cheap no-op otherwise; call at control rate. */
-    void update() { if (dirty) rebuild(); }
+    /** Bring the compiled form up to date; call at control rate. A structural change rebuilds (assemble + invert, n^3);
+        resistance changes alone -- what a pot does -- update the inverse by one rank-1 (Sherman-Morrison) step per
+        changed resistor (n^2), so a turning knob or a smoothed snapshot ramp, which moves pots every control tick,
+        no longer pays a full inversion each time (measured: up to 84 % of a core in one block on the DT-1 before).
+        A full rebuild every `incrementalLimit` updates bounds the round-off. Cheap no-op when nothing changed. */
+    void update()
+    {
+        if (dirty) rebuild();
+        else if (resistorsDirty) updateResistors();
+    }
+    /** Tests: a full assemble-and-invert now, the reference the rank-1 updates are checked against. */
+    void rebuildNow() { rebuild(); }
 
     /** Dot product over n (a multiple of 4) with four independent accumulators: no loop-carried dependency, so it
         pipelines and vectorises (SSE / NEON) where a single running sum does not. */
@@ -436,7 +446,7 @@ private:
     enum class Kind { diodePair, clamp, transfer, diode, composite, bjtBase, bjtCollector, triodeGrid, triodePlate };
     struct Port { Node a, b; Kind kind; double is, nv, vPos, vNeg; Node ca = -1, cb = -1; const TransferCurve* curve = nullptr; const DeviceCurve* device = nullptr;
                   const CompositeDiode* comp = nullptr; const BjtDevice* bjt = nullptr; const TriodeDevice* tri = nullptr; };
-    struct Resistor { Node a, b; double ohms; };
+    struct Resistor { Node a, b; double ohms; double gApplied = 0.0; }; // gApplied: the conductance `inv` holds
     struct Cap { Node a, b; double farads, hist, current; double g = 0.0; bool inductor = false; };
     struct Vccs { Node outP, outN, cp, cn; double gm; };
     struct Entry { Node r, c; double y; };
@@ -808,6 +818,52 @@ private:
             }
         }
 
+        for (int k = 0; k < numResistors; ++k) resistors[(size_t) k].gApplied = 1.0 / resistors[(size_t) k].ohms;
+        resistorsDirty = false;
+        incrementalUpdates = 0;
+        compileStateSpace();
+    }
+
+    /** Rank-1 updates of `inv` for every resistor whose conductance moved: G' = G + dg d d^T with d = e_a - e_b, so
+        inv' = inv - (dg / (1 + dg d^T inv d)) (inv d) (d^T inv). Falls back to a full rebuild when the denominator is
+        near zero or after `incrementalLimit` updates. */
+    void updateResistors()
+    {
+        resistorsDirty = false;
+        if (++incrementalUpdates > incrementalLimit) { rebuild(); return; }
+        const int n = numNodes + numRows;
+        std::array<double, MaxNodes> u {}, w {};
+        bool changed = false;
+        for (int k = 0; k < numResistors; ++k)
+        {
+            auto& r = resistors[(size_t) k];
+            const double gNew = 1.0 / r.ohms, dg = gNew - r.gApplied;
+            if (dg == 0.0) continue;
+            const int ua = unknownOf (r.a), ub = unknownOf (r.b);
+            for (int i = 0; i < n; ++i)
+            {
+                u[(size_t) i] = (ua >= 0 ? inv[(size_t) i][(size_t) ua] : 0.0) - (ub >= 0 ? inv[(size_t) i][(size_t) ub] : 0.0);
+                w[(size_t) i] = (ua >= 0 ? inv[(size_t) ua][(size_t) i] : 0.0) - (ub >= 0 ? inv[(size_t) ub][(size_t) i] : 0.0);
+            }
+            const double sdd = (ua >= 0 ? u[(size_t) ua] : 0.0) - (ub >= 0 ? u[(size_t) ub] : 0.0);
+            const double denom = 1.0 + dg * sdd;
+            if (std::abs (denom) < 1.0e-9) { rebuild(); return; }
+            const double f = dg / denom;
+            for (int i = 0; i < n; ++i)
+            {
+                const double fu = f * u[(size_t) i];
+                if (fu == 0.0) continue;
+                for (int j = 0; j < n; ++j) inv[(size_t) i][(size_t) j] -= fu * w[(size_t) j];
+            }
+            r.gApplied = gNew;
+            changed = true;
+        }
+        if (changed) compileStateSpace();
+    }
+
+    /** The per-sample state-space form, from `inv`. */
+    void compileStateSpace()
+    {
         capIn.fill (0.0); portIn.fill (0.0); probeIn.fill (0.0); twoG.fill (0.0);
         capIn1.fill (0.0); portIn1.fill (0.0); probeIn1.fill (0.0);
         for (auto& r : capH) r.fill (0.0);
@@ -923,7 +979,9 @@ private:
     Node inputNode = -1;
     double inputG = 0.0;
     std::array<double, 2> inputVolts {};
-    bool dirty = true;
+    bool dirty = true, resistorsDirty = false;
+    int incrementalUpdates = 0;
+    static constexpr int incrementalLimit = 256; // rank-1 updates between full rebuilds (round-off bound)
     int portSweeps = 1, activeSweeps = 1;
 };
 
