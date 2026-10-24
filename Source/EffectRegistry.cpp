@@ -505,7 +505,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // newly built (4 cascaded gain stages). reducedOrder placeholder trim pending its own J8_POWERCAL measurement.
     JCM800StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("JCM800StyleAmplifier");
-    registry.registerType ("JCM800StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<JCM800StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -16.98f); }, "High-Gain");
+    registry.registerType ("JCM800StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<JCM800StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -13.75f); }, "High-Gain");
     // docs/circuits/AC15Twin.md. Genuinely new family: EF86 pentode preamp, cathodyne (split-load) phase inverter,
     // cathode-biased EL84 pair, no global feedback. reducedOrder calibrated (A15_POWERCAL) against this amp's own
     // stable reference (no instability investigation needed, unlike the JTM45/JCM800).
@@ -516,7 +516,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // long-tailed-pair phase inverter, no global feedback (confirmed absent on the factory power-amp drawing).
     AC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AC30StyleAmplifier");
-    registry.registerType ("AC30StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -11.63f); }, "Crunch");
+    registry.registerType ("AC30StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.77f); }, "Crunch");
     // docs/circuits/MatchlessHC30.md.
     MatchlessHC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MatchlessHC30StyleAmplifier");
@@ -553,7 +553,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // post-tonestack gain recovery, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     EVH5150StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("EVH5150StyleAmplifier");
-    registry.registerType ("EVH5150StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.94f); }, "High-Gain");
+    registry.registerType ("EVH5150StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -11.24f); }, "High-Gain");
     // docs/circuits/ENGLPowerball.md. ENGL Powerball Hi Lead channel. Six cascaded 12AX7 gain stages
     // (3 pre-tonestack + 3 post-tonestack), FMV tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     ENGLPowerballStyleAmplifierProcessor::reducedOrder = true;

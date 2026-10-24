@@ -121,3 +121,12 @@ preamp's own cathode-follower output when active, matching the AC15's own conven
 ## Cost
 Shipped default (`reducedOrder`): ~4.63% avg, ~7.2% worst block under a hot-pedal stress, zero failures. Orders
 {0, 0, 1}, same tier convention as the other amps. Unity trim +25.88 dB.
+
+## Reduced-order refit (2026-10-24)
+
+After the #99 audit (rail / PI rework) the reduced stage was no longer refitted and drifted out of its own test
+(+2.44 / +2.79 dB at 0.02 / 0.05 input, bound 2 dB). A grid fit against the current full netlist (levels 0.005-0.6 V,
+100 Hz, the test's own settings) gave `bmGain0 = 13.0`, `bmYmax = 0.13`, `bmKneeN = 0.75`: a much softer knee, which is
+what the full stage does (it compresses progressively from the smallest level). Worst deviation now 0.65 dB, and the
+AmpFullVsReducedConsistency entry passes (level 5.37 dB, bound 6). The registry trim moved -11.63 -> -9.77 dB to keep
+the AC30 at unity.
