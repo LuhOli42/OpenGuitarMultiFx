@@ -52,9 +52,12 @@ public:
     static inline bool reducedOrder = false;
     // Fitted (2026-10-05) to the full reference after its plate resistors were rewired in series with the OT (they
     // were a shunt across each half-primary that killed ~35 dB of output; the old constants were fitted to that).
-    static constexpr double bmGain0 = 7.0;
-    static constexpr double bmYmax = 0.128;
-    static constexpr double bmKneeN = 2.0;
+    // Refit 2026-10-24 against the full netlist as it stands after the #99 audit (rail / PI rework): the old
+    // 7 / 0.128 / 2.0 curve compressed too late and too hard (+2.8 dB at 0.05 input); this one tracks the
+    // reference within 0.65 dB from 0.005 to 0.6 (AC30 test "reducedOrder power stage tracks the reference").
+    static constexpr double bmGain0 = 13.0;
+    static constexpr double bmYmax = 0.13;
+    static constexpr double bmKneeN = 0.75;
     static constexpr double bmShelfHz = 120.0;
     static constexpr double bmShelfHfGain = 0.7;
 
