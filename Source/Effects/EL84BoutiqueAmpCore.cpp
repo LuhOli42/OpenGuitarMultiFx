@@ -875,7 +875,9 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     // level re-fit 2026-10-11: matchless/hotCat defaults now restore the pre-audio-taper wiper
     // fractions, which moved the stage's calibration point; scaled so the reduced path re-tracks
     // the reference at the new defaults (was 1.17 / 14.0).
-    const double level = model == Model::matchlessHC30 ? 2.02 :
+    // matchless 2.02 -> 5.2 (2026-10-24): 2.02 had been fitted against a test that ran the reference at Volume 2 = 0.6
+    // and the reduced path at its default; at equal knobs it sat 7-10 dB under the netlist.
+    const double level = model == Model::matchlessHC30 ? 5.2 :
                          model == Model::hotCat30 ? 34.0 :
                          model == Model::carmenGhia ? 18.5 : 21.4;
     const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
@@ -898,11 +900,9 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
         buildChannel (ch);
         auto bmVoicing = tubeamp::voicings::classAChime;
         bmVoicing.asym = 0.06; // half-strength: the knee already shifts with the Bias control
-        if (model == Model::matchlessHC30)
-        {
-            bmVoicing.cabLpHz = 900.0;  // own netlist is much darker than the shared alnico voicing
-            bmVoicing.cabAirHz = 3000.0;
-        }
+        // (Matchless used to override cabLpHz 900 / cabAirHz 3000 here, "own netlist much darker": after #111's Cut / CH2
+        // rework the netlist is not, and the override put the reduced treble 20 dB under it. Removed 2026-10-24: worst
+        // band vs the netlist 13.2 -> 3.2 dB.)
         ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
         bool ok = ch.supply.prepare (sampleRate / (double) supplyInterval);
