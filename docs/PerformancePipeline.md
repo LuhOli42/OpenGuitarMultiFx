@@ -171,6 +171,36 @@ shows (AmpFullVsReducedConsistency, AC30 / Astroverb / 5150 / ENGL, the JCM800 a
 without the fix -- they predate it and the CI smoke subset does not run them. The HM-2's measured-only figure depends
 on which suites ran before it in the same process (1.88 dB alone, 41 dB after the pedal suites): shared state to find.
 
+## Turning knobs: rank-1 pot updates (2026-10-24)
+
+The bench measures a pedal standing still. A turned knob, an expression pedal or a snapshot ramp moves pots every
+control tick (16 samples), and each move used to rebuild the compiled network: assemble and invert the whole matrix
+(n^3). `EffectCostBench` with `BENCH_SWEEP=1` (every float knob moving, 0.5 Hz) showed it: the compiled pedals cost 3-5x
+their standing figure, with single blocks at 80-86 % of a core (DT-1, ODR-1, Bass Big Muff) -- a dropout waiting for a
+footswitch.
+
+A pot changes one or two resistors, so `LinearPortNetwork::update()` now applies one Sherman-Morrison step per changed
+resistor (n^2) and recompiles only the state-space forms; a full rebuild still happens on structural changes, when a
+denominator is near zero, and every 256 updates (round-off bound). Exact: a test sweeping two pots for 2 s against a full
+rebuild every tick differs by 0.000000000 V.
+
+| Pedal | still (mean / worst block) | knobs moving, before | knobs moving, rank-1 |
+|---|---|---|---|
+| Metal Zone | 7.0 / 11.5 % | 33.4 / 40.5 % | **13.0 / 23.5 %** |
+| DT-1 | 5.8 / 12.3 % | 23.8 / 84.1 % | **9.7 / 28.2 %** |
+| ODR-1 | 6.6 / 7.9 % | 25.5 / 79.9 % | **10.6 / 12.7 %** |
+| Bass Big Muff | 4.1 / 8.5 % | 18.4 / 86.2 % | **7.4 / 32.0 %** |
+| Darkglass B7K | 4.9 / 11.5 % | 21.1 / 24.7 % | **9.5 / 14.7 %** |
+| OCD | 6.2 / 7.1 % | 17.6 / 20.1 % | **8.6 / 11.9 %** |
+| Big Muff | 4.4 / 14.4 % | 10.7 / 11.9 % | **7.3 / 14.6 %** |
+| RAT | 2.9 / 4.7 % | 11.8 / 13.2 % | **4.8 / 6.3 %** |
+| SansAmp BDDI | 2.6 / 4.8 % | 9.3 / 12.6 % | **4.3 / 6.8 %** |
+| HM-2 (netlist, for reference) | 13.6 / 19.9 % | 20.0 / 22.7 % | 20.8 / 30.2 % |
+
+Moving knobs still cost about twice the standing figure (the state-space forms are recompiled every tick); every
+compiled pedal is now cheaper than the netlist HM-2 while its knobs turn. Rule: judge a conversion with `BENCH_SWEEP=1`
+as well, by its worst block.
+
 ## Rule: a netlist change re-runs its equivalence
 
 A compiled pedal is only as right as the netlist it was compiled from, and the compile happens at runtime from that
