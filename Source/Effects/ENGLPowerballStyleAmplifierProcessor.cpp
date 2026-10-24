@@ -826,6 +826,18 @@ void ENGLPowerballStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         }
         if (! reducedOrder) ch.tone.setSource (ch.tSrcVcc, ch.supply.voltage (ch.sC));
         ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sD));
+        // The blocks' last DC solves saw the previous pass's rails; the final supply solve moved them a little, and a
+        // few millivolts of rail step through this much gain was a ~0.6 startup thump (2026-10-24). Solve them again
+        // at the rails they will run on.
+        ch.tone.setSource (ch.tSrcPre, 0.0);
+        dcOk = ch.pre.prepare (newSampleRate) && ch.tone.prepare (newSampleRate) && dcOk;
+        if (! reducedOrder)
+        {
+            ch.power.setSource (ch.wSrcMaster, 0.0);
+            ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.5);
+            ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.5);
+            dcOk = ch.power.prepare (newSampleRate) && dcOk;
+        }
 
         ch.pre.solveSample();
         ch.plateDcU6a = ch.pre.voltage (ch.pPlateU6a);
