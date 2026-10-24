@@ -117,6 +117,14 @@ void runEL84BoutiqueAmpTests (juce::UnitTest& test, const char* gainId, const ch
     const double reference = measureTone (220.0, 0.6f, 0.5f, 0.2f);
     Amp::reducedOrder = true;
     Amp reduced;
+    // the same knob positions as the reference (measureTone above): comparing the reference at gain 0.6 against the
+    // reduced path at its defaults let a per-model level be "fitted" to the knob difference (Matchless, 2026-10-11)
+    for (auto* parameter : reduced.getParameters()->getParameters (true))
+        if (auto* value = dynamic_cast<juce::AudioParameterFloat*> (parameter))
+        {
+            if (value->paramID == gainId) *value = 0.6f;
+            if (value->paramID == toneId) *value = 0.5f;
+        }
     reduced.prepare (sr, 512, 1);
     juce::AudioBuffer<float> signal (1, 4096);
     for (int i = 0; i < signal.getNumSamples(); ++i)
