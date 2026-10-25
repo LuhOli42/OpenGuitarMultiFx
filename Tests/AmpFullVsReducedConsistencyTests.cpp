@@ -437,7 +437,9 @@ public:
             reportBands (sb, bb);
             double band = 0.0;
             for (int i = 0; i < 3; ++i)
-                band = juce::jmax (band, std::abs ((bb[i] - sb.totalDb) - (bf[i] - sf.totalDb)));
+                if (bf[i] > sf.totalDb - 40.0) // a band the reference leaves 40 dB under its total is inaudible: its dB
+                                               // ratio is noise (Acoustic 360's clean treble band sat 122 dB down)
+                    band = juce::jmax (band, std::abs ((bb[i] - sb.totalDb) - (bf[i] - sf.totalDb)));
             logMessage (juce::String (ampName) + " rms " + juce::String (rms, 2)
                         + ": level " + juce::String (level, 2) + " dB, worst shape band "
                         + juce::String (band, 2) + " dB (bass " + juce::String (bb[0] - bf[0], 2)
