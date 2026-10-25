@@ -14,16 +14,15 @@ namespace openguitarmultifx
     amp's factory schematic (see docs/circuits/AmpegB15.md -- read that file to understand this processor).
 
     Two solver blocks plus a small power-supply model:
-      1. the preamp -- two 6SL7 gain stages around the passive bass/treble network, the Volume pot and
-         the Ultra-Lo / Ultra-Hi rocker networks;
-      2. everything the global feedback loop passes through -- the third 6SL7's floating-paraphase
-         phase splitter (one half drives the first output grid, a plate tap feeds the second half which
-         drives the other), the two 6L6GCs on fixed ~-50 V bias, the output transformer (coupled
-         inductors), the speaker and the negative feedback into the driver's cathode;
+      1. the preamp -- V1a (unbypassed), the Ultra-Lo shunt, the 1M linear Volume with the Ultra-Hi cap, V1b
+         (unbypassed), the passive bass/treble network and the 270k mixer resistor;
+      2. everything the global feedback loop passes through -- the third 6SL7's floating paraphase (both
+         plates summed through 470k / 510k into V3b's grid), the two 6L6GCs on fixed -50 V bias, the output
+         transformer (coupled inductors), the speaker and the 10k negative feedback onto V3a's cathode;
       3. the rectifier / filter supply, whose sag under load is a large part of the "flip-top" feel.
 
-    Controls, page 1: Input (0 dB / -15 dB -- the amp's two front-panel jacks), Volume, Ultra-Lo,
-    Ultra-Hi (the faceplate rockers), Bass, Treble, Master. Page 2 (synthetic, plus Output -- a plug-in
+    Controls, page 1: Input (the channel's Normal / Bright jack), Volume, Ultra-Lo, Ultra-Hi (the faceplate
+    rockers), Bass, Treble, Master (synthetic: a linear level into V3). Page 2 (synthetic, plus Output -- a plug-in
     level control): Power Drive (a level between the preamp and the phase splitter), Bias (the output
     grids' bias tap, hot/cold), Tube Feel (how much the supply sags and how little negative feedback
     there is: 0 = stiff, 1 = the real amp) and Speaker (4 / 8 / 16 ohm).
@@ -51,13 +50,13 @@ public:
         on centrally; the unit tests reset it to false so they keep probing the reference model. */
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 25.0;      // closed-loop gain of the driver + push-pull + OT + NFB
-    static constexpr double bmYmax = 0.208;
-    static constexpr double bmLevelTrim = 0.50;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)      // fraction of the sag rail reachable at the speaker
+    static constexpr double bmYmax = 0.095;
+    static constexpr double bmLevelTrim = 0.90;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
     static constexpr double bmAsym = 0.09;       // push-pull clip asymmetry
     static constexpr double bmGridClampV = 24.0; // driver input where the paraphase stage saturates
     static constexpr double bmDcHz = 8.0;        // OT low-frequency saturation rolloff
     static constexpr double bmShelfHz = 70.0;    // speaker-magnetics low-shelf pole
-    static constexpr double bmShelfHfGain = 0.24;
+    static constexpr double bmShelfHfGain = 0.6;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -68,8 +67,10 @@ public:
     {
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
     }
-    /** Supply rails at the last update: plates+screens, preamp+driver. */
+    /** Supply rails at the last update: plates (OT centre tap), screens, V3 driver, V1 / V2 preamp. */
     double railPlates() const noexcept { return channels[0].supply.voltage (channels[0].sA); }
+    double railScreens() const noexcept { return channels[0].supply.voltage (channels[0].sS); }
+    double railDriver() const noexcept { return channels[0].supply.voltage (channels[0].sD); }
     double railPreamp() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
     /** Development/test hook: replaces the negative-feedback resistor (a huge value opens the loop). */
     void debugSetFeedbackResistance (double ohms);
@@ -94,8 +95,8 @@ private:
         // preamp
         int pSrcVcc = 0, pSrcIn = 0;
         int rBassTop = 0, rBassBot = 0, rTrebleTop = 0, rTrebleBot = 0;
-        int rVolumeTop = 0, rVolumeBot = 0, rMasterTop = 0, rMasterBot = 0;
-        int rUltraLoA = 0, capUltraHi = 0;
+        int rVolumeTop = 0, rVolumeBot = 0;
+        int rUltraLo = 0, capUltraHi = 0, rInSeries = 0, capBright = 0, rInShunt = 0;
         NodalCircuit::Node pPlate1 = 0, pTone = 0, pPlate2 = 0, pOut = 0;
 
         // power section
@@ -104,12 +105,11 @@ private:
         int rSpkRe = 0, rSpkRp = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wDrvPlate = 0, wInvPlate = 0, wPowerGridA = 0, wPP1 = 0, wPP2 = 0, wOut = 0;
-        double screenDropA = 0.0, screenDropB = 0.0;
         double vScreen = 380.0;
 
         // supply
-        int iA = 0, iB = 0, srcVoc = 0, rRect = 0;
-        NodalCircuit::Node sA = 0, sB = 0;
+        int iA = 0, iS = 0, srcVoc = 0, rRect = 0;
+        NodalCircuit::Node sA = 0, sS = 0, sD = 0, sB = 0; // plates, screens, V3 rail, V1/V2 rail
         double sumPlate = 0.0, sumScreen = 0.0;
         NodalCircuit::Node wTone = 0;
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
