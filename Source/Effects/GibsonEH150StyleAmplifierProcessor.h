@@ -15,15 +15,13 @@ namespace openguitarmultifx
     modelled at component level on NodalCircuit -- docs/circuits/GibsonEH150.md, read that file to understand this
     processor.
 
-    Three parts, the same structure as the Trainwreck Express-style amplifier:
-      1. the instrument-channel preamp -- a 6SQ7 high-mu triode (the octal predecessor of the 6SL7/12AX7 family),
-         the 1M Volume pot, then the 6SQ7 "common" second stage, with the unit's single Tone control (a treble-cut
-         network, era-typical) on its plate;
-      2. the 6N7 twin-triode paraphase phase inverter (the part Gibson fitted when they retired the interstage
-         transformer) driving two CATHODE-BIASED 6L6s in push-pull through the ~5k output transformer -- and NO global
-         negative feedback;
-      3. the 5U4G-rectified supply (sagging, ~360 / 330 / 300 / 250 V nodes; see the doc for what is measured vs
-         estimated).
+    Three parts, built from Gibson's factory "EH-150 LATER" drawing:
+      1. the instrument-channel preamp -- 100k into the 500k Volume, the wiper straight onto ONE 6SQ7 high-mu triode
+         (paralleled with the idling mic-channel 6SQ7 on a shared 100k plate / 1k + 20 uF cathode), then the Tone
+         control: a 1 MEG rheostat in series with the .1 coupling cap, bypassed by .00075, into the 100k grid leak;
+      2. the 6N7 twin-triode paraphase phase inverter (shared unbypassed 1k cathode, 12,500 tap off the upper 6L6's
+         grid leak) driving two CATHODE-BIASED 6L6s (shared unbypassed 200 ohm) in push-pull -- NO global feedback;
+      3. the 5U4 supply with the speaker field coil (750 ohm) as the choke, plates and screens on one node.
 
     Controls, page 1: Volume, Tone (the real amp's instrument-channel controls). Page 2 (synthetic): Power Drive (a
     master ahead of the phase inverter), Bias (the shared output-tube cathode resistor), Tube Feel (supply sag),
@@ -57,12 +55,12 @@ public:
 
     // drive -> speaker small-signal gain at the nominal rail, output knee height as a fraction of the sagged
     // rail, knee sharpness, and the fitted first-order shelf standing in for the transformer + speaker response
-    // (EH150_POWERCAL in the test file).
-    static constexpr double bmGain0 = 5.9692;
-    static constexpr double bmYmax = 0.04142;
-    static constexpr double bmKneeN = 4.0;
-    static constexpr double bmShelfHz = 95.0;
-    static constexpr double bmShelfHfGain = 1.0;
+    // (grid-fitted with AMP_ONLY=eh150 AmpFullVsReducedConsistency).
+    static constexpr double bmGain0 = 40.0;
+    static constexpr double bmYmax = 0.0554;
+    static constexpr double bmKneeN = 2.0;
+    static constexpr double bmShelfHz = 300.0;
+    static constexpr double bmShelfHfGain = 0.6;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -74,8 +72,11 @@ public:
     {
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
     }
-    double railPlates() const noexcept { return channels[0].supply.voltage (channels[0].sA); }
-    double railScreens() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
+    /** The node after the field coil: output-transformer centre tap AND 6L6 screens (one node on the drawing). */
+    double railPlates() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
+    double railScreens() const noexcept { return railPlates(); }
+    /** The 5U4's reservoir, ahead of the field coil. */
+    double railReservoir() const noexcept { return channels[0].supply.voltage (channels[0].sA); }
     long long debugPreFailures() const noexcept { return failuresPre; }
     long long debugPowerFailures() const noexcept { return failuresPower; }
     int debugRecoveries() const noexcept { return recoveries; }

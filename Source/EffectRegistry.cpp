@@ -590,7 +590,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // cathode-biased, no global feedback, 5U4G sag. Full netlist, behavioural power stage in reducedOrder.
     GibsonEH150StyleAmplifierProcessor::reducedOrder = true; // behavioural power stage, same as the other heavy amps
     registry.markQualityDependent ("GibsonEH150StyleAmplifier");
-    registry.registerType ("GibsonEH150StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<GibsonEH150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -17.03f); }, "Clean");
+    registry.registerType ("GibsonEH150StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<GibsonEH150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -10.58f); }, "Clean");
     // Garnet Herzog (docs/circuits/GarnetHerzog.md): two 12AX7 stages -> single-ended 6V6 -> ~6R dummy load ->
     // instrument-level tap. Full netlist, behavioural power stage in reducedOrder.
     GarnetHerzogStyleAmplifierProcessor::reducedOrder = true;
