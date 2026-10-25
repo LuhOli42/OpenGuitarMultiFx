@@ -13,7 +13,7 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 | Gibson EH-150 | el34world `Gibson/Gibson_eh150.pdf`, `Gibson_eh_150_later.pdf`, `Gibson_eh_150_older.pdf` | factory-style, verified | three revisions; the model's doc says none could be obtained |
 | Ampeg B-15 | el34world `Ampeg/Ampeg_B-15N.pdf`, `Ampeg_B-15NF.pdf` (+ B-15NC, B-15S, B-15T, B-15R) | factory, verified | model rebuilt to rev C (591722 C); only the OT and 5AR4 resistance are estimates |
 | Ampeg V-4 / V-4B | el34world `Ampeg/Ampegv4_v22.service_manual.pdf` (4 pages), `Ampegvt22_v4_reva.pdf` | factory, verified | |
-| Mesa Bass 400 | el34world `Mesa_Boogie/Boogie_bass400.pdf` (2 pages) | factory, verified | check whether it is the 400 or the 400+ |
+| Mesa Bass 400 | el34world `Mesa_Boogie/Boogie_bass400.pdf` (2 pages) | factory, verified | it is the original 1983 Bass 400; the model uses it for the 400+ (same architecture per the Plus manual, which adds a 7th EQ band) |
 | Trace Elliot GP12 | el34world `Trace_elliot/Trace_Elliot_GP12_serie6-preamp.pdf` (11 pages), `Trace_Elliot_GP12_250Watt.pdf` | factory, verified | the model's pre-shape curve is marked estimated |
 | Dumble (ODS family) | el34world `Dumble/*.pdf` (full schematic, pre / power / mods) | community traces | not the Steel String Singer |
 

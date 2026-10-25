@@ -653,7 +653,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("AmpegV4BStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.87f); }, "Bass");
     MesaBass400PlusStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MesaBass400PlusStyleAmplifier");
-    registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.61f); }, "Bass");
+    registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 12.10f); }, "Bass");
     Acoustic360StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Acoustic360StyleAmplifier");
     registry.registerType ("Acoustic360StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Acoustic360StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -6.38f); }, "Bass");
