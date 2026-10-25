@@ -4,6 +4,8 @@
 #include "IconKit.h"
 #include "TubeAmpCommon.h"
 
+#include <cstdlib>
+
 #include <IconData.h>
 
 namespace openguitarmultifx
@@ -14,17 +16,20 @@ namespace
     using namespace tubeamp;
 
     // ---- supply (docs/circuits/MesaBass400Plus.md, "What the Bass 400+ actually is") ----
-    constexpr double railPlatesNominal = 500.0;   // OT centre tap for the twelve 6L6GCs
-    constexpr double railScreensNominal = 400.0;  // screens and the driver stage
-    constexpr double railPreampNominal = 300.0;   // preamp and the phase splitter's plates
-    constexpr double rectifierResistance = 80.0;  // solid-state rectified into a large PT
-    constexpr double rectifierResistance2 = 150.0; // the 400 V rail's own series resistance
-    constexpr double screenResistor = 150.0;      // shared screen stopper per sextet
-    constexpr double idlePlateCurrent = 0.42;     // twelve 6L6GCs at ~35 mA
+    // Supply, from Mesa/Boogie's 1983 Bass 400 drawing (docs/circuits/MesaBass400Plus.md): A 540 V (plates; screens
+    // through 2700 each), filter choke to B 535 V (the V4 buffer), 10k 2 W to C 370 V (preamp + V3 driver).
+    constexpr double railPlatesNominal = 540.0;
+    constexpr double railBufferNominal = 535.0;
+    constexpr double railPreampNominal = 370.0;
+    constexpr double rectifierResistance = 60.0;  // bridge + PT (estimated -- not on the drawing)
+    constexpr double chokeResistance = 50.0;      // filter choke DCR (estimated)
+    constexpr double screenResistor = 2700.0 / 6.0; // 2700 5 W per tube, six per composite bank
+    constexpr double idlePlateCurrent = 0.42;     // twelve 6L6s (initial guess; prepare() measures)
     constexpr double idleScreenCurrent = 0.030;
-    constexpr double idleDriverCurrent = 0.010;
-    constexpr double idlePreampCurrent = 0.003;   // the marked ~300 V preamp rail is the LOADED rail
-    constexpr double railDriverReturn = -180.0;   // negative winding the level-shifters return to
+    constexpr double idleBufferCurrent = 0.0043;  // V4 pair: the marked 2 V across 470
+    constexpr double idlePreampCurrent = 0.0165;  // everything on C: the marked 535 -> 370 V across the 10k
+    constexpr double tailSupplyVolts = -68.0;     // F
+    constexpr double biasSupplyVolts = -63.0;     // D
 
     // ---- tubes ----
     KorenTriode::Parameters triode12AX7()
@@ -56,19 +61,22 @@ namespace
 
     constexpr double cgp = 1.7e-12;
 
-    // Output transformer: ~1.2k plate-to-plate for twelve 6L6GCs at ~500 V, 4 ohm secondary.
+    // Output transformer: ~1.2k plate-to-plate for twelve 6L6s, modelled at the 4 ohm tap (not on the drawing:
+    // estimated).
     constexpr double primaryHalfInductance = 15.0;
     constexpr double halfToSecondaryTurns = 8.66;         // sqrt(300/4): one half-primary is 300 ohm
     constexpr double couplingHalves = 0.9996;
     constexpr double couplingSecondary = 0.9990;
     constexpr double primaryHalfResistance = 20.0;
     constexpr double secondaryResistance = 0.05;
-    constexpr double feedbackResistor = 100.0e3;
 
-    // Graphic EQ bands (Hz) and the series inductor of each L-C trap; C computed per band in build.
+    // Graphic EQ: the Bass 400 PLUS's seven bands (its manual). The Bass 400 drawing has six, each 470 (680 on the top
+    // band) + L + C on a 50k slider: 1 H / 22 u, 1 H / 2.2 u, .35 H / 1 u, .22 H / .22 u, .068 H / .15 u, .033 H / .047 u.
+    // The Plus keeps those parts' pattern: L from the drawing's family, C for the panel frequency (estimated).
     constexpr int eqBands = 7;
     constexpr double eqFreq[eqBands] = { 40.0, 80.0, 160.0, 320.0, 750.0, 2200.0, 6600.0 };
-    constexpr double eqInductance[eqBands] = { 1.0, 1.0, 0.5, 0.2, 0.05, 0.01, 0.001 };
+    constexpr double eqInductance[eqBands] = { 1.0, 1.0, 0.35, 0.22, 0.068, 0.033, 0.033 };
+    constexpr double eqSeriesR[eqBands] = { 470.0, 470.0, 470.0, 470.0, 470.0, 680.0, 680.0 };
 
     constexpr double speakerNominal[3] = { 2.0, 4.0, 8.0 };
 
@@ -100,6 +108,14 @@ MesaBass400PlusStyleAmplifierProcessor::MesaBass400PlusStyleAmplifierProcessor()
         "mesa400p_treble", "Treble", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
     auto master = std::make_unique<juce::AudioParameterFloat> (
         "mesa400p_master", "Master", juce::NormalisableRange<float> (0.0f, 1.0f), 0.7f);
+    const auto onOff = juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+    {
+        return juce::String (juce::roundToInt (v) == 0 ? "Off" : "On");
+    });
+    auto trebleShift = std::make_unique<juce::AudioParameterFloat> (
+        "mesa400p_treble_shift", "Treble Shift", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f, onOff);
+    auto bassShift = std::make_unique<juce::AudioParameterFloat> (
+        "mesa400p_bass_shift", "Bass Shift", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f, onOff);
 
     volumeParam = volume.get();
     brightParam = bright.get();
@@ -107,6 +123,8 @@ MesaBass400PlusStyleAmplifierProcessor::MesaBass400PlusStyleAmplifierProcessor()
     middleParam = middle.get();
     trebleParam = treble.get();
     masterParam = master.get();
+    trebleShiftParam = trebleShift.get();
+    bassShiftParam = bassShift.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "mesa400p", "Bass 400+", "|", std::move (volume));
@@ -115,6 +133,8 @@ MesaBass400PlusStyleAmplifierProcessor::MesaBass400PlusStyleAmplifierProcessor()
     group->addChild (std::move (middle));
     group->addChild (std::move (treble));
     group->addChild (std::move (master));
+    group->addChild (std::move (trebleShift));
+    group->addChild (std::move (bassShift));
 
     const char* eqNames[eqBands] = { "40 Hz", "80 Hz", "160 Hz", "320 Hz", "750 Hz", "2.2 kHz", "6.6 kHz" };
     // The 7-band graphic EQ is a front-panel control on the real Bass 400+ -> page 1, not page 2.
@@ -164,41 +184,37 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
 {
     const auto gnd = NodalCircuit::ground;
 
-    // ================================================================ supply
+    // ================================================================ supply (page 2 of the drawing)
+    // Bridge -> A 540 V (plates through the OT, screens through 2700 each) -> filter choke -> B 535 V (the V4 buffer;
+    // 2 x 40 uF in series with 150k / 150k balancing) -> 10k 2 W -> C 370 V (30 uF: the preamp and the V3 driver).
     {
         auto& c = ch.supply;
         c.setIntegrationTheta (0.5);
         const auto vo = c.addNode();
         ch.sA = c.addNode();
-        const auto vo2 = c.addNode();
         ch.sB = c.addNode();
         ch.sC = c.addNode();
 
-        const double dcDrop = rectifierResistance * (idlePlateCurrent + idleScreenCurrent);
-        ch.srcVoc = c.addSource (vo, railPlatesNominal + dcDrop);
+        const double total = idlePlateCurrent + idleScreenCurrent + idleBufferCurrent + idlePreampCurrent;
+        ch.srcVoc = c.addSource (vo, railPlatesNominal + rectifierResistance * total);
         ch.rRect = c.addResistor (vo, ch.sA, rectifierResistance);
-        c.addCapacitor (ch.sA, gnd, 180.0e-6);
-
-        const double dcDrop2 = rectifierResistance2 * (idleScreenCurrent + idleDriverCurrent + idlePreampCurrent);
-        ch.srcVoc2 = c.addSource (vo2, railScreensNominal + dcDrop2);
-        ch.rRect2 = c.addResistor (vo2, ch.sB, rectifierResistance2);
-        c.addCapacitor (ch.sB, gnd, 100.0e-6);
-
-        c.addResistor (ch.sB, ch.sC, 33.0e3);            // dropper: ~100 V at the ~3 mA preamp draw
+        c.addCapacitor (ch.sA, gnd, 200.0e-6);
+        c.addResistor (ch.sA, ch.sB, chokeResistance);
+        c.addCapacitor (ch.sB, gnd, 20.0e-6);
+        c.addResistor (ch.sB, gnd, 300.0e3);
+        c.addResistor (ch.sB, ch.sC, 10.0e3);
         c.addCapacitor (ch.sC, gnd, 30.0e-6);
 
-        ch.iA = c.addCurrentSource (ch.sA, -idlePlateCurrent);
-        ch.iB = c.addCurrentSource (ch.sB, -(idleScreenCurrent + idleDriverCurrent));
+        ch.iA = c.addCurrentSource (ch.sA, -(idlePlateCurrent + idleScreenCurrent));
+        ch.iB = c.addCurrentSource (ch.sB, -idleBufferCurrent);
         ch.iC = c.addCurrentSource (ch.sC, -idlePreampCurrent);
-        c.setInitialGuess (vo, railPlatesNominal + dcDrop);
+        c.setInitialGuess (vo, railPlatesNominal + rectifierResistance * total);
         c.setInitialGuess (ch.sA, railPlatesNominal);
-        c.setInitialGuess (vo2, railScreensNominal + dcDrop2);
-        c.setInitialGuess (ch.sB, railScreensNominal);
+        c.setInitialGuess (ch.sB, railBufferNominal);
         c.setInitialGuess (ch.sC, railPreampNominal);
     }
 
-    // ================================================================ preamp
-    // Two 12AX7 stages around the Volume pot (pull-Bright), the passive tone section, recovery, Master.
+    // ================================================================ preamp (channel 1)
     {
         auto& c = ch.pre;
         c.setIntegrationTheta (0.5);
@@ -206,128 +222,115 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pSrcVcc = c.addSource (vcc, railPreampNominal);
         ch.pSrcIn = c.addSource (in, 0.0);
 
-        // V1a -- first gain stage.
-        const auto g1 = c.addNode(), p1 = c.addNode(), k1 = c.addNode();
-        c.addResistor (in, g1, 68.0e3);
+        // Input 1 -> .047 -> V1A (1M leak, 100k plate, 1500 || 15 uF).
+        const auto ni = c.addNode(), g1 = c.addNode(), p1 = c.addNode(), k1 = c.addNode();
+        c.addResistor (in, ni, 1.0e3);
+        c.addCapacitor (ni, g1, 0.047e-6);
         c.addResistor (g1, gnd, 1.0e6);
         c.addTriode (p1, g1, k1, triode12AX7());
         c.addCapacitor (g1, p1, cgp);
         c.addResistor (vcc, p1, 100.0e3);
-        c.addResistor (k1, gnd, 1.5e3);
-        c.addCapacitor (k1, gnd, 22.0e-6);
-        c.setInitialGuess (g1, 0.0);
-        c.setInitialGuess (k1, 1.4);
-        c.setInitialGuess (p1, 200.0);
+        c.addResistor (k1, gnd, 1500.0);
+        c.addCapacitor (k1, gnd, 15.0e-6);
+        c.setInitialGuess (p1, 247.0);
+        c.setInitialGuess (k1, 1.84);
 
-        // Volume pot (1M audio) with the pull-Bright cap across its top leg.
-        const auto na = c.addNode(), vt = c.addNode(), vw = c.addNode();
-        c.addCapacitor (p1, na, 0.047e-6);
-        c.addResistor (na, gnd, 470.0e3);
-        c.addResistor (na, vt, 100.0e3);
-        ch.rVolumeTop = c.addResistor (vt, vw, 500.0e3);
-        ch.rVolumeBot = c.addResistor (vw, gnd, 500.0e3);
-        ch.capBright = c.addCapacitor (vt, vw, 1.0e-12); // Bright on: ~470 pF treble bleed
-        c.setInitialGuess (na, 0.0);
+        // .047 -> Volume 1 (1M) with the pull Bright's 120 pF from top to wiper. The wiper meets channel 2's through
+        // 1.5M (channel 2: 470k) on V2A's grid, which has 470k to ground; channel 2's Volume down adds its 470k.
+        const auto v = c.addNode(), w = c.addNode(), m = c.addNode();
+        c.addCapacitor (p1, v, 0.047e-6);
+        ch.rVolumeTop = c.addResistor (v, w, 500.0e3);
+        ch.rVolumeBot = c.addResistor (w, gnd, 500.0e3);
+        ch.capBright = c.addCapacitor (v, w, 1.0e-12);
+        c.addResistor (w, m, 1.5e6);
+        c.addResistor (m, gnd, 470.0e3);
+        c.addResistor (m, gnd, 470.0e3);
+        c.setInitialGuess (v, 0.0);
 
-        // V1b -- second gain stage.
-        const auto g2 = c.addNode(), p2 = c.addNode(), k2 = c.addNode();
-        c.addCapacitor (vw, g2, 0.047e-6);
-        c.addResistor (g2, gnd, 1.0e6);
-        c.addTriode (p2, g2, k2, triode12AX7());
-        c.addCapacitor (g2, p2, cgp);
+        // V2A: 100k plate, 1000 cathode with .15 uF (treble bypass) and 15 uF + 33k; Bass Shift grounds the 33k end.
+        const auto p2 = c.addNode(), k2 = c.addNode(), ns = c.addNode();
+        c.addTriode (p2, m, k2, triode12AX7());
+        c.addCapacitor (m, p2, cgp);
         c.addResistor (vcc, p2, 100.0e3);
-        c.addResistor (k2, gnd, 1.5e3);
-        c.addCapacitor (k2, gnd, 22.0e-6);
-        c.setInitialGuess (k2, 1.4);
-        c.setInitialGuess (p2, 200.0);
-        ch.pPlate2 = p2;
+        c.addResistor (k2, gnd, 1000.0);
+        c.addCapacitor (k2, gnd, 0.15e-6);
+        c.addCapacitor (k2, ns, 15.0e-6);
+        c.addResistor (ns, gnd, 33.0e3);
+        ch.rBassShift = c.addResistor (ns, gnd, 1.0e12);
+        c.setInitialGuess (p2, 224.0);
+        c.setInitialGuess (k2, 1.5);
+        c.setInitialGuess (ns, 0.0);
 
-        // Passive bass/middle/treble section (Ampeg-family network, Mesa-voiced values).
-        const auto ti = c.addNode(), t1 = c.addNode(), w1 = c.addNode(), nb = c.addNode(),
-                   ns = c.addNode(), t2 = c.addNode(), wt = c.addNode(), tb = c.addNode();
-        c.addCapacitor (p2, ti, 0.047e-6);
-        c.addResistor (ti, t1, 220.0e3);
-        ch.rBassTop = c.addResistor (t1, w1, 500.0e3);   // Bass 1M audio
-        ch.rBassBot = c.addResistor (w1, nb, 500.0e3);
-        c.addResistor (nb, gnd, 22.0e3);
-        c.addCapacitor (w1, ns, 0.001e-6);
-        c.addResistor (ns, t2, 100.0e3);
-        c.addCapacitor (ti, t2, 470.0e-12);              // treble feed
-        ch.rTrebleTop = c.addResistor (t2, wt, 500.0e3); // Treble 1M audio
-        ch.rTrebleBot = c.addResistor (wt, tb, 500.0e3);
-        c.addCapacitor (tb, gnd, 0.0047e-6);
-        ch.pTone = wt;
-        c.setInitialGuess (ti, 0.0);
+        // Tone stack straight off V2A's plate: 250 pF (+750 pF Treble Shift) into the Treble pot; 100k slope to a node
+        // that feeds .047 to the Treble pot's bottom / Bass top and .1 to the Bass bottom / Mid top; Bass 250k and Mid
+        // 10k are rheostats. Treble wiper -> .047 -> V2B.
+        const auto tt = c.addNode(), tw = c.addNode(), u = c.addNode(), sb = c.addNode(), vm = c.addNode();
+        c.addCapacitor (p2, tt, 250.0e-12);
+        ch.capTrebleShift = c.addCapacitor (p2, tt, 1.0e-12);
+        ch.rTrebleTop = c.addResistor (tt, tw, 125.0e3);
+        ch.rTrebleBot = c.addResistor (tw, u, 125.0e3);
+        c.addResistor (p2, sb, 100.0e3);
+        c.addCapacitor (sb, u, 0.047e-6);
+        c.addCapacitor (sb, vm, 0.1e-6);
+        ch.rBassTop = c.addResistor (u, vm, 125.0e3);
+        ch.rMid = c.addResistor (vm, gnd, 5.0e3);
+        ch.pTone = tw;
+        c.setInitialGuess (tt, 224.0);
+        c.setInitialGuess (sb, 224.0);
 
-        // V2a -- recovery stage; its plate carries the Middle pot's fixed mid trap
-        // (~400 Hz, the 400+'s Middle control's effective band).
-        const auto g3 = c.addNode(), p3 = c.addNode(), k3 = c.addNode(), mt = c.addNode(),
-                   mtp = c.addNode(), mc = c.addNode();
-        c.addCapacitor (wt, g3, 0.047e-6);
-        c.addResistor (g3, gnd, 470.0e3);
-        c.addTriode (p3, g3, k3, triode12AX7());
-        c.addCapacitor (g3, p3, cgp);
-        c.addResistor (vcc, p3, 100.0e3);
-        c.addResistor (k3, gnd, 1.5e3);
-        c.addCapacitor (k3, gnd, 22.0e-6);
-        c.addCapacitor (p3, mt, 0.047e-6);
-        c.addResistor (mt, gnd, 470.0e3);
-        ch.rMid = c.addResistor (mt, mtp, 25.0e3);       // Middle: rheostat on the trap
-        c.addCapacitor (mtp, mc, 0.22e-6);
-        c.addCoupledInductors ({ { mc, gnd } }, { 0.3 }); // ~0.62 kHz trap (see the doc)
-        c.setInitialGuess (k3, 1.4);
-        c.setInitialGuess (p3, 200.0);
-        c.setInitialGuess (mt, 0.0);
-        ch.pPlate3 = p3;
-
-        // Master pot -> out node.
-        const auto mtop = c.addNode(), mw = c.addNode(), po = c.addNode();
-        c.addResistor (mt, mtop, 470.0);
-        ch.rMasterTop = c.addResistor (mtop, mw, 25.0e3); // Master 50k linear
-        ch.rMasterBot = c.addResistor (mw, gnd, 25.0e3);
-        c.addCapacitor (mw, po, 0.047e-6);
-        c.addResistor (po, gnd, 1.0e6);
-        c.setInitialGuess (mw, 0.0);
-        ch.pOut = po;
+        // V2B cathode follower (plate on C, 33k cathode; grid 3.3M from C and ~2.8M to ground for the marked 170 V)
+        // -> .1 -> the 15k send node.
+        const auto g4 = c.addNode(), k4 = c.addNode();
+        c.addCapacitor (tw, g4, 0.047e-6);
+        c.addResistor (g4, vcc, 3.3e6);
+        c.addResistor (g4, gnd, 2.8e6);
+        c.addTriode (vcc, g4, k4, triode12AX7());
+        c.addResistor (k4, gnd, 33.0e3);
+        c.setInitialGuess (g4, 170.0);
+        c.setInitialGuess (k4, 172.0);
+        ch.pOut = c.addNode();
+        c.addCapacitor (k4, ch.pOut, 0.1e-6);
+        c.addResistor (ch.pOut, gnd, 15.0e3);
+        c.setInitialGuess (ch.pOut, 0.0);
         ch.pPlate1 = p1;
+        ch.pPlate2 = p2;
+        ch.pPlate3 = k4;
     }
 
-    // ================================================================ graphic EQ (linear block):
-    // a finite-gain inverting stage; each slider's pot straddles the input/output buses with a
-    // series L-C trap on its wiper -- the amp's own feedback-EQ topology.
+    // ================================================================ graphic EQ (linear block)
+    // The discrete op-amp of the drawing (Q1 follower, Q2 / Q3 pair, Q4 output) as a high-gain block: 3300 from the
+    // input into its + input, 3300 (|| 10 pF) from the output back to its - input; every 50k slider spans + and -, its
+    // wiper carrying series R + L + C to AC ground. Wiper at the + end shunts the input (cut), at the - end the
+    // feedback (boost).
     {
         auto& c = ch.eq;
         c.setIntegrationTheta (0.5);
-        const auto cin = c.addNode(), ei = c.addNode(), sn = c.addNode();
+        const auto cin = c.addNode(), pp = c.addNode(), nn = c.addNode();
         ch.qOut = c.addNode();
         ch.qSrcIn = c.addSource (cin, 0.0);
-        c.addCapacitor (cin, ei, 0.47e-6);
-        c.addResistor (ei, gnd, 1.0e6);
-        c.addResistor (ei, sn, 68.0e3);                  // input leg
-        c.addResistor (ch.qOut, sn, 68.0e3);             // feedback leg -> unity gain
-        c.addFiniteGainOpAmp (gnd, sn, ch.qOut, -1.0e5); // virtual-earth summing node
+        c.addResistor (cin, pp, 3300.0);
+        c.addResistor (ch.qOut, nn, 3300.0);
+        c.addCapacitor (ch.qOut, nn, 10.0e-12);
+        c.addFiniteGainOpAmp (pp, nn, ch.qOut, 1.0e4);
         for (int i = 0; i < eqBands; ++i)
         {
-            const auto w = c.addNode(), x = c.addNode();
-            ch.rEqTop[i] = c.addResistor (ei, w, 25.0e3);
-            ch.rEqBot[i] = c.addResistor (w, ch.qOut, 25.0e3);
-            c.addCoupledInductors ({ { w, x } }, { eqInductance[i] });
+            const auto w = c.addNode(), r = c.addNode(), x = c.addNode();
+            ch.rEqTop[i] = c.addResistor (pp, w, 25.0e3);
+            ch.rEqBot[i] = c.addResistor (w, nn, 25.0e3);
+            c.addResistor (w, r, eqSeriesR[i]);
+            c.addCoupledInductors ({ { r, x } }, { eqInductance[i] });
             const double cap = 1.0 / (39.478 * eqFreq[i] * eqFreq[i] * eqInductance[i]);
-            // The trap terminates at the summing node (virtual earth), not real ground: wiper at the
-            // input end puts the LC across the input leg (a second path into sn -> BOOST at
-            // resonance); wiper at the output end puts it across the feedback leg (Zf -> 0 -> CUT).
-            c.addCapacitor (x, sn, cap);
+            c.addCapacitor (x, gnd, cap);
         }
-        c.setInitialGuess (ei, 0.0);
     }
 
-    // ================================================================ power amp: 12AX7 LTP, 12AU7
-    // drivers with level-shifters (~-68 V taps), twelve 6L6GCs as two sextets, OT, speaker, NFB.
+    // ================================================================ power amp: V3 driver (12AX7 long-tailed pair),
+    // V4 buffer (12AX7 pair), twelve 6L6s as two sextets, output transformer, speaker. No global feedback on the drawing.
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
         const auto cin = c.addNode();
-        const auto vpi = c.addNode(), vdr = c.addNode(), ct = c.addNode(), neg = c.addNode();
+        const auto vc = c.addNode(), vb = c.addNode(), ct = c.addNode(), negF = c.addNode(), negD = c.addNode();
         ch.wSrcPre = c.addSource (cin, 0.0);
         ch.wTone = cin;
         c.addResistor (cin, gnd, 1.0e6);
@@ -336,79 +339,69 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         // behavioralPowerStage(), fitted to this same circuit (see the header + docs/circuits/MesaBass400Plus.md).
         if (! reducedOrder)
         {
-        ch.wSrcPi = c.addSource (vpi, railPreampNominal);
+        ch.wSrcPi = c.addSource (vc, railPreampNominal);
+        ch.wSrcVdr = c.addSource (vb, railBufferNominal);
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
-        ch.wSrcNeg = c.addSource (neg, railDriverReturn);
-        ch.wSrcVdr = c.addSource (vdr, railScreensNominal);
+        ch.wSrcTail = c.addSource (negF, tailSupplyVolts);
+        ch.wSrcNeg = c.addSource (negD, biasSupplyVolts);
 
-        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(),
-                   k = c.addNode(), bn = c.addNode();
-        const auto g7 = c.addNode();
-        c.addCapacitor (cin, g7, 0.1e-6);
-        c.addResistor (g7, g1, 1.0e3);
-        c.addResistor (g1, bn, 470.0e3);
-        c.addResistor (g2, bn, 470.0e3);
-        c.addTriode (pa, g1, k, triode12AX7());
-        c.addTriode (pb, g2, k, triode12AX7());
-        c.addCapacitor (g1, pa, cgp);
-        c.addCapacitor (g2, pb, cgp);
-        c.addResistor (vpi, pa, 100.0e3);
-        c.addResistor (vpi, pb, 68.0e3);
-        c.addResistor (k, bn, 220.0);
-        c.addResistor (bn, neg, 47.0e3);
-        c.setInitialGuess (pa, 200.0);
-        c.setInitialGuess (pb, 250.0);
-        c.setInitialGuess (k, -42.0);
-        c.setInitialGuess (bn, -43.0);
-        c.setInitialGuess (g1, -43.0);
-        c.setInitialGuess (g2, -43.0);
-        ch.wGridA = g1;
+        // Master 250k wiper (~60k source at the shipped setting) into V3A; 33k plates on C, 33k tail to F (-68 V).
+        // V3B's grid sits on the junction of two 62k from the two coupled plate outputs: the pair balances itself.
+        const auto ga = c.addNode(), gb = c.addNode(), pa = c.addNode(), pb = c.addNode(), kt = c.addNode(),
+                   a = c.addNode(), b = c.addNode();
+        c.addResistor (cin, ga, 60.0e3);
+        c.addTriode (pa, ga, kt, triode12AX7());
+        c.addTriode (pb, gb, kt, triode12AX7());
+        c.addCapacitor (ga, pa, cgp);
+        c.addCapacitor (gb, pb, cgp);
+        c.addResistor (vc, pa, 33.0e3);
+        c.addResistor (vc, pb, 33.0e3);
+        c.addResistor (kt, negF, 33.0e3);
+        c.addCapacitor (pa, a, 0.047e-6);
+        c.addCapacitor (pb, b, 0.047e-6);
+        c.addResistor (a, gb, 62.0e3);
+        c.addResistor (b, gb, 62.0e3);
+        c.setInitialGuess (pa, 335.0);
+        c.setInitialGuess (pb, 335.0);
+        c.setInitialGuess (kt, 1.5);
+        ch.wGridA = ga;
         ch.wPlateA = pa;
         ch.wPlateB = pb;
-        ch.wTail = bn;
+        ch.wTail = kt;
 
-        const auto gd1 = c.addNode(), gd2 = c.addNode(), pd1 = c.addNode(), pd2 = c.addNode(),
-                   kd1 = c.addNode(), kd2 = c.addNode(), m1 = c.addNode(), m2 = c.addNode(),
-                   nab = c.addNode(), nbb = c.addNode();
-        c.addCapacitor (pa, gd1, 0.047e-6);
-        c.addCapacitor (pb, gd2, 0.047e-6);
-        c.addResistor (gd1, gnd, 470.0e3);
-        c.addResistor (gd2, gnd, 470.0e3);
-        c.addTriode (pd1, gd1, kd1, triode12AU7());
-        c.addTriode (pd2, gd2, kd2, triode12AU7());
-        c.addCapacitor (gd1, pd1, 2.2e-12);
-        c.addCapacitor (gd2, pd2, 2.2e-12);
-        c.addResistor (vdr, pd1, 47.0e3);
-        c.addResistor (vdr, pd2, 47.0e3);
-        c.addResistor (kd1, gnd, 1.8e3);
-        c.addResistor (kd2, gnd, 1.8e3);
-        c.addCapacitor (kd1, kd2, 1.0e-6);
-        c.setInitialGuess (pd1, 220.0);
-        c.setInitialGuess (pd2, 220.0);
-        c.setInitialGuess (kd1, 5.5);
-        c.setInitialGuess (kd2, 5.5);
-        ch.wDrvPlateA = pd1;
+        // 470k / 220k into the V4 buffer pair: plates to B (120k -- unmarked; it is what the drawing's 276 V plates and
+        // 2 V cathodes need), shared 470 cathode.
+        const auto gv1 = c.addNode(), gv2 = c.addNode(), pv1 = c.addNode(), pv2 = c.addNode(), kv = c.addNode();
+        c.addResistor (a, gv1, 470.0e3);
+        c.addResistor (gv1, gnd, 220.0e3);
+        c.addResistor (b, gv2, 470.0e3);
+        c.addResistor (gv2, gnd, 220.0e3);
+        c.addTriode (pv1, gv1, kv, triode12AX7());
+        c.addTriode (pv2, gv2, kv, triode12AX7());
+        c.addCapacitor (gv1, pv1, cgp);
+        c.addCapacitor (gv2, pv2, cgp);
+        c.addResistor (vb, pv1, 120.0e3);
+        c.addResistor (vb, pv2, 120.0e3);
+        c.addResistor (kv, gnd, 470.0);
+        c.setInitialGuess (pv1, 276.0);
+        c.setInitialGuess (pv2, 276.0);
+        c.setInitialGuess (kv, 2.0);
+        ch.wDrvPlateA = pv1;
 
-        c.addResistor (pd1, m1, 300.0e3);
-        c.addResistor (m1, nab, 120.0e3);
-        ch.rBiasTapA = c.addResistor (nab, neg, 175.0e3); // tap lands ~-68 V at idle
-        c.addResistor (pd2, m2, 300.0e3);
-        c.addResistor (m2, nbb, 120.0e3);
-        ch.rBiasTapB = c.addResistor (nbb, neg, 175.0e3);
-        c.setInitialGuess (m1, 100.0);
-        c.setInitialGuess (m2, 100.0);
-        c.setInitialGuess (nab, -68.0);
-        c.setInitialGuess (nbb, -68.0);
-
-        const auto g3 = c.addNode(), g4 = c.addNode(), pp1 = c.addNode(), pp2 = c.addNode(),
-                   a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode();
-        c.addResistor (nab, g3, 47.0e3);
-        c.addResistor (nbb, g4, 47.0e3);
+        // .1 600 V couplings, 100k to D (-63 V), 2200 grid stoppers per tube (367 per composite sextet).
+        const auto na = c.addNode(), nb = c.addNode(), g3 = c.addNode(), g4 = c.addNode(), pp1 = c.addNode(),
+                   pp2 = c.addNode(), a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode();
+        c.addCapacitor (pv1, na, 0.1e-6);
+        c.addCapacitor (pv2, nb, 0.1e-6);
+        c.addResistor (na, negD, 100.0e3);
+        c.addResistor (nb, negD, 100.0e3);
+        c.addResistor (na, g3, 2200.0 / 6.0);
+        c.addResistor (nb, g4, 2200.0 / 6.0);
         c.addCapacitor (g3, gnd, 660.0e-12);             // six 6L6s' input capacitance per bank
         c.addCapacitor (g4, gnd, 660.0e-12);
         ch.wPowerGridA = g3;
-        ch.penA = c.addPentode (pp1, g3, gnd, pentode6L6Sextuple(), railScreensNominal);
-        ch.penB = c.addPentode (pp2, g4, gnd, pentode6L6Sextuple(), railScreensNominal);
+        ch.penA = c.addPentode (pp1, g3, gnd, pentode6L6Sextuple(), railPlatesNominal);
+        ch.penB = c.addPentode (pp2, g4, gnd, pentode6L6Sextuple(), railPlatesNominal);
 
         c.addCapacitor (pp1, pp2, 400.0e-12);
         c.addResistor (pp1, pp2, 60.0e3);
@@ -420,7 +413,6 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         const double ls = lh / (halfToSecondaryTurns * halfToSecondaryTurns);
         const double m12 = -couplingHalves * lh;
         const double mps = couplingSecondary * std::sqrt (lh * ls);
-        // Secondary sense chosen so feedback into the second PI grid is NEGATIVE.
         c.addCoupledInductors ({ { a1, pp1 }, { a2, pp2 }, { sw, gnd } },
                                { lh,  m12,  mps,
                                  m12, lh,  -mps,
@@ -439,18 +431,14 @@ void MesaBass400PlusStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb2, gnd, sm.cp);
         }
 
-        const auto fp = c.addNode();
-        ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        c.addCapacitor (fp, g2, 0.1e-6);
-        c.addCapacitor (fp, gnd, 1.5e-9);
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
         c.setInitialGuess (a1, railPlatesNominal);
         c.setInitialGuess (a2, railPlatesNominal);
-        c.setInitialGuess (g3, -68.0);
-        c.setInitialGuess (g4, -68.0);
-        c.setInitialGuess (nab, -68.0);
-        c.setInitialGuess (nbb, -68.0);
+        c.setInitialGuess (g3, biasSupplyVolts);
+        c.setInitialGuess (g4, biasSupplyVolts);
+        c.setInitialGuess (na, biasSupplyVolts);
+        c.setInitialGuess (nb, biasSupplyVolts);
         }
     }
 }
@@ -504,43 +492,36 @@ void MesaBass400PlusStyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
     const double volumeBot = juce::jmax (1.0, 1.0e6 * pots::audio (k.volume));
-    const double bassBot = juce::jmax (1.0, 1.0e6 * pots::audio (k.bass));
-    const double trebleBot = juce::jmax (1.0, 1.0e6 * pots::audio (k.treble));
-    const double midR = juce::jmax (1.0, 50.0e3 * k.middle);
-    const double masterBot = juce::jmax (1.0, 50.0e3 * k.master);
-    const double brightC = k.bright > 0.5 ? 470.0e-12 : 1.0e-12;
-    const double biasR = 210.0e3 + 80.0e3 * k.bias; // 210k (cold ~-59 V) .. 290k (hot ~-32 V), noon ~-45 V
+    // Treble 250k (unmarked; audio), Bass 250k and Mid 10k rheostats.
+    const double trebleBot = juce::jmax (1.0, 250.0e3 * pots::audio (k.treble));
+    const double bassR = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass));
+    const double midR = juce::jmax (1.0, 10.0e3 * k.middle);
+    const double brightC = k.bright > 0.5 ? 120.0e-12 : 1.0e-12;
+    // Bias: D, -70 (cold) .. -56 V (hot), noon at the drawing's -63.
+    const double biasV = -(70.0 - 14.0 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
-    const double rectifier2 = rectifierResistance2 * (0.05 + 0.95 * k.tubeFeel);
-    const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride
-                                                  : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
 
     for (auto& ch : channels)
     {
         ch.pre.setResistance (ch.rVolumeTop, juce::jmax (1.0, 1.0e6 - volumeBot));
         ch.pre.setResistance (ch.rVolumeBot, volumeBot);
         ch.pre.setCapacitance (ch.capBright, brightC);
-        ch.pre.setResistance (ch.rBassTop, juce::jmax (1.0, 1.0e6 - bassBot));
-        ch.pre.setResistance (ch.rBassBot, bassBot);
-        ch.pre.setResistance (ch.rTrebleTop, juce::jmax (1.0, 1.0e6 - trebleBot));
+        ch.pre.setResistance (ch.rTrebleTop, juce::jmax (1.0, 250.0e3 - trebleBot));
         ch.pre.setResistance (ch.rTrebleBot, trebleBot);
+        ch.pre.setResistance (ch.rBassTop, bassR);
         ch.pre.setResistance (ch.rMid, midR);
-        ch.pre.setResistance (ch.rMasterTop, juce::jmax (1.0, 50.0e3 - masterBot));
-        ch.pre.setResistance (ch.rMasterBot, masterBot);
+        ch.pre.setCapacitance (ch.capTrebleShift, k.trebleShift > 0.5 ? 750.0e-12 : 1.0e-12);
+        ch.pre.setResistance (ch.rBassShift, k.bassShift > 0.5 ? 1.0 : 1.0e12);
         for (int i = 0; i < eqBands; ++i)
         {
             const double slider = juce::jlimit (0.0, 1.0, k.eq[i]);
-            ch.eq.setResistance (ch.rEqTop[i], juce::jmax (1.0, 50.0e3 * (1.0 - slider)));
-            ch.eq.setResistance (ch.rEqBot[i], juce::jmax (1.0, 50.0e3 * slider));
+            // Slider up = boost: the wiper toward the - (feedback) end.
+            ch.eq.setResistance (ch.rEqTop[i], juce::jmax (1.0, 50.0e3 * slider));
+            ch.eq.setResistance (ch.rEqBot[i], juce::jmax (1.0, 50.0e3 * (1.0 - slider)));
         }
         if (! reducedOrder)
-        {
-            ch.power.setResistance (ch.rBiasTapA, biasR);
-            ch.power.setResistance (ch.rBiasTapB, biasR);
-            ch.power.setResistance (ch.rFeedback, feedbackR);
-        }
+            ch.power.setSource (ch.wSrcNeg, biasV);
         ch.supply.setResistance (ch.rRect, rectifier);
-        ch.supply.setResistance (ch.rRect2, rectifier2);
         ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifier * idleSupplyCurrent);
         if (! reducedOrder && ! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
@@ -561,24 +542,23 @@ void MesaBass400PlusStyleAmplifierProcessor::recover (Channel& ch) const
     ch.sumCount = 0;
     ch.failStreak = 0;
     ch.alignOutput = true;
-    ch.vScreen = ch.supply.voltage (ch.sB);
+    ch.vScreen = ch.supply.voltage (ch.sA);
 }
 
 void MesaBass400PlusStyleAmplifierProcessor::updateSupply (Channel& ch) const
 {
     const double n = (double) juce::jmax (1, ch.sumCount);
-    ch.supply.setCurrentSource (ch.iA, -juce::jlimit (0.0, 2.0, ch.sumPlate / n));
-    ch.supply.setCurrentSource (ch.iB, -juce::jlimit (0.0, 0.4, ch.sumScreen / n + idleDriverCurrent));
+    ch.supply.setCurrentSource (ch.iA, -juce::jlimit (0.0, 2.5, (ch.sumPlate + ch.sumScreen) / n));
     ch.supply.solveSample();
     ch.sumPlate = ch.sumScreen = 0.0;
     ch.sumCount = 0;
 
     const auto rail = [&] (NodalCircuit::Node node, double maxVolts) { return juce::jlimit (0.0, maxVolts, ch.supply.voltage (node)); };
     if (! reducedOrder) ch.power.setSource (ch.wSrcCt, rail (ch.sA, 700.0));
-    if (! reducedOrder) ch.power.setSource (ch.wSrcPi, rail (ch.sC, 420.0));
-    if (! reducedOrder) ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 500.0));
-    ch.pre.setSource (ch.pSrcVcc, rail (ch.sC, 420.0));
-    ch.vScreen = rail (ch.sB, 500.0);
+    if (! reducedOrder) ch.power.setSource (ch.wSrcPi, rail (ch.sC, 600.0));
+    if (! reducedOrder) ch.power.setSource (ch.wSrcVdr, rail (ch.sB, 700.0));
+    ch.pre.setSource (ch.pSrcVcc, rail (ch.sC, 600.0));
+    ch.vScreen = rail (ch.sA, 700.0);
 }
 
 double MesaBass400PlusStyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
@@ -624,9 +604,8 @@ void MesaBass400PlusStyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 
 void MesaBass400PlusStyleAmplifierProcessor::debugSetFeedbackResistance (double ohms)
 {
+    // The drawing has no global feedback loop: nothing to open.
     feedbackOverride = ohms;
-    for (auto& ch : channels)
-        ch.power.setResistance (ch.rFeedback, ohms);
 }
 
 double MesaBass400PlusStyleAmplifierProcessor::plateCurrentTotal() const noexcept
@@ -660,8 +639,8 @@ void MesaBass400PlusStyleAmplifierProcessor::prepare (double newSampleRate, int,
         ch = Channel {};
         buildChannel (ch);
         auto bmVoicing = voicings::bassAmp;
-        bmVoicing.cabLpHz = 5500.0;  // own netlist keeps more top than the shared bass-cab voicing
-        bmVoicing.cabAirHz = 8000.0;
+        bmVoicing.cabLpHz = 8000.0;  // fitted: the drawing's netlist keeps more top than the shared bass-cab voicing
+        bmVoicing.cabAirHz = 10000.0;
         bmVoicing.asym = 0.0; // even-order content already lives in the knee's dcShift law
         ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
@@ -686,7 +665,7 @@ void MesaBass400PlusStyleAmplifierProcessor::prepare (double newSampleRate, int,
     smoothedFeel.reset (newSampleRate, 0.05);
     smoothedFeel.setCurrentAndTargetValue (tubeFeelParam->get());
 
-    idleSupplyCurrent = idlePlateCurrent + idleScreenCurrent + idleDriverCurrent + idlePreampCurrent;
+    idleSupplyCurrent = idlePlateCurrent + idleScreenCurrent + idleBufferCurrent + idlePreampCurrent;
     appliedSpeaker = 1;
     Knobs k {};
     k.input = 1.0;
@@ -696,6 +675,8 @@ void MesaBass400PlusStyleAmplifierProcessor::prepare (double newSampleRate, int,
     k.middle = middleParam->get();
     k.treble = trebleParam->get();
     k.master = masterParam->get();
+    k.trebleShift = trebleShiftParam->get();
+    k.bassShift = bassShiftParam->get();
     for (int i = 0; i < eqBands; ++i)
         k.eq[i] = eqParam[i]->get();
     k.powerDrive = powerParam->get();
@@ -708,51 +689,42 @@ void MesaBass400PlusStyleAmplifierProcessor::prepare (double newSampleRate, int,
     for (auto& ch : channels)
     {
         const double supplyRate = newSampleRate / (double) supplyInterval;
-        dcOk = ch.supply.prepare (supplyRate) && dcOk;
-
-        ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sC));
-        dcOk = ch.pre.prepare (newSampleRate) && dcOk;
-        dcOk = ch.eq.prepare (newSampleRate) && dcOk;
-
-        if (! reducedOrder)
+        double ip = idlePlateCurrent, is = idleScreenCurrent;
+        for (int pass = 0; pass < 6; ++pass)
         {
-            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
-            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
-        }
-        ch.vScreen = ch.supply.voltage (ch.sB);
-        if (! reducedOrder)
-        {
-            ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.0);
-            ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.0);
-        }
-        dcOk = ch.power.prepare (newSampleRate) && dcOk;
-        ch.power.solveSample();
-
-        double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
-        if (! reducedOrder)
-        {
+            ch.supply.setCurrentSource (ch.iA, -(ip + is));
+            idleSupplyCurrent = ip + is + idleBufferCurrent + idlePreampCurrent;
+            ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifierResistance
+                                                * (0.05 + 0.95 * (double) tubeFeelParam->get()) * idleSupplyCurrent);
+            bool passOk = ch.supply.prepare (supplyRate);
+            ch.vScreen = ch.supply.voltage (ch.sA);
+            ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sC));
+            passOk = ch.pre.prepare (newSampleRate) && passOk;
+            passOk = ch.eq.prepare (newSampleRate) && passOk;
             if (! reducedOrder)
             {
+                ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+                ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
+                ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
+                ch.power.setPentodeScreen (ch.penA, ch.vScreen - screenResistor * 0.5 * is);
+                ch.power.setPentodeScreen (ch.penB, ch.vScreen - screenResistor * 0.5 * is);
+            }
+            passOk = ch.power.prepare (newSampleRate) && passOk;
+            ch.power.solveSample();
+            double isA = 0.5 * is, isB = 0.5 * is;
+            if (! reducedOrder)
+            {
+                double ipA = 0.0, ipB = 0.0;
                 ch.power.pentodeCurrents (ch.penA, ipA, isA);
                 ch.power.pentodeCurrents (ch.penB, ipB, isB);
+                ip = ipA + ipB;
+                is = isA + isB;
             }
+            ch.screenDropA = screenResistor * isA;
+            ch.screenDropB = screenResistor * isB;
+            if (pass == 5)
+                dcOk = passOk && dcOk;
         }
-        ch.supply.setCurrentSource (ch.iA, -(ipA + ipB));
-        ch.supply.setCurrentSource (ch.iB, -(isA + isB + idleDriverCurrent));
-        idleSupplyCurrent = ipA + ipB + isA + isB + idleDriverCurrent + idlePreampCurrent;
-        ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifierResistance * (0.05 + 0.95 * (double) tubeFeelParam->get()) * idleSupplyCurrent);
-        dcOk = ch.supply.prepare (supplyRate) && dcOk;
-        ch.screenDropA = screenResistor * isA;
-        ch.screenDropB = screenResistor * isB;
-        ch.vScreen = ch.supply.voltage (ch.sB);
-        if (! reducedOrder)
-        {
-            ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
-            ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
-            ch.power.setSource (ch.wSrcVdr, ch.supply.voltage (ch.sB));
-        }
-        ch.pre.setSource (ch.pSrcVcc, ch.supply.voltage (ch.sC));
         ch.pre.saveDynamicState (ch.preRest);
         ch.eq.saveDynamicState (ch.eqRest);
         ch.power.saveDynamicState (ch.powerRest);
@@ -811,6 +783,8 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
     const double brightOn = brightParam->get() > 0.5f ? 1.0 : 0.0;
+    const double trebleShiftOn = trebleShiftParam->get() > 0.5f ? 1.0 : 0.0;
+    const double bassShiftOn = bassShiftParam->get() > 0.5f ? 1.0 : 0.0;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -835,6 +809,8 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
             k.middle = mi;
             k.treble = tr;
             k.master = ma;
+            k.trebleShift = trebleShiftOn;
+            k.bassShift = bassShiftOn;
             for (int b = 0; b < eqBands; ++b)
                 k.eq[b] = eqParam[b]->get();
             k.powerDrive = pw;
@@ -844,7 +820,8 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
             updatePots (k);
         }
 
-        const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
+        // Master (250k, after the effects loop and the EQ, as the manual says) and Power Drive into V3.
+        const double masterGain = juce::jmax (0.002, pots::audio ((double) pw)) * pots::audio ((double) ma);
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
 
@@ -858,9 +835,9 @@ void MesaBass400PlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
-            ch.eq.setSource (ch.qSrcIn, masterGain * ch.pre.voltage (ch.pOut));
+            ch.eq.setSource (ch.qSrcIn, ch.pre.voltage (ch.pOut));
             ch.eq.solveSample(); // linear block: cannot diverge, always one pass
-            ch.power.setSource (ch.wSrcPre, ch.eq.voltage (ch.qOut));
+            ch.power.setSource (ch.wSrcPre, masterGain * ch.eq.voltage (ch.qOut));
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);

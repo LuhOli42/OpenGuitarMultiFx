@@ -48,19 +48,19 @@ private:
     {
         MesaBass400PlusStyleAmplifierProcessor::reducedOrder = false; // the unit suite always probes the full-order reference
 
-        beginTest ("DC operating points land near the schematic's expected voltages (+-40%)");
+        beginTest ("DC operating points land near the voltages marked on the Bass 400 drawing");
         {
             MesaBass400PlusStyleAmplifierProcessor amp;
             amp.prepare (48000.0, 128, 1);
             expect (amp.dcConverged());
             struct { P p; double target; double tol; const char* what; } pts[] = {
-                { P::firstPlate, 200.0, 0.4, "V1a plate" },
-                { P::secondPlate, 200.0, 0.4, "V1b plate" },
-                { P::recoveryPlate, 200.0, 0.4, "recovery plate" },
-                { P::phaseInverterPlateA, 200.0, 0.5, "PI plate A" },
-                { P::phaseInverterPlateB, 250.0, 0.5, "PI plate B" },
-                { P::driverPlateA, 220.0, 0.5, "driver plate" },
-                { P::powerGridA, -68.0, 0.35, "6L6 grid bias" },
+                { P::firstPlate, 247.0, 0.25, "V1A plate" },
+                { P::secondPlate, 224.0, 0.25, "V2A plate" },
+                { P::recoveryPlate, 172.0, 0.25, "V2B cathode" },
+                { P::phaseInverterPlateA, 350.0, 0.15, "V3A plate" },
+                { P::phaseInverterPlateB, 350.0, 0.15, "V3B plate" },
+                { P::driverPlateA, 276.0, 0.2, "V4A plate" },
+                { P::powerGridA, -62.0, 0.1, "6L6 grid bias" },
             };
             for (auto& pt : pts)
             {
@@ -68,9 +68,13 @@ private:
                 expect (std::abs (v - pt.target) < pt.tol * std::abs (pt.target),
                         juce::String (pt.what) + " " + juce::String (v) + " V, expected " + juce::String (pt.target));
             }
-            expect (std::abs (amp.railScreens() - 400.0) < 0.25 * 400.0, "screen rail " + juce::String (amp.railScreens()));
-            expect (std::abs (amp.railPreamp() - 300.0) < 0.25 * 300.0, "preamp rail " + juce::String (amp.railPreamp()));
-            expectGreaterThan (amp.plateCurrentTotal(), 0.2); // twelve 6L6GCs idle ~420 mA
+            logMessage ("rails: plates " + juce::String (amp.railPlates(), 1) + ", screens " + juce::String (amp.railScreens(), 1)
+                        + ", B " + juce::String (amp.railBuffer(), 1) + ", C " + juce::String (amp.railPreamp(), 1)
+                        + "; 6L6 Ip " + juce::String (amp.plateCurrentTotal() * 1000.0, 1) + " mA");
+            expect (std::abs (amp.railPlates() - 540.0) < 0.1 * 540.0, "plate rail");
+            expect (std::abs (amp.railScreens() - 526.0) < 0.1 * 526.0, "screen rail");
+            expect (std::abs (amp.railPreamp() - 370.0) < 0.1 * 370.0, "C rail");
+            expectGreaterThan (amp.plateCurrentTotal(), 0.1);
         }
 
         beginTest ("clean tone: sine in, sine out, no solve failures");
