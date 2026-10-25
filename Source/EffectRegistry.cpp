@@ -529,7 +529,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/DrZCarmenGhia.md.
     CarmenGhiaStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarmenGhiaStyleAmplifier");
-    registry.registerType ("CarmenGhiaStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.53f); }, "Crunch");
+    registry.registerType ("CarmenGhiaStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.46f); }, "Crunch");
     // docs/circuits/SoldanoAstroverb16.md.
     Astroverb16StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Astroverb16StyleAmplifier");
@@ -653,7 +653,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("AmpegV4BStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.87f); }, "Bass");
     MesaBass400PlusStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MesaBass400PlusStyleAmplifier");
-    registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.61f); }, "Bass");
+    registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 12.10f); }, "Bass");
     Acoustic360StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Acoustic360StyleAmplifier");
     registry.registerType ("Acoustic360StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Acoustic360StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -6.38f); }, "Bass");

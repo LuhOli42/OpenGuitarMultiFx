@@ -10,23 +10,22 @@ namespace openguitarmultifx
 {
 
 /**
-    A Mesa/Boogie Bass 400+-style bass amplifier, modelled at component level on NodalCircuit from the
-    amp's schematic (see docs/circuits/MesaBass400Plus.md -- read that file to understand this processor).
+    A Mesa/Boogie Bass 400+-style bass amplifier, modelled at component level on NodalCircuit from Mesa's 1983 Bass 400
+    factory drawing (the Plus is its evolution; see docs/circuits/MesaBass400Plus.md -- read that file to understand
+    this processor).
 
     Four solver blocks:
-      1. the preamp -- two 12AX7 gain stages around the Volume pot (with its pull-Bright), the passive
-         bass/treble/middle tone section and the recovery stage;
-      2. the seven-band graphic equalizer -- a feedback EQ around a finite-gain stage, each slider a pot
-         between the input and output buses with a series L-C trap on its wiper, exactly as in the amp;
-      3. everything the global feedback loop passes through -- the long-tailed-pair phase splitter, the
-         two common-cathode drivers with their resistive level-shifters (which set the output tubes'
-         ~-68 V bias), the twelve 6L6GCs as two push-pull sextets, the output transformer (coupled
-         inductors), the speaker and the negative feedback into the phase splitter;
-      4. the rectifier / filter supply.
+      1. the preamp -- V1A, the Volume (pull Bright), the channel mixer, V2A with the Bass Shift cathode network, the
+         Treble-Shift tone stack and the V2B cathode follower into the send node;
+      2. the graphic equalizer -- the drawing's discrete op-amp with 50k sliders spanning its inputs and R + L + C on
+         every wiper, at the Plus's seven panel frequencies;
+      3. the power amp -- the V3 12AX7 long-tailed-pair driver (self-balancing 62k pair), the V4 12AX7 buffer pair,
+         the twelve 6L6s as two sextets on -63 V fixed bias, the output transformer and the speaker. The drawing has
+         no global feedback;
+      4. the bridge / choke supply (A 540, B 535, C 370 V).
 
-    Controls, page 1: Volume (channel 1), Bright (the Volume's pull switch), Bass, Middle, Treble,
-    Master. Page 2: the seven graphic-EQ sliders (40 Hz .. 6.6 kHz), Power Drive, Bias, Tube Feel,
-    Speaker, Output.
+    Controls, page 1: Volume, Bright, Bass, Middle, Treble, Master, Treble Shift, Bass Shift (the Plus's pull
+    switches) and the seven EQ sliders. Page 2: Power Drive, Bias, Tube Feel, Speaker, Output.
 */
 class MesaBass400PlusStyleAmplifierProcessor : public EffectProcessor
 {
@@ -50,14 +49,14 @@ public:
         reference -- same pattern as BassmanStyleAmplifierProcessor). EffectRegistry.cpp flips this
         on centrally; the unit tests reset it to false so they keep probing the reference model. */
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 60.0;      // twelve 6L6s: closed-loop gain of the LTP + drivers + push-pull + OT + NFB
-    static constexpr double bmYmax = 0.208;
-    static constexpr double bmLevelTrim = 0.266;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)      // fraction of the sag rail reachable at the speaker
+    static constexpr double bmGain0 = 400.0;     // V3 + V4 + twelve 6L6s + OT open-loop gain (no NFB on the drawing; fitted)
+    static constexpr double bmYmax = 0.13;
+    static constexpr double bmLevelTrim = 1.0;     // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
     static constexpr double bmAsym = 0.09;       // push-pull clip asymmetry
     static constexpr double bmGridClampV = 70.0; // huge clean headroom: onset much later than the guitar-amp family
     static constexpr double bmDcHz = 8.0;        // OT low-frequency saturation rolloff
     static constexpr double bmShelfHz = 70.0;    // speaker-magnetics low-shelf pole
-    static constexpr double bmShelfHfGain = 0.65;
+    static constexpr double bmShelfHfGain = 0.55;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -70,7 +69,8 @@ public:
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
     }
     double railPlates() const noexcept { return channels[0].supply.voltage (channels[0].sA); }
-    double railScreens() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
+    double railScreens() const noexcept { return channels[0].vScreen - channels[0].screenDropA; }
+    double railBuffer() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
     double railPreamp() const noexcept { return channels[0].supply.voltage (channels[0].sC); }
     void debugSetFeedbackResistance (double ohms);
     void debugSetResistiveLoad (double ohms);
@@ -94,8 +94,7 @@ private:
         // preamp
         int pSrcVcc = 0, pSrcIn = 0;
         int rVolumeTop = 0, rVolumeBot = 0, capBright = 0;
-        int rBassTop = 0, rBassBot = 0, rTrebleTop = 0, rTrebleBot = 0, rMid = 0;
-        int rMasterTop = 0, rMasterBot = 0;
+        int rBassTop = 0, rTrebleTop = 0, rTrebleBot = 0, rMid = 0, capTrebleShift = 0, rBassShift = 0;
         NodalCircuit::Node pPlate1 = 0, pPlate2 = 0, pTone = 0, pPlate3 = 0, pOut = 0;
 
         // graphic EQ (linear block)
@@ -105,7 +104,7 @@ private:
 
         // power section
         int wSrcPre = 0, wSrcPi = 0, wSrcCt = 0, wSrcNeg = 0, wSrcVdr = 0;
-        int rFeedback = 0, rBiasTapA = 0, rBiasTapB = 0;
+        int wSrcTail = 0;
         int rSpkRe = 0, rSpkRp = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wGridA = 0, wPlateA = 0, wPlateB = 0, wTail = 0, wDrvPlateA = 0,
@@ -114,7 +113,7 @@ private:
         double vScreen = 400.0;
 
         // supply
-        int iA = 0, iB = 0, iC = 0, srcVoc = 0, srcVoc2 = 0, rRect = 0, rRect2 = 0;
+        int iA = 0, iB = 0, iC = 0, srcVoc = 0, rRect = 0;
         NodalCircuit::Node sA = 0, sB = 0, sC = 0;
         double sumPlate = 0.0, sumScreen = 0.0;
         NodalCircuit::Node wTone = 0;
@@ -127,7 +126,7 @@ private:
     void buildChannel (Channel& ch);
     struct Knobs
     {
-        double input, volume, bright, bass, middle, treble, master;
+        double input, volume, bright, bass, middle, treble, master, trebleShift, bassShift;
         double eq[7];
         double powerDrive, bias, tubeFeel;
         int speaker; // 0 = 2 ohm, 1 = 4, 2 = 8
@@ -155,6 +154,8 @@ private:
     juce::AudioParameterFloat* middleParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* masterParam = nullptr;
+    juce::AudioParameterFloat* trebleShiftParam = nullptr;
+    juce::AudioParameterFloat* bassShiftParam = nullptr;
     juce::AudioParameterFloat* eqParam[7] = {};
     juce::AudioParameterFloat* outputParam = nullptr;
     juce::AudioParameterFloat* powerParam = nullptr;
