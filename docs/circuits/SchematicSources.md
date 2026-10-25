@@ -12,7 +12,7 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 | Soldano Astroverb 16 | el34world `Soldano/Soldano_astroverb_16.pdf` | redraw, verified | used in PR #136; some values are drawing errors |
 | Gibson EH-150 | el34world `Gibson/Gibson_eh150.pdf`, `Gibson_eh_150_later.pdf`, `Gibson_eh_150_older.pdf` | factory-style, verified | three revisions; the model's doc says none could be obtained |
 | Ampeg B-15 | el34world `Ampeg/Ampeg_B-15N.pdf`, `Ampeg_B-15NF.pdf` (+ B-15NC, B-15S, B-15T, B-15R) | factory, verified | model rebuilt to rev C (591722 C); only the OT and 5AR4 resistance are estimates |
-| Ampeg V-4 / V-4B | el34world `Ampeg/Ampegv4_v22.service_manual.pdf` (4 pages), `Ampegvt22_v4_reva.pdf` | factory, verified | |
+| Ampeg V-4 / V-4B | V-4B: factory drawing 4010267 (5-71), photos at ampegv4.com `images/schematics/V4B.jpg` and irationaudio.com (2016/02 "ampeg-v4b"); V-4 / VT-22: el34world `Ampeg/Ampegv4_v22.service_manual.pdf`, `Ampegvt22_v4_reva.pdf` | factory, verified | model rebuilt to 4010267; the P.E.C. module contents, L101 and the OT are estimates |
 | Mesa Bass 400 | el34world `Mesa_Boogie/Boogie_bass400.pdf` (2 pages) | factory, verified | check whether it is the 400 or the 400+ |
 | Trace Elliot GP12 | el34world `Trace_elliot/Trace_Elliot_GP12_serie6-preamp.pdf` (11 pages), `Trace_Elliot_GP12_250Watt.pdf` | factory, verified | the model's pre-shape curve is marked estimated |
 | Dumble (ODS family) | el34world `Dumble/*.pdf` (full schematic, pre / power / mods) | community traces | not the Steel String Singer |

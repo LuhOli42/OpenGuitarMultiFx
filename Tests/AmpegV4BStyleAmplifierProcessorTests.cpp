@@ -48,19 +48,20 @@ private:
     {
         AmpegV4BStyleAmplifierProcessor::reducedOrder = false; // the unit suite always probes the full-order reference
 
-        beginTest ("DC operating points land near the schematic's expected voltages (+-40%)");
+        beginTest ("DC operating points land near the voltages marked on the V-4B drawing");
         {
             AmpegV4BStyleAmplifierProcessor amp;
             amp.prepare (48000.0, 128, 1);
             expect (amp.dcConverged());
             struct { P p; double target; double tol; const char* what; } pts[] = {
-                { P::firstPlate, 235.0, 0.4, "first plate" },
-                { P::secondPlate, 240.0, 0.4, "second plate" },
-                { P::recoveryPlate, 240.0, 0.4, "recovery plate" },
-                { P::phaseInverterPlateA, 200.0, 0.5, "PI plate A" },
-                { P::phaseInverterPlateB, 250.0, 0.5, "PI plate B" },
-                { P::driverPlateA, 220.0, 0.5, "driver plate" },
-                { P::powerGridA, -50.0, 0.35, "7027A grid bias" },
+                { P::firstPlate, 155.0, 0.25, "V1a plate" },
+                { P::secondPlate, 230.0, 0.25, "V1b plate" },
+                { P::recoveryPlate, 192.0, 0.25, "6K11 first plate" },
+                { P::driverPlateA, 205.0, 0.25, "V3b plate" },
+                { P::phaseInverterPlateA, 200.0, 0.25, "12AU7 LTP plate A" },
+                { P::phaseInverterPlateB, 200.0, 0.25, "12AU7 LTP plate B" },
+                { P::phaseInverterTail, 9.7, 0.35, "12AU7 LTP cathodes" },
+                { P::powerGridA, -64.0, 0.1, "7027A grid bias" },
             };
             for (auto& pt : pts)
             {
@@ -68,11 +69,12 @@ private:
                 expect (std::abs (v - pt.target) < pt.tol * std::abs (pt.target),
                         juce::String (pt.what) + " " + juce::String (v) + " V, expected " + juce::String (pt.target));
             }
-            expect (std::abs (amp.railScreens() - 340.0) < 0.25 * 340.0, "screen rail " + juce::String (amp.railScreens()));
-            expect (std::abs (amp.railPreamp() - 300.0) < 0.25 * 300.0, "preamp rail " + juce::String (amp.railPreamp()));
-            expectGreaterThan (amp.plateCurrentTotal(), 0.002); // the kg1 softening that stabilises the
-            // NFB loop (see the processor) drops the reference idle far below the real ~160 mA -- the
-            // documented trade-off shared by the JCM800/SLO-100/Mark IIC+ family of models
+            logMessage ("rails: plates " + juce::String (amp.railPlates(), 1) + ", screens " + juce::String (amp.railScreens(), 1)
+                        + ", LTP " + juce::String (amp.railDriver(), 1) + ", preamp " + juce::String (amp.railPreamp(), 1)
+                        + "; 7027A Ip " + juce::String (amp.plateCurrentTotal() * 1000.0, 1) + " mA");
+            expect (std::abs (amp.railPlates() - 545.0) < 0.1 * 545.0, "plate rail");
+            expect (std::abs (amp.railScreens() - 540.0) < 0.1 * 540.0, "screen rail");
+            expectGreaterThan (amp.plateCurrentTotal(), 0.04);
         }
 
         beginTest ("clean tone: sine in, sine out, no solve failures");
@@ -101,6 +103,39 @@ private:
             const double up = levelAt (1.0f, 0.5f);
             const double dn = levelAt (0.0f, 0.5f);
             expectGreaterThan (up / juce::jmax (1.0e-9, dn), 1.2, "40 Hz tone out, bass up/down " + juce::String (up) + " / " + juce::String (dn));
+        }
+
+        beginTest ("the 6K11 Mid-Range pot boosts and cuts around the selected frequency");
+        {
+            // Small input: the stage's own level at the mid-section output S, 800 Hz selected.
+            auto midAt = [&] (float middle, double hz)
+            {
+                AmpegV4BStyleAmplifierProcessor amp;
+                amp.prepare (48000.0, 128, 1);
+                setParam (amp, "ampegv4b_middle", middle);
+                setParam (amp, "ampegv4b_volume", 0.2f);
+                // Peak-to-peak: S sits on the follower's ~18 V DC.
+                juce::AudioBuffer<float> buffer (1, 1);
+                const int warm = 24000, meas = 4800;
+                double lo = 1.0e9, hi = -1.0e9;
+                for (int i = 0; i < warm + meas; ++i)
+                {
+                    buffer.setSample (0, 0, (float) (0.002 * std::sin (2.0 * juce::MathConstants<double>::pi * hz * i / 48000.0)));
+                    amp.process (buffer);
+                    if (i >= warm)
+                    {
+                        const double v = amp.debugVoltage (P::midNode);
+                        lo = juce::jmin (lo, v);
+                        hi = juce::jmax (hi, v);
+                    }
+                }
+                return hi - lo;
+            };
+            const double boost = midAt (1.0f, 800.0), flat = midAt (0.5f, 800.0), cut = midAt (0.0f, 800.0);
+            logMessage ("800 Hz at the mid output, Middle 1 / 0.5 / 0: " + juce::String (boost, 5) + " / "
+                        + juce::String (flat, 5) + " / " + juce::String (cut, 5));
+            expectGreaterThan (boost / juce::jmax (1.0e-9, flat), 2.0, "Middle up boosts 800 Hz");
+            expectGreaterThan (flat / juce::jmax (1.0e-9, cut), 2.0, "Middle down cuts 800 Hz");
         }
 
         beginTest ("bias knob moves the 6L6 idle current");
