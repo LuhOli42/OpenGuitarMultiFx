@@ -116,10 +116,13 @@ namespace voicings
     // character but let the speaker's top through the way the full models do.
     inline constexpr PowerTailVoicing highGainEVH { 11000.0, 95.0, 0.0, 1.0, 160.0, 0.3, 0.04, 0.4,
                                                     100.0, 2.5, 60.0, 5600.0, 11000.0, 0.0, 0.0, 1.5, 8500.0, -15.0 };
+    // ENGL / SLO notch -23 -> -6 dB (2026-10-24): refit against their netlists after #106's preamp rewiring left the
+    // reduced paths 5 dB short on top (AmpFullVsReducedConsistency band 4.99 / 5.01 -> 2.50 / 1.65 dB). The notch depth
+    // was the lever; the cab LP corner barely moves the band balance.
     inline constexpr PowerTailVoicing highGainENGL { 11000.0, 95.0, 0.0, 1.0, 160.0, 0.3, 0.04, 0.4,
-                                                     100.0, 2.5, 60.0, 5800.0, 11000.0, 0.0, 0.0, 1.5, 8500.0, -23.0 };
+                                                     100.0, 2.5, 60.0, 5800.0, 11000.0, 0.0, 0.0, 1.5, 8500.0, -6.0 };
     inline constexpr PowerTailVoicing highGainSLO { 11000.0, 95.0, 0.0, 1.0, 160.0, 0.3, 0.04, 0.4,
-                                                    100.0, 2.5, 60.0, 4500.0, 14000.0, 0.0, 0.0, 1.5, 9000.0, -23.0 };
+                                                    100.0, 2.5, 60.0, 4500.0, 14000.0, 0.0, 0.0, 1.5, 9000.0, -6.0 };
     // Fryette Deliverance D120: tight and articulate -- the amp's oversized, wide-bandwidth output iron
     // (extended top, controlled LF) plus a quad of KT88s under firm NFB damping. Controlled cone bloom,
     // open top through a V30-loaded 4x12 with the usual top-octave notch.
