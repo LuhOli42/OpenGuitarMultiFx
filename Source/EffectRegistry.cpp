@@ -520,7 +520,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/MatchlessHC30.md.
     MatchlessHC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MatchlessHC30StyleAmplifier");
-    registry.registerType ("MatchlessHC30StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MatchlessHC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 44.70f); }, "Crunch");
+    registry.registerType ("MatchlessHC30StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MatchlessHC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 51.92f); }, "Crunch");
     // docs/circuits/BadCatHotCat30.md.
     HotCat30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("HotCat30StyleAmplifier");
