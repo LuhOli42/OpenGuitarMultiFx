@@ -1,54 +1,96 @@
 # ODB3StyleOverdrive — Boss ODB-3 Bass Overdrive
 
-## What the real unit is
+## Source
 
-The Boss ODB-3 is the bass member of Boss's op-amp/FET overdrive family (same generation
-as the OD-3/BD-2/FZ-2 circuit family). Published schematic walkthroughs (the indyguitarist
-scan and the sdiy analysis) describe:
+The model follows a complete, legible redraw of the Boss ODB-3. It is a DIYSB / postimg image, 3465×1063, kept
+locally as `odb3.jpg` and listed in `docs/circuits/SchematicSources.md`. Every value below comes from it.
 
-1. A high-impedance input buffer,
-2. an op-amp gain stage with diode limiting and the **Gain** control in its feedback,
-3. further nonlinear (FET-based) gain stages buffered by a PNP,
-4. a pair of **LED clippers** shunting the signal path (the ODB-3's characteristically
-   harder, higher-threshold clip — LED Vf ≈ 1.7 V versus ~0.6 V silicon),
-5. a **Balance** blend that mixes the driven signal against a clean low-frequency feed —
-   the reason the pedal keeps a solid bottom end,
-6. a Low/High tone section (the low band is built around an NPN transistor used as a
-   virtual inductor/gyrator) and **Level**.
+The earlier model was built when only a partly legible scan was known. It had:
 
-Front panel, in order: **Level, High, Low, Balance, Gain**.
+- an op-amp clipper with silicon diodes;
+- the LEDs as a *shunt* clipper;
+- an estimated ~480 Hz low-pass "clean" leg;
+- a Baxandall stand-in for the tone.
 
-## What is modelled
+None of that is the real circuit.
 
-Thevenin-chain + Newton solves per sample, same technique as the TS9B model:
+## What the real circuit is
 
-- **Input buffer** — ideal follower (Vb − 0.62), emitter feeding both the clipper's (+)
-  bias node and the clean path.
-- **Gain stage** — a non-inverting op-amp with R4 4.7K + C3 47 nF to the rail and
-  R6 51K + A500K Gain pot with the symmetric 1N914-class pair and C4 51 pF in feedback
-  (1D Newton) — the family's shared clipper cell.
-- **LED clipper** — the op-amp output through 4.7K into a node shunted to the bias rail
-  by an LED pair (Is = 6e-12, nVt = 0.09 reproduces the ~1.7 V knee at ~1 mA), solved by
-  the same `AsymmetricDiodePair` Newton with the diodes' port referenced to the rail.
-- **Clean low path** — the buffered input through a one-pole RC low-pass (~480 Hz corner)
-  before the blend, so the bass fundamental stays uncompressed, matching the pedal's
-  documented behavior.
-- **Balance** — a resistive summer crossfading the LED-clipped signal against the
-  low-passed clean feed.
-- **Low/High tone** — the bridged-feedback Baxandall arrangement (one pot per band
-  spanning the op-amp's two virtual-short inputs, each wiper driving its own RC shunt —
-  the same structure the TS9B model uses, here standing in for the gyrator low band
-  plus high shelf of the real unit).
-- **Level + output** — the Boss family's output network: coupling cap + 1K into the
-  A100K Level pot, closed switch, C8, biased follower, 470 Ω + 10 µF + 100K.
+- **Input:**
+  - R1 10k → C1 47n → Q1 2SK184 source follower (R2 1M to Vref, R3 10k).
+  - C2 100n → the Q2 bypass switch (R4 / R5 1M) → C3 100n.
+  - The stage-1 gate sits on R6 100k to Vref.
+- **Gain stage 1**, a discrete op-amp: the Boss JFET-pair + PNP stage the BD-2 also uses.
+  - Q3 / Q4 2SK184 (R8 2k2 drain, R7 4k7 tail) drive Q5 2SA1049 (R11 2k2 collector load).
+  - Feedback: R10 2k2 + **Gain VR1a** (250k log), with C5 330p across. R9 1k5 + C4 10µ go to ground.
+- **Gain stage 2**, the same stage, DC-coupled from stage 1's collector.
+  - Q6 / Q7 (R14 2k2, R15 4k7) drive Q8 (R18 1k5 + R19 820 collector load).
+  - The feedback is **the red-LED pair D2 / D3**, anti-parallel, ∥ R17 100k ∥ C8 330p. R16 1k8 + C7 100n go to
+    ground.
+  - So this stage clips *inside its own feedback loop*, at the LEDs' ~1.7 V knee, from a gain of 1 + 100k/1k8.
+- **Filter:** from the R18 / R19 tap, R20 3k3 → C26 2µ2 → a bridged-T (C10 33n across, R21 / R22 4k7 to C11 0.22µ)
+  → R28 47k → the **Balance** pot (VR2, 250k lin).
+- **Clean path:** the other end of Balance is IC1b (NJM4558), non-inverting from the stage-1 input node.
+  - R27 68k + C14 1µ to ground.
+  - Feedback: R28 47k + **VR1b**, the Gain pot's second gang, ∥ C15 10p.
+  - D9 1SS133 from (−) to (+).
+  - So Gain also lifts the clean path, from ×1.7 to ×5.4.
+- **Tone:** Balance's wiper → R29 10k → C16 1µ → IC1a (+), with R34 100k to Vref. Feedback is 22k ∥ 47p.
+  - **Low** (VR3a, 50k) spans (+) and (−). Its wiper drives C19 0.15µ into a **Q9 gyrator** (R31 3k3 to the emitter,
+    C20 47n to the base, R33 100k base bias, R35 10k). That is L = 3k3 × 100k × 47n = 15.5 H in series with 3k3,
+    resonating with 0.15 µF near 104 Hz.
+  - **High** (VR3b, 50k) has R30 2k2 + C18 15n on its wiper, ~4.8 kHz.
+- **Output:** C21 1µ → R44 10k → **Level** VR4 (50k log) → C22 → the Q10 switch → C23 → the Q9' output follower
+  → C24 → R43 1k → out (R42 100k).
 
-## Deliberate simplifications
+## What's modelled
 
-- The published ODB-3 schematic is only partly legible, so intermediate-stage values are
-  estimated on the documented topology (the nonlinear JFET pairs are folded into the
-  op-amp clipper's gain — the audible result is the same cascaded soft-clip-then-LED-clip
-  curve; flagged as an estimate, not a claimed BOM).
-- The gyrator low band is realised as the Baxandall low shelf — same boost/cut function
-  at the same band region.
-- The clean path's exact corner is estimated at ~480 Hz (published descriptions only say
-  it preserves the low end).
+Everything above, on NodalCircuit, in four blocks cut at high-impedance or ideal-source boundaries:
+
+- **A:** input follower and coupling.
+- **B:** both gain stages, the LEDs, the bridged-T and R28.
+- **C:** the IC1b clean stage.
+- **D:** Balance, IC1a and the gyrator, Level and the output follower.
+
+Supplies are the Boss ~8 V / 4 V, and the parts are the BD-2's (2SK184 Idss 4.5 mA / Vp −1.2 V; 2SA1049 β 300). The
+LEDs use Is 6e-12 with nVt 0.09.
+
+### Shipped build (`reducedOrder`, default on)
+
+Each discrete stage is the BD-2's op-amp macro: finite gain 288 with its common-mode term, one 30 kHz pole, and a
+saturating output. Stage 1 sits behind its 2k2 collector load. Stage 2 drives R18 + R19 directly, with a 7.3 V
+swing, fitted to the transistor stage.
+
+The LEDs, the feedback networks and everything else stay component-level. The transistor-level netlist
+(`reducedOrder = false`) is the test reference. The macros track it within 0.55 dB at five settings: noon, low and
+full Gain, 110 Hz to 1 kHz, and both Balance ends.
+
+| Build | CPU | Worst block |
+|---|---|---|
+| Transistor-level | 14 % | 42 % |
+| Macro (shipped) | 4.3 % | 16 % |
+
+## Controls
+
+Level, High, Low, Balance, Gain, in the pedal's front-panel order.
+
+- **Gain:** the ganged 250k log pot, in both drive stages *and* the clean stage.
+- **Balance:** up = toward the drive path.
+- **Low / High:** up = boost.
+- **Level:** 50k log.
+
+## Verification
+
+- **DC:** Q1 gate 4.00 V, source 4.82 V (a JFET follower sits above its gate). Stage outputs 4.16 / 4.67 V.
+- **Balance:** at 0 the output is the clean path, linear (×2.0 for ×2 input). At 1 it is the LED-clipped path
+  (×1.02).
+- **Tone:** Low and High each move their own band.
+- **Robustness:** the stress run (random knobs, plucks, hot bursts) has no solve failures.
+- **Level:** PedalUnityLevel −0.46 dB at trim 18.19 dB.
+
+## Simplifications
+
+- The JFET bypass switches are their on-resistance (100 Ω).
+- Q1 and the output Q9' are ideal followers with their DC offsets.
+- The gyrator transistor is an ideal follower too: its 15.5 H does not depend on β.
+- The DC jack / capacitance-multiplier regulator is an ideal 8 V / 4 V.

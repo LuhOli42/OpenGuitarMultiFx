@@ -26,7 +26,7 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 | Komet 60 / Concorde | AmpGarage threads "Komet 60 Schematic...Accurate?", "Komet K60 or Concord Layout" | traces; accuracy disputed |
 | Dr. Z Carmen Ghia | TDPRI "Carmen Ghia" thread (590924), a reverse-engineered schematic + a layout | 150R cathode (layout says 130R) |
 | Bad Cat Hot Cat 30 | Music-Electronics-Forum threads point to a Schematic Heaven PDF (link moved) | Hot Cat 30 and 30R differ |
-| Boss ODB-3 | DIYStompboxes 2007 hand-drawn schematic | community |
+| Boss ODB-3 | DIYStompboxes 2007 hand-drawn schematic; a clean full redraw on postimg (3465x1063, linked from DIYSB) | community | model rebuilt to the redraw (discrete stages, LED feedback, IC1b clean path, gyrator Low) |
 | Boss BD-2 | factory board schematic (hobby-hour, Free Info Society); Gauss Markov redraw | the model already uses the factory board |
 | Mu-Tron III | mu-tron.com owner's manual (schematic on p.14 per MEF); GGG "Neutron" replica schematic | the randtronics "complete manual" link has 3 pages only |
 | A/DA Flanger | "adadepot" archive (per MEF) | SAD1024 (1977) vs MN3010 (from 5/78) revisions |
