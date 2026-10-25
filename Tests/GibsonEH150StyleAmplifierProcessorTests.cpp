@@ -67,7 +67,7 @@ public:
             Amp amp;
             amp.prepare (sr, 128, 2);
             expect (amp.dcConverged());
-            logMessage ("rails: plates " + juce::String (amp.railPlates(), 1) + ", screens " + juce::String (amp.railScreens(), 1));
+            logMessage ("rails: reservoir " + juce::String (amp.railReservoir(), 1) + ", plates/screens " + juce::String (amp.railPlates(), 1));
             logMessage ("V1 " + juce::String (amp.debugVoltage (P::stage1Plate), 1) + " / " + juce::String (amp.debugVoltage (P::stage1Cathode), 2)
                         + ", V2 " + juce::String (amp.debugVoltage (P::stage2Plate), 1) + " / " + juce::String (amp.debugVoltage (P::stage2Cathode), 2)
                         + ", 6N7 " + juce::String (amp.debugVoltage (P::piPlateA), 1) + " / " + juce::String (amp.debugVoltage (P::piPlateB), 1)
@@ -75,14 +75,15 @@ public:
                         + ", 6L6 plates " + juce::String (amp.debugVoltage (P::powerPlateA), 1)
                         + ", cathode " + juce::String (amp.debugVoltage (P::powerCathode), 1)
                         + ", Ip " + juce::String (amp.plateCurrentA() * 1000.0, 1) + " / " + juce::String (amp.plateCurrentB() * 1000.0, 1) + " mA");
-            expect (amp.railPlates() > 330.0 && amp.railPlates() < 400.0);
-            expect (amp.railScreens() > 290.0 && amp.railScreens() < 360.0);
-            expect (amp.debugVoltage (P::stage1Plate) > 100.0 && amp.debugVoltage (P::stage1Plate) < 230.0, "V1 plate");
-            expect (amp.debugVoltage (P::stage1Cathode) > 0.4 && amp.debugVoltage (P::stage1Cathode) < 2.5, "V1 cathode");
+            // Field coil drop: 750 ohm x the whole amp's current (~0.1 A) between the reservoir and the plates.
+            expect (amp.railReservoir() - amp.railPlates() > 50.0 && amp.railReservoir() - amp.railPlates() < 130.0, "field coil drop");
+            expect (amp.railPlates() > 300.0 && amp.railPlates() < 370.0);
+            expect (amp.debugVoltage (P::stage1Plate) > 60.0 && amp.debugVoltage (P::stage1Plate) < 160.0, "6SQ7 plate");
+            expect (amp.debugVoltage (P::stage1Cathode) > 0.6 && amp.debugVoltage (P::stage1Cathode) < 2.5, "6SQ7 cathode");
             expect (amp.debugVoltage (P::piPlateA) > 100.0 && amp.debugVoltage (P::piPlateA) < 260.0, "6N7 plate A");
             expect (amp.debugVoltage (P::piPlateB) > 100.0 && amp.debugVoltage (P::piPlateB) < 260.0, "6N7 plate B");
-            expect (amp.debugVoltage (P::powerCathode) > 12.0 && amp.debugVoltage (P::powerCathode) < 45.0, "6L6 shared cathode");
-            expect (amp.plateCurrentA() > 0.010 && amp.plateCurrentA() < 0.060, "6L6 idle current");
+            expect (amp.debugVoltage (P::powerCathode) > 10.0 && amp.debugVoltage (P::powerCathode) < 30.0, "6L6 shared cathode");
+            expect (amp.plateCurrentA() > 0.025 && amp.plateCurrentA() < 0.065, "6L6 idle current");
             expect (std::abs (amp.plateCurrentA() - amp.plateCurrentB()) < 0.002, "matched pair at idle");
         }
 
@@ -140,9 +141,11 @@ public:
             logMessage ("volume 0.1 / 0.5: " + juce::String (volLo, 5) + " / " + juce::String (volHi, 5));
             expectGreaterThan (volHi, volLo * 1.5);
 
-            const double tLo = level ("tone", 0.0f, 3000.0, 0.002), tHi = level ("tone", 1.0f, 3000.0, 0.002);
-            logMessage ("tone 0 / 1 at 3 kHz: " + juce::String (tLo, 5) + " / " + juce::String (tHi, 5));
-            expectGreaterThan (tHi, tLo * 1.3);
+            // The Tone rheostat cuts bass under the .00075 bypass: turning it up tilts the response toward the top.
+            const double tilt0 = level ("tone", 0.0f, 3000.0, 0.002) / level ("tone", 0.0f, 100.0, 0.002);
+            const double tilt1 = level ("tone", 1.0f, 3000.0, 0.002) / level ("tone", 1.0f, 100.0, 0.002);
+            logMessage ("3 kHz / 100 Hz, tone 0 / 1: " + juce::String (tilt0, 3) + " / " + juce::String (tilt1, 3));
+            expectGreaterThan (tilt1, tilt0 * 3.0);
 
             Amp speakerAmp;
             setParam (speakerAmp, juce::String (px) + "volume", 0.25f);

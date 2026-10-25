@@ -13,9 +13,15 @@ namespace
 {
     using namespace tubeamp;
 
-    /** The 6SQ7 is the octal high-mu triode (mu ~ 100) the 12AX7/ECC83 descends from; Koren's ECC83 set is the right
-        curve family. */
-    KorenTriode::Parameters triode6SQ7() { return {}; }
+    /** The 6SQ7 is the octal high-mu triode (mu ~ 100) the 12AX7/ECC83 descends from, so Koren's ECC83 curve family
+        with the perveance scaled down to the 6SQ7's published point (0.9 mA at 250 V / -2 V, rp ~ 91k -- the 12AX7
+        draws ~1.2 mA there with rp ~ 62k). */
+    KorenTriode::Parameters triode6SQ7()
+    {
+        KorenTriode::Parameters p;
+        p.kg1 = 1410.0;
+        return p;
+    }
 
     /** The 6N7 is a twin triode with mu ~ 35, much beefier than a 12AX7: lower mu, higher perveance. Fitted to its
         published operating region (~9 mA at 250 V / -5 V) rather than copied from a datasheet set. */
@@ -27,8 +33,7 @@ namespace
         return p;
     }
 
-    /** ONE 6L6 (the original 19 W 6L6G/GA; Koren's 6L6GC defaults are the same curve family): the Twin Reverb's pair
-        set (pentode6L6Pair) with the pair-doubling undone. */
+    /** ONE 6L6 (the original 19 W 6L6G/GA; Koren's 6L6GC defaults are the same curve family). */
     KorenPentode::Parameters pentode6L6()
     {
         KorenPentode::Parameters p; // Koren's 6L6GC defaults
@@ -37,16 +42,23 @@ namespace
 
     constexpr double cgp = 1.7e-12;
 
-    // Estimated Style-4 rails: 5U4G rectifier (sagging), small period filter caps, cathode-biased 6L6s at ~15-20 W
-    // class A1 (docs/circuits/GibsonEH150.md).
-    constexpr double railPlatesNominal = 360.0;
+    // Supply, from the factory "EH-150 LATER" drawing (docs/circuits/GibsonEH150.md): 5U4 -> 10 uF -> the 750 ohm
+    // speaker FIELD COIL as the choke -> 10 uF + 20k 20 W bleeder = the node that feeds BOTH the output transformer
+    // centre tap and the 6L6 screens -> 10k -> 10 uF (6N7 plates) -> 100k -> 10 uF (6SQ7 plates). The transformer
+    // voltage is not on the drawing: the open-circuit peak below is estimated for ~330 V at the plates.
+    constexpr double transformerPeak = 470.0;
     constexpr double rectifierR = 150.0;
-    constexpr double reservoir = 16.0e-6;
-    constexpr double screenResistor = 1.5e3;
-    constexpr double piFraction = 300.0 / 330.0;
-    constexpr double preFraction = 250.0 / 330.0;
-    constexpr double idlePlateCurrent = 0.030;   // per output tube
-    constexpr double preampAndPiCurrent = 0.006;
+    constexpr double reservoir = 10.0e-6;
+    constexpr double fieldCoilR = 750.0;
+    constexpr double plateNodeCap = 10.0e-6;
+    constexpr double bleeder = 20.0e3;
+    constexpr double piDropR = 10.0e3, preDropR = 100.0e3, decouplingCap = 10.0e-6;
+    constexpr double platesNominal = 330.0;      // initial guess only
+    constexpr double idlePlateCurrent = 0.045;   // per output tube, plate + screen (initial guess; prepare() iterates)
+    // Small-signal stage currents through the decoupling resistors, measured on the full model at idle (the mic
+    // channel's first 6SQ7, not in the guitar path, still draws its ~0.4 mA through the 100k).
+    constexpr double piCurrent = 0.0030;
+    constexpr double preCurrent = 0.0011;
 
     constexpr double otPrimary = 5000.0;
     constexpr double primaryHalfL = 7.0;
@@ -59,11 +71,12 @@ namespace
     constexpr int matchedSpeaker = 1; // the 8 ohm tap
 
     // ---- reduced-order power stage: calibration data, EH150_POWERCAL in the test file ----
-    // Plate rail vs. the preamp-signal drive PEAK, measured on the full reference model (Volume 1, Power Drive
-    // max, 8 ohm). The 5U4G sags hard -- the amp's compressed feel is mostly this table.
+    // Plate rail vs. the preamp-signal drive PEAK (Volume 1, Power Drive max, 8 ohm), fitted against the full
+    // reference model. The cathode-biased pair draws a near-constant current, so the field-coil node sags only
+    // ~25 V at full drive.
     constexpr int bmSagPoints = 9;
     constexpr double bmSagDrive[bmSagPoints] = { 0.05, 0.15, 0.40, 0.90, 1.80, 3.60, 7.00, 12.0, 18.0 };
-    constexpr double bmSagRail[bmSagPoints] = { 360.0, 358.0, 354.0, 346.0, 332.0, 312.0, 292.0, 278.0, 270.0 };
+    constexpr double bmSagRail[bmSagPoints] = { 325.0, 324.5, 323.4, 321.2, 317.4, 312.0, 306.6, 302.9, 300.7 };
 
     double sagRailLookup (double drivePeak) noexcept
     {
@@ -131,72 +144,71 @@ GibsonEH150StyleAmplifierProcessor::GibsonEH150StyleAmplifierProcessor()
 void GibsonEH150StyleAmplifierProcessor::buildChannel (Channel& ch)
 {
     const auto gnd = NodalCircuit::ground;
-    const double screenNominal = railPlatesNominal - screenResistor * (2.0 * 0.008 + preampAndPiCurrent);
+    const double piNominal = platesNominal - piDropR * (piCurrent + preCurrent);
+    const double preNominal = piNominal - preDropR * preCurrent;
 
-    // ================================================================ supply: 5U4G -> reservoir (plates) -> 1k5 -> screens
+    // ================================================================ supply: 5U4 -> 10 uF -> field coil -> plates + screens
     {
         auto& c = ch.supply;
         c.setIntegrationTheta (0.5);
         const auto vo = c.addNode();
         ch.sA = c.addNode();
         ch.sB = c.addNode();
-        ch.srcVoc = c.addSource (vo, railPlatesNominal);
+        ch.srcVoc = c.addSource (vo, transformerPeak);
         ch.rRect = c.addResistor (vo, ch.sA, rectifierR);
         c.addCapacitor (ch.sA, gnd, reservoir);
-        c.addResistor (ch.sA, ch.sB, screenResistor);
-        c.addCapacitor (ch.sB, gnd, 16.0e-6);
-        ch.iA = c.addCurrentSource (ch.sA, -2.0 * idlePlateCurrent);
-        ch.iB = c.addCurrentSource (ch.sB, -preampAndPiCurrent);
-        c.setInitialGuess (ch.sA, railPlatesNominal);
-        c.setInitialGuess (ch.sB, screenNominal);
+        c.addResistor (ch.sA, ch.sB, fieldCoilR); // the speaker field coil is the filter choke
+        c.addCapacitor (ch.sB, gnd, plateNodeCap);
+        c.addResistor (ch.sB, gnd, bleeder);
+        ch.iA = c.addCurrentSource (ch.sB, -2.0 * idlePlateCurrent);         // 6L6 plates AND screens: same node
+        ch.iB = c.addCurrentSource (ch.sB, -(piCurrent + preCurrent));      // through the 10k to the 6N7 / 6SQ7 rails
+        c.setInitialGuess (ch.sA, platesNominal + fieldCoilR * 0.11);
+        c.setInitialGuess (ch.sB, platesNominal);
     }
 
-    // ================================================================ preamp: 6SQ7 -> Volume -> 6SQ7 + Tone
+    // ================================================================ preamp: Volume -> 6SQ7 (paralleled) -> Tone coupling
     {
         auto& c = ch.pre;
         const auto in = c.addNode();
         ch.pSrcIn = c.addSource (in, 0.0);
         const auto rail = c.addNode();
-        ch.pSrcRail = c.addSource (rail, screenNominal * preFraction);
+        ch.pSrcRail = c.addSource (rail, preNominal);
 
-        auto stage = [&] (NodalCircuit::Node gIn, double stopper, double leak, double rk, double ck,
-                          NodalCircuit::Node& plate, NodalCircuit::Node& cathode, double plateGuess, double cathodeGuess)
-        {
-            const auto g = c.addNode();
-            plate = c.addNode();
-            cathode = c.addNode();
-            c.addResistor (gIn, g, stopper);
-            if (leak > 0.0)
-                c.addResistor (g, gnd, leak);
-            c.addTriode (plate, g, cathode, triode6SQ7());
-            c.addCapacitor (g, plate, cgp);
-            c.addResistor (rail, plate, 250.0e3); // the high plate loads Gibson ran in this era
-            c.addResistor (cathode, gnd, rk);
-            if (ck > 0.0)
-                c.addCapacitor (cathode, gnd, ck);
-            c.setInitialGuess (plate, plateGuess);
-            c.setInitialGuess (cathode, cathodeGuess);
-        };
-
-        // V1 (instrument channel): 68k stopper, 1M leak, 1k5 + 10 uF.
-        stage (in, 68.0e3, 1.0e6, 1.5e3, 10.0e-6, ch.pPlate1, ch.pK1, 170.0, 1.2);
-
-        // .022 coupling -> Volume 1M.
-        const auto v1Out = c.addNode();
-        c.addCapacitor (ch.pPlate1, v1Out, 22.0e-9);
+        // Instrument jack -> 100k -> 500k Volume, the wiper straight onto the 6SQ7 grid (no first stage: the guitar
+        // gets ONE 6SQ7 before the phase inverter; the two-stage path is the microphone channel's).
+        const auto top = c.addNode();
+        c.addResistor (in, top, 100.0e3);
         const auto w = c.addNode();
-        ch.rVolTop = c.addResistor (v1Out, w, 900.0e3);
-        ch.rVolBot = c.addResistor (w, gnd, 100.0e3);
+        ch.rVolTop = c.addResistor (top, w, 250.0e3);
+        ch.rVolBot = c.addResistor (w, gnd, 250.0e3);
 
-        // V2 (the "common" stage): 2k2 unbypassed (some local degeneration, era-typical).
-        stage (w, 68.0e3, 0.0, 2.2e3, 0.0, ch.pPlate2, ch.pK2, 190.0, 1.6);
+        // The instrument 6SQ7 and the mic channel's second 6SQ7 share the 100k plate load and the 1k + 20 uF cathode.
+        // The mic stage's grid sits on its Volume wiper (taken as fully down = grounded): it idles, so it still
+        // halves the plate's source impedance and shares the cathode current.
+        ch.pPlate2 = c.addNode();
+        ch.pK2 = c.addNode();
+        c.addTriode (ch.pPlate2, w, ch.pK2, triode6SQ7());
+        c.addCapacitor (w, ch.pPlate2, cgp);
+        c.addTriode (ch.pPlate2, gnd, ch.pK2, triode6SQ7());
+        c.addCapacitor (ch.pPlate2, gnd, cgp);
+        c.addResistor (rail, ch.pPlate2, 100.0e3);
+        c.addResistor (ch.pK2, gnd, 1.0e3);
+        c.addCapacitor (ch.pK2, gnd, 20.0e-6);
+        c.setInitialGuess (ch.pPlate2, 0.55 * preNominal);
+        c.setInitialGuess (ch.pK2, 1.0);
+        ch.pPlate1 = ch.pPlate2;
+        ch.pK1 = ch.pK2;
 
-        // Tone: the single pot is a treble-cut -- cap from V2's plate through the pot's variable R to ground. Knob up
-        // = brighter = larger series R (less shunt). Values estimated (docs/circuits/GibsonEH150.md).
-        const auto tn = c.addNode();
-        ch.rTone = c.addResistor (ch.pPlate2, tn, 20.0e3);
-        c.addCapacitor (tn, gnd, 10.0e-9);
-        ch.pOut = ch.pPlate2;
+        // Tone: .1 in series with the 1 MEG Tone rheostat, bypassed by .00075, into the 6N7's 100k grid leak. At zero
+        // R the coupling is flat; turning the R in starves the lows through the 100k while the .00075 keeps the top
+        // (~2 kHz corner) -- a bass cut that reads as "treble".
+        const auto t = c.addNode();
+        ch.pOut = c.addNode();
+        c.addCapacitor (ch.pPlate2, t, 0.1e-6);
+        ch.rTone = c.addResistor (t, ch.pOut, 1.0e3);
+        c.addCapacitor (ch.pPlate2, ch.pOut, 750.0e-12);
+        c.addResistor (ch.pOut, gnd, 100.0e3);
+        c.setInitialGuess (ch.pOut, 0.0);
     }
 
     // ================================================================ power: 6N7 paraphase -> 2x 6L6 cathode-biased PP, no NFB
@@ -205,63 +217,54 @@ void GibsonEH150StyleAmplifierProcessor::buildChannel (Channel& ch)
     {
         auto& c = ch.power;
         const auto rail = c.addNode(), piRail = c.addNode(), in = c.addNode();
-        ch.wSrcRail = c.addSource (rail, railPlatesNominal);
-        ch.wSrcPi = c.addSource (piRail, screenNominal * piFraction);
+        ch.wSrcRail = c.addSource (rail, platesNominal);
+        ch.wSrcPi = c.addSource (piRail, piNominal);
         ch.wSrcIn = c.addSource (in, 0.0);
 
-        // .047 coupling + 470k leak into PI half A's grid.
+        // The preamp already carries the 100k grid leak; this is the tone network's source impedance (~ the paralleled
+        // 6SQ7 plate, 100k || rp/2, in the coupling) that the 6N7 grid sees when it draws current on peaks.
         ch.wPiGrid = c.addNode();
-        c.addCapacitor (in, ch.wPiGrid, 47.0e-9);
-        c.addResistor (ch.wPiGrid, gnd, 470.0e3);
+        c.addResistor (in, ch.wPiGrid, 22.0e3);
 
-        // Paraphase: both 6N7 halves share the cathode string (2k + 25 uF); half A amplifies the input from its plate;
-        // a ~1/20 divider off plate A feeds half B's grid, whose plate then carries the inverted phase. Plate loads
-        // 100k each.
+        // Paraphase: both 6N7 halves on one UNBYPASSED 1k cathode, 100k plates. Plate A -> .1 -> upper 6L6 grid, whose
+        // leak is 250k + 12,500 to ground; the 12,500 tap (1/21) is half B's grid, and plate B -> .1 -> the lower
+        // 6L6 grid (250k leak).
         ch.wPiK = c.addNode();
         ch.wPiPlateA = c.addNode();
         ch.wPiPlateB = c.addNode();
+        const auto tap = c.addNode();
         c.addTriode (ch.wPiPlateA, ch.wPiGrid, ch.wPiK, triode6N7());
+        c.addTriode (ch.wPiPlateB, tap, ch.wPiK, triode6N7());
         c.addResistor (piRail, ch.wPiPlateA, 100.0e3);
-        c.addResistor (ch.wPiK, gnd, 2.0e3);
-        c.addCapacitor (ch.wPiK, gnd, 25.0e-6);
-        const auto dv = c.addNode(), gB = c.addNode();
-        c.addCapacitor (ch.wPiPlateA, dv, 47.0e-9); // the divider is AC-coupled -- grid B biases through its own leak
-        c.addResistor (dv, gB, 470.0e3);          // paraphase divider
-        c.addResistor (gB, gnd, 24.0e3);
-        c.addCapacitor (gB, gnd, 10.0e-9);         // cleans the divider's HF edge
-        c.addTriode (ch.wPiPlateB, gB, ch.wPiK, triode6N7());
         c.addResistor (piRail, ch.wPiPlateB, 100.0e3);
-        c.setInitialGuess (ch.wPiPlateA, 160.0);
-        c.setInitialGuess (ch.wPiPlateB, 170.0);
+        c.addResistor (ch.wPiK, gnd, 1.0e3);
+        c.setInitialGuess (ch.wPiPlateA, 0.6 * piNominal);
+        c.setInitialGuess (ch.wPiPlateB, 0.6 * piNominal);
         c.setInitialGuess (ch.wPiK, 4.0);
         c.setInitialGuess (ch.wPiGrid, 0.0);
-        c.setInitialGuess (dv, 0.0);
-        c.setInitialGuess (gB, 0.0);
+        c.setInitialGuess (tap, 0.0);
 
-        // .047 couplings, 470k grid leaks to ground (cathode bias -- no negative supply), 1k5 stoppers.
         ch.wGridA = c.addNode();
         ch.wGridB = c.addNode();
-        c.addCapacitor (ch.wPiPlateA, ch.wGridA, 47.0e-9);
-        c.addCapacitor (ch.wPiPlateB, ch.wGridB, 47.0e-9);
-        c.addResistor (ch.wGridA, gnd, 470.0e3);
-        c.addResistor (ch.wGridB, gnd, 470.0e3);
-        const auto gAs = c.addNode(), gBs = c.addNode();
-        c.addResistor (ch.wGridA, gAs, 1.5e3);
-        c.addResistor (ch.wGridB, gBs, 1.5e3);
+        c.addCapacitor (ch.wPiPlateA, ch.wGridA, 0.1e-6);
+        c.addCapacitor (ch.wPiPlateB, ch.wGridB, 0.1e-6);
+        c.addResistor (ch.wGridA, tap, 250.0e3);
+        c.addResistor (tap, gnd, 12.5e3);
+        c.addResistor (ch.wGridB, gnd, 250.0e3);
         c.setInitialGuess (ch.wGridA, 0.0);
         c.setInitialGuess (ch.wGridB, 0.0);
 
-        // Shared 6L6 cathode string: ~500R + 50 uF (class-A-ish bias ~30 mA/tube; the Bias knob sweeps it).
+        // 6L6 cathodes tied together onto ONE unbypassed 200 ohm resistor (the Bias knob sweeps it); screens straight on
+        // the plate node.
         ch.wPP1 = c.addNode();
         ch.wPP2 = c.addNode();
         ch.wK = c.addNode();
-        ch.penA = c.addPentode (ch.wPP1, gAs, ch.wK, pentode6L6(), screenNominal);
-        ch.penB = c.addPentode (ch.wPP2, gBs, ch.wK, pentode6L6(), screenNominal);
-        ch.rBias = c.addResistor (ch.wK, gnd, 500.0);
-        c.addCapacitor (ch.wK, gnd, 50.0e-6);
-        c.setInitialGuess (ch.wPP1, railPlatesNominal - 25.0);
-        c.setInitialGuess (ch.wPP2, railPlatesNominal - 25.0);
-        c.setInitialGuess (ch.wK, 30.0);
+        ch.penA = c.addPentode (ch.wPP1, ch.wGridA, ch.wK, pentode6L6(), platesNominal);
+        ch.penB = c.addPentode (ch.wPP2, ch.wGridB, ch.wK, pentode6L6(), platesNominal);
+        ch.rBias = c.addResistor (ch.wK, gnd, 200.0);
+        c.setInitialGuess (ch.wPP1, platesNominal - 2.0);
+        c.setInitialGuess (ch.wPP2, platesNominal - 2.0);
+        c.setInitialGuess (ch.wK, 18.0);
 
         // Winding capacitance / losses, same treatment as the other models.
         c.addCapacitor (ch.wPP1, ch.wPP2, 400.0e-12);
@@ -294,25 +297,25 @@ void GibsonEH150StyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.grpSpkLp = c.addCoupledInductors ({ { nbb, gnd } }, { sm.lp });
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
-        c.setInitialGuess (a1, railPlatesNominal);
-        c.setInitialGuess (a2, railPlatesNominal);
+        c.setInitialGuess (a1, platesNominal);
+        c.setInitialGuess (a2, platesNominal);
     }
 }
 
 void GibsonEH150StyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
-    const double volBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volume));
-    // Tone up = brighter = bigger series R under the 10 nF shunt cap.
-    const double toneR = 200.0 + 250.0e3 * k.tone * k.tone;
-    // Bias knob sweeps the shared cathode resistor (cathode bias: knob up = smaller R = hotter idle, matching the
-    // fixed-bias amps' "up = hotter" convention).
-    const double cathodeR = 750.0 - 500.0 * k.bias;
+    const double volBottom = juce::jmax (1.0, 500.0e3 * pots::audio (k.volume));
+    // Tone up = brighter = more of the 1 MEG rheostat in series with the .1 (the .00075 then carries the top alone).
+    const double toneR = 1.0e3 + 1.0e6 * pots::audio (k.tone);
+    // Bias knob sweeps the shared, unbypassed 6L6 cathode resistor around the drawing's 200 ohm (knob up = smaller R =
+    // hotter idle, matching the fixed-bias amps' "up = hotter" convention).
+    const double cathodeR = 300.0 - 200.0 * k.bias;
     const double rectifier = rectifierR * (0.05 + 0.95 * k.tubeFeel);
 
     for (auto& ch : channels)
     {
-        ch.pre.setResistance (ch.rVolTop, juce::jmax (1.0, 1.0e6 - volBottom));
+        ch.pre.setResistance (ch.rVolTop, juce::jmax (1.0, 500.0e3 - volBottom));
         ch.pre.setResistance (ch.rVolBot, volBottom);
         ch.pre.setResistance (ch.rTone, toneR);
         if (! reducedOrder)
@@ -379,29 +382,25 @@ void GibsonEH150StyleAmplifierProcessor::updateSupply (Channel& ch) const
 {
     const double n = (double) juce::jmax (1, ch.sumCount);
     if (ch.sumCount > 0)
-    {
-        ch.supply.setCurrentSource (ch.iA, -juce::jlimit (0.0, 0.5, ch.sumPlate / n));
-        ch.supply.setCurrentSource (ch.iB, -juce::jlimit (0.0, 0.1, ch.sumScreen / n + preampAndPiCurrent));
-    }
+        ch.supply.setCurrentSource (ch.iA, -juce::jlimit (0.0, 0.6, (ch.sumPlate + ch.sumScreen) / n));
     ch.supply.solveSample();
     ch.sumPlate = 0.0;
     ch.sumScreen = 0.0;
     ch.sumCount = 0;
 
-    const double plates = juce::jlimit (0.0, 600.0, ch.supply.voltage (ch.sA));
-    const double screens = juce::jlimit (0.0, 600.0, ch.supply.voltage (ch.sB));
+    // Plates and screens share the node after the field coil.
+    const double plates = juce::jlimit (0.0, 600.0, ch.supply.voltage (ch.sB));
     if (! reducedOrder)
     {
         ch.power.setSource (ch.wSrcRail, plates);
-        ch.power.setPentodeScreen (ch.penA, screens);
-        ch.power.setPentodeScreen (ch.penB, screens);
+        ch.power.setPentodeScreen (ch.penA, plates);
+        ch.power.setPentodeScreen (ch.penB, plates);
     }
-    constexpr double decouplingTau = 9.1e3 * 20.0e-6;
+    // 10k / 10 uF to the 6N7 plates, then 100k / 10 uF to the 6SQ7s: fixed idle drops, filtered at the RC rates.
+    const double piTarget = plates - piDropR * (piCurrent + preCurrent);
     const double dt = (double) supplyInterval / juce::jmax (1.0, sampleRate);
-    const double a = 1.0 - std::exp (-dt / decouplingTau);
-    ch.piRail += a * (screens * piFraction - ch.piRail);
-    const double b = 1.0 - std::exp (-dt / (2.0 * decouplingTau));
-    ch.preRail += b * (screens * preFraction - ch.preRail);
+    ch.piRail += (1.0 - std::exp (-dt / (piDropR * decouplingCap))) * (piTarget - ch.piRail);
+    ch.preRail += (1.0 - std::exp (-dt / (preDropR * decouplingCap))) * (ch.piRail - preDropR * preCurrent - ch.preRail);
     if (! reducedOrder)
         ch.power.setSource (ch.wSrcPi, ch.piRail);
     ch.pre.setSource (ch.pSrcRail, ch.preRail);
@@ -513,16 +512,17 @@ void GibsonEH150StyleAmplifierProcessor::prepare (double newSampleRate, int, int
     {
         const double supplyRate = newSampleRate / (double) supplyInterval;
         bool passOk = true;
-        double ipRun = 2.0 * idlePlateCurrent, isRun = 0.01;
+        double ipRun = 2.0 * idlePlateCurrent, isRun = 0.0;
         for (int pass = 0; pass < 10; ++pass)
         {
-            ch.supply.setCurrentSource (ch.iA, -ipRun);
-            ch.supply.setCurrentSource (ch.iB, -(isRun + preampAndPiCurrent));
-            ch.supply.setSource (ch.srcVoc, railPlatesNominal + rectifierR * (ipRun + isRun + preampAndPiCurrent));
+            ch.supply.setCurrentSource (ch.iA, -(ipRun + isRun));
+            ch.supply.setCurrentSource (ch.iB, -(piCurrent + preCurrent));
+            ch.supply.setSource (ch.srcVoc, transformerPeak);
             passOk = ch.supply.prepare (supplyRate);
-            const double plates = ch.supply.voltage (ch.sA), screens = ch.supply.voltage (ch.sB);
-            ch.piRail = screens * piFraction;
-            ch.preRail = screens * preFraction;
+            const double plates = ch.supply.voltage (ch.sB);
+            const double screens = plates;
+            ch.piRail = plates - piDropR * (piCurrent + preCurrent);
+            ch.preRail = ch.piRail - preDropR * preCurrent;
 
             ch.pre.setSource (ch.pSrcRail, ch.preRail);
             passOk = ch.pre.prepare (newSampleRate) && passOk;
