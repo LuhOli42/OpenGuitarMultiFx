@@ -101,6 +101,7 @@ juce_add_binary_data(OpenGuitarMultiFx_Icons
     Assets/Icons/dual_delay.svg
     Assets/Icons/shimmer.svg
     Assets/Icons/gated.svg
+    Assets/Icons/gpstm_pedal.svg
     Assets/Icons/multi_tap.svg
     Assets/Icons/tremolo.svg
     Assets/Icons/chorus.svg
@@ -258,6 +259,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/PingPongDelayProcessor.cpp
   Source/Effects/ReverseDelayProcessor.cpp
   Source/Effects/HoldProcessor.cpp
+  Source/Effects/GuitarPedalSTM32Processor.cpp
   Source/Effects/ReverbProcessor.cpp
   Source/Effects/SpringReverbProcessor.cpp
   Source/Effects/HallReverbProcessor.cpp

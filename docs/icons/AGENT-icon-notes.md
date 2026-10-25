@@ -154,6 +154,7 @@ palette now for effects that don't exist yet.
 | RoomReverbProcessor | Reverb → Room | `Assets/Icons/room.svg` (nested boxes tightening toward the centre) | `Source/Effects/RoomReverbProcessor.cpp` |
 | ShimmerReverbProcessor | Reverb → Shimmer | `Assets/Icons/shimmer.svg` (wash + sparkle above it) | `Source/Effects/ShimmerReverbProcessor.cpp` |
 | GatedReverbProcessor | Reverb → Gated | `Assets/Icons/gated.svg` (decaying wave cut off by a hard bar) | `Source/Effects/GatedReverbProcessor.cpp` |
+| GuitarPedalSTM32Processor | Reverb → GuitarML STM32 | `Assets/Icons/gpstm_pedal.svg` (reverb arch over a dotted echo line) | `Source/Effects/GuitarPedalSTM32Processor.cpp` |
 | AnalogDelayProcessor | Delay → Analog Delay | `Assets/Icons/analog_delay.svg` (decaying rounded humps) | `Source/Effects/AnalogDelayProcessor.cpp` |
 | DualDelayProcessor | Delay → Dual Delay | `Assets/Icons/dual_delay.svg` (two offset dot-rows) | `Source/Effects/DualDelayProcessor.cpp` |
 | MultiTapDelayProcessor | Delay → Multi Tap | `Assets/Icons/multi_tap.svg` (one line, several branching taps) | `Source/Effects/MultiTapDelayProcessor.cpp` |
