@@ -58,7 +58,10 @@ GuitarPedalSTM32Processor::GuitarPedalSTM32Processor()
     auto revTime = std::make_unique<juce::AudioParameterFloat> ("gpstm_reverb_time", "Reverb Time", juce::NormalisableRange<float> (0.0f, 1.0f), 0.7f);
     auto revFilter = std::make_unique<juce::AudioParameterFloat> ("gpstm_reverb_filter", "Reverb Filter", juce::NormalisableRange<float> (0.0f, 1.0f), 0.6f);
     auto delMix = std::make_unique<juce::AudioParameterFloat> ("gpstm_delay_mix", "Delay Mix", juce::NormalisableRange<float> (0.0f, 1.0f), 0.35f);
-    auto delTime = std::make_unique<juce::AudioParameterFloat> ("gpstm_delay_time", "Delay Time", juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
+    auto delTime = std::make_unique<juce::AudioParameterFloat> (
+        "gpstm_delay_time", "Delay Time",
+        juce::NormalisableRange<float> (1.0f, 1000.0f, 0.0f, 0.4f), 400.0f,
+        juce::AudioParameterFloatAttributes().withLabel ("ms"));
     auto delFeedback = std::make_unique<juce::AudioParameterFloat> ("gpstm_delay_feedback", "Delay Feedback", juce::NormalisableRange<float> (0.0f, 1.0f), 0.35f);
     auto route = std::make_unique<juce::AudioParameterFloat> (
         "gpstm_routing", "Routing", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 0.0f,
@@ -87,6 +90,7 @@ GuitarPedalSTM32Processor::GuitarPedalSTM32Processor()
     routing = route.get();
     delayMode = mode.get();
     hold = held.get();
+    registerTempoSyncParam (delTime.get());
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "gpstm", "GuitarML STM32", "|", std::move (revMix), std::move (revTime), std::move (revFilter),
@@ -134,7 +138,8 @@ void GuitarPedalSTM32Processor::prepare (double sampleRate, int, int)
     smoothedDelayMix.reset (sampleRate, paramRampSeconds);
     smoothedDelayMix.setCurrentAndTargetValue (delayMix->get());
 
-    currentDelaySamples = juce::jlimit (1.0, static_cast<double> (forwardLength - 2), static_cast<double> (delayTime->get()) * sampleRate);
+    currentDelaySamples = juce::jlimit (1.0, static_cast<double> (forwardLength - 2),
+                                        static_cast<double> (delayTime->get() * 0.001f) * sampleRate);
     delaySmoothingCoefficient = 1.0 - std::pow (1.0 - 0.0002, 48000.0 / sampleRate);
 
     const auto g = std::tan (juce::MathConstants<double>::pi * 1000.0 / sampleRate);
@@ -203,7 +208,7 @@ void GuitarPedalSTM32Processor::process (juce::AudioBuffer<float>& buffer)
     const auto c = 2.0 - std::cos (2.0 * juce::MathConstants<double>::pi * cutoff / currentSampleRate);
     const auto damping = static_cast<float> (c - std::sqrt (std::max (0.0, c * c - 1.0)));
     const auto targetDelay = juce::jlimit (1.0, static_cast<double> (forwardDelay.size() - 2),
-                                           static_cast<double> (delayTime->get()) * currentSampleRate);
+                                           static_cast<double> (delayTime->get() * 0.001f) * currentSampleRate);
 
     for (int sample = 0; sample < numSamples; ++sample)
     {

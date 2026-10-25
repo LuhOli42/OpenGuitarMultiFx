@@ -97,7 +97,7 @@ public:
                 GuitarPedalSTM32Processor processor;
                 setParameter (processor, "gpstm_routing", static_cast<float> (route));
                 setParameter (processor, "gpstm_delay_mode", static_cast<float> (mode));
-                setParameter (processor, "gpstm_delay_time", 0.2f);
+                setParameter (processor, "gpstm_delay_time", 200.0f);
                 setParameter (processor, "gpstm_delay_feedback", 0.3f);
                 prepare (processor, 48000.0);
 
@@ -136,7 +136,7 @@ public:
             expect (equal);
         }
 
-        beginTest ("Normal delay first echo follows the normalized delay time");
+        beginTest ("Normal delay first echo follows the millisecond delay time");
         for (const auto sampleRate : { 48000.0, 44100.0, 96000.0 })
         {
             GuitarPedalSTM32Processor processor;
@@ -144,7 +144,7 @@ public:
             setParameter (processor, "gpstm_delay_mode", 0.0f);
             setParameter (processor, "gpstm_reverb_mix", 0.0f);
             setParameter (processor, "gpstm_delay_mix", 1.0f);
-            setParameter (processor, "gpstm_delay_time", 0.25f);
+            setParameter (processor, "gpstm_delay_time", 250.0f);
             setParameter (processor, "gpstm_delay_feedback", 0.0f);
             prepare (processor, sampleRate);
             std::vector<float> input (static_cast<size_t> (sampleRate * 0.5), 0.0f);
@@ -169,7 +169,7 @@ public:
             setParameter (processor, "gpstm_delay_mode", 1.0f);
             setParameter (processor, "gpstm_reverb_mix", 0.0f);
             setParameter (processor, "gpstm_delay_mix", 1.0f);
-            setParameter (processor, "gpstm_delay_time", 0.3f);
+            setParameter (processor, "gpstm_delay_time", 300.0f);
             setParameter (processor, "gpstm_delay_feedback", 0.0f);
             prepare (processor, 48000.0);
             std::vector<float> input (76800);
@@ -201,7 +201,7 @@ public:
             setParameter (processor, "gpstm_delay_mode", 2.0f);
             setParameter (processor, "gpstm_reverb_mix", 0.0f);
             setParameter (processor, "gpstm_delay_mix", 1.0f);
-            setParameter (processor, "gpstm_delay_time", 0.2f);
+            setParameter (processor, "gpstm_delay_time", 200.0f);
             setParameter (processor, "gpstm_delay_feedback", 0.0f);
             prepare (processor, 48000.0);
             std::vector<float> input (72000, 0.0f);

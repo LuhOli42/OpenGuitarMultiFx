@@ -16,7 +16,7 @@ network.
 | Reverb Time | Knob 2, reverb decay |
 | Reverb Filter | Knob 3, reverb tone/filter |
 | Delay Mix | Knob 4, delay level |
-| Delay Time | Knob 5, delay time; normalized 0–1 maps to 0–1 second |
+| Delay Time | Knob 5, 1–1000 ms; tempo-syncable |
 | Delay Feedback | Knob 6, delay feedback |
 | Routing | Left toggle: Dly>Rev, Parallel, Rev>Dly |
 | Delay Mode | Right toggle: Normal, Octave, Reverse |
