@@ -18,7 +18,7 @@ network.
 | Delay Mix | Knob 4, delay level |
 | Delay Time | Knob 5, delay time; normalized 0–1 maps to 0–1 second |
 | Delay Feedback | Knob 6, delay feedback |
-| Routing | Left toggle: Delay→Reverb, Parallel, Reverb→Delay |
+| Routing | Left toggle: Dly>Rev, Parallel, Rev>Dly |
 | Delay Mode | Right toggle: Normal, Octave, Reverse |
 | Hold | Left footswitch; freezes the delay/reverb input and sets both feedbacks to 1 |
 | MIDI Learn on Delay Time | Expression-pedal assignment |

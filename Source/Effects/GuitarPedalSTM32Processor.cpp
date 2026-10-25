@@ -64,7 +64,7 @@ GuitarPedalSTM32Processor::GuitarPedalSTM32Processor()
         "gpstm_routing", "Routing", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 0.0f,
         steppedLabels ([] (int value)
         {
-            static const char* labels[] { "Delay→Reverb", "Parallel", "Reverb→Delay" };
+            static const char* labels[] { "Dly>Rev", "Parallel", "Rev>Dly" };
             return juce::String (labels[juce::jlimit (0, 2, value)]);
         }));
     auto mode = std::make_unique<juce::AudioParameterFloat> (
