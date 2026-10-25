@@ -53,6 +53,8 @@ private:
         NodalCircuit pre, pre2, power, supply;
         NodalCircuit::DynamicState preRest, pre2Rest, powerRest, supplyRest;
         int preInput = 0, preInput2 = 0, preRail = 0, preRail2 = 0;
+        int ef86Pen = -1;          // Matchless Ch2 EF86: its screen hangs on a 2M2 dropper (screen volts follow its current)
+        double ef86Screen = 90.0;
         int preRailA = -1; // Astroverb: the 272 V node (cathode follower plate) one 10k above the preamp's 258 V node
         int preVolumeTop = -1, preVolumeBottom = -1, preVolume2Top = -1, preVolume2Bottom = -1;
         int rTrebleTop = -1, rTrebleBottom = -1, rBassTop = -1, rBassBottom = -1, rMid = -1;
@@ -91,6 +93,7 @@ private:
     void buildSupply (Channel& channel);
     void updatePots (Channel& channel);
     void updateSupply (Channel& channel);
+    void trackEf86Screen (Channel& ch, double dt) const noexcept;
     double behavioralPowerStage (Channel& channel, double drive) const noexcept;
     juce::AudioParameterFloat* addFloat (juce::AudioProcessorParameterGroup& group, const char* id, const char* name, float value);
     juce::AudioParameterFloat* findParam (const char* id) const;

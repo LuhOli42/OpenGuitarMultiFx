@@ -62,7 +62,7 @@ EL84BoutiqueAmpCore::EL84BoutiqueAmpCore (Model ampModel, TubeFits fits, bool& r
         treble1Param = add ("hc30_treble1", "Treble 1", 0.5f);
         volume2Param = add ("hc30_volume2", "Volume 2", (float) pots::audioInverse (0.4));
         auto tone = std::make_unique<juce::AudioParameterFloat> (
-            "hc30_tone2", "Tone 2", juce::NormalisableRange<float> (0.0f, 5.0f, 1.0f), 0.0f);
+            "hc30_tone2", "Tone 2", juce::NormalisableRange<float> (0.0f, 5.0f, 1.0f), 5.0f); // default: the full .01 position
         tone2Param = tone.get();
         group->addChild (std::move (tone));
         cutParam = add ("hc30_cut", "Cut", 0.5f);
@@ -216,21 +216,21 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         return std::pair { plate, out };
     };
 
+    // DC-30 Ch2 EF86 (el34world trace): 68k/39k grid stoppers off the 1M input leak, 330k plate, screen through 2M2
+    // (0.1 uF to ground: prepare()/process() track its voltage from the screen current), 2k2 + 25 uF cathode. The
+    // plate drives the TONE selector's series caps directly.
     const auto addEF86 = [&] (NodalCircuit::Node input)
     {
-        const auto grid = c.addNode(), cathode = c.addNode(), plate = c.addNode(), out = c.addNode();
-        c.addCapacitor (input, grid, 0.02e-6);
-        c.addResistor (grid, gnd, 1.0e6);
-        c.addPentode (plate, grid, cathode, tubes.ef86, 200.0);
-        c.addResistor (rail, plate, 220.0e3);
+        const auto grid = c.addNode(), cathode = c.addNode(), plate = c.addNode();
+        c.addResistor (input, grid, 68.0e3);
+        ch.ef86Pen = c.addPentode (plate, grid, cathode, tubes.ef86, ch.ef86Screen);
+        c.addResistor (rail, plate, 330.0e3);
         c.addResistor (cathode, gnd, 2.2e3);
         c.addCapacitor (cathode, gnd, 25.0e-6);
-        c.addCapacitor (plate, out, 0.02e-6);
-        c.addResistor (out, gnd, 1.0e6);
-        c.setInitialGuess (plate, 220.0);
-        c.setInitialGuess (cathode, 1.8);
+        c.setInitialGuess (plate, 180.0);
+        c.setInitialGuess (cathode, 1.2);
         ch.prePlate = plate;
-        return out;
+        return plate;
     };
 
     // Matchless-family interactive Bass/Treble pair: each leg gets its own
@@ -286,32 +286,42 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         c.setInitialGuess (v2aPlate, 200.0);
         c.setInitialGuess (v2aCath, 1.2);
 
+        // V2b cathode follower (56k) -> Fender-style Treble/Bass stack (DC-30 trace): 56 pF to TREBLE 1MA, 18k slope,
+        // .022 to the treble-bottom / bass-top node, .022 to the BASS 1MA wiper (bass bottom to ground, no mid pot);
+        // output from the treble wiper through 220k into 18k to ground (-> FX send -> PI grid A).
         const auto follower = c.addNode();
         c.addFollower (v2aPlate, follower, 1.5);
-        c.addResistor (follower, gnd, 47.0e3);
-        ch.toneOut = matchlessTone (follower, 56.0e-12, 0.022e-6, 220.0e3, 1.0e6, 180.0e3, 0.0);
-        ch.preOut = ch.toneOut;
+        c.addResistor (follower, gnd, 56.0e3);
+        const auto trebleTop = c.addNode(), slope = c.addNode(), mid = c.addNode(), bassWiper = c.addNode(), trebleWiper = c.addNode();
+        c.addCapacitor (follower, trebleTop, 56.0e-12);
+        c.addResistor (follower, slope, 18.0e3);
+        c.addCapacitor (slope, mid, 0.022e-6);
+        c.addCapacitor (slope, bassWiper, 0.022e-6);
+        ch.rTrebleTop = c.addResistor (trebleTop, trebleWiper, 1.0e6);
+        ch.rTrebleBottom = c.addResistor (trebleWiper, mid, 1.0e6);
+        ch.rBassTop = c.addResistor (mid, bassWiper, 1.0e6);
+        ch.rBassBottom = c.addResistor (bassWiper, gnd, 1.0e6);
+        const auto out = c.addNode();
+        c.addResistor (trebleWiper, out, 220.0e3);
+        c.addResistor (out, gnd, 18.0e3);
+        ch.toneOut = out;
+        ch.preOut = out;
         return;
     }
 
     if (model == Model::matchlessHC30)
     {
-        // Channel 2 (factory schematic): EF86 -> coupling -> TONE rotary cap selector
-        // -> VOL 1MA with 180pF bright -> 470k -> out. The tone cap sits BEFORE the
-        // volume on the real amp (the model previously had them swapped).
-        auto output = addEF86 (in);
-        const auto toneNode = c.addNode();
-        c.addCapacitor (output, toneNode, 3.6e-9); // schematic marks this leg "360" (~.0036uF)
-        ch.toneCap = c.addCapacitor (toneNode, gnd, 56.0e-12);
+        // Channel 2 (DC-30 trace): EF86 plate -> TONE rotary = the SERIES coupling cap (360p / 56p / .0012 / .0022 /
+        // .0047 / .01 + 180p, each with a 5M bleed) -> VOL 1MA (180 pF bright) -> wiper, 470k to ground -> PI grid B.
+        const auto plate = addEF86 (in);
         const auto volTop = c.addNode(), volWiper = c.addNode();
-        c.addResistor (toneNode, volTop, 1.0);
+        ch.toneCap = c.addCapacitor (plate, volTop, 10.18e-9);
+        c.addResistor (volTop, gnd, 5.0e6);
         ch.preVolume2Top = c.addResistor (volTop, volWiper, 1.0e6);
         ch.preVolume2Bottom = c.addResistor (volWiper, gnd, 1.0e6);
         c.addCapacitor (volTop, volWiper, 180.0e-12);
-        const auto toneOut = c.addNode();
-        c.addResistor (volWiper, toneOut, 470.0e3);
-        c.addResistor (toneOut, gnd, 1.0e6);
-        ch.preOut2 = toneOut;
+        c.addResistor (volWiper, gnd, 470.0e3);
+        ch.preOut2 = volWiper;
         return;
     }
 
@@ -626,7 +636,7 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
         // (4n7 + 500k) and the Hot Cat BRILLIANCE (4n7 + 1M log) are the same
         // network; only the pot taper/value differs (handled in updatePots).
         const auto cutNode = c.addNode();
-        c.addCapacitor (gridCouplingA, cutNode, 4.7e-9);
+        c.addCapacitor (gridCouplingA, cutNode, isHotCat ? 4.7e-9 : 2.2e-9); // DC-30 trace: CUT 250KA + .0022
         ch.rCut = c.addResistor (cutNode, gridCouplingB, 500.0e3);
     }
     // Astroverb runs fixed bias: the 220k grid leaks return to the -16 V bias
@@ -731,17 +741,19 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 500.0e3, pots::audio (smoothedParam (ch, 3, volume1Param, 0.4)));
         setPot (ch.pre2, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, pots::audio (smoothedParam (ch, 4, volume2Param, 0.4)));
         const double bass = smoothedParam (ch, 5, bass1Param, 0.5), treble = smoothedParam (ch, 6, treble1Param, 0.5);
-        setPot (ch.pre, ch.rTrebleTop, ch.rTrebleBottom, 220.0e3, treble);
+        setPot (ch.pre, ch.rTrebleTop, ch.rTrebleBottom, 1.0e6, pots::audio (treble)); // TREBLE 1MA (DC-30 trace)
         setPot (ch.pre, ch.rBassTop, ch.rBassBottom, 1.0e6, pots::audio (bass));
         if (! reducedOrder)
-            ch.power.setResistance (ch.rCut, boundedPot (1.0 - smoothedParam (ch, 7, cutParam, 0.5), 500.0e3));
-        const int tonePosition = juce::jlimit (0, 5, juce::roundToInt ((float) param (tone2Param, 0.0)));
+            ch.power.setResistance (ch.rCut, boundedPot (1.0 - smoothedParam (ch, 7, cutParam, 0.5), 250.0e3));
+        const int tonePosition = juce::jlimit (0, 5, juce::roundToInt ((float) param (tone2Param, 5.0)));
         if (tonePosition != ch.lastTonePosition)
         {
             ch.lastTonePosition = tonePosition;
             // Rotary TONE caps from the factory schematic (position 5 is the
             // factory-added 180pF on top of the .01uF).
-            constexpr double toneCaps[6] { 56.0e-12, 1.2e-9, 2.2e-9, 4.7e-9, 10.0e-9, 10.18e-9 };
+            // DC-30 trace: 56p, 360p, .0012, .0022, .0047 and .01 + 180p (factory-added) series coupling caps, thinnest
+            // first (the trace lists the 360 above the 56p; ordered by value so the knob turns one way).
+            constexpr double toneCaps[6] { 56.0e-12, 360.0e-12, 1.2e-9, 2.2e-9, 4.7e-9, 10.18e-9 };
             ch.pre2.setCapacitance (ch.toneCap, toneCaps[tonePosition]);
         }
     }
@@ -861,6 +873,17 @@ void EL84BoutiqueAmpCore::updateSupply (Channel& ch)
         ch.pre2.setSource (ch.preRail2, ch.preRailFiltered);
 }
 
+void EL84BoutiqueAmpCore::trackEf86Screen (Channel& ch, double dt) const noexcept
+{
+    // Screen = rail - 2M2 * Ig2 through the 0.1 uF bypass (tau 0.22 s); dt < 0: jump to the static value (prepare()).
+    double ip = 0.0, ig2 = 0.0;
+    ch.pre2.pentodeCurrents (ch.ef86Pen, ip, ig2);
+    const double rail = ch.preRailFiltered > 0.0 ? ch.preRailFiltered : railNominal * 0.725;
+    const double target = juce::jlimit (5.0, rail, rail - 2.2e6 * juce::jmax (0.0, ig2));
+    ch.ef86Screen = dt < 0.0 ? target : ch.ef86Screen + (1.0 - std::exp (-dt / (2.2e6 * 0.1e-6))) * (target - ch.ef86Screen);
+    ch.pre2.setPentodeScreen (ch.ef86Pen, ch.ef86Screen);
+}
+
 double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) const noexcept
 {
     const double attack = 1.0 - std::exp (-1.0 / (0.008 * juce::jmax (1.0, sampleRate)));
@@ -875,9 +898,9 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     // level re-fit 2026-10-11: matchless/hotCat defaults now restore the pre-audio-taper wiper
     // fractions, which moved the stage's calibration point; scaled so the reduced path re-tracks
     // the reference at the new defaults (was 1.17 / 14.0).
-    // matchless 2.02 -> 5.2 (2026-10-24): 2.02 had been fitted against a test that ran the reference at Volume 2 = 0.6
+    // matchless 2.02 -> 5.2 (2026-10-24), 6.2 after the DC-30 trace rebuild (2026-10-25): 2.02 had been fitted against a test that ran the reference at Volume 2 = 0.6
     // and the reduced path at its default; at equal knobs it sat 7-10 dB under the netlist.
-    const double level = model == Model::matchlessHC30 ? 5.2 :
+    const double level = model == Model::matchlessHC30 ? 6.2 :
                          model == Model::hotCat30 ? 34.0 :
                          model == Model::carmenGhia ? 18.5 : 21.4;
     const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
@@ -909,6 +932,13 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
         ok = ch.pre.prepare (sampleRate) && ok;
         if (hasSecondPreamp())
             ok = ch.pre2.prepare (sampleRate) && ok;
+        if (ch.ef86Pen >= 0)
+            for (int pass = 0; pass < 6; ++pass) // the EF86 screen on its 2M2 dropper, to its own DC point
+            {
+                ch.pre2.solveSample();
+                trackEf86Screen (ch, -1.0);
+                ok = ch.pre2.prepare (sampleRate) && ok;
+            }
         if (! reducedOrder)
             ok = ch.power.prepare (sampleRate) && ok;
         dcOk = dcOk && ok;
@@ -985,7 +1015,11 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
 
         if ((i & 15) == 0)
             for (auto& ch : channels)
+            {
                 updatePots (ch);
+                if (ch.ef86Pen >= 0)
+                    trackEf86Screen (ch, 16.0 / sampleRate);
+            }
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
