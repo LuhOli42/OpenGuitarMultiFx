@@ -529,7 +529,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/DrZCarmenGhia.md.
     CarmenGhiaStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarmenGhiaStyleAmplifier");
-    registry.registerType ("CarmenGhiaStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.53f); }, "Crunch");
+    registry.registerType ("CarmenGhiaStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.46f); }, "Crunch");
     // docs/circuits/SoldanoAstroverb16.md.
     Astroverb16StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Astroverb16StyleAmplifier");

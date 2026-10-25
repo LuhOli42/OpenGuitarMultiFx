@@ -432,17 +432,44 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
 
     if (model == Model::carmenGhia)
     {
-        auto first = addTriode (in, 100.0e3, 1.5e3, 25.0e-6, 0.022e-6, true);
-        const auto volumeOut = c.addNode();
-        ch.preVolumeTop = c.addResistor (first.second, volumeOut, 1.0e6);
-        ch.preVolumeBottom = c.addResistor (volumeOut, gnd, 1.0e6);
-        auto second = addTriode (volumeOut, 100.0e3, 1.5e3, 0.0, 0.022e-6, false);
-        const auto tone = c.addNode();
-        c.addResistor (second.second, tone, 100.0e3);
-        ch.toneCap = c.addCapacitor (tone, gnd, 4.7e-9);
-        c.addResistor (tone, gnd, 1.0e6);
-        ch.prePlate = first.first;
-        ch.preOut = tone;
+        // Phoenix Project redraw rev 1.3 (docs/circuits/DrZCarmenGhia.md): R29 68k / R27 1M into V1a (R21 100k, R23 2k7 +
+        // C13 .68 uF -- a partial bypass); C11 .022 into the tone network -- C15 250 pF across R24 + R25 150k, their
+        // joint to ground through the TONE pot P2 (500k A) and C17 .01 -- whose far end is the VOLUME P1 (1M A); the
+        // wiper drives V1b (R20 100k, R22 1k5 + C12 25 uF); C14 .01 out (R19 / C9 / NFB are in the power block).
+        const auto g1 = c.addNode(), p1 = c.addNode(), k1 = c.addNode();
+        c.addResistor (in, gnd, 1.0e6);
+        c.addResistor (in, g1, 68.0e3);
+        c.addTriode (p1, g1, k1, tubes.triode);
+        c.addCapacitor (g1, p1, 1.7e-12);
+        c.addResistor (rail, p1, 100.0e3);
+        c.addResistor (k1, gnd, 2.7e3);
+        c.addCapacitor (k1, gnd, 0.68e-6);
+        c.setInitialGuess (p1, 150.0);
+        c.setInitialGuess (k1, 1.43);
+
+        const auto x = c.addNode(), y = c.addNode(), j = c.addNode(), t = c.addNode(), w = c.addNode();
+        c.addCapacitor (p1, x, 0.022e-6);
+        c.addCapacitor (x, y, 250.0e-12);
+        c.addResistor (x, j, 150.0e3);
+        c.addResistor (j, y, 150.0e3);
+        ch.rTonePot = c.addResistor (j, t, 250.0e3);
+        c.addCapacitor (t, gnd, 0.01e-6);
+        ch.preVolumeTop = c.addResistor (y, w, 500.0e3);
+        ch.preVolumeBottom = c.addResistor (w, gnd, 500.0e3);
+        c.setInitialGuess (x, 0.0);
+
+        const auto p2 = c.addNode(), k2 = c.addNode(), o = c.addNode();
+        c.addTriode (p2, w, k2, tubes.triode);
+        c.addCapacitor (w, p2, 1.7e-12);
+        c.addResistor (rail, p2, 100.0e3);
+        c.addResistor (k2, gnd, 1.5e3);
+        c.addCapacitor (k2, gnd, 25.0e-6);
+        c.addCapacitor (p2, o, 0.01e-6);
+        c.addResistor (o, gnd, 1.0e6);
+        c.setInitialGuess (p2, 187.0);
+        c.setInitialGuess (k2, 1.37);
+        ch.prePlate = p1;
+        ch.preOut = o;
         return;
     }
 
@@ -589,8 +616,22 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     const bool isAstro = model == Model::astroverb16;
     const bool elevatedRef = model == Model::matchlessHC30 || isHotCat;
     const auto piRef = c.addNode();
-    c.addCapacitor (input, ch.piGridA, isAstro ? 0.02e-6 : 0.01e-6);
-    c.addResistor (ch.piGridA, elevatedRef ? piRef : gnd, 1.0e6);
+    const bool isCarmen = model == Model::carmenGhia;
+    NodalCircuit::Node nfbJoint = gnd;
+    if (isCarmen)
+    {
+        // CG: C14's output -> R19 220k -> C9 .001 -> the 5751's grid (R26 470k); R10 3M3 NFB lands on the R19 / C9 joint.
+        nfbJoint = c.addNode();
+        c.addResistor (input, nfbJoint, 220.0e3);
+        c.addCapacitor (nfbJoint, ch.piGridA, 0.001e-6);
+        c.addResistor (ch.piGridA, gnd, 470.0e3);
+        c.setInitialGuess (nfbJoint, 0.0);
+    }
+    else
+    {
+        c.addCapacitor (input, ch.piGridA, isAstro ? 0.02e-6 : 0.01e-6);
+        c.addResistor (ch.piGridA, elevatedRef ? piRef : gnd, 1.0e6);
+    }
     c.addResistor (ch.piGridB, elevatedRef ? piRef : gnd, 1.0e6);
     // Channel 2 feeds the PI's second grid on the interactive two-channel
     // circuits: Hot Cat clean -> 10n -> V4b grid; DC-30 CH2 -> .01/400V -> V7b.
@@ -645,8 +686,8 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     // Newton-storms in this solver under the audit's hard pluck; the shared
     // cathode-bias topology stays for now. See PR notes.
     const NodalCircuit::Node biasRef = gnd;
-    c.addResistor (gridCouplingA, biasRef, 220.0e3);
-    c.addResistor (gridCouplingB, biasRef, 220.0e3);
+    c.addResistor (gridCouplingA, biasRef, isCarmen ? 330.0e3 : 220.0e3); // CG: R13 / R17 330k
+    c.addResistor (gridCouplingB, biasRef, isCarmen ? 330.0e3 : 220.0e3);
     // Grid stoppers: 1k5 (DC-30), 10k/2W (Hot Cat), 2k2 (Astroverb); CG reuses
     // these handles for its ganged PPIMV, so it starts at 1 ohm.
     const double gridStopper = model == Model::carmenGhia ? 1.0
@@ -655,7 +696,7 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     ch.rMasterTopB = c.addResistor (gridCouplingB, gridB, gridStopper);
     ch.cathodeBias = c.addNode();
     const bool fourTubes = model == Model::matchlessHC30;
-    const double cathodeR = model == Model::matchlessHC30 ? 68.0 : isHotCat ? 135.0 : 130.0;
+    const double cathodeR = model == Model::matchlessHC30 ? 68.0 : isHotCat ? 135.0 : isCarmen ? 150.0 : 130.0;
     ch.rCathodeBias = c.addResistor (ch.cathodeBias, gnd, cathodeR);
     c.addCapacitor (ch.cathodeBias, gnd, 250.0e-6);
     const auto& powerTube = fourTubes ? tubes.el84Pair : tubes.el84;
@@ -682,10 +723,13 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     const double ls = lh / (turns * turns);
     const double m12 = -couplingHalves * lh;
     const double mps = couplingSecondary * std::sqrt (lh * ls);
+    // Secondary sense: the CG's R10 NFB returns to the PI's grid side (the Astroverb's to its tail), so it needs the
+    // opposite winding sense for the loop to be negative.
+    const double sense = isCarmen ? -1.0 : 1.0;
     c.addCoupledInductors ({ { a1, t1 }, { a2, t2 }, { sw, gnd } },
-                           { lh, m12, -mps,
-                             m12, lh, mps,
-                             -mps, mps, ls });
+                           { lh, m12, -sense * mps,
+                             m12, lh, sense * mps,
+                             -sense * mps, sense * mps, ls });
     ch.speaker = c.addNode();
     c.addResistor (sw, ch.speaker, 0.2);
     const auto speakerModel = tubeamp::speakerModel (speakerNominal[2]);
@@ -700,6 +744,12 @@ void EL84BoutiqueAmpCore::buildPower (Channel& ch)
     c.setInitialGuess (t2, railNominal);
     c.setInitialGuess (a1, railNominal);
     c.setInitialGuess (a2, railNominal);
+
+    if (isCarmen)
+    {
+        c.addResistor (ch.speaker, nfbJoint, 3.3e6);                   // R10 3M3 (the drawing's alternate is 2M2)
+        c.addCapacitor (ch.powerPlateA, ch.powerPlateB, 0.0022e-6);    // C18 .0022: keeps the NFB loop's top end stable
+    }
 
     if (model == Model::astroverb16)
     {
@@ -779,8 +829,9 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     {
         // Volume: 1M audio taper.
         setPot (ch.pre, ch.preVolumeTop, ch.preVolumeBottom, 1.0e6, pots::audio (smoothedParam (ch, 3, volume1Param, 0.4)));
+        // TONE P2 500k A as a rheostat to C17: up = more resistance = less of the treble shunt.
         const double tone = smoothedParam (ch, 12, toneParam, 0.5);
-        ch.pre.setCapacitance (ch.toneCap, 4.7e-9 * (0.2 + 1.6 * (1.0 - tone)));
+        ch.pre.setResistance (ch.rTonePot, juce::jmax (100.0, 500.0e3 * pots::audio (tone)));
     }
     else
     {
@@ -800,7 +851,8 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
     {
         {
             const double cathodeNominal = model == Model::matchlessHC30 ? 68.0
-                                        : model == Model::hotCat30 ? 135.0 : 130.0;
+                                        : model == Model::hotCat30 ? 135.0
+                                        : model == Model::carmenGhia ? 150.0 : 130.0;
             ch.power.setResistance (ch.rCathodeBias, cathodeNominal * (0.7 + 0.6 * bias));
         }
         ch.supply.setResistance (ch.rectifierResistance,
@@ -809,8 +861,8 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         {
             // Ganged 250K post-PI master: audio taper, like a real dual-gang PPIMV pot.
             const double master = pots::audio (smoothedParam (ch, 15, masterParam, 1.0));
-            ch.power.setResistance (ch.rMasterTopA, boundedPot (1.0 - master, 250.0e3));
-            ch.power.setResistance (ch.rMasterTopB, boundedPot (1.0 - master, 250.0e3));
+            ch.power.setResistance (ch.rMasterTopA, 2.7e3 + boundedPot (1.0 - master, 250.0e3)); // + R30 / R31 2700
+            ch.power.setResistance (ch.rMasterTopB, 2.7e3 + boundedPot (1.0 - master, 250.0e3));
         }
         const auto speakerIndex = juce::jlimit (0, 2, juce::roundToInt ((float) param (speakerParam, 2.0)));
         if (speakerIndex != ch.lastSpeakerIndex)
@@ -902,7 +954,7 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     // and the reduced path at its default; at equal knobs it sat 7-10 dB under the netlist.
     const double level = model == Model::matchlessHC30 ? 6.2 :
                          model == Model::hotCat30 ? 34.0 :
-                         model == Model::carmenGhia ? 18.5 : 21.4;
+                         model == Model::carmenGhia ? 26.4 : 21.4;
     const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
     const double sag = reducedOrder ? 0.03 * ch.bmFeel : 0.025;
     return level * (std::tanh (drive * gain + asym) - std::tanh (asym)) * (model == Model::carmenGhia ? 0.65 : 0.8)
@@ -928,31 +980,49 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
         // band vs the netlist 13.2 -> 3.2 dB.)
         ch.bmTail.setCabChoices (cabParam, cabAlts);
         ch.bmTail.prepare (sampleRate, bmVoicing, 1.0 / outputScale);
-        bool ok = ch.supply.prepare (sampleRate / (double) supplyInterval);
-        ok = ch.pre.prepare (sampleRate) && ok;
-        if (hasSecondPreamp())
-            ok = ch.pre2.prepare (sampleRate) && ok;
-        if (ch.ef86Pen >= 0)
-            for (int pass = 0; pass < 6; ++pass) // the EF86 screen on its 2M2 dropper, to its own DC point
-            {
-                ch.pre2.solveSample();
-                trackEf86Screen (ch, -1.0);
+        // Supply -> rails -> preamp / power -> the tubes' measured current -> supply again, until it settles: the supply
+        // used to be solved once at an assumed 0.15 A and the rails then walked to their real point after start-up --
+        // a thump that scaled with the Volume (it showed on the Carmen Ghia once its preamp was rebuilt).
+        bool ok = true;
+        for (int railPass = 0; railPass < 4; ++railPass)
+        {
+            ok = ch.supply.prepare (sampleRate / (double) supplyInterval);
+            const double rail = juce::jlimit (0.0, 500.0, ch.supply.voltage (ch.supplyB));
+            ch.preRailFiltered = rail * 0.725;
+            ch.pre.setSource (ch.preRail, ch.preRailFiltered);
+            if (ch.preRailA >= 0)
+                ch.pre.setSource (ch.preRailA, ch.preRailFiltered * 272.0 / 258.0);
+            if (hasSecondPreamp())
+                ch.pre2.setSource (ch.preRail2, ch.preRailFiltered);
+            if (! reducedOrder)
+                ch.power.setSource (ch.powerRail, rail);
+            ok = ch.pre.prepare (sampleRate) && ok;
+            if (hasSecondPreamp())
                 ok = ch.pre2.prepare (sampleRate) && ok;
+            if (ch.ef86Pen >= 0)
+                for (int pass = 0; pass < 6; ++pass) // the EF86 screen on its 2M2 dropper, to its own DC point
+                {
+                    ch.pre2.solveSample();
+                    trackEf86Screen (ch, -1.0);
+                    ok = ch.pre2.prepare (sampleRate) && ok;
+                }
+            if (! reducedOrder)
+            {
+                ok = ch.power.prepare (sampleRate) && ok;
+                ch.power.solveSample(); // pentodeCurrents() reads the last solve
+                double ipA = 0.0, isA = 0.0, ipB = 0.0, isB = 0.0;
+                ch.power.pentodeCurrents (ch.penA, ipA, isA);
+                ch.power.pentodeCurrents (ch.penB, ipB, isB);
+                ch.supply.setCurrentSource (ch.supplyCurrent, -juce::jlimit (0.0, 0.5, ipA + ipB + isA + isB));
+                ok = ch.power.prepare (sampleRate) && ok; // back to the exact DC point after the probing solve
             }
-        if (! reducedOrder)
-            ok = ch.power.prepare (sampleRate) && ok;
+        }
         dcOk = dcOk && ok;
         ch.pre.saveDynamicState (ch.preRest);
         if (hasSecondPreamp())
             ch.pre2.saveDynamicState (ch.pre2Rest);
         if (! reducedOrder)
-        {
             ch.power.saveDynamicState (ch.powerRest);
-            double ipA = 0.0, isA = 0.0, ipB = 0.0, isB = 0.0;
-            ch.power.pentodeCurrents (ch.penA, ipA, isA);
-            ch.power.pentodeCurrents (ch.penB, ipB, isB);
-            ch.supply.setCurrentSource (ch.supplyCurrent, -(ipA + ipB + isA + isB));
-        }
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.preRailFiltered = ch.supply.voltage (ch.supplyB) * 0.725;
         ch.preDc = ch.pre.voltage (ch.preOut);
