@@ -147,6 +147,7 @@
 #include "Effects/GuitarSynth/TrackedSynthProcessor.h"
 #include "Effects/GuitarSynth/SpectralMorphProcessor.h"
 #include "Effects/HoldProcessor.h"
+#include "Effects/GuitarPedalSTM32Processor.h"
 
 namespace openguitarmultifx
 {
@@ -796,6 +797,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("Room", EffectRegistry::Category::reverb, [] { return std::make_unique<RoomReverbProcessor>(); }, "Room/Hall");
     registry.registerType ("Shimmer", EffectRegistry::Category::reverb, [] { return std::make_unique<ShimmerReverbProcessor>(); }, "Ambient");
     registry.registerType ("GatedReverb", EffectRegistry::Category::reverb, [] { return std::make_unique<GatedReverbProcessor>(); }, "Special");
+    registry.registerType ("GuitarPedalSTM32", EffectRegistry::Category::reverb, [] { return std::make_unique<GuitarPedalSTM32Processor>(); }, "Special");
     registry.registerType ("PingPong", EffectRegistry::Category::delay, [] { return std::make_unique<PingPongDelayProcessor>(); }, "Digital");
     registry.registerType ("ReverseDelay", EffectRegistry::Category::delay, [] { return std::make_unique<ReverseDelayProcessor>(); }, "Special");
     registry.registerType ("Hold", EffectRegistry::Category::delay, [] { return std::make_unique<HoldProcessor>(); }, "Special");

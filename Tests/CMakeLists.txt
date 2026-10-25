@@ -8,6 +8,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   SignalGraphTests.cpp
   SignalGraphBench.cpp
   EffectRegistryCategoryTests.cpp
+  GuitarPedalSTM32ProcessorTests.cpp
   BypassCrossfadeTests.cpp
   ParamSmoothingTests.cpp
   DeferredReclaimerTests.cpp
