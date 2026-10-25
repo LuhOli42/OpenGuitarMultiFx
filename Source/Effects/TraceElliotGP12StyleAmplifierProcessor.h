@@ -59,7 +59,10 @@ public:
 private:
     struct Channel
     {
-        // Pre-shape filters (low shelf, mid cut, high shelf)
+        // Pre-shape: the Mid Pre Shape circuit, plus the estimated Shape 2 filters (low shelf, mid cut, high shelf)
+        NodalCircuit pre;
+        int srcPre = 0, rShaped = 0, rStraight = 0;
+        NodalCircuit::Node nPreOut = 0;
         Biquad preLo, preMid, preHi;
         // Crossover + compressor state
         double lpX = 0.0;                    // the complementary crossover's low-pass state

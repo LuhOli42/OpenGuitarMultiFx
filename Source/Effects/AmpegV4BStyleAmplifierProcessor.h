@@ -13,22 +13,19 @@ namespace openguitarmultifx
     An Ampeg V4B-style bass amplifier, modelled at component level on NodalCircuit from the amp's
     1971 factory schematic (see docs/circuits/AmpegV4B.md -- read that file to understand this processor).
 
-    Two solver blocks plus a small power-supply model:
-      1. the preamp -- the 6K11/12AX7 front end's gain stages around the Ultra-Lo network and the Volume pot, the
-         Baxandall-style bass/treble tone section, the V2:B recovery stage, the tapped-inductor mid trap
-         with its 3-position frequency select, the Master pot and the V2:A cathode-follower output;
-      2. everything the global feedback loop passes through -- the 12DW7 long-tailed-pair phase splitter
-         (modelled with the 12AX7 parameter set), the two 12AU7 common-cathode drivers with their resistive
-         level-shifters (which is where the output tubes' -50 V bias actually comes from), the four 7027As
-         as two push-pull pairs, the output
-         transformer (coupled inductors), the speaker and the negative feedback into the phase splitter;
-      3. the rectifier / filter supply, whose sag under load is a large part of the character.
+    Two solver blocks plus a small power-supply model, all from the factory V-4B drawing (4010267, 5-71):
+      1. the preamp -- V1a, the Ultra-Lo ladder, the 1M linear Volume with Ultra-Hi, V1b, the bass / treble
+         network, the 6K11 active mid stage (L101 + the 300 / 800 / 3000 Hz selector on the 50k Mid-Range pot)
+         and the 12DW7's 12AX7 cathode follower to the Ext Amp jacks;
+      2. everything the global feedback loop passes through -- the 12DW7's 12AU7 half (R34 NFB onto its 33 ohm
+         cathode resistor), the 12AU7 long-tailed pair, the four 7027As as two banks on -64 V fixed bias, the
+         output transformer (coupled inductors) and the speaker;
+      3. the bridge supply (545 V plates, R55 to the 540 V screens, the 360 / 325 V small-signal rails).
 
-    Controls, page 1: Input (0 dB / -15 dB -- the amp's two front-panel jacks), Gain, Ultra-Lo, Ultra-Hi
-    (the faceplate rocker switches), Bass, Mid + Mid Frequency (the 3-position 220/800/3000 Hz tapped-
-    inductor select), Treble, Master. Page 2 (synthetic, plus Output -- a plug-in level control): Power
-    Drive (a master volume between the preamp and the phase splitter), Bias (the driver level-shifter tap,
-    so hot/cold like the amp's own bias trims), Tube Feel (how much the supply sags and how little negative
+    Controls, page 1: Input (a synthetic 0 / -15 dB pad), Volume, Ultra-Lo, Ultra-Hi (the faceplate rocker
+    switches), Bass, Mid + Mid Frequency (SW3: 300 / 800 / 3000 Hz), Treble, Master (synthetic: a linear level
+    into the power amp). Page 2 (synthetic, plus Output -- a plug-in level control): Power
+    Drive (a master volume between the preamp and the power amp), Bias (the -64 V bias rail, hot/cold), Tube Feel (how much the supply sags and how little negative
     feedback there is: 0 = stiff and solid-state-like, 1 = the real amp) and Speaker (2 / 4 / 8 ohm, a
     speaker with its voice-coil inductance and cone resonance).
 */
@@ -54,8 +51,8 @@ public:
         reference -- same pattern as BassmanStyleAmplifierProcessor). EffectRegistry.cpp flips this
         on centrally; the unit tests reset it to false so they keep probing the reference model. */
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 25.0;      // closed-loop gain of the LTP + drivers + push-pull + OT + NFB
-    static constexpr double bmYmax = 0.208;      // fraction of the sag rail reachable at the speaker
+    static constexpr double bmGain0 = 120.0;     // V3b + LTP + push-pull + OT closed-loop gain (fitted)
+    static constexpr double bmYmax = 0.078;      // fraction of the sag rail reachable at the speaker
     static constexpr double bmAsym = 0.09;       // push-pull clip asymmetry
     static constexpr double bmGridClampV = 24.0; // LTP input where grid conduction clamps
     static constexpr double bmDcHz = 8.0;        // OT low-frequency saturation rolloff
@@ -72,10 +69,11 @@ public:
     {
         return sampleCount > 0 ? (double) failureCount / (double) sampleCount : 0.0;
     }
-    /** Supply rails at the last update: plates (B+), screens/drivers, preamp+PI. */
+    /** Supply rails at the last update: plates (B+), screens, the long-tailed pair's 360 V, the 325 V preamp rail. */
     double railPlates() const noexcept { return channels[0].supply.voltage (channels[0].sA); }
     double railScreens() const noexcept { return channels[0].supply.voltage (channels[0].sB); }
-    double railPreamp() const noexcept { return channels[0].supply.voltage (channels[0].sC); }
+    double railDriver() const noexcept { return channels[0].driverRail; }
+    double railPreamp() const noexcept { return channels[0].preRail; }
     /** Development/test hook: replaces the negative-feedback resistor (a huge value opens the loop). */
     void debugSetFeedbackResistance (double ohms);
     /** Test hook: replaces the speaker by a plain resistor. */
@@ -102,15 +100,15 @@ private:
         bool alignOutput = false;
 
         // preamp
-        int pSrcVcc = 0, pSrcIn = 0;
+        int pSrcVcc = 0, pSrcVccLow = 0, pSrcIn = 0;
         int rGainTop = 0, rGainBot = 0, rBassTop = 0, rBassBot = 0, rTrebleTop = 0, rTrebleBot = 0;
-        int rMasterTop = 0, rMasterBot = 0, rMid = 0, rUltraLoA = 0, rUltraLoB = 0, capUltraHi = 0;
-        int grpMidL = 0, capMidC = 0;
+        int rUlDirect = 0, rUlIn = 0, rUlOut = 0, capUltraHi = 0, rUhBypass = 0;
+        int rMidA = 0, rMidB = 0, rCoil = 0, grpMidL = 0, capMidC = 0;
         NodalCircuit::Node pPlate1 = 0, pPlate2 = 0, pTone = 0, pPlate3 = 0, pMid = 0, pFollower = 0;
 
         // power section
         int wSrcPre = 0, wSrcPi = 0, wSrcCt = 0, wSrcNeg = 0, wSrcVdr = 0;
-        int rFeedback = 0, rBiasTapA = 0, rBiasTapB = 0;
+        int rFeedback = 0;
         int rSpkRe = 0, rSpkRp = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wGridA = 0, wPlateA = 0, wPlateB = 0, wTail = 0, wDrvPlateA = 0,
@@ -119,8 +117,9 @@ private:
         double vScreen = 365.0;
 
         // supply
-        int iA = 0, iB = 0, iC = 0, srcVoc = 0, srcVoc2 = 0, rRect = 0, rRect2 = 0;
-        NodalCircuit::Node sA = 0, sB = 0, sC = 0;
+        int iA = 0, iB = 0, srcVoc = 0, rRect = 0;
+        NodalCircuit::Node sA = 0, sB = 0;                 // plates (545 V), screens (540 V)
+        double driverRail = 360.0, preRail = 325.0, lowRail = 318.0;
         double sumPlate = 0.0, sumScreen = 0.0;
         NodalCircuit::Node wTone = 0;
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
@@ -152,6 +151,7 @@ private:
     bool resistiveLoadForced = false;
     double feedbackOverride = 0.0;
     void updateSupply (Channel& ch) const;
+    void trackSmallRails (Channel& ch, double dt) const;
 
     std::array<Channel, 2> channels;
 
