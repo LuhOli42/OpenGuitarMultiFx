@@ -656,7 +656,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.61f); }, "Bass");
     Acoustic360StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Acoustic360StyleAmplifier");
-    registry.registerType ("Acoustic360StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Acoustic360StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.28f); }, "Bass");
+    registry.registerType ("Acoustic360StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Acoustic360StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -6.38f); }, "Bass");
 
     // Same wrapper class, three chain roles -- only the .nam file loaded
     // into each instance determines whether it sounds like an amp, an

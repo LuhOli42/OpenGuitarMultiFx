@@ -54,8 +54,10 @@ private:
             amp.prepare (48000.0, 128, 1);
             expect (amp.dcConverged());
             struct { P p; double target; double tol; const char* what; } pts[] = {
-                { P::firstCollector, 13.0, 0.4, "Q1 collector" },
-                { P::secondCollector, 13.0, 0.4, "Q2 collector" },
+                // factory 360 (1006A): Q1 is an emitter follower biased by R3 1M / R4 4.7M off +25 V (~20 V at the
+                // emitter); Q4 (R16 3.9K, R14 270K collector-base, R15 680) sits near 7.7 V.
+                { P::firstCollector, 20.0, 0.2, "Q1 emitter" },
+                { P::secondCollector, 7.7, 0.4, "Q4 collector" },
             };
             for (auto& pt : pts)
             {
@@ -87,28 +89,31 @@ private:
                 amp.prepare (48000.0, 128, 1);
                 setParam (amp, "acoustic360_bass", bass);
                 setParam (amp, "acoustic360_treble", treble);
-                return runSine (amp, 40.0, 0.02, 1.0, 0.2, (int) P::variampNode);
+                return runSine (amp, 40.0, 0.02, 1.0, 0.2, (int) P::toneStackOut);
             };
             const double up = levelAt (1.0f, 0.5f);
             const double dn = levelAt (0.0f, 0.5f);
             expectGreaterThan (up / juce::jmax (1.0e-9, dn), 1.2, "40 Hz tone out, bass up/down " + juce::String (up) + " / " + juce::String (dn));
         }
 
-        beginTest ("variamp select moves the resonant dip");
+        beginTest ("variamp: the RANGE selects the band, the depth pot cuts or boosts it");
         {
-            // Effect at max closes the trap's rheostat: the selected band dips at the preamp output.
-            auto levelAt = [&] (float pos, double freq)
+            // R24 at the collector end: the 1.5 H trap shunts Q5's output at resonance (cut); at the emitter end it
+            // bypasses the emitter resistor at resonance (boost). RANGE 0 = 87 Hz, 2 = 411 Hz.
+            auto levelAt = [&] (float pos, float effect, double freq)
             {
                 Acoustic360StyleAmplifierProcessor amp;
                 amp.prepare (48000.0, 128, 1);
-                setParam (amp, "acoustic360_effect", 1.0f);
+                setParam (amp, "acoustic360_effect", effect);
                 setParam (amp, "acoustic360_variamp", pos);
-                return runSine (amp, freq, 0.02, 1.0, 0.2, (int) P::variampNode);
+                return runSine (amp, freq, 0.005, 1.0, 0.2, (int) P::preampOut);
             };
-            const double lo390 = levelAt (0.0f, 390.0);   // position 1 trap ~390 Hz
-            const double hi390 = levelAt (3.0f, 390.0);   // position 4 trap ~2200 Hz: 390 passes
-            expectGreaterThan (hi390 / juce::jmax (1.0e-9, lo390), 1.2,
-                               "390 Hz at variamp node: 2.2k pos " + juce::String (hi390) + " vs 390 pos " + juce::String (lo390));
+            const double cutAt411 = levelAt (2.0f, 0.0f, 411.0), cutAway = levelAt (0.0f, 0.0f, 411.0);
+            expectGreaterThan (cutAway / juce::jmax (1.0e-9, cutAt411), 1.4,
+                               "411 Hz, full cut: 87 Hz range " + juce::String (cutAway) + " vs 411 Hz range " + juce::String (cutAt411));
+            const double boost = levelAt (2.0f, 1.0f, 411.0), flat = levelAt (2.0f, 0.5f, 411.0);
+            expectGreaterThan (boost / juce::jmax (1.0e-9, flat), 1.4,
+                               "411 Hz, 411 Hz range: boost " + juce::String (boost) + " vs centre " + juce::String (flat));
         }
 
         beginTest ("hot input still terminates: bounded output, low failure rate");

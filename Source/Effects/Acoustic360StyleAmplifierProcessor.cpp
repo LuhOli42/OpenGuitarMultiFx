@@ -14,15 +14,17 @@ namespace
     using namespace tubeamp;
 
     // ---- supply ----
-    constexpr double railNominal = 24.0; // the 360's single-rail preamp supply
+    constexpr double railNominal = 25.0; // the 360's regulated +25 V preamp rail (schematic 1006A, block 17-7)
 
     // ---- transistors: small-signal NPN of the era (2N5088/2N3394 class). Standard Ebers-Moll
     // set used across this project's SS pedals.
     const NodalCircuit::BjtParams npn { 1.0e-14, 25.85e-3, 300.0, 4.0 };
 
-    // Variamp: selectable L-C trap; L fixed, the rotary picks C (see the doc for the mapping).
-    constexpr double variampInductance = 0.5;
-    constexpr double variampCapacitance[5] = { 0.33e-6, 0.1e-6, 0.033e-6, 0.01e-6, 0.0033e-6 };
+    // Variamp (schematic 1006A): L1 1.5 H in series with the RANGE cap C15 2.2 / C16 .47 / C17 .1 / C18 .027 uF:
+    // resonances at 87 / 190 / 411 / 790 Hz.
+    constexpr double variampInductance = 1.5;
+    constexpr int variampPositions = 4;
+    constexpr double variampCapacitance[variampPositions] = { 2.2e-6, 0.47e-6, 0.1e-6, 0.027e-6 };
 
     constexpr double speakerNominal[2] = { 4.0, 8.0 };
 }
@@ -51,7 +53,7 @@ Acoustic360StyleAmplifierProcessor::Acoustic360StyleAmplifierProcessor()
     auto effect = std::make_unique<juce::AudioParameterFloat> (
         "acoustic360_effect", "Effect", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
     auto variamp = std::make_unique<juce::AudioParameterFloat> (
-        "acoustic360_variamp", "Variamp", juce::NormalisableRange<float> (0.0f, 4.0f, 1.0f), 2.0f,
+        "acoustic360_variamp", "Variamp", juce::NormalisableRange<float> (0.0f, 3.0f, 1.0f), 1.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
         {
             return juce::String (juce::roundToInt (v) + 1);
@@ -94,8 +96,10 @@ void Acoustic360StyleAmplifierProcessor::buildChannel (Channel& ch)
 {
     const auto gnd = NodalCircuit::ground;
 
-    // ================================================================ preamp: two NPN
-    // common-emitter stages on 24 V around the passive bass/treble network and the Variamp trap.
+    // ================================================================ preamp: the factory 360 schematic
+    // (Acoustic Control Corp 1006A, rev 7/10/70; docs/circuits/Acoustic360.md). Six 2N3391-class NPNs on +25 V:
+    // Q1 bootstrapped emitter follower -> Q2 shunt-feedback stage whose feedback ratio IS the Volume pot -> Q3 follower
+    // -> Q4 -> passive Treble/Bass -> Q5 with the Variamp across its collector and emitter -> Q6 follower -> output.
     {
         auto& c = ch.pre;
         c.setIntegrationTheta (0.5);
@@ -103,72 +107,103 @@ void Acoustic360StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pSrcVcc = c.addSource (vcc, railNominal);
         ch.pSrcIn = c.addSource (in, 0.0);
 
-        // Q1 -- input stage: divider bias, ~20x gain.
-        const auto b1 = c.addNode(), c1 = c.addNode(), e1 = c.addNode(), ee1 = c.addNode();
-        c.addCapacitor (in, b1, 1.0e-6);
-        c.addResistor (vcc, b1, 150.0e3);
-        c.addResistor (b1, gnd, 47.0e3);
-        c.addBjt (c1, b1, e1, false, npn);
-        c.addResistor (vcc, c1, 4.7e3);
-        c.addResistor (e1, ee1, 220.0);                  // un-bypassed: sets the stage gain
-        c.addResistor (ee1, gnd, 2.0e3);
-        c.addCapacitor (ee1, gnd, 22.0e-6);
-        c.setInitialGuess (b1, 5.6);
-        c.setInitialGuess (e1, 5.0);
-        c.setInitialGuess (c1, 13.0);
-        ch.pCol1 = c1;
+        // Q1 (MPSA09): input R1 22K -> C2 1.0 -> base, R3 1M (100 pF across) to the rail, R4 4.7M to ground,
+        // emitter R5 100K, out through C4 1.0.
+        const auto r1 = c.addNode(), b1 = c.addNode(), e1 = c.addNode(), n = c.addNode();
+        c.addResistor (in, r1, 22.0e3);
+        c.addCapacitor (r1, b1, 1.0e-6);
+        c.addResistor (vcc, b1, 1.0e6);
+        c.addCapacitor (vcc, b1, 100.0e-12);
+        c.addResistor (b1, gnd, 4.7e6);
+        c.addBjt (vcc, b1, e1, false, npn);
+        c.addResistor (e1, gnd, 100.0e3);
+        c.addCapacitor (e1, n, 1.0e-6);
+        c.addResistor (n, gnd, 470.0e3);                   // R6
+        c.setInitialGuess (b1, 20.6);
+        c.setInitialGuess (e1, 20.0);
+        ch.pCol1 = e1;
 
-        // Passive bass/treble network (Fender-family, scaled to solid-state impedances).
-        const auto ti = c.addNode(), t1 = c.addNode(), w1 = c.addNode(), nb = c.addNode(),
-                   ns = c.addNode(), t2 = c.addNode(), wt = c.addNode(), tb = c.addNode();
-        c.addCapacitor (c1, ti, 0.47e-6);
-        c.addResistor (ti, t1, 56.0e3);
-        ch.rBassTop = c.addResistor (t1, w1, 125.0e3);   // Bass 250k audio
-        ch.rBassBot = c.addResistor (w1, nb, 125.0e3);
-        c.addResistor (nb, gnd, 5.6e3);
-        c.addCapacitor (w1, ns, 0.047e-6);             // bass-path cap, voiced for ~40 Hz control
-        c.addResistor (ns, t2, 22.0e3);
-        c.addCapacitor (ti, t2, 4.7e-9);                 // treble feed
-        ch.rTrebleTop = c.addResistor (t2, wt, 125.0e3); // Treble 250k audio
-        ch.rTrebleBot = c.addResistor (wt, tb, 125.0e3);
-        c.addCapacitor (tb, gnd, 0.022e-6);
-        ch.pTone = wt;
-        c.setInitialGuess (ti, 0.0);
-
-        // Q2 -- recovery stage after the lossy network.
-        const auto b2 = c.addNode(), c2 = c.addNode(), e2 = c.addNode(), ee2 = c.addNode();
-        c.addCapacitor (wt, b2, 0.47e-6);
-        c.addResistor (vcc, b2, 150.0e3);
-        c.addResistor (b2, gnd, 47.0e3);
+        // VOLUME R7 50K: input end at n, wiper -> C6 1.0 -> Q2 base, far end -> R9 8.2K -> C7 1.0 -> Q2 collector.
+        // BRIGHT (S1): C5 .01 + R8 2.2K from n to the wiper.
+        const auto wv = c.addNode(), fv = c.addNode(), f2 = c.addNode(), br = c.addNode();
+        const auto b2 = c.addNode(), c2 = c.addNode(), e2 = c.addNode();
+        ch.rVolumeTop = c.addResistor (n, wv, 25.0e3);
+        ch.rVolumeBot = c.addResistor (wv, fv, 25.0e3);
+        c.addResistor (fv, f2, 8.2e3);
+        c.addCapacitor (f2, c2, 1.0e-6);
+        ch.capBright = c.addCapacitor (n, br, 1.0e-12);    // .01 when Bright is on
+        c.addResistor (br, wv, 2.2e3);
+        c.addCapacitor (wv, b2, 1.0e-6);
+        // Q2: R11 10K collector, R12 680 emitter, R10 2.7M collector-base bias.
         c.addBjt (c2, b2, e2, false, npn);
-        c.addResistor (vcc, c2, 4.7e3);
-        c.addResistor (e2, ee2, 470.0);
-        c.addResistor (ee2, gnd, 2.0e3);
-        c.addCapacitor (ee2, gnd, 22.0e-6);
-        c.setInitialGuess (b2, 5.6);
-        c.setInitialGuess (e2, 5.0);
-        c.setInitialGuess (c2, 13.0);
-        ch.pCol2 = c2;
+        c.addResistor (vcc, c2, 10.0e3);
+        c.addResistor (e2, gnd, 680.0);
+        c.addResistor (c2, b2, 2.7e6);
+        c.setInitialGuess (b2, 1.3);
+        c.setInitialGuess (e2, 0.7);
+        c.setInitialGuess (c2, 11.0);
 
-        // The Variamp: a selectable series L-C trap on the recovery output through the Effect pot --
-        // the amp's Varitone-derived active voicing (see the doc for what is simplified).
-        const auto mt = c.addNode(), mtp = c.addNode(), mc = c.addNode();
-        c.addCapacitor (c2, mt, 0.47e-6);
-        c.addResistor (mt, gnd, 100.0e3);
-        ch.rEffect = c.addResistor (mt, mtp, 50.0e3);    // Effect: 100k linear rheostat
-        ch.capVarC = c.addCapacitor (mtp, mc, variampCapacitance[2]);
-        ch.grpVarL = c.addCoupledInductors ({ { mc, gnd } }, { variampInductance });
-        ch.pVar = mt;
-        c.setInitialGuess (mt, 0.0);
+        // Q3 follower (R13 10K) -> C8 1.0 -> Q4: R14 270K collector-base, R15 680 emitter, R16 3.9K collector.
+        const auto e3 = c.addNode(), b4 = c.addNode(), c4 = c.addNode(), e4 = c.addNode();
+        c.addBjt (vcc, c2, e3, false, npn);
+        c.addResistor (e3, gnd, 10.0e3);
+        c.addCapacitor (e3, b4, 1.0e-6);
+        c.addBjt (c4, b4, e4, false, npn);
+        c.addResistor (vcc, c4, 3.9e3);
+        c.addResistor (e4, gnd, 680.0);
+        c.addResistor (c4, b4, 270.0e3);
+        c.setInitialGuess (e3, 10.4);
+        c.setInitialGuess (b4, 1.3);
+        c.setInitialGuess (e4, 0.65);
+        c.setInitialGuess (c4, 13.0);
+        ch.pCol2 = c4;
 
-        // Volume (front panel) -> out, with the Bright treble-bleed cap across the top leg.
-        const auto vw = c.addNode(), po = c.addNode();
-        ch.rVolumeTop = c.addResistor (mt, vw, 250.0e3); // Volume 500k linear-ish
-        ch.rVolumeBot = c.addResistor (vw, gnd, 250.0e3);
-        ch.capBright = c.addCapacitor (mt, vw, 1.0e-12); // Bright on: 470 pF bleed
-        c.addCapacitor (vw, po, 0.47e-6);
-        c.addResistor (po, gnd, 1.0e6);
-        c.setInitialGuess (vw, 0.0);
+        // Treble/Bass: C40 .0025 -> TREBLE R18 25K (top), R17 10K -> A, C10 1.0 A -> B (treble bottom = bass top),
+        // BASS R19 25K as a rheostat B -> D, C11 .47 A -> D, R20 680 D -> ground; the treble wiper -> C12 1.0 -> Q5.
+        const auto tt = c.addNode(), ta = c.addNode(), tb = c.addNode(), td = c.addNode(), tw = c.addNode();
+        c.addCapacitor (c4, tt, 0.0025e-6);
+        c.addResistor (c4, ta, 10.0e3);
+        ch.rTrebleTop = c.addResistor (tt, tw, 12.5e3);
+        ch.rTrebleBot = c.addResistor (tw, tb, 12.5e3);
+        c.addCapacitor (ta, tb, 1.0e-6);
+        ch.rBassTop = c.addResistor (tb, td, 12.5e3);     // the bass rheostat (wiper tied to its top)
+        ch.rBassBot = c.addResistor (td, gnd, 1.0e9);     // unused leg: keeps the handle (R19 has no bottom leg)
+        c.addCapacitor (ta, td, 0.47e-6);
+        c.addResistor (td, gnd, 680.0);
+        ch.pTone = tw;
+
+        // Q5: C12 1.0 in, R21 1M collector-base, R22 4.7K collector, R23 2.2K emitter.
+        // VARIAMP: collector -> C14 6.8 -> R24 50K <- wiper -> R25 680 -> C13 6.8 -> emitter; the wiper -> R26 100K to
+        // ground and -> L1 1.5 H -> the RANGE cap to ground. Wiper toward the collector: the trap shunts the output (cut);
+        // toward the emitter: it bypasses the emitter resistor at resonance (boost); centre: about flat.
+        const auto b5 = c.addNode(), c5 = c.addNode(), e5 = c.addNode();
+        const auto vc = c.addNode(), vw = c.addNode(), ve = c.addNode(), vee = c.addNode(), vl = c.addNode();
+        c.addCapacitor (tw, b5, 1.0e-6);
+        c.addBjt (c5, b5, e5, false, npn);
+        c.addResistor (vcc, c5, 4.7e3);
+        c.addResistor (e5, gnd, 2.2e3);
+        c.addResistor (c5, b5, 1.0e6);
+        c.addCapacitor (c5, vc, 6.8e-6);
+        ch.rEffect = c.addResistor (vc, vw, 25.0e3);
+        ch.rEffectB = c.addResistor (vw, ve, 25.0e3);
+        c.addResistor (ve, vee, 680.0);
+        c.addCapacitor (vee, e5, 6.8e-6);
+        c.addResistor (vw, gnd, 100.0e3);
+        ch.grpVarL = c.addCoupledInductors ({ { vw, vl } }, { variampInductance });
+        ch.capVarC = c.addCapacitor (vl, gnd, variampCapacitance[1]);
+        c.setInitialGuess (b5, 2.3);
+        c.setInitialGuess (e5, 1.65);
+        c.setInitialGuess (c5, 13.0);
+        ch.pVar = vw;
+
+        // Q6 follower (R27 10K) -> C19 1.0 -> R28 8.2K -> R29 50K level pot (kept at max) -> the 361's input.
+        const auto e6 = c.addNode(), o1 = c.addNode(), po = c.addNode();
+        c.addBjt (vcc, c5, e6, false, npn);
+        c.addResistor (e6, gnd, 10.0e3);
+        c.addCapacitor (e6, o1, 1.0e-6);
+        c.addResistor (o1, po, 8.2e3);
+        c.addResistor (po, gnd, 50.0e3);
+        c.setInitialGuess (e6, 12.4);
         ch.pOut = po;
     }
 
@@ -187,12 +222,21 @@ void Acoustic360StyleAmplifierProcessor::buildChannel (Channel& ch)
         // behavioralPowerStage(), fitted to this same circuit (see the header + docs/circuits/Acoustic360.md).
         if (! reducedOrder)
         {
-        c.addResistor (cin, ip, 22.0e3);
-        c.addResistor (ip, gnd, 100.0e3);
-        c.addResistor (ch.wOut, im, 56.0e3);             // feedback divider -> gain ~30
-        c.addResistor (im, gnd, 2.0e3);
-        c.addCapacitor (im, gnd, 0.047e-6);              // LF stabilisation at the input leg
-        c.addSaturatingOpAmp (ip, im, ch.wOut, { -40.0, 40.0 }); // ~28 Vrms into 4 ohm, plus margin
+        // 361 power amp (schematic 1005A): input C2 .47 -> R2 10K to ground -> C3 .1 -> R35 1K -> the 2N4248 pair
+        // (R3 47K bias); NFB R11 100K from the output into R9 470 + (R10 100K || C6 10 uF): ~46 dB closed loop.
+        // A single +80 V rail (C1 7800 uF) swinging +-40 V around half-rail, the speaker through C9 3900 uF.
+        const auto n1 = c.addNode(), n2 = c.addNode(), fb = c.addNode(), amp = c.addNode();
+        c.addCapacitor (cin, n1, 0.47e-6);
+        c.addResistor (n1, gnd, 10.0e3);
+        c.addCapacitor (n1, n2, 0.1e-6);
+        c.addResistor (n2, gnd, 47.0e3);
+        c.addResistor (n2, ip, 1.0e3);
+        c.addResistor (amp, im, 100.0e3);
+        c.addResistor (im, fb, 470.0);
+        c.addResistor (fb, gnd, 100.0e3);
+        c.addCapacitor (fb, gnd, 10.0e-6);
+        c.addSaturatingOpAmp (ip, im, amp, { -40.0, 40.0 });
+        c.addCapacitor (amp, ch.wOut, 3900.0e-6);
 
         {
             const auto sm = speakerModel (4.0);
@@ -205,6 +249,7 @@ void Acoustic360StyleAmplifierProcessor::buildChannel (Channel& ch)
         }
         c.setInitialGuess (ip, 0.0);
         c.setInitialGuess (im, 0.0);
+        c.setInitialGuess (amp, 0.0);
         }
     }
 }
@@ -226,7 +271,12 @@ double Acoustic360StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double over = toneVoltage / bmGridClampV;
     const double clamped = toneVoltage / std::sqrt (1.0 + over * over);
-    const auto knee = [k, rail = ch.bmRail] (double x) { return std::tanh (x / juce::jmax (1.0e-9, k)) * rail * bmYmax; };
+    // a hard solid-state clip (the 361's quasi-complementary pair runs clean up to its rails)
+    const auto knee = [k, rail = ch.bmRail] (double x)
+    {
+        const double u = x / juce::jmax (1.0e-9, k);
+        return u / std::pow (1.0 + std::pow (std::abs (u), bmKneeN), 1.0 / bmKneeN) * rail * bmYmax;
+    };
     const double shift = bmAsym * k;
     const double raw = knee (clamped + shift) - knee (shift);
 
@@ -252,7 +302,7 @@ void Acoustic360StyleAmplifierProcessor::applySpeaker (Channel& ch, int index) c
 
 void Acoustic360StyleAmplifierProcessor::applyVariamp (Channel& ch, int index) const
 {
-    const int i = juce::jlimit (0, 4, index);
+    const int i = juce::jlimit (0, variampPositions - 1, index);
     ch.pre.setCapacitance (ch.capVarC, variampCapacitance[i]);
     ch.pre.setInductorInverse (ch.grpVarL, 1.0 / variampInductance);
 }
@@ -260,22 +310,24 @@ void Acoustic360StyleAmplifierProcessor::applyVariamp (Channel& ch, int index) c
 void Acoustic360StyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
-    const double volumeBot = juce::jmax (1.0, 500.0e3 * pots::audio (k.volume));
-    const double bassBot = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass));
-    const double trebleBot = juce::jmax (1.0, 250.0e3 * pots::audio (k.treble));
-    const double effectR = juce::jmax (1.0, 100.0e3 * (1.0 - k.effect)); // Effect up = trap fully in circuit
-    const double brightC = k.bright > 0.5 ? 470.0e-12 : 1.0e-12;
+    // VOLUME 50K (audio): up = the wiper toward the input end -> more feedback resistance per input resistance.
+    const double volIn = juce::jmax (1.0, 50.0e3 * (1.0 - pots::audio (k.volume)));
+    const double trebleBot = juce::jmax (1.0, 25.0e3 * k.treble);
+    const double bassR = juce::jmax (1.0, 25.0e3 * k.bass);    // the bass rheostat in series with the bass leg: up = more bass
+    // VARIAMP depth (R24 50K): 0 = full cut, 0.5 = flat, 1 = full boost.
+    const double effectTop = juce::jmax (1.0, 50.0e3 * k.effect);
+    const double brightC = k.bright > 0.5 ? 0.01e-6 : 1.0e-12;
 
     for (auto& ch : channels)
     {
-        ch.pre.setResistance (ch.rVolumeTop, juce::jmax (1.0, 500.0e3 - volumeBot));
-        ch.pre.setResistance (ch.rVolumeBot, volumeBot);
+        ch.pre.setResistance (ch.rVolumeTop, volIn);
+        ch.pre.setResistance (ch.rVolumeBot, juce::jmax (1.0, 50.0e3 - volIn));
         ch.pre.setCapacitance (ch.capBright, brightC);
-        ch.pre.setResistance (ch.rBassTop, juce::jmax (1.0, 250.0e3 - bassBot));
-        ch.pre.setResistance (ch.rBassBot, bassBot);
-        ch.pre.setResistance (ch.rTrebleTop, juce::jmax (1.0, 250.0e3 - trebleBot));
+        ch.pre.setResistance (ch.rBassTop, bassR);
+        ch.pre.setResistance (ch.rTrebleTop, juce::jmax (1.0, 25.0e3 - trebleBot));
         ch.pre.setResistance (ch.rTrebleBot, trebleBot);
-        ch.pre.setResistance (ch.rEffect, effectR);
+        ch.pre.setResistance (ch.rEffect, effectTop);
+        ch.pre.setResistance (ch.rEffectB, juce::jmax (1.0, 50.0e3 - effectTop));
         if (! reducedOrder && ! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
         if (k.variamp != appliedVariamp)

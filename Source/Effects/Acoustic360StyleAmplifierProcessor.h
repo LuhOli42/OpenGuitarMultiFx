@@ -48,13 +48,16 @@ public:
         reference -- same pattern as BassmanStyleAmplifierProcessor). EffectRegistry.cpp flips this
         on centrally; the unit tests reset it to false so they keep probing the reference model. */
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 30.0;      // closed-loop gain of the power-amp feedback pair (~30x)
+    // Refit 2026-10-25 against the 361 schematic (1005A): NFB R11 100K over R9 470 = ~214x closed loop, a hard clip
+    // at the +-40 V swing of the single 80 V rail, the input network's 34 Hz high-pass.
+    static constexpr double bmGain0 = 214.0;     // closed-loop gain of the 361 power amp
+    static constexpr double bmKneeN = 12.0;      // hard SS clip
     static constexpr double bmYmax = 0.62;       // solid-state clip: output swings close to the 40 V rails
     static constexpr double bmAsym = 0.02;       // nearly symmetric SS clip
     static constexpr double bmGridClampV = 60.0; // broad knee: SS clip is sudden, this only softens onset
-    static constexpr double bmDcHz = 4.0;        // rail-decoupling rolloff
+    static constexpr double bmDcHz = 34.0;       // the 361 input network (C2 .47 / 10K, C3 .1 / 47K)
     static constexpr double bmShelfHz = 70.0;    // speaker-magnetics low-shelf pole
-    static constexpr double bmShelfHfGain = 0.53;
+    static constexpr double bmShelfHfGain = 0.8;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -84,7 +87,7 @@ private:
         // preamp
         int pSrcVcc = 0, pSrcIn = 0;
         int rBassTop = 0, rBassBot = 0, rTrebleTop = 0, rTrebleBot = 0;
-        int rVolumeTop = 0, rVolumeBot = 0, rEffect = 0, capBright = 0;
+        int rVolumeTop = 0, rVolumeBot = 0, rEffect = 0, rEffectB = 0, capBright = 0;
         int grpVarL = 0, capVarC = 0;
         NodalCircuit::Node pCol1 = 0, pTone = 0, pCol2 = 0, pVar = 0, pOut = 0;
 
@@ -101,7 +104,7 @@ private:
     struct Knobs
     {
         double volume, bright, bass, treble, effect;
-        int variamp; // 0..4
+        int variamp; // 0..3 (the four RANGE caps)
         int speaker; // 0 = 4 ohm, 1 = 8
     };
     void updatePots (const Knobs& k);
