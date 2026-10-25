@@ -100,12 +100,21 @@ public:
             expectLessThan (comp, none);
         }
 
-        beginTest ("Pre Shape 1 scoops the mids relative to flat");
+        beginTest ("Pre Shape 1 (the Mid Pre Shape circuit) lands on the spec sheet: +6 dB at 50 Hz and 2 kHz, -6 dB at 400 Hz");
         {
-            const double flatMid = gainDb (0.0f, 0.0f, 0.5f, 0.0f, 0.0f, { 0,0,0,0,0,0,0,0,0,0,0,0 }, 400.0);
-            const double shapedMid = gainDb (1.0f, 0.0f, 0.5f, 0.0f, 0.0f, { 0,0,0,0,0,0,0,0,0,0,0,0 }, 400.0);
-            logMessage ("400 Hz, flat vs shape1: " + juce::String (flatMid, 1) + " vs " + juce::String (shapedMid, 1) + " dB");
-            expectLessThan (shapedMid - flatMid, -3.0);
+            // Relative to the straight path; the spec's figures are for the Pre Shape button.
+            auto rel = [&] (double hz)
+            {
+                return gainDb (1.0f, 0.0f, 0.5f, 0.0f, 0.0f, { 0,0,0,0,0,0,0,0,0,0,0,0 }, hz)
+                       - gainDb (0.0f, 0.0f, 0.5f, 0.0f, 0.0f, { 0,0,0,0,0,0,0,0,0,0,0,0 }, hz);
+            };
+            const double lo = rel (50.0), mid = rel (400.0), hi = rel (2000.0);
+            logMessage ("shape1 - flat: 50 Hz " + juce::String (lo, 1) + ", 400 Hz " + juce::String (mid, 1)
+                        + ", 2 kHz " + juce::String (hi, 1) + " dB");
+            // The drawn network measures +6.7 / -9.0 / +6.3: the sheet's round figures, with a deeper notch.
+            expectWithinAbsoluteError (lo, 6.0, 3.5);
+            expectWithinAbsoluteError (mid, -6.0, 3.5);
+            expectWithinAbsoluteError (hi, 6.0, 3.5);
         }
 
         beginTest ("random slider moves, plucked notes and hot bursts: the solver stays finite and converges");
