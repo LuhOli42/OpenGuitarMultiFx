@@ -48,17 +48,17 @@ private:
     {
         AmpegB15StyleAmplifierProcessor::reducedOrder = false; // the unit suite always probes the full-order reference
 
-        beginTest ("DC operating points land near the schematic's expected voltages (+-40%)");
+        beginTest ("DC operating points land near the voltages marked on the B-15-N drawing");
         {
             AmpegB15StyleAmplifierProcessor amp;
             amp.prepare (48000.0, 128, 1);
             expect (amp.dcConverged());
             struct { P p; double target; double tol; const char* what; } pts[] = {
-                { P::firstPlate, 180.0, 0.4, "V1a plate" },
-                { P::secondPlate, 200.0, 0.4, "V1b plate" },
-                { P::driverPlate, 200.0, 0.5, "paraphase driver plate" },
-                { P::inverterPlate, 200.0, 0.5, "paraphase inverter plate" },
-                { P::powerGridA, -50.0, 0.35, "6L6 grid bias" },
+                { P::firstPlate, 165.0, 0.25, "V1a plate" },
+                { P::secondPlate, 175.0, 0.25, "V1b plate" },
+                { P::driverPlate, 235.0, 0.25, "V3a plate" },
+                { P::inverterPlate, 225.0, 0.25, "V3b plate" },
+                { P::powerGridA, -50.0, 0.1, "6L6 grid bias" },
             };
             for (auto& pt : pts)
             {
@@ -66,7 +66,13 @@ private:
                 expect (std::abs (v - pt.target) < pt.tol * std::abs (pt.target),
                         juce::String (pt.what) + " " + juce::String (v) + " V, expected " + juce::String (pt.target));
             }
-            expect (std::abs (amp.railPreamp() - 330.0) < 0.25 * 330.0, "preamp rail " + juce::String (amp.railPreamp()));
+            logMessage ("rails: plates " + juce::String (amp.railPlates(), 1) + ", screens " + juce::String (amp.railScreens(), 1)
+                        + ", V3 " + juce::String (amp.railDriver(), 1) + ", V1/V2 " + juce::String (amp.railPreamp(), 1)
+                        + "; V1a " + juce::String (amp.debugVoltage (P::firstPlate), 1) + ", V1b " + juce::String (amp.debugVoltage (P::secondPlate), 1)
+                        + ", V3 " + juce::String (amp.debugVoltage (P::driverPlate), 1) + " / " + juce::String (amp.debugVoltage (P::inverterPlate), 1)
+                        + ", 6L6 Ip " + juce::String (amp.plateCurrentTotal() * 1000.0, 1) + " mA");
+            expect (std::abs (amp.railPlates() - 450.0) < 0.1 * 450.0, "plate rail");
+            expect (std::abs (amp.railScreens() - 445.0) < 0.1 * 445.0, "screen rail");
             expectGreaterThan (amp.plateCurrentTotal(), 0.03); // two 6L6GCs idle ~70 mA
         }
 

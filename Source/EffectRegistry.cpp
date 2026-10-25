@@ -647,7 +647,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // (2-stage BJT preamp, Variamp EQ, saturating-op-amp 200 W stage). Full netlists; no reducedOrder.
     AmpegB15StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AmpegB15StyleAmplifier");
-    registry.registerType ("AmpegB15StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegB15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 17.81f); }, "Bass");
+    registry.registerType ("AmpegB15StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegB15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.20f); }, "Bass");
     AmpegV4BStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AmpegV4BStyleAmplifier");
     registry.registerType ("AmpegV4BStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.87f); }, "Bass");
