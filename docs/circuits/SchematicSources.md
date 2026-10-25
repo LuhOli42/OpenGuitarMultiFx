@@ -24,7 +24,7 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 | Acoustic 360 / 361 | ManualsLib "Acoustic 360 Service Manual" (manual 1003858); Elektrotanya `acoustic_360_361_sm.pdf`; Tapatalk "unofficial Acoustic Control Corp forum" schematic index; TalkBass "Links to Acoustic (ACC) schematics" | full factory service manual (voltages, parts, schematic) |
 | Dumble Steel String Singer | AmpGarage `viewtopic.php?p=397996` (#001 / #002 / #004 layouts, #002 hand schematic + corrected PDF) | reverse-engineered |
 | Komet 60 / Concorde | AmpGarage threads "Komet 60 Schematic...Accurate?", "Komet K60 or Concord Layout" | traces; accuracy disputed |
-| Dr. Z Carmen Ghia | TDPRI "Carmen Ghia" thread (590924), a reverse-engineered schematic + a layout | 150R cathode (layout says 130R) |
+| Dr. Z Carmen Ghia | TDPRI "Carmen Ghia" thread (590924), a reverse-engineered schematic + a layout | Phoenix rev 1.3 redraw (attachment 305957, 700x543): model rebuilt to its preamp, NFB and output stage; the 5751 PI is not legible at that size |
 | Bad Cat Hot Cat 30 | Music-Electronics-Forum threads point to a Schematic Heaven PDF (link moved) | Hot Cat 30 and 30R differ |
 | Boss ODB-3 | DIYStompboxes 2007 hand-drawn schematic | community |
 | Boss BD-2 | factory board schematic (hobby-hour, Free Info Society); Gauss Markov redraw | the model already uses the factory board |
