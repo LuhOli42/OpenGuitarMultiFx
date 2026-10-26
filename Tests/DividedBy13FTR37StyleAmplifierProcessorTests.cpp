@@ -46,19 +46,19 @@ public:
                         + " bias " + juce::String (amp.debugVoltage (P::biasNode), 1)
                         + " ip " + juce::String (amp.plateCurrentTotal(), 4));
             expect (amp.dcConverged());
-            expectWithinAbsoluteError (amp.railPlates(), 410.0, 60.0);
-            expectWithinAbsoluteError (amp.railScreens(), 395.0, 60.0);
+            expectWithinAbsoluteError (amp.railPlates(), 393.0, 30.0);   // B+5, marked on the trace
+            expectWithinAbsoluteError (amp.railScreens(), 385.0, 30.0);  // B+4
             // Channel 1: 5879 stage plate + second 12AX7 cathode
-            expectWithinAbsoluteError (amp.debugVoltage (P::ch1Plate), 210.0, 100.0);
-            expectWithinAbsoluteError (amp.debugVoltage (P::ch1K2), 1.5, 1.2);
+            expectWithinAbsoluteError (amp.debugVoltage (P::ch1Plate), 81.0, 30.0);   // the 5879, marked 81 V
+            expectWithinAbsoluteError (amp.debugVoltage (P::ch1K2), 1.0, 0.8);
             // Channel 2 stages
-            expectWithinAbsoluteError (amp.debugVoltage (P::ch2Plate1), 200.0, 90.0);
-            expectWithinAbsoluteError (amp.debugVoltage (P::ch2Plate2), 200.0, 90.0);
+            expectWithinAbsoluteError (amp.debugVoltage (P::ch2Plate1), 138.0, 35.0);
+            expectWithinAbsoluteError (amp.debugVoltage (P::ch2Plate2), 143.0, 35.0);
             // PI + power tubes
-            expectWithinAbsoluteError (amp.debugVoltage (P::piPlateA), 210.0, 90.0);
-            expectWithinAbsoluteError (amp.debugVoltage (P::piCathode), 40.0, 25.0);
-            expectWithinAbsoluteError (amp.debugVoltage (P::powerPlateA), 405.0, 70.0);
-            expectWithinAbsoluteError (amp.debugVoltage (P::powerGridA), -32.0, 10.0);
+            expectWithinAbsoluteError (amp.debugVoltage (P::piPlateA), 205.0, 45.0);
+            expectWithinAbsoluteError (amp.debugVoltage (P::piCathode), 60.0, 40.0);  // elevated-reference pair
+            expectWithinAbsoluteError (amp.debugVoltage (P::powerPlateA), 383.0, 30.0);
+            expectWithinAbsoluteError (amp.debugVoltage (P::powerGridA), -14.0, 8.0);   // fixed part of the mixed bias
             const double ip = amp.plateCurrentTotal();
             expect (ip > 0.020 && ip < 0.300); // four 6V6s near the manual's 25 mA each
         }

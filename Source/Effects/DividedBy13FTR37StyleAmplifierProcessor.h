@@ -62,7 +62,7 @@ public:
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 70.0;   // closed-loop small-signal gain, pMix -> speaker, at the nominal rail (F37_POWERCAL)
     static constexpr double bmYmax = 0.30;    // peak output as a fraction of the (sagged) rail at full saturation -- fitted
-    static constexpr double bmLevelTrim = 0.155;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
+    static constexpr double bmLevelTrim = 0.212;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
     static constexpr double bmKneeN = 6.0;
     static constexpr double bmShelfHz = 90.0;
     static constexpr double bmShelfHfGain = 0.55;
@@ -109,7 +109,7 @@ private:
         // preamp: preCh1 = Click channel (5879 + 12AX7 + Click tap), pre = Ch2 chain + the pMix summing node.
         // pSrcMixRef (in preCh1) injects the previous sample's pMix behind ch1's 100k mix resistor; pSrcCh1Tap
         // (in pre) injects ch1's tap behind its own 100k -- identical loading to one lumped circuit.
-        int pSrcIn1 = 0, pSrcIn2 = 0, pSrcRail = 0, pSrcRail1 = 0, pSrcMixRef = 0, pSrcCh1Tap = 0;
+        int pSrcIn1 = 0, pSrcIn2 = 0, pSrcRail = 0, pSrcRail1 = 0, pSrcRailB1 = 0;
         int rVol1Top = 0, rVol1Bot = 0, rVol2Top = 0, rVol2Bot = 0;
         int rTrebleTop = 0, rTrebleBot = 0, rBass = 0, rBoost = 0;
         int capClick = 0, penPre1 = 0;
@@ -118,7 +118,7 @@ private:
         double mixDc = 0.0;
 
         // power section
-        int wSrcIn = 0, wSrcRail = 0, wSrcPi = 0, wSrcBias = 0;
+        int wSrcIn = 0, wSrcInB = 0, wSrcRail = 0, wSrcPi = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rLiftA = 0, rLiftB = 0;
         int penA1 = 0, penA2 = 0, penB1 = 0, penB2 = 0;
