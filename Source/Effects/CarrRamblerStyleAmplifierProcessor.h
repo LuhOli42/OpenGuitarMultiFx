@@ -59,8 +59,8 @@ public:
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 60.0;   // closed-loop small-signal gain, pOut -> speaker, at the nominal rail (CR_POWERCAL)
     static constexpr double bmYmax = 0.30;    // peak output as a fraction of the (sagged) rail at full saturation -- fitted
-    static constexpr double bmLevelTrim = 0.205;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
-    static constexpr double bmKneeN = 6.0;
+    static constexpr double bmLevelTrim = 0.30;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
+    static constexpr double bmKneeN = 12.0;
     static constexpr double bmShelfHz = 90.0;
     static constexpr double bmShelfHfGain = 0.6;
     // See TwinReverbStyleAmplifierProcessor's bmAsym/bmDcHz: real output stages clip

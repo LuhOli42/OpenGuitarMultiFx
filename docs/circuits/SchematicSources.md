@@ -34,10 +34,13 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 
 ## Not found (no public schematic; the model stays an estimate)
 
-Diezel VH4, Carr Rambler, Fryette Deliverance D120 (only the Deliverance 60 circulates).
+Diezel VH4, Fryette Deliverance D120 (only the Deliverance 60 circulates).
 
 Found later as community work (2026-10-26):
 - Divided by 13 FTR37: Edwin Thoen's 3-page trace with measured voltages (Das Musikding forum "Divided by 13 FTR 37
   Schematic!", file-download 8389; also on Scribd). The model is rebuilt to it.
-- Boss VB-2: the BYOC Analog Vibrato (a VB-2 clone) schematic, rev 2.0, via the Wayback Machine. The model's filters
-  and emphasis come from it.
+- Boss VB-2: the BYOC Analog Vibrato (a VB-2 clone) schematic, rev 2.0, via the Wayback Machine
+  (web.archive.org/web/20250327200355/http://byocelectronics.com/analogvibratoschematic.pdf). The model's filters
+  and emphasis come from it; the delay timing is still calibrated.
+- Carr Rambler: Bryce Amps' preamp trace (December 2011). The preamp, tone stack and reverb send are rebuilt to it;
+  the power stage and tremolo stay estimated.

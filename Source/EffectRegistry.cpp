@@ -612,7 +612,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // 2x6L6GC, zero global feedback, bias-vary tremolo, pentode/triode switch. reducedOrder behavioral power stage.
     CarrRamblerStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarrRamblerStyleAmplifier");
-    registry.registerType ("CarrRamblerStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarrRamblerStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -7.99f); }, "Clean");
+    registry.registerType ("CarrRamblerStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarrRamblerStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.88f); }, "Clean");
     // Jim Kelley Single Channel Reverb (docs/circuits/JimKelley.md): Dumble-adjacent boutique cascade
     // (V1a -> Gain -> V1b with 1N914 grid clamps -> Baxandall shelving stack -> V3a), V4a mixer with
     // global NFB + presence at its cathode, V4b cathodyne PI, 4x6V6GTA fixed-bias quad, behavioral
