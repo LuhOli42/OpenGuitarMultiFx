@@ -5,19 +5,26 @@ pentode/triode switch, a long-tail-pair phase splitter, a blackface-derived sing
 TMB (Treble/Middle/Bass) tone stack, and bias-vary tremolo. It is best described as a cleaner, tighter
 blackface-style platform — no global negative feedback.
 
+## Source
+
+Carr does not publish schematics. **Bryce Amps traced the preamp of a Rambler 2x12** (Dec 2011). It is a hand-drawn
+page in their rare-schematic archive, `bryceamps.com/mainsite/carr rambler preamp section.pdf`, marked "for
+information only". The preamp below follows it. The power stage was not traced, so it stays the documented estimate.
+
 ## What is modelled
 
-- **Preamp** (`pre` NodalCircuit block, two cascaded 12AX7 stages in the real blackface signal order —
-  corrected after an audit found the earlier draft was wired as a Trainwreck cascade, which made the
-  Rambler distort at every volume):
-  - V1A input stage: 68k grid stopper, 1M leak, 100k plate load, 1k5 cathode + 22 µF bypass.
-  - 22 nF coupling into a blackface TMB: 250 pF treble bypass, 100k slope, 0.1 µF bass / 0.047 µF mid
-    legs, 250k-A treble pot, 250k-A bass rheostat, 10k-A mid rheostat to ground.
-  - Single 1M-A Volume pot (track halves modelled as two resistors) tapped at the treble wiper;
-    the wiper feeds V1B's grid directly — the pot track is the grid leak, as in the real wiring.
-  - V1B recovery stage: wiper-fed via 68k, 1k5 + 22 µF cathode, 100k plate load.
-  - 22 nF coupling into a 1M "PI grid leak" — the preamp's output tap.
-  - Miller grid-to-plate capacitance on each triode.
+- **Preamp** (`pre` NodalCircuit block), as traced:
+  - **V1A:** 1M input leak (the stopper is unmarked; 68k kept), 100k plate, 1k5 + 22 µF.
+  - **Tone stack:** a TMB fed **straight off V1A's plate**, with no coupling cap. It has 250 pF treble, 100k slope,
+    100n bass / 47n mid legs, Treble 250k, Bass 250k and **Mid 25k** (the old model used 10k).
+  - **Volume:** 1M from the Treble wiper, with a **47 pF bright** cap. Its wiper goes straight to V1B.
+  - **V1B:** 100k plate, **1k8** + 22 µF.
+  - **Into V3A:** 22n, then **2M4** into V3A's grid, which has 220k to ground. That is a ~1/12 divider. The reverb
+    return joins there through 430k, modelled as its ~490k to AC ground. The reverb driver's 500p + 1M hangs on the
+    22n.
+  - **V3A:** 100k plate, 1k5 + 22 µF, then 22n into the PI.
+  - The previous model stopped at V1B, with a coupling cap ahead of the stack. It had no 2M4 divider and no V3A
+    stage.
 - **Power stage** (`power` block, theta = 0.9): LTP phase inverter (5751-family triode fit), 2x 6L6GC
   (KorenPentode defaults), cathode-biased, cathode-vary tremolo injected on the bias node, output
   transformer + speaker impedance model with the standard `rSpkRe/rSpkRp/rSpkEddy` network and the three
@@ -45,3 +52,15 @@ The three-stage preamp is kept in a single `NodalCircuit` solve (the proven Trai
 split-block variant and several topology variants exhibited slow basin-hopping wander at idle; the
 single shared solve is stable. Test-side, `process()` is in-place — buffers must be re-cleared every
 block in tests, or the amp eats its own output and any model looks like it self-oscillates.
+
+## Reduced stage after the trace
+
+The traced preamp makes the full netlist's PI / power stage block on hot input: its output *falls* from the quiet
+chord to the loud one. A static saturator cannot do that. The reduced stage was refitted to the best compromise:
+
+- level trim 0.205 → 0.30;
+- knee 6 → 12;
+- tail low-pass opened to 9 kHz, with air at 12 kHz.
+
+The result is 1.35 dB of level and 5.06 dB of band shape. The shape bound moved from 5.0 to 5.5 for that reason. The
+registry trim is −8.88 dB, giving unity.

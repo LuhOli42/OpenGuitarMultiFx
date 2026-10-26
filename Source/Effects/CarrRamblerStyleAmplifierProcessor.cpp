@@ -179,8 +179,9 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.sB, railPlatesNominal - 8.0);
     }
 
-    // ================================================================ preamp: blackface signal order --
-    // V1A -> coupling cap -> TMB -> Volume -> V1B -> coupling cap -> PI grid (docs/circuits/CarrRambler.md).
+    // ================================================================ preamp: Bryce Amps' trace of a Rambler 2x12
+    // (Dec 2011, docs/circuits/CarrRambler.md): V1A -> TMB straight off its plate -> Volume (47p bright) -> V1B ->
+    // 22n -> 2M4 / 220k divider (the reverb return mixes in through 430k) -> V3A -> 22n -> PI.
     {
         auto& c = ch.pre;
         const auto in = c.addNode();
@@ -216,9 +217,8 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         // Blackface signal order (the real Rambler's): V1A -> .022 coupling cap -> TMB -> Volume -> V1B.
         // The coupling cap blocks the plate DC, so the stack, the Volume track and V1B's grid all sit at
         // ground-referenced DC -- the pot track IS V1B's grid leak, exactly the Fender wiring.
-        const auto ti = c.addNode(), pTop = c.addNode(), pSlope = c.addNode(), pN1 = c.addNode(), pN2 = c.addNode();
+        const auto ti = ch.pPlate1, pTop = c.addNode(), pSlope = c.addNode(), pN1 = c.addNode(), pN2 = c.addNode();
         const auto tone = c.addNode();
-        c.addCapacitor (ch.pPlate1, ti, 22.0e-9);
         c.addCapacitor (ti, pTop, 250.0e-12);
         c.addResistor (ti, pSlope, 100.0e3);
         ch.rTrebleTop = c.addResistor (pTop, tone, 125.0e3);
@@ -226,20 +226,34 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addCapacitor (pSlope, pN1, 0.1e-6);
         ch.rBass = c.addResistor (pN1, pN2, 250.0e3);
         c.addCapacitor (pSlope, pN2, 0.047e-6);
-        ch.rMid = c.addResistor (pN2, gnd, 10.0e3);
+        ch.rMid = c.addResistor (pN2, gnd, 12.5e3);     // MID 25k (the trace)
+        c.setInitialGuess (pSlope, 180.0);
 
         // 1M-A Volume: treble wiper -> track top -> wiper. The wiper feeds V1B's grid directly
         // (the 68k stopper below), no coupling cap -- the real blackface wiring.
         ch.pTone = c.addNode(); // the wiper (kept for probing)
         ch.rVolTop = c.addResistor (tone, ch.pTone, 0.5e6);
         ch.rVolBot = c.addResistor (ch.pTone, gnd, 0.5e6);
+        c.addCapacitor (tone, ch.pTone, 47.0e-12);      // the Volume's 47p bright cap
 
         // V1B recovery stage: wiper-fed through 68k, blackface 1k5 + 22 uF cathode, 100k plate load.
-        stage (ch.pTone, 68.0e3, 0.0, 1.5e3, 22.0e-6, ch.pPlate2, ch.pK2, 200.0, 1.4);
+        stage (ch.pTone, 1.0e3, 0.0, 1.8e3, 22.0e-6, ch.pPlate2, ch.pK2, 200.0, 1.5); // V1B: 1k8 + 22 uF
+
+        // 22n -> 2M4 into V3A's grid (220k leak; the reverb return's 430k from V3B's plate, ~AC ground through it), the
+        // reverb driver's 500p + 1M hanging on the 22n side.
+        const auto d1 = c.addNode(), g3 = c.addNode(), rv = c.addNode();
+        c.addCapacitor (ch.pPlate2, d1, 22.0e-9);
+        c.addCapacitor (d1, rv, 500.0e-12);
+        c.addResistor (rv, gnd, 1.0e6);
+        c.addResistor (d1, g3, 2.4e6);
+        c.addResistor (g3, gnd, 220.0e3);
+        c.addResistor (g3, gnd, 430.0e3 + 60.0e3);
+        NodalCircuit::Node p3 = 0, k3 = 0;
+        stage (g3, 1.0, 0.0, 1.5e3, 22.0e-6, p3, k3, 200.0, 1.4); // V3A: 100k, 1k5 + 22 uF
 
         // .022 coupling into the PI grid leak -- the preamp's output tap.
         ch.pOut = c.addNode();
-        c.addCapacitor (ch.pPlate2, ch.pOut, 22.0e-9);
+        c.addCapacitor (p3, ch.pOut, 22.0e-9);
         c.addResistor (ch.pOut, gnd, 1.0e6);
     }
 
@@ -363,7 +377,7 @@ void CarrRamblerStyleAmplifierProcessor::updatePots (const Knobs& k)
         const double trebleBottom = juce::jmax (1.0, 125.0e3 * 2.0 * k.treble);
         const double trebleTop = juce::jmax (1.0, 250.0e3 - trebleBottom);
         const double bassR = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass));
-        const double midR = juce::jmax (1.0, 10.0e3 * pots::audio (k.middle));
+        const double midR = juce::jmax (1.0, 25.0e3 * pots::audio (k.middle)); // MID 25k (Bryce trace)
         const double volBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volume));
         ch.pre.setResistance (ch.rTrebleTop, trebleTop);
         ch.pre.setResistance (ch.rTrebleBot, trebleBottom);
@@ -563,8 +577,8 @@ void CarrRamblerStyleAmplifierProcessor::prepare (double newSampleRate, int maxB
         // Refitted after the preamp rebuild (blackface signal order): the full netlist's OT + speaker
         // darken the top further than the class-A cab defaults -- earlier LP corner, less air.
         bmVoicing.otHz = 11000.0;
-        bmVoicing.cabLpHz = 4300.0;
-        bmVoicing.cabAirHz = 6500.0;
+        bmVoicing.cabLpHz = 9000.0;  // refitted after the Bryce-trace preamp (its V3A stage keeps more top)
+        bmVoicing.cabAirHz = 12000.0;
         bmVoicing.cabNotchHz = 1500.0;
         bmVoicing.cabNotchDb = -6.5;
         ch.bmTail.setCabChoices (cabParam, cabAlts);
