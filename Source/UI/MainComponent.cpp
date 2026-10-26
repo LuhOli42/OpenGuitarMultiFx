@@ -1762,7 +1762,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
             midiCcBindings.erase (ccNumber); // a CC drives one thing: scene or knob
             if (sceneMidi.bind (ccNumber, sceneMidiArmed))
             {
-                sceneMidi.isPress (ccNumber, ccValue); // so the held/repeated 127 doesn't fire the scene at once
+                sceneMidi.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()); // the learning stomp must not also switch scene
                 scenemidi::save (sceneMidi);
             }
             sceneMidiArmed = scenemidi::noAction;

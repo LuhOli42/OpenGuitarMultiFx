@@ -36,6 +36,9 @@ inline bool isValidAction (int action)
 /** A footswitch sends a value >= this when pressed (127 on every controller seen so far). */
 constexpr int pressThreshold = 64;
 
+/** A second stomp on the same CC this soon after the first is contact bounce, not a new stomp. */
+constexpr juce::uint32 debounceMs = 150;
+
 class Bindings
 {
 public:
@@ -71,26 +74,32 @@ public:
     bool hasCc (int cc) const { return byCc.find (cc) != byCc.end(); }
     bool empty() const { return byCc.empty(); }
 
-    /** True when this message is a new press: value at or above the threshold, after a value below it (or the first
-        message seen on that CC). A momentary footswitch sends 127 then 0 -- only the press counts, so "next scene"
-        advances once per stomp instead of twice. A controller that keeps sending 127 while held counts once as well. */
-    bool isPress (int cc, int value)
+    /** True when this message is a stomp: a value at or above the threshold, not within debounceMs of the previous
+        stomp on the same CC. Deliberately does NOT wait for a release (value 0) before accepting the next press --
+        many footswitches send 127 on every stomp and never send 0, and a press-after-release rule then fires
+        once and ignores the pedal forever. The release (or any value below the threshold) is simply ignored, so a
+        switch that sends 127 then 0 still counts once per stomp. */
+    bool isPress (int cc, int value, juce::uint32 nowMs)
     {
-        const bool down = value >= pressThreshold;
-        const auto it = lastDown.find (cc);
-        const bool wasDown = it != lastDown.end() && it->second;
-        lastDown[cc] = down;
-        return down && ! wasDown;
+        if (value < pressThreshold)
+            return false;
+
+        const auto it = lastPressMs.find (cc);
+        if (it != lastPressMs.end() && nowMs - it->second < debounceMs)
+            return false;
+
+        lastPressMs[cc] = nowMs;
+        return true;
     }
 
     /** What a CC message should do right now: the scene to switch to, or -1 for nothing (unbound CC, a release, or
-        a repeat). Tracks the press edge itself, so call it once per incoming message. */
-    int targetFor (int cc, int value, int currentScene)
+        a bounce). Call it once per incoming message. */
+    int targetFor (int cc, int value, int currentScene, juce::uint32 nowMs = juce::Time::getMillisecondCounter())
     {
         const auto it = byCc.find (cc);
         if (it == byCc.end())
             return -1;
-        if (! isPress (cc, value))
+        if (! isPress (cc, value, nowMs))
             return -1;
 
         constexpr int count = snapshotxml::maxSnapshots;
@@ -118,7 +127,7 @@ public:
     void fromXml (const juce::XmlElement* xml)
     {
         byCc.clear();
-        lastDown.clear();
+        lastPressMs.clear();
         if (xml == nullptr || ! xml->hasTagName ("SceneMidi"))
             return;
 
@@ -128,7 +137,7 @@ public:
 
 private:
     std::map<int, int> byCc;
-    std::map<int, bool> lastDown;
+    std::map<int, juce::uint32> lastPressMs;
 };
 
 inline juce::File settingsFile()

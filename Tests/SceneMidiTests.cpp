@@ -12,24 +12,25 @@ public:
     {
         using scenemidi::Bindings;
 
-        beginTest ("a pedal bound to a scene selects it on press, and only on press");
+        beginTest ("a pedal bound to a scene selects it on every stomp, with or without a release");
         {
             Bindings b;
             expect (b.bind (22, 2));
-            expectEquals (b.targetFor (22, 127, 0), 2);
-            expectEquals (b.targetFor (22, 0, 2), -1, "release is not a press");
-            expectEquals (b.targetFor (22, 127, 0), 2, "the next stomp fires again");
-            expectEquals (b.targetFor (99, 127, 0), -1, "unbound CC does nothing");
+            expectEquals (b.targetFor (22, 127, 0, 1000), 2);
+            expectEquals (b.targetFor (22, 0, 2, 1050), -1, "release is not a press");
+            expectEquals (b.targetFor (22, 127, 0, 2000), 2, "the next stomp fires again");
+            expectEquals (b.targetFor (22, 127, 0, 3000), 2, "a pedal that never sends 0 still works");
+            expectEquals (b.targetFor (22, 127, 0, 4000), 2);
+            expectEquals (b.targetFor (99, 127, 0, 5000), -1, "unbound CC does nothing");
         }
 
-        beginTest ("a controller that repeats 127 while held counts once");
+        beginTest ("contact bounce within the debounce window counts once");
         {
             Bindings b;
             b.bind (10, 5);
-            expectEquals (b.targetFor (10, 127, 0), 5);
-            expectEquals (b.targetFor (10, 127, 5), -1);
-            expectEquals (b.targetFor (10, 0, 5), -1);
-            expectEquals (b.targetFor (10, 127, 0), 5);
+            expectEquals (b.targetFor (10, 127, 0, 1000), 5);
+            expectEquals (b.targetFor (10, 127, 0, 1000 + scenemidi::debounceMs - 1), -1);
+            expectEquals (b.targetFor (10, 127, 0, 1000 + scenemidi::debounceMs), 5);
         }
 
         beginTest ("next and previous wrap around A-H");
@@ -37,12 +38,12 @@ public:
             Bindings b;
             b.bind (11, scenemidi::nextScene);
             b.bind (12, scenemidi::previousScene);
-            expectEquals (b.targetFor (11, 127, 2), 3);
-            expectEquals (b.targetFor (11, 0, 3), -1);
-            expectEquals (b.targetFor (11, 127, 7), 0);
-            expectEquals (b.targetFor (12, 127, 0), 7);
-            expectEquals (b.targetFor (12, 0, 7), -1);
-            expectEquals (b.targetFor (12, 127, 4), 3);
+            expectEquals (b.targetFor (11, 127, 2, 1000), 3);
+            expectEquals (b.targetFor (11, 0, 3, 1010), -1);
+            expectEquals (b.targetFor (11, 127, 7, 2000), 0);
+            expectEquals (b.targetFor (12, 127, 0, 3000), 7);
+            expectEquals (b.targetFor (12, 0, 7, 3010), -1);
+            expectEquals (b.targetFor (12, 127, 4, 4000), 3);
         }
 
         beginTest ("one CC drives one action and one action has one CC");
@@ -74,7 +75,7 @@ public:
             b.bind (10, 0);
             b.clearAction (0);
             expect (b.empty());
-            expectEquals (b.targetFor (10, 127, 3), -1);
+            expectEquals (b.targetFor (10, 127, 3, 1000), -1);
         }
 
         beginTest ("round-trips through XML and a file; garbage entries are skipped");
