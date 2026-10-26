@@ -215,17 +215,26 @@ void BbdFlangerProcessor::prepare (double newSampleRate, int, int)
         }
         case FlangerModel::ada:
         {
-            // No reliable schematic: the published behaviour. Compressor ahead of the BBD, a band-pass in the loop,
-            // 0.4-15 ms (the 40:1 sweep), 20 Hz - 16 kHz.
-            input = couplingHighpass (0.1e-6, 500.0e3);
+            // Charlie Barth's trace of the A/DA (docs/circuits/ADAFlanger.md). C1 .01 into R5 1M; IC1a's pre-emphasis
+            // (R4 30k over R2 30k + C2 4.7u || R3 2k7 + C3 .01: x2 in the lows, ~x13 above 6 kHz); IC1b inverting
+            // (R9 + R10 = 47k in, R11 47k || C8 100p) with the diode-bridge peak limiter on its input -- kept as the
+            // compressor; R14 1k / C10 .01 into the SAD1024; the IC1d Sallen-Key low-pass after it (R39 22k, R40 68k,
+            // C18 1500p, C19 510p: ~4.7 kHz); wet and dry each through 68k into IC2b's de-emphasis, R43 27k || R44 5k1 +
+            // C20 .01. Clock 34.8 kHz .. 1.3 MHz (the factory calibration) over 1024 stages = 0.39 .. 14.7 ms.
+            const auto preEmphasis = sum (gain (1.0), cascade (gain (30.0e3), reciprocal (parallel (seriesRC (30.0e3, 4.7e-6),
+                                                                                                    seriesRC (2.7e3, 0.01e-6)))));
+            input = cascade (couplingHighpass (0.01e-6, 1.0e6), preEmphasis);
             compressorOnly = true;
-            bbdIn = { { 10.0e3, 0.0, 1.3e-9, 0.0, 0.0 }, { 10.0e3, 0.0, 0.0, 3.3e-9, 0.0 }, { 10.0e3, 0.0, 190.0e-12, 0.0, 0.0 } };
-            bbdOut = bbdIn;
+            bbdIn = { { 1.0e3, 0.0, 10.0e-9, 0.0, 0.0 } };
+            bbdOut = { { 22.0e3, 0.0, 0.0, 1.5e-9, 0.0 }, { 68.0e3, 0.0, 510.0e-12, 0.0, 0.0 } };
+            const auto zf = parallel (resistor (27.0e3), seriesRC (5.1e3, 0.01e-6));
+            dryMix = inverting (zf, resistor (68.0e3));
+            wetMix = inverting (zf, resistor (68.0e3));
             regen = cascade (couplingHighpass (1.0e-6, 1.0e3), Rational { { 1.0 }, { 1.0, 1.0 / (2.0 * juce::MathConstants<double>::pi * 5000.0) } });
             loopMax = 0.97;
             exponentialLfo = true;
             stages = 1024;
-            minDelay = 0.4e-3; maxDelay = 15.0e-3;
+            minDelay = 1024.0 / (2.0 * 1.3e6); maxDelay = 1024.0 / (2.0 * 34.8e3);
             rateMin = 0.04; rateMax = 10.0;
             railVolts = 6.0;
             break;

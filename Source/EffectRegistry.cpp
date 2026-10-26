@@ -529,7 +529,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/DrZCarmenGhia.md.
     CarmenGhiaStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarmenGhiaStyleAmplifier");
-    registry.registerType ("CarmenGhiaStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.53f); }, "Crunch");
+    registry.registerType ("CarmenGhiaStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.46f); }, "Crunch");
     // docs/circuits/SoldanoAstroverb16.md.
     Astroverb16StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Astroverb16StyleAmplifier");
@@ -653,7 +653,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("AmpegV4BStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.87f); }, "Bass");
     MesaBass400PlusStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MesaBass400PlusStyleAmplifier");
-    registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.61f); }, "Bass");
+    registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 12.10f); }, "Bass");
     Acoustic360StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Acoustic360StyleAmplifier");
     registry.registerType ("Acoustic360StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Acoustic360StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -6.38f); }, "Bass");
@@ -732,7 +732,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("MXR117StyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::mxr117), 470000.0), 1.56f); }, "Flanger");
     registry.registerType ("ElectricMistressStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::electricMistress), 130000.0), 6.65f); }, "Flanger");
     registry.registerType ("BF2StyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::bf2), 407000.0), -2.48f); }, "Flanger");
-    registry.registerType ("ADAStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::ada), 500000.0), -3.31f); }, "Flanger");
+    registry.registerType ("ADAStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::ada), 500000.0), -0.15f); }, "Flanger");
     registry.registerType ("TycobraheStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::tycobrahe), 377000.0), -2.75f); }, "Flanger");
     registry.registerType ("EchoFlangerStyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::echoFlanger), 100000.0), 0.15f); }, "Flanger");
     registry.registerType ("FX75StyleFlanger", EffectRegistry::Category::modulation, [] { return trimmed (pickupLoaded (std::make_unique<BbdFlangerProcessor> (FlangerModel::fx75), 470000.0), -0.54f); }, "Flanger");
