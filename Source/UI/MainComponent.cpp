@@ -212,6 +212,12 @@ MainComponent::MainComponent()
 
     parameterPanel.onMidiLearnRequested = [this] (juce::AudioParameterFloat* param)
     {
+        if (sceneMidiArmed != scenemidi::noAction)
+        {
+            sceneMidiArmed = scenemidi::noAction;
+            refreshScenePedalDisplay();
+        }
+
         // Already bound -> tapping it clears the binding outright.
         for (auto it = midiCcBindings.begin(); it != midiCcBindings.end(); ++it)
         {
@@ -322,6 +328,9 @@ MainComponent::MainComponent()
         audioEngine.getDeviceManager().setMidiInputDeviceEnabled (midiInput.identifier, true);
         audioEngine.getDeviceManager().addMidiInputDeviceCallback (midiInput.identifier, this);
     }
+
+    scenemidi::load (sceneMidi);
+    refreshScenePedalDisplay();
 
     // Snapshot A's colour owns the accent from launch -- no updatePresetDisplay()
     // runs this early (it would also clobber the audio-device warning above).
@@ -1531,6 +1540,24 @@ void MainComponent::showSnapshotMenu (int index)
     menu.addSubMenu ("Colour", colours);
     menu.addSubMenu ("Copy to", copyTo);
 
+    // Footswitch -> scene. The pedal sends one fixed CC per switch, so each
+    // action learns its own (CC 69 with a value per scene still works for
+    // controllers that can send one).
+    const auto pedalItem = [this] (juce::PopupMenu& m, int id, int action, const juce::String& what)
+    {
+        const int cc = sceneMidi.ccFor (action);
+        m.addItem (id, cc >= 0 ? "Clear pedal: " + what + " (CC " + juce::String (cc) + ")"
+                               : "Learn pedal: " + what,
+                   true, sceneMidiArmed == action);
+    };
+    juce::PopupMenu pedal;
+    pedalItem (pedal, 300, index, "this scene (" + snapshotxml::letterFor (index) + ")");
+    pedalItem (pedal, 301, scenemidi::nextScene, "next scene");
+    pedalItem (pedal, 302, scenemidi::previousScene, "previous scene");
+    if (sceneMidiArmed != scenemidi::noAction)
+        pedal.addItem (303, "Cancel learning");
+    menu.addSubMenu ("Footswitch (MIDI)", pedal);
+
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapshotBar)
                                                    .withStandardItemHeight (touch::minTapTarget),
                         [this, index, alive = aliveFlag] (int result)
@@ -1572,7 +1599,54 @@ void MainComponent::showSnapshotMenu (int index)
         {
             copySnapshot (index, result - 200);
         }
+        else if (result == 300)
+            toggleScenePedal (index);
+        else if (result == 301)
+            toggleScenePedal (scenemidi::nextScene);
+        else if (result == 302)
+            toggleScenePedal (scenemidi::previousScene);
+        else if (result == 303 && sceneMidiArmed != scenemidi::noAction)
+            toggleScenePedal (sceneMidiArmed);
     });
+}
+
+void MainComponent::toggleScenePedal (int action)
+{
+    if (sceneMidi.ccFor (action) >= 0)
+    {
+        sceneMidi.clearAction (action);
+        scenemidi::save (sceneMidi);
+        sceneMidiArmed = scenemidi::noAction;
+    }
+    else if (sceneMidiArmed == action)
+    {
+        sceneMidiArmed = scenemidi::noAction;
+    }
+    else
+    {
+        sceneMidiArmed = action;
+        midiLearnArmedParam = nullptr; // one learn at a time
+    }
+
+    refreshScenePedalDisplay();
+}
+
+void MainComponent::refreshScenePedalDisplay()
+{
+    std::array<int, snapshotxml::maxSnapshots> ccs;
+    for (int i = 0; i < snapshotxml::maxSnapshots; ++i)
+        ccs[(size_t) i] = sceneMidi.ccFor (i);
+    snapshotBar.setPedalCcs (ccs);
+
+    juce::String caption;
+    if (sceneMidiArmed != scenemidi::noAction)
+    {
+        const auto what = sceneMidiArmed == scenemidi::nextScene     ? juce::String ("NEXT scene")
+                        : sceneMidiArmed == scenemidi::previousScene ? juce::String ("PREVIOUS scene")
+                                                                     : "scene " + snapshotxml::letterFor (sceneMidiArmed);
+        caption = "press the footswitch for " + what + " ...";
+    }
+    snapshotBar.setCaptionOverride (caption);
 }
 
 juce::Colour MainComponent::colourOfSnapshot (int index) const
@@ -1678,6 +1752,25 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         return;
     }
 
+    // A scene armed for pedal learning takes the next stomp. Only a press is
+    // learned: the footswitch's release (value 0) arrives right after and must
+    // not bind a second, useless CC.
+    if (sceneMidiArmed != scenemidi::noAction)
+    {
+        if (ccValue >= scenemidi::pressThreshold)
+        {
+            midiCcBindings.erase (ccNumber); // a CC drives one thing: scene or knob
+            if (sceneMidi.bind (ccNumber, sceneMidiArmed))
+            {
+                sceneMidi.isPress (ccNumber, ccValue); // so the held/repeated 127 doesn't fire the scene at once
+                scenemidi::save (sceneMidi);
+            }
+            sceneMidiArmed = scenemidi::noAction;
+            refreshScenePedalDisplay();
+        }
+        return;
+    }
+
     // A knob armed for MIDI Learn takes priority over an existing binding
     // on the same CC -- the next CC message received while armed is what
     // gets learned, even if that CC number was already bound to something
@@ -1685,6 +1778,13 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     // from the old one, since a CC can only ever drive one parameter).
     if (midiLearnArmedParam != nullptr)
     {
+        if (sceneMidi.hasCc (ccNumber))
+        {
+            sceneMidi.clearCc (ccNumber);
+            scenemidi::save (sceneMidi);
+            refreshScenePedalDisplay();
+        }
+
         for (auto it = midiCcBindings.begin(); it != midiCcBindings.end(); )
             it = it->second == midiLearnArmedParam ? midiCcBindings.erase (it) : std::next (it);
 
@@ -1692,6 +1792,14 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         midiLearnArmedParam = nullptr;
         return;
     }
+
+    if (const int scene = sceneMidi.targetFor (ccNumber, ccValue, currentSnapshot); scene >= 0)
+    {
+        selectSnapshot (scene);
+        return;
+    }
+    if (sceneMidi.hasCc (ccNumber))
+        return; // a scene pedal's release/repeat never drives a knob
 
     const auto it = midiCcBindings.find (ccNumber);
     if (it == midiCcBindings.end())
