@@ -34,5 +34,10 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 
 ## Not found (no public schematic; the model stays an estimate)
 
-Divided by 13 FTR37, Diezel VH4, Carr Rambler, Fryette Deliverance D120 (only the Deliverance 60 circulates),
-Boss VB-2 (MN3207 / MN3102 BBD, ~4 ms).
+Diezel VH4, Carr Rambler, Fryette Deliverance D120 (only the Deliverance 60 circulates).
+
+Found later as community work (2026-10-26):
+- Divided by 13 FTR37: Edwin Thoen's 3-page trace with measured voltages (Das Musikding forum "Divided by 13 FTR 37
+  Schematic!", file-download 8389; also on Scribd). The model is rebuilt to it.
+- Boss VB-2: the BYOC Analog Vibrato (a VB-2 clone) schematic, rev 2.0, via the Wayback Machine. The model's filters
+  and emphasis come from it.

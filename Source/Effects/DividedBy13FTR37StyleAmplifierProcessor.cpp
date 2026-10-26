@@ -13,19 +13,23 @@ namespace
 {
     using namespace tubeamp;
 
-    // ---- supply (docs/circuits/DividedBy13FTR37.md). No factory schematic is published; the manufacturer quotes the
-    // tube complement (5879, 2x12AX7, 12AT7, 2x12AX7, 4x6V6GT), the GZ34 rectifier and a 25 mA-per-tube idle, so the
-    // rails below are ESTIMATED for a ~37 W fixed-bias 6V6 quartet and the idle currents chosen to land there. ----
-    constexpr double railPlatesNominal = 410.0;   // OT centre tap (estimated)
+    // ---- supply, from Edwin Thoen's FTR 37 trace (3-3-2008; docs/circuits/DividedBy13FTR37.md): GZ34 -> B+5 393 V (OT
+    // centre tap) -> choke -> B+4 385 V (screens, through 470 per tube) -> 10k chain -> B+3 265 V (PI), B+2 212 V (preamp),
+    // B+1 206 V (the 5879). ----
+    constexpr double railPlatesNominal = 393.0;
     constexpr double rectifierResistance = 140.0; // GZ34 + PT (estimated)
-    constexpr double screenResistor = 1.0e3;      // plate node -> screen node dropper
-    constexpr double idlePlateCurrent = 0.025;    // per output tube -- the manual's own 25 mA bias point
+    constexpr double screenResistor = 100.0;      // choke DCR between B+5 and B+4 (estimated)
+    constexpr double idlePlateCurrent = 0.030;    // per output tube (initial guess; prepare() measures)
     constexpr double idleScreenCurrent = 0.003;
-    constexpr double piAndPreampCurrent = 0.006;  // PI + preamp halves, drawn from the screen node (estimated)
-    constexpr double piFraction = 0.74;           // PI rail / screen node
-    constexpr double preFraction = 0.68;          // preamp rail / screen node
-    constexpr double biasNominal = -32.0;         // fixed-bias grid volts at noon (operating-point estimate for ~25 mA)
-    constexpr double biasSpan = 16.0;             // +/- volts over the Bias knob
+    constexpr double piAndPreampCurrent = 0.006;  // PI + preamp, drawn from B+4 (estimated)
+    constexpr double piFraction = 265.0 / 385.0;  // B+3 / B+4 (marked)
+    constexpr double preFraction = 212.0 / 385.0; // B+2 / B+4 (marked)
+    constexpr double pre1Fraction = 206.0 / 385.0; // B+1 / B+4 (marked)
+    constexpr double pentodeScreenVolts = 65.0;   // the 5879's screen: marked 50 V, but read through its 1M with a 20k/V meter (reads low)
+    // Mixed bias: each pair of 6V6s has its own 270 R 5 W + 50 uF cathode, and the grid leaks return to the BIAS circuit
+    // (a 1N4007 off the HT winding, B25k trim). The fixed part is estimated so the quartet idles near 30 mA a tube.
+    constexpr double biasNominal = -14.0;
+    constexpr double biasSpan = 8.0;
     double idleSupplyCurrent = 0.0;
 
     // ---- tubes ----
@@ -81,11 +85,9 @@ namespace
         return a <= outputKnee ? v : std::copysign (outputKnee + outputSpan * std::tanh ((a - outputKnee) / outputSpan), v);
     }
 
-    // The Ch1 "Tone" rotary's six positions: a switched shunt capacitor on the channel's mix tap -- clockwise adds
-    // capacitance, cutting more top end and so raising the apparent lows, exactly the feel the manual describes
-    // ("clockwise increases low frequencies"). Values are ESTIMATED (no schematic published); positions are
-    // monotonically spaced like the real switch's audible steps.
-    constexpr double clickCaps[6] = { 1.0e-12, 0.56e-9, 1.2e-9, 2.7e-9, 5.6e-9, 12.0e-9 };
+    // The Ch1 TONE: a six-position rotary picking the SERIES coupling capacitor between the 5879's 100n output and the
+    // Volume (the trace: 250p, 500p, 2n, 4n7, 10n, 22n) -- clockwise passes more lows, as the manual says.
+    constexpr double clickCaps[6] = { 250.0e-12, 500.0e-12, 2.0e-9, 4.7e-9, 10.0e-9, 22.0e-9 };
 
     // ---- reduced-order sag table (drive peak volts at pMix -> plate rail volts), Twin-shaped, rescaled; F37_POWERCAL
     // in the test file re-measures it against this model. ----
@@ -222,7 +224,7 @@ void DividedBy13FTR37StyleAmplifierProcessor::buildChannel (Channel& ch)
         probe.prepare (48000.0);
         const PreampSeed seed { probe.voltage (ch.pPlate1), probe.voltage (ch.pK1),
                                probe.voltage (ch.pPlate1b), probe.voltage (ch.pK1b),
-                               0.0, 0.0, 0.0, 0.0 };
+                               probe.voltage (ch.pToneTap), 0.0, 0.0, 0.0 };
         buildPreampCh1 (ch.preCh1, ch, &seed, false);
         buildPreamp (ch.pre, ch);
     }
@@ -233,130 +235,126 @@ void DividedBy13FTR37StyleAmplifierProcessor::buildChannel (Channel& ch)
 void DividedBy13FTR37StyleAmplifierProcessor::buildPreampCh1 (NodalCircuit& c, Channel& ch,
                                                              const PreampSeed* seed, bool triodeStandin)
 {
+    // Channel 1 (the trace): 68k into the 5879 (1M leak; 220k plate on B+1, marked 81 V; 1M + 100n screen, marked
+    // 50 V; 2k2 + 25 uF cathode) -> 100n -> the TONE rotary's series cap -> Volume A1M (100p bright) -> V2a (100k plate
+    // on B+2, 1k cathode unbypassed) -> V2b cathode follower (100k to ground) -> 1M to the PI's first grid.
     const auto gnd = NodalCircuit::ground;
-    const auto rail = c.addNode();
-    ch.pSrcRail1 = c.addSource (rail, railPlatesNominal * preFraction * 0.8);
+    const auto rail = c.addNode(), rail1 = c.addNode();
+    ch.pSrcRail1 = c.addSource (rail, railPlatesNominal * preFraction);
+    ch.pSrcRailB1 = c.addSource (rail1, railPlatesNominal * pre1Fraction);
 
-    {
-        const auto in1 = c.addNode();
-        ch.pSrcIn1 = c.addSource (in1, 0.0);
-        const auto g = c.addNode();
-        ch.pK1 = c.addNode();
-        ch.pPlate1 = c.addNode();
-        c.addResistor (in1, g, 220.0e3); // the pentode grid's stopper (5879's own jack network, like the AC15's EF86)
-        c.addResistor (g, gnd, 1.0e6);
-        // Screen ~100 V through the real amp's large screen dropper (estimated), 2k7 cathode: the EF86 fit at
-        // Vs 200 V pulls more than the 100k load can carry, so its DC point collapses to ~28 V and Newton
-        // settles into that basin. At Vs 100 V / 2k7 the stage's available current stays below the load line's
-        // -- the collapsed solution disappears and the stage lands mid-rail like the real 5879 preamp stage.
-        if (triodeStandin)
-            c.addTriode (ch.pPlate1, g, ch.pK1, triode12AX7());
-        else
-            ch.penPre1 = c.addPentode (ch.pPlate1, g, ch.pK1, pentode5879(), 100.0);
-        c.addResistor (rail, ch.pPlate1, 100.0e3);
-        c.addResistor (ch.pK1, gnd, 2.7e3);
-        c.addCapacitor (ch.pK1, gnd, 25.0e-6);
-        c.setInitialGuess (ch.pPlate1, seed != nullptr ? seed->plate1 : 210.0);
-        c.setInitialGuess (ch.pK1, seed != nullptr ? seed->k1 : 1.4);
+    const auto in1 = c.addNode();
+    ch.pSrcIn1 = c.addSource (in1, 0.0);
+    const auto g = c.addNode();
+    ch.pK1 = c.addNode();
+    ch.pPlate1 = c.addNode();
+    c.addResistor (in1, g, 68.0e3);
+    c.addResistor (g, gnd, 1.0e6);
+    if (triodeStandin)
+        c.addTriode (ch.pPlate1, g, ch.pK1, triode12AX7());
+    else
+        ch.penPre1 = c.addPentode (ch.pPlate1, g, ch.pK1, pentode5879(), pentodeScreenVolts);
+    c.addResistor (rail1, ch.pPlate1, 220.0e3);
+    c.addResistor (ch.pK1, gnd, 2.2e3);
+    c.addCapacitor (ch.pK1, gnd, 25.0e-6);
+    c.setInitialGuess (ch.pPlate1, seed != nullptr ? seed->plate1 : 81.0);
+    c.setInitialGuess (ch.pK1, seed != nullptr ? seed->k1 : 1.2);
 
-        // Ch1 Volume: 1M-A.
-        const auto volTop = c.addNode(), wVol = c.addNode();
-        c.addCapacitor (ch.pPlate1, volTop, 0.022e-6);
-        c.addResistor (volTop, gnd, 1.0e6);
-        ch.rVol1Top = c.addResistor (volTop, wVol, 0.5e6);
-        ch.rVol1Bot = c.addResistor (wVol, gnd, 0.5e6);
+    const auto t = c.addNode(), volTop = c.addNode(), wVol = c.addNode();
+    c.addCapacitor (ch.pPlate1, t, 0.1e-6);
+    c.addResistor (t, gnd, 10.0e6);                // numerical DC reference only (the switch node floats on the real amp)
+    ch.capClick = c.addCapacitor (t, volTop, clickCaps[3]);
+    ch.rVol1Top = c.addResistor (volTop, wVol, 0.5e6);
+    ch.rVol1Bot = c.addResistor (wVol, gnd, 0.5e6);
+    c.addCapacitor (volTop, wVol, 100.0e-12);
 
-        // Second Click-channel section: a 12AX7 whose output carries the six-position Tone switch.
-        const auto g2 = c.addNode();
-        ch.pK1b = c.addNode();
-        ch.pPlate1b = c.addNode();
-        c.addResistor (wVol, g2, 470.0e3); // series into the second stage's grid (the pentode channel runs hot)
-        c.addResistor (g2, gnd, 1.0e6);
-        c.addCapacitor (g2, ch.pPlate1b, cgp);
-        c.addTriode (ch.pPlate1b, g2, ch.pK1b, triode12AX7());
-        c.addResistor (rail, ch.pPlate1b, 100.0e3);
-        c.addResistor (ch.pK1b, gnd, 1.5e3);
-        c.addCapacitor (ch.pK1b, gnd, 25.0e-6);
-        c.setInitialGuess (ch.pPlate1b, seed != nullptr ? seed->plate1b : 200.0);
-        c.setInitialGuess (ch.pK1b, seed != nullptr ? seed->k1b : 1.5);
+    ch.pK1b = c.addNode();
+    ch.pPlate1b = c.addNode();
+    c.addCapacitor (wVol, ch.pPlate1b, cgp);
+    c.addTriode (ch.pPlate1b, wVol, ch.pK1b, triode12AX7());
+    c.addResistor (rail, ch.pPlate1b, 100.0e3);
+    c.addResistor (ch.pK1b, gnd, 1.0e3);
+    c.setInitialGuess (ch.pPlate1b, seed != nullptr ? seed->plate1b : 125.0);
+    c.setInitialGuess (ch.pK1b, seed != nullptr ? seed->k1b : 1.0);
 
-        ch.pToneTap = c.addNode();
-        c.addCapacitor (ch.pPlate1b, ch.pToneTap, 0.022e-6);
-        c.addResistor (ch.pToneTap, gnd, 470.0e3);
-        ch.capClick = c.addCapacitor (ch.pToneTap, gnd, clickCaps[3]); // the click-switch shunt cap
-        const auto mixRef = c.addNode();
-        ch.pSrcMixRef = c.addSource (mixRef, 0.0); // set per sample to the other block's pMix
-        c.addResistor (ch.pToneTap, mixRef, 100.0e3); // ch1's half of the real 100k/100k mix
-    }
+    ch.pToneTap = c.addNode(); // V2b's cathode: the channel's output
+    c.addTriode (rail, ch.pPlate1b, ch.pToneTap, triode12AX7());
+    c.addResistor (ch.pToneTap, gnd, 100.0e3);
+    c.setInitialGuess (ch.pToneTap, seed != nullptr ? seed->plate2a : 126.0);
 }
 
 void DividedBy13FTR37StyleAmplifierProcessor::buildPreamp (NodalCircuit& c, Channel& ch)
 {
+    // Channel 2 (the trace): 68k into V3A (1M leak; 100k plate on B+2, marked 138 V; 1k5 cathode, its 22 uF bypass on
+    // the Volume's pull switch) -> the Treble / Bass stack straight off the plate (250p, 100k slope, Treble A250k, Bass
+    // A250k rheostat, 100n / 47n, 6k8) -> Volume A1M from the Treble wiper (82p bright) -> V3B (100k, 1k5 + 25 uF) ->
+    // 22n -> 3M3 || 10p into V5B (220k grid leak; 100k plate, 820 + 25 uF) -> 100n -> the PI's second grid.
     const auto gnd = NodalCircuit::ground;
     const auto rail = c.addNode();
-    ch.pSrcRail = c.addSource (rail, railPlatesNominal * preFraction * 0.8);
-    ch.pMix = c.addNode();
-    c.addResistor (ch.pMix, gnd, 1.0e6); // DC reference for the mix point (behind the coupling caps)
-    const auto ch1In = c.addNode();
-    ch.pSrcCh1Tap = c.addSource (ch1In, 0.0); // set per sample to preCh1's pToneTap
-    c.addResistor (ch1In, ch.pMix, 100.0e3);  // ch1's 100k mix resistor, seen from this side
+    ch.pSrcRail = c.addSource (rail, railPlatesNominal * preFraction);
 
-    // ---------------- Channel 2: 12AX7 -> Volume -> Treble/Bass stack -> boosted recovery -> pMix
-    {
-        const auto in2 = c.addNode();
-        ch.pSrcIn2 = c.addSource (in2, 0.0);
-        const auto g = c.addNode();
-        ch.pK2a = c.addNode();
-        ch.pPlate2a = c.addNode();
-        c.addResistor (in2, g, 68.0e3);
-        c.addResistor (g, gnd, 1.0e6);
-        c.addCapacitor (g, ch.pPlate2a, cgp);
-        c.addTriode (ch.pPlate2a, g, ch.pK2a, triode12AX7());
-        c.addResistor (rail, ch.pPlate2a, 100.0e3);
-        c.addResistor (ch.pK2a, gnd, 1.5e3);
-        c.addCapacitor (ch.pK2a, gnd, 25.0e-6);
-        c.setInitialGuess (ch.pPlate2a, 200.0);
-        c.setInitialGuess (ch.pK2a, 1.5);
+    const auto in2 = c.addNode();
+    ch.pSrcIn2 = c.addSource (in2, 0.0);
+    const auto g = c.addNode();
+    ch.pK2a = c.addNode();
+    ch.pPlate2a = c.addNode();
+    c.addResistor (in2, g, 68.0e3);
+    c.addResistor (g, gnd, 1.0e6);
+    c.addCapacitor (g, ch.pPlate2a, cgp);
+    c.addTriode (ch.pPlate2a, g, ch.pK2a, triode12AX7());
+    c.addResistor (rail, ch.pPlate2a, 100.0e3);
+    c.addResistor (ch.pK2a, gnd, 1.5e3);
+    ch.pBoostTap = c.addNode();
+    ch.rBoost = c.addResistor (ch.pK2a, ch.pBoostTap, 1.0e9); // the Volume's pull switch
+    c.addCapacitor (ch.pBoostTap, gnd, 22.0e-6);
+    c.setInitialGuess (ch.pPlate2a, 138.0);
+    c.setInitialGuess (ch.pK2a, 1.3);
 
-        const auto volTop = c.addNode(), wVol = c.addNode();
-        c.addCapacitor (ch.pPlate2a, volTop, 0.022e-6);
-        c.addResistor (volTop, gnd, 1.0e6);
-        ch.rVol2Top = c.addResistor (volTop, wVol, 0.5e6);
-        ch.rVol2Bot = c.addResistor (wVol, gnd, 0.5e6);
+    const auto pA = c.addNode(), pSlope = c.addNode(), pN1 = c.addNode(), pN2 = c.addNode(), pTone = c.addNode();
+    c.addCapacitor (ch.pPlate2a, pA, 250.0e-12);
+    c.addResistor (ch.pPlate2a, pSlope, 100.0e3);
+    ch.rTrebleTop = c.addResistor (pA, pTone, 125.0e3);
+    ch.rTrebleBot = c.addResistor (pTone, pN1, 125.0e3);
+    c.addCapacitor (pSlope, pN1, 0.1e-6);
+    ch.rBass = c.addResistor (pN1, pN2, 250.0e3);
+    c.addCapacitor (pSlope, pN2, 0.047e-6);
+    c.addResistor (pN2, gnd, 6.8e3);
+    c.setInitialGuess (pSlope, 138.0);
+    c.setInitialGuess (pA, 0.0);
+    c.setInitialGuess (pTone, 0.0);
 
-        // Blackface Treble/Bass stack (no Mid control on this channel's panel; fixed 6k8 tail where a Mid
-        // pot would sit) -- wired exactly like the Deluxe's proven stack: the Bass pot bridges the two
-        // cap-end nodes n1/n2, the treble pot feeds the wiper from the cap top into n1.
-        const auto pA = c.addNode(), pSlope = c.addNode(), pN1 = c.addNode(), pN2 = c.addNode(), pTone = c.addNode();
-        c.addCapacitor (wVol, pA, 250.0e-12);
-        c.addResistor (wVol, pSlope, 100.0e3);
-        ch.rTrebleTop = c.addResistor (pA, pTone, 125.0e3);
-        ch.rTrebleBot = c.addResistor (pTone, pN1, 125.0e3);
-        c.addCapacitor (pSlope, pN1, 0.1e-6);
-        ch.rBass = c.addResistor (pN1, pN2, 250.0e3);
-        c.addCapacitor (pSlope, pN2, 0.047e-6);
-        c.addResistor (pN2, gnd, 6.8e3);
+    const auto wVol = c.addNode();
+    ch.rVol2Top = c.addResistor (pTone, wVol, 0.5e6);
+    ch.rVol2Bot = c.addResistor (wVol, gnd, 0.5e6);
+    c.addCapacitor (pTone, wVol, 82.0e-12);
 
-        // Recovery stage; its cathode bypass is switched in/out by the Volume knob's pull Mid+Gain boost.
-        const auto g2 = c.addNode();
-        ch.pK2b = c.addNode();
-        ch.pPlate2b = c.addNode();
-        ch.pBoostTap = c.addNode();
-        c.addCapacitor (pTone, g2, 0.022e-6);
-        c.addResistor (g2, gnd, 1.0e6);
-        c.addCapacitor (g2, ch.pPlate2b, cgp);
-        c.addTriode (ch.pPlate2b, g2, ch.pK2b, triode12AX7());
-        c.addResistor (rail, ch.pPlate2b, 100.0e3);
-        c.addResistor (ch.pK2b, gnd, 1.5e3);
-        ch.rBoost = c.addResistor (ch.pK2b, ch.pBoostTap, 1.0e9); // off until pulled
-        c.addCapacitor (ch.pBoostTap, gnd, 22.0e-6);
-        c.setInitialGuess (ch.pPlate2b, 200.0);
-        c.setInitialGuess (ch.pK2b, 1.5);
-        const auto mixTap2 = c.addNode();
-        c.addCapacitor (ch.pPlate2b, mixTap2, 0.022e-6);
-        c.addResistor (mixTap2, gnd, 470.0e3);
-        c.addResistor (mixTap2, ch.pMix, 100.0e3);
-    }
+    ch.pK2b = c.addNode();
+    ch.pPlate2b = c.addNode();
+    c.addCapacitor (wVol, ch.pPlate2b, cgp);
+    c.addTriode (ch.pPlate2b, wVol, ch.pK2b, triode12AX7());
+    c.addResistor (rail, ch.pPlate2b, 100.0e3);
+    c.addResistor (ch.pK2b, gnd, 1.5e3);
+    c.addCapacitor (ch.pK2b, gnd, 25.0e-6);
+    c.setInitialGuess (ch.pPlate2b, 143.0);
+    c.setInitialGuess (ch.pK2b, 1.3);
+
+    const auto x = c.addNode(), g5 = c.addNode(), k5 = c.addNode(), p5 = c.addNode();
+    c.addCapacitor (ch.pPlate2b, x, 22.0e-9);
+    c.addResistor (x, gnd, 1.0e6);                 // the reverb send's 1M
+    c.addResistor (x, g5, 3.3e6);
+    c.addCapacitor (x, g5, 10.0e-12);
+    c.addResistor (g5, gnd, 220.0e3);
+    c.addCapacitor (g5, p5, cgp);
+    c.addTriode (p5, g5, k5, triode12AX7());
+    c.addResistor (rail, p5, 100.0e3);
+    c.addResistor (k5, gnd, 820.0);
+    c.addCapacitor (k5, gnd, 25.0e-6);
+    c.setInitialGuess (p5, 141.0);
+    c.setInitialGuess (k5, 1.1);
+    ch.pMix = c.addNode(); // V5B's output after its 100n: the channel's feed to the PI
+    c.addCapacitor (p5, ch.pMix, 0.1e-6);
+    c.addResistor (ch.pMix, gnd, 2.0e6);           // the 1M + 1M path to the PI's grid return, seen from here
+    c.setInitialGuess (ch.pMix, 0.0);
 }
 
 void DividedBy13FTR37StyleAmplifierProcessor::buildPower (Channel& ch)
@@ -374,30 +372,39 @@ void DividedBy13FTR37StyleAmplifierProcessor::buildPower (Channel& ch)
         ch.wSrcBias = c.addSource (biasSrc, biasNominal);
         ch.wSrcIn = c.addSource (in, 0.0);
 
-        // Long-tailed pair (12AX7): 82k/100k plates, 470 + 22k tail, 1M grid leaks to the tail tap.
+        // The trace's PI (V6, ECC83): channel 1 into the first grid through 1M + 22n, channel 2 into the second through
+        // 1M + 1n; both 1M grid leaks return to a node 1k2 below the joined cathodes, with 47k to ground (the
+        // elevated-reference pair); 100k plates on B+3 (marked 205 / 208 V).
         ch.wPiK = c.addNode();
-        const auto tap = c.addNode(), gB = c.addNode();
+        const auto tap = c.addNode(), gB = c.addNode(), nA = c.addNode(), nB = c.addNode(), inB = c.addNode();
+        ch.wSrcInB = c.addSource (inB, 0.0);
         ch.wPiGrid = c.addNode();
         ch.wPiPlateA = c.addNode();
         ch.wPiPlateB = c.addNode();
-        c.addCapacitor (in, ch.wPiGrid, 0.047e-6);
+        c.addResistor (in, nA, 1.0e6);
+        c.addCapacitor (nA, ch.wPiGrid, 22.0e-9);
+        c.addResistor (inB, nB, 1.0e6);
+        c.addCapacitor (nB, gB, 1.0e-9);
         c.addResistor (ch.wPiGrid, tap, 1.0e6);
         c.addResistor (gB, tap, 1.0e6);
-        c.addResistor (ch.wPiK, tap, 470.0);
-        c.addResistor (tap, gnd, 22.0e3);
+        c.addResistor (ch.wPiK, tap, 1.2e3);
+        c.addResistor (tap, gnd, 47.0e3);
         c.addTriode (ch.wPiPlateA, ch.wPiGrid, ch.wPiK, triode12AX7());
         c.addTriode (ch.wPiPlateB, gB, ch.wPiK, triode12AX7());
-        c.addResistor (piRail, ch.wPiPlateA, 82.0e3);
+        c.addCapacitor (ch.wPiGrid, ch.wPiPlateA, cgp);
+        c.addCapacitor (gB, ch.wPiPlateB, cgp);
+        c.addResistor (piRail, ch.wPiPlateA, 100.0e3);
         c.addResistor (piRail, ch.wPiPlateB, 100.0e3);
-        c.setInitialGuess (ch.wPiPlateA, 210.0);
-        c.setInitialGuess (ch.wPiPlateB, 215.0);
-        c.setInitialGuess (ch.wPiK, 40.0);
-        c.setInitialGuess (tap, 39.0);
-        c.setInitialGuess (ch.wPiGrid, 39.0);
-        c.setInitialGuess (gB, 39.0);
+        c.setInitialGuess (ch.wPiPlateA, 205.0);
+        c.setInitialGuess (ch.wPiPlateB, 208.0);
+        c.setInitialGuess (ch.wPiK, 60.0);
+        c.setInitialGuess (tap, 58.5);
+        c.setInitialGuess (ch.wPiGrid, 58.5);
+        c.setInitialGuess (gB, 58.5);
+        c.setInitialGuess (nA, 126.0);
+        c.setInitialGuess (nB, 0.0);
 
-        // .047 uF couplings -> 220k grid leaks into the fixed-bias node (15k from the bias supply, 10 uF), 1k5
-        // stoppers -- the same grid network the Trainwreck model uses, minus the NFB.
+        // 150n couplings with 2n2 to ground, 220k leaks into the BIAS node, 2k7 stoppers.
         ch.wBias = c.addNode();
         ch.wGridA = c.addNode();
         ch.wGridB = c.addNode();
@@ -407,33 +414,41 @@ void DividedBy13FTR37StyleAmplifierProcessor::buildPower (Channel& ch)
         ch.wKA2 = c.addNode();
         ch.wKB2 = c.addNode();
         c.addResistor (biasSrc, ch.wBias, 15.0e3);
-        c.addCapacitor (ch.wBias, gnd, 10.0e-6);
-        c.addCapacitor (ch.wPiPlateA, ch.wGridA, 0.047e-6);
-        c.addCapacitor (ch.wPiPlateB, ch.wGridB, 0.047e-6);
+        c.addCapacitor (ch.wBias, gnd, 100.0e-6);
+        c.addCapacitor (ch.wPiPlateA, ch.wGridA, 0.15e-6);
+        c.addCapacitor (ch.wPiPlateB, ch.wGridB, 0.15e-6);
+        c.addCapacitor (ch.wGridA, gnd, 2.2e-9);
+        c.addCapacitor (ch.wGridB, gnd, 2.2e-9);
         c.addResistor (ch.wGridA, ch.wBias, 220.0e3);
         c.addResistor (ch.wGridB, ch.wBias, 220.0e3);
-        c.addResistor (ch.wGridA, g3s, 1.5e3);
-        c.addResistor (ch.wGridB, g4s, 1.5e3);
+        c.addResistor (ch.wGridA, g3s, 2.7e3);
+        c.addResistor (ch.wGridB, g4s, 2.7e3);
         c.setInitialGuess (ch.wBias, biasNominal);
         c.setInitialGuess (ch.wGridA, biasNominal);
         c.setInitialGuess (ch.wGridB, biasNominal);
         c.setInitialGuess (g3s, biasNominal);
         c.setInitialGuess (g4s, biasNominal);
 
-        // FOUR 6V6GTs as four real devices sharing plate/grid nodes per side: the Full/Half switch lifts the second
-        // tube of each pair's cathode (47k to ground) -- the classic cathode-lift half-power circuit, so the two
-        // surviving tubes keep their own operating point instead of the quartet's being emulated by scaling.
+        // FOUR 6V6s: one tube of each side on a fixed 270 R 5 W + 50 uF cathode (node F), the other on the second
+        // 270 R + 50 uF that the Half / Full switch disconnects (half power: those tubes cut off).
         const double screenIdle = railPlatesNominal - screenResistor * (4.0 * idleScreenCurrent + piAndPreampCurrent);
-        ch.penA1 = c.addPentode (ch.wPP1, g3s, gnd, pentode6V6(), screenIdle);
+        const auto kF = c.addNode(), kG = c.addNode();
+        ch.penA1 = c.addPentode (ch.wPP1, g3s, kF, pentode6V6(), screenIdle);
         ch.penA2 = c.addPentode (ch.wPP1, g3s, ch.wKA2, pentode6V6(), screenIdle);
-        ch.penB1 = c.addPentode (ch.wPP2, g4s, gnd, pentode6V6(), screenIdle);
+        ch.penB1 = c.addPentode (ch.wPP2, g4s, kF, pentode6V6(), screenIdle);
         ch.penB2 = c.addPentode (ch.wPP2, g4s, ch.wKB2, pentode6V6(), screenIdle);
-        ch.rLiftA = c.addResistor (ch.wKA2, gnd, 0.001); // Full: hard ground; Half: 47k -> self-cuts at idle
-        ch.rLiftB = c.addResistor (ch.wKB2, gnd, 0.001);
-        c.setInitialGuess (ch.wPP1, 405.0);
-        c.setInitialGuess (ch.wPP2, 405.0);
-        c.setInitialGuess (ch.wKA2, 0.0);
-        c.setInitialGuess (ch.wKB2, 0.0);
+        c.addResistor (kF, gnd, 270.0);
+        c.addCapacitor (kF, gnd, 50.0e-6);
+        ch.rLiftA = c.addResistor (ch.wKA2, kG, 0.001); // the Half / Full switch: Half opens it
+        ch.rLiftB = c.addResistor (ch.wKB2, kG, 0.001);
+        c.addResistor (kG, gnd, 270.0);
+        c.addCapacitor (kG, gnd, 50.0e-6);
+        c.setInitialGuess (ch.wPP1, 383.0);
+        c.setInitialGuess (ch.wPP2, 383.0);
+        c.setInitialGuess (kF, 16.0);
+        c.setInitialGuess (kG, 16.0);
+        c.setInitialGuess (ch.wKA2, 16.0);
+        c.setInitialGuess (ch.wKB2, 16.0);
 
         // Output transformer: centre tap on the plate rail, 8 ohm tap, no feedback off the secondary.
         const auto a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode();
@@ -484,7 +499,7 @@ void DividedBy13FTR37StyleAmplifierProcessor::updatePots (const Knobs& k)
     lastKnobs = k;
     const double biasVolts = biasNominal + biasSpan * (k.bias - 0.5);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
-    const double liftR = k.halfPower == 1 ? 47.0e3 : 0.001;
+    const double liftR = k.halfPower == 1 ? 1.0e9 : 0.001;
     const double boostR = k.boost == 1 ? 1.0 : 1.0e9;
     const double clickC = clickCaps[juce::jlimit (0, 5, k.click)];
 
@@ -570,16 +585,19 @@ void DividedBy13FTR37StyleAmplifierProcessor::updateSupply (Channel& ch) const
     ch.preRail += b * (screens * preFraction - ch.preRail);
     ch.pre.setSource (ch.pSrcRail, ch.preRail);
     ch.preCh1.setSource (ch.pSrcRail1, ch.preRail);
+    ch.preCh1.setSource (ch.pSrcRailB1, ch.preRail * pre1Fraction / preFraction);
     // The mix node feeds the power block as a Thevenin source, so its DC has to be removed here the same way
     // the real amp's coupling cap + grid leak removes it: a ~5 ms one-pole tracker (~32 Hz, the corner of the real coupling
     // corner) follows the node's DC point as the supply sags into its settled state instead of injecting DC
     // into the LTP.
-    ch.mixDc += (1.0 - std::exp (-dt / 0.005)) * (ch.pre.voltage (ch.pMix) - ch.mixDc);
+    // (now: channel 1's follower output, which reaches the PI through 1M + 22n)
+    ch.mixDc += (1.0 - std::exp (-dt / 0.005)) * (ch.preCh1.voltage (ch.pToneTap) - ch.mixDc);
 }
 
 double DividedBy13FTR37StyleAmplifierProcessor::preampOutput (const Channel& ch) const noexcept
 {
-    return ch.pre.voltage (ch.pMix) - ch.mixDc;
+    // The PI is a difference amplifier: channel 1 on one grid, channel 2 on the other, each through 1M into its 1M leak.
+    return 0.5 * ((ch.preCh1.voltage (ch.pToneTap) - ch.mixDc) - ch.pre.voltage (ch.pMix));
 }
 
 double DividedBy13FTR37StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double driveVoltage) const noexcept
@@ -728,16 +746,18 @@ void DividedBy13FTR37StyleAmplifierProcessor::prepare (double newSampleRate, int
         dcOk = s1 && dcOk;
 
         ch.preCh1.setSource (ch.pSrcRail1, ch.supply.voltage (ch.sB) * preFraction);
+        ch.preCh1.setSource (ch.pSrcRailB1, ch.supply.voltage (ch.sB) * pre1Fraction);
         const bool p1 = ch.preCh1.prepare (newSampleRate);
         ch.pre.setSource (ch.pSrcRail, ch.supply.voltage (ch.sB) * preFraction);
         const bool p2 = ch.pre.prepare (newSampleRate);
         dcOk = p1 && p2 && dcOk;
-        ch.mixDc = ch.pre.voltage (ch.pMix);
+        ch.mixDc = ch.preCh1.voltage (ch.pToneTap);
 
         double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
         if (! reducedOrder)
         {
-            ch.power.setSource (ch.wSrcIn, 0.0);
+            ch.power.setSource (ch.wSrcIn, ch.mixDc);
+            ch.power.setSource (ch.wSrcInB, 0.0);
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sB) * piFraction);
             ch.power.setSource (ch.wSrcRail, ch.supply.voltage (ch.sA));
             const double scr = ch.supply.voltage (ch.sB);
@@ -772,6 +792,7 @@ void DividedBy13FTR37StyleAmplifierProcessor::prepare (double newSampleRate, int
         ch.preRail = ch.supply.voltage (ch.sB) * preFraction;
         ch.pre.setSource (ch.pSrcRail, ch.preRail);
         ch.preCh1.setSource (ch.pSrcRail1, ch.preRail);
+        ch.preCh1.setSource (ch.pSrcRailB1, ch.supply.voltage (ch.sB) * pre1Fraction);
         ch.preCh1.saveDynamicState (ch.preCh1Rest);
         ch.pre.saveDynamicState (ch.preRest);
         ch.power.saveDynamicState (ch.powerRest);
@@ -851,13 +872,10 @@ void DividedBy13FTR37StyleAmplifierProcessor::process (juce::AudioBuffer<float>&
             auto* data = buffer.getWritePointer (chIdx);
 
             const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
-            // One-sample-delayed Thevenin loop between the two preamp blocks: ch1 sees last sample's pMix behind
-            // its 100k mix resistor, ch2's block sees this sample's ch1 tap behind its own (loop gain < 1).
+            // The two channels are independent until the PI (each on its own grid).
             ch.preCh1.setSource (ch.pSrcIn1, inCh1 ? x : 0.0);
-            ch.preCh1.setSource (ch.pSrcMixRef, ch.pre.voltage (ch.pMix));
             const bool okPre1 = ch.preCh1.solveSample();
             ch.pre.setSource (ch.pSrcIn2, inCh2 ? x : 0.0);
-            ch.pre.setSource (ch.pSrcCh1Tap, ch.preCh1.voltage (ch.pToneTap));
             const bool okPre2 = ch.pre.solveSample();
             const bool okPre = okPre1 && okPre2;
             bool ok = okPre;
@@ -866,7 +884,8 @@ void DividedBy13FTR37StyleAmplifierProcessor::process (juce::AudioBuffer<float>&
             bool ok2 = true; // reducedOrder: ch.power is empty, nothing to solve
             if (! reducedOrder)
             {
-                ch.power.setSource (ch.wSrcIn, drive);
+                ch.power.setSource (ch.wSrcIn, ch.mixDc + masterGain * (ch.preCh1.voltage (ch.pToneTap) - ch.mixDc));
+                ch.power.setSource (ch.wSrcInB, masterGain * ch.pre.voltage (ch.pMix));
                 ok2 = ch.power.solveSample();
             }
             ok = ok && ok2;

@@ -624,7 +624,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // channel mixed into an LTP PI and a fixed-bias 4x6V6 push-pull (Full/Half power). reducedOrder power stage.
     DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DividedBy13FTR37StyleAmplifier");
-    registry.registerType ("DividedBy13FTR37StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DividedBy13FTR37StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -7.51f); }, "Crunch");
+    registry.registerType ("DividedBy13FTR37StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DividedBy13FTR37StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.90f); }, "Crunch");
 
     // Four new big-iron heads (docs/circuits/{DumbleSteelString,SunnModelT,FryetteDeliveranceD120,
     // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
