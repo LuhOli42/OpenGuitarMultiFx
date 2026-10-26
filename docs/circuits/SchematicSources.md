@@ -36,3 +36,4 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 
 Divided by 13 FTR37, Diezel VH4, Carr Rambler, Fryette Deliverance D120 (only the Deliverance 60 circulates),
 Boss VB-2 (MN3207 / MN3102 BBD, ~4 ms).
+| Boss VB-2 | BYOC Analog Vibrato (VB-2 clone) schematic rev 2.0, Wayback: web.archive.org/web/20250327200355/http://byocelectronics.com/analogvibratoschematic.pdf | community clone | model filters / emphasis now from it; delay timing still calibrated |

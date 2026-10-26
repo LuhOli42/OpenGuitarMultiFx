@@ -14,10 +14,6 @@ namespace
 
     double triangle (double p) { return p < 0.5 ? 4.0 * p - 1.0 : 3.0 - 4.0 * p; }
 
-    std::vector<LadderNode> ce2SallenKey()
-    {
-        return { { 10.0e3, 0.0, 3.3e-9, 0.0, 0.0 }, { 10.0e3, 0.0, 0.0, 8.2e-9, 0.0 }, { 10.0e3, 0.0, 470.0e-12, 0.0, 0.0 } };
-    }
 
     // Hammond: the scanner's sweep for V1 / V2 / V3 as a fraction of the delay line (~1.1 ms end to end).
     constexpr double hammondLineSeconds = 1.1e-3;
@@ -89,7 +85,12 @@ juce::AudioParameterFloat* VibratoPedalProcessor::add (const juce::String& id, c
 void VibratoPedalProcessor::prepare (double newSampleRate, int, int)
 {
     sampleRate = newSampleRate;
-    const auto sk = bbdchorus::bbdFilter (ce2SallenKey());
+    // VB-2: the BYOC Analog Vibrato (a VB-2 clone, schematic rev 2.0, docs/circuits/VB2Vibrato.md). Q2 Sallen-Key ahead
+    // of the MN3207 (R8 / R9 10k, C5 .01 feedback, C6 47p to ground); Q3 3rd-order after it (R13-R15 10k; C9 2n7, C10
+    // 4n7 feedback, C11 220p).
+    const auto vb2In = bbdchorus::bbdFilter ({ { 10.0e3, 0.0, 0.0, 10.0e-9, 0.0 }, { 10.0e3, 0.0, 47.0e-12, 0.0, 0.0 } });
+    const auto vb2Out = bbdchorus::bbdFilter ({ { 10.0e3, 0.0, 2.7e-9, 0.0, 0.0 }, { 10.0e3, 0.0, 0.0, 4.7e-9, 0.0 },
+                                                { 10.0e3, 0.0, 220.0e-12, 0.0, 0.0 } });
     // Clone Theory: R5 10K / C4 22n ahead of the MN3007 (a dark 720 Hz pole -- the pedal is famously murky) and the
     // IC1B Sallen-Key (51K, 680p / 680p) after it.
     const auto ctIn = bbdchorus::bbdFilter ({ { 10.0e3, 0.0, 22.0e-9, 0.0, 0.0 }, { 2.4e3, 0.0, 2.2e-9, 0.0, 0.0 } });
@@ -98,10 +99,11 @@ void VibratoPedalProcessor::prepare (double newSampleRate, int, int)
     {
         if (model == VibratoModel::vb2)
         {
-            ch.bbd.prepare (newSampleRate, 1024, sk, sk); // MN3207
-            // The CE-2 family's emphasis around the BBD: pre-emphasis in, the matching de-emphasis out (wet only).
-            ch.pre.prepare (inverting (parallelRC (47.0e3, 100.0e-12), parallel (resistor (47.0e3), seriesRC (10.0e3, 6.8e-9))), newSampleRate, 2340.0);
-            ch.post.prepare (inverting (parallel (parallel (resistor (47.0e3), seriesRC (10.0e3, 6.8e-9)), capacitor (100.0e-12)), resistor (47.0e3)), newSampleRate, 2340.0);
+            ch.bbd.prepare (newSampleRate, 1024, vb2In, vb2Out); // MN3207
+            // IC1B pre-emphasis (R5 47k || C3 6n8 + R4 7k5 in, R6 47k || C4 33p feedback) and the output op-amp's
+            // de-emphasis (R20 47k in, R21 47k || C15 6n8 + R22 10k || C14 33p feedback). Wet only.
+            ch.pre.prepare (inverting (parallelRC (47.0e3, 33.0e-12), parallel (resistor (47.0e3), seriesRC (7.5e3, 6.8e-9))), newSampleRate, 2340.0);
+            ch.post.prepare (inverting (parallel (parallel (resistor (47.0e3), seriesRC (10.0e3, 6.8e-9)), capacitor (33.0e-12)), resistor (47.0e3)), newSampleRate, 2340.0);
         }
         else if (model == VibratoModel::cloneTheory)
         {
