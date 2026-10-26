@@ -636,7 +636,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("SunnModelTStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 16.70f); }, "High-Gain");
     FryetteDeliveranceD120StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("FryetteDeliveranceD120StyleAmplifier");
-    registry.registerType ("FryetteDeliveranceD120StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -4.34f); }, "High-Gain");
+    registry.registerType ("FryetteDeliveranceD120StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.49f); }, "High-Gain");
     BognerUberschallStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("BognerUberschallStyleAmplifier");
     registry.registerType ("BognerUberschallStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<BognerUberschallStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.14f); }, "High-Gain");
