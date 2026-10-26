@@ -49,6 +49,17 @@ namespace
     // ---- tubes ----
     KorenTriode::Parameters triode12AX7() { return {}; }
 
+    KorenTriode::Parameters triode12AU7()
+    {
+        // Koren's published 12AU7 set.
+        KorenTriode::Parameters p;
+        p.mu = 21.5;
+        p.ex = 1.3;
+        p.kg1 = 1180.0;
+        p.kp = 84.0;
+        return p;
+    }
+
     KorenTriode::Parameters triode12AX7Pi()
     {
         auto p = triode12AX7();
@@ -98,7 +109,7 @@ namespace
     // NFB off the 16-ohm tap to the PI (estimated mid value for a fixed-bias big-iron head).
     constexpr double feedbackResistor = 56.0e3;
 
-    constexpr double biasSupplyVolts = -55.0;  // KT88 fixed bias
+    constexpr double biasSupplyVolts = -76.0;  // feeds the CF drivers' grids; their cathodes sit ~10-15 V above (estimated)
 
     constexpr double speakerEddyLoss = 150.0;
 
@@ -390,36 +401,42 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcBias = c.addSource (vc18, biasSupplyVolts);
 
-        // Phase inverter: 12AX7 long-tailed pair, 82K/100K plates, .047uF couplings.
-        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
+        // Phase inverter: Fryette publishes no schematic. The Deliverance's documented layout (MEF / SLOclone's
+        // reverse-engineered D60) is a gain stage -> a CATHODYNE -> the power tubes, with the 120 adding cathode-follower
+        // drivers after the cathodyne. Values estimated (docs/circuits/FryetteDeliveranceD120.md):
+        //   gain stage 12AX7: .022 in, 1M leak, 100k plate, 1k5 cathode over the 470 R NFB node;
+        //   cathodyne 12AX7: .022 from the gain plate, 100k plate / 1k5 bias + 100k load cathode, grid leak 1M
+        //   bootstrapped to the 1k5 / 100k joint;
+        //   drivers 12AU7 cathode followers: .047 in, 220k leaks to the bias node, 47k loads to a -150 V supply, DC
+        //   into the KT88 grids through 1k5.
+        const auto g1 = c.addNode(), pg = c.addNode(), kg = c.addNode(), fp = c.addNode();
+        const auto gc = c.addNode(), pc = c.addNode(), kc = c.addNode(), kcb = c.addNode();
         ch.wGridA = g1;
-        ch.wPlateA = pa;
-        ch.wPlateB = pb;
-        ch.wTail = nm;
+        ch.wPlateA = pc;
+        ch.wPlateB = kc;
+        ch.wTail = kg;
         ch.wFeedback = fp;
         c.addCapacitor (ch.wTone, g1, 0.022e-6);
-        c.addResistor (g1, nm, 1.0e6);
-        c.addResistor (g2, fp, 1.0e6);
-        c.addTriode (pa, g1, k, triode12AX7Pi());
-        c.addTriode (pb, g2, k, triode12AX7Pi());
-        c.addCapacitor (g1, pa, cgp);
-        c.addCapacitor (g2, pb, cgp);
-        c.addResistor (vpi, pa, 82.0e3);
-        c.addResistor (vpi, pb, 100.0e3);
-        c.addCapacitor (pa, pb, 47.0e-12);
-        c.addResistor (k, nm, 1.0e3);
-        c.addResistor (nm, gnd, 10.0e3);
-        c.setInitialGuess (pa, 250.0);
-        c.setInitialGuess (pb, 245.0);
-        c.setInitialGuess (k, 30.0);
-        c.setInitialGuess (nm, 27.0);
-        c.setInitialGuess (g1, 27.0);
-        c.setInitialGuess (g2, 27.0);
-        c.setInitialGuess (fp, 2.0);
+        c.addResistor (g1, gnd, 1.0e6);
+        c.addTriode (pg, g1, kg, triode12AX7Pi());
+        c.addCapacitor (g1, pg, cgp);
+        c.addResistor (vpi, pg, 100.0e3);
+        c.addResistor (kg, fp, 1.5e3);
+        c.addResistor (fp, gnd, 470.0);
+        c.addCapacitor (pg, gc, 0.022e-6);
+        c.addResistor (gc, kcb, 1.0e6);
+        c.addTriode (pc, gc, kc, triode12AX7Pi());
+        c.addCapacitor (gc, pc, cgp);
+        c.addResistor (vpi, pc, 100.0e3);
+        c.addResistor (kc, kcb, 1.5e3);
+        c.addResistor (kcb, gnd, 100.0e3);
+        c.setInitialGuess (g1, 0.0); c.setInitialGuess (pg, 330.0); c.setInitialGuess (kg, 1.6); c.setInitialGuess (fp, 0.4);
+        c.setInitialGuess (pc, 300.0); c.setInitialGuess (kc, 152.0); c.setInitialGuess (kcb, 150.0); c.setInitialGuess (gc, 150.0);
 
-        // Power amplifier: 4 x KT88 as two push-pull pairs. .047uF couplings, 1.5K grid stoppers,
-        // 220K grid leaks to the fixed bias rail.
+        // Cathode-follower drivers -> 4 x KT88 as two push-pull pairs (1.5K grid stoppers).
         const auto g3 = c.addNode(), g4 = c.addNode(), g3s = c.addNode(), g4s = c.addNode(), nb = c.addNode(), nbt = c.addNode();
+        const auto cfA = c.addNode(), cfB = c.addNode(), vneg = c.addNode();
+        c.addSource (vneg, -150.0);
         ch.wBias = nb;
         ch.wPowerGridA = g3s;
         const auto pp1 = c.addNode(), pp2 = c.addNode(), a1 = c.addNode(), a2 = c.addNode();
@@ -427,12 +444,22 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wPP2 = pp2;
         const auto sw = c.addNode();
         ch.wOut = c.addNode();
-        c.addCapacitor (pa, g3, 0.047e-6);
-        c.addCapacitor (pb, g4, 0.047e-6);
+        c.addCapacitor (pc, g3, 0.047e-6);
+        c.addCapacitor (kc, g4, 0.047e-6);
         c.addResistor (g3, nb, 220.0e3);
         c.addResistor (g4, nb, 220.0e3);
-        c.addResistor (g3, g3s, 1.5e3);
-        c.addResistor (g4, g4s, 1.5e3);
+        const auto vcf = c.addNode();
+        c.addResistor (vpi, vcf, 33.0e3);                 // the drivers' plate dropper (estimated)
+        c.addCapacitor (vcf, gnd, 22.0e-6);
+        c.setInitialGuess (vcf, 310.0);
+        c.addTriode (vcf, g3, cfA, triode12AU7());
+        c.addTriode (vcf, g4, cfB, triode12AU7());
+        c.addResistor (cfA, vneg, 47.0e3);
+        c.addResistor (cfB, vneg, 47.0e3);
+        c.addResistor (cfA, g3s, 1.5e3);
+        c.addResistor (cfB, g4s, 1.5e3);
+        c.setInitialGuess (cfA, -55.0);
+        c.setInitialGuess (cfB, -55.0);
         c.addResistor (vc18, nb, 15.0e3);
         c.addCapacitor (nb, gnd, 10.0e-6);
         c.addResistor (nb, nbt, 100.0e3);
@@ -455,10 +482,12 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::buildChannel (Channel& ch)
         const double ls = lh / (halfToSecondaryTurns * halfToSecondaryTurns);
         const double m12 = -couplingHalves * lh;
         const double mps = couplingSecondary * std::sqrt (lh * ls);
+        // Secondary sense: the NFB now returns to the gain stage's cathode (in phase with its grid), so the winding
+        // sense that makes the loop negative is the opposite of the old LTP grid-2 return.
         c.addCoupledInductors ({ { a1, pp1 }, { a2, pp2 }, { sw, gnd } },
-                               { lh,  m12, -mps,
-                                 m12, lh,   mps,
-                                 -mps, mps, ls });
+                               { lh,  m12,  mps,
+                                 m12, lh,  -mps,
+                                 mps, -mps, ls });
         c.addResistor (sw, ch.wOut, secondaryResistance);
         {
             const auto sm = speakerModel (speakerNominal[matchedSpeaker]);
@@ -471,7 +500,8 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: from speaker terminal through feedbackResistor to PI grid 2, with Presence 25K shunt and stray cap.
+        // NFB: from the speaker terminal through feedbackResistor onto the gain stage's 470 R cathode node, with the
+        // Presence 25K shunt and stray cap (estimated, as the rest of this section).
         const auto wp = c.addNode();
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
         ch.rPresTop = c.addResistor (fp, wp, 12.5e3);
@@ -493,7 +523,9 @@ void FryetteDeliveranceD120StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (pp2, railPlatesNominal);
         c.setInitialGuess (a1, railPlatesNominal);
         c.setInitialGuess (a2, railPlatesNominal);
-        for (auto n : { g3, g4, g3s, g4s, nb })
+        for (auto n : { g3, g4, nb })
+            c.setInitialGuess (n, -65.0);
+        for (auto n : { g3s, g4s })
             c.setInitialGuess (n, -55.0);
         c.setInitialGuess (nbt, -1.0);
     }

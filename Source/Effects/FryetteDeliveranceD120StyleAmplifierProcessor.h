@@ -52,7 +52,7 @@ public:
     static constexpr double bmYmax = 0.198;
     static constexpr double bmKneeN = 6.0;
     static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.55;
+    static constexpr double bmShelfHfGain = 1.3;  // refitted after the cathodyne + CF-driver rebuild
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
