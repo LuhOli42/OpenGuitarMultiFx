@@ -22,7 +22,7 @@ namespace
     constexpr double chokeResistance = 50.0;
     constexpr double chokeInductance = 10.0;
     constexpr double bleeder = 100.0e3;
-    constexpr double screenResistor = 500.0; // ~100Ω per tube / 2 per pair → 50Ω; R207/R209 are 100W5 each → 500Ω effective
+    constexpr double screenResistor = 50.0;  // R207/R209 (R203/R205): 100 ohm per tube, two tubes per modelled pair
 
     // ---- reduced-order power stage sag table (Twin Reverb's data scaled from 497V to 465V) ----
     constexpr int bmSagPoints = 20;
@@ -82,10 +82,6 @@ namespace
     constexpr double couplingSecondary = 0.995;
     constexpr double primaryHalfResistance = 45.0;
     constexpr double secondaryResistance = 0.15;
-    // NFB: R56=39K from OT secondary. The model taps from 16 ohm secondary (not 8 ohm),
-    // scale: 39K * (16/8) = 78K effective.
-    constexpr double feedbackResistor = 78.0e3;
-
     constexpr double biasSupplyVolts = -52.0; // 6L6GC bias
 
     constexpr double speakerEddyLoss = 150.0;
@@ -94,214 +90,153 @@ namespace
     constexpr int matchedSpeaker = 1; // 8 ohm matched (J1=8 ohm on schematic)
     constexpr double powerTheta = 0.9;
 
-    // ---- preamp helper ----
-    struct PreampBuild
-    {
-        NodalCircuit& c;
-        int srcV2 = 0, srcV1 = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
-        int rV2aSeries = 0, rBypassV2ab = 0;
-        NodalCircuit::Node plateV1a = 0, plateV1b = 0, plateV2a = 0, plateV2b = 0, plateV5b = 0, follower = 0;
-        NodalCircuit::Node nodeV2 = 0, nodeV1 = 0;
-    };
-
-    /** The EVH 5150 ULTRA channel preamp: FIVE cascaded 12AX7 gain stages (V1A -> V1B -> V2A -> V2B -> V5B)
-        plus a V5A cathode follower driving the tone stack.
-
-        Key voicing elements:
-        - V1A: 220K plate (V1 rail), 68K grid stopper, 1M grid leak, 1.82K/1µF bypassed cathode
-        - ULTRA GAIN: 1M pot (audio taper) between V1A and V1B
-        - V1B: 100K plate (V1 rail), 470K grid leak, 1.82K/1µF bypassed cathode
-        - V2A: 100K plate (V1 rail), 470K grid leak, 39K series, 1.82K/1µF bypassed cathode
-        - V2B: 220K plate (V2 rail), 1M grid leak, 10K unbypassed cathode (compression stage)
-        - V5B: 220K plate (V2 rail), 1M grid leak, 2.2K/1µF bypassed cathode
-
-        Supply taps: E (~410V) for V1A/V1B/V2A, D (~420V) for V2B/V5B/V5A. */
-    PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double v1Guess, double v2Guess)
-    {
-        const auto gnd = NodalCircuit::ground;
-        PreampBuild b { c };
-
-        const auto vccV1 = c.addNode(), vccV2 = c.addNode(), in = c.addNode();
-        b.nodeV1 = vccV1;
-        b.nodeV2 = vccV2;
-        b.srcV1 = c.addSource (vccV1, v1Guess);
-        b.srcV2 = c.addSource (vccV2, v2Guess);
-        b.srcIn = c.addSource (in, 0.0);
-
-        // V1A: 220K plate (V1 rail), 68K grid stopper, 1M grid leak, 1.82K cathode bypassed with 1µF.
-        const auto g1 = c.addNode(), k1 = c.addNode();
-        b.plateV1a = c.addNode();
-        c.addResistor (in, g1, 68.0e3);                  // R22 grid stopper
-        c.addResistor (g1, gnd, 1.0e6);                  // R25 grid leak
-        c.addTriode (b.plateV1a, g1, k1, triode12AX7());
-        c.addCapacitor (g1, b.plateV1a, cgp);
-        c.addResistor (vccV1, b.plateV1a, 220.0e3);      // R2
-        c.addResistor (k1, gnd, 1.82e3);                 // R12
-        c.addCapacitor (k1, gnd, 1.0e-6);                // C3: 1A50NP
-        c.setInitialGuess (b.plateV1a, 200.0);
-        c.setInitialGuess (k1, 1.6);
-
-        // ULTRA GAIN: V1A plate → coupling cap (.022µF) → Gain pot (1M audio taper).
-        const auto gainIn = c.addNode(), gainWiper = c.addNode();
-        c.addCapacitor (b.plateV1a, gainIn, 22.0e-9);    // C6 = .022
-        c.addResistor (gainIn, gnd, 470.0e3);             // R29 bias reference
-        b.rGainTop = c.addResistor (gainIn, gainWiper, 1.0e6);
-        b.rGainBot = c.addResistor (gainWiper, gnd, 1.0e6);
-
-        // V1B: 100K plate (V1 rail), 470K grid leak, 1.82K cathode bypassed with 1µF.
-        const auto g2 = c.addNode(), k2 = c.addNode();
-        b.plateV1b = c.addNode();
-        c.addResistor (gainWiper, g2, 10.0e3);            // series from gain wiper
-        c.addResistor (g2, gnd, 470.0e3);                // R82 grid leak
-        c.addTriode (b.plateV1b, g2, k2, triode12AX7());
-        c.addCapacitor (g2, b.plateV1b, cgp);
-        c.addResistor (vccV1, b.plateV1b, 100.0e3);      // R3
-        c.addResistor (k2, gnd, 1.82e3);                 // R17
-        c.addCapacitor (k2, gnd, 1.0e-6);                // C4: 1A50NP
-        c.setInitialGuess (b.plateV1b, 250.0);
-        c.setInitialGuess (k2, 1.6);
-
-        // V2A: 100K plate (V1 rail), 470K grid leak, 39K series, 1.82K cathode bypassed with 1µF.
-        // Rhythm channel bypasses V2A+V2B entirely (relay switching).
-        const auto g3 = c.addNode(), k3 = c.addNode(), coup3 = c.addNode();
-        b.plateV2a = c.addNode();
-        c.addCapacitor (b.plateV1b, coup3, 22.0e-9);     // coupling
-        b.rV2aSeries = c.addResistor (coup3, g3, 39.0e3); // R15 (switchable: 100M for Rhythm)
-        c.addResistor (g3, gnd, 470.0e3);                // R6 grid leak
-        c.addTriode (b.plateV2a, g3, k3, triode12AX7());
-        c.addCapacitor (g3, b.plateV2a, cgp);
-        c.addResistor (vccV1, b.plateV2a, 100.0e3);      // R1
-        c.addResistor (k3, gnd, 1.82e3);                 // R13
-        c.addCapacitor (k3, gnd, 1.0e-6);                // C5: 1A50NP
-        c.setInitialGuess (b.plateV2a, 250.0);
-        c.setInitialGuess (k3, 1.6);
-
-        // V2B: 220K plate (V2 rail), 1M grid leak. Unbypassed cathode (~10K estimated — compression stage,
-        // similar to the Dual Rectifier's V2B but with a lower cathode R for slightly less compression).
-        const auto g4 = c.addNode(), k4 = c.addNode(), coup4 = c.addNode();
-        b.plateV2b = c.addNode();
-        c.addCapacitor (b.plateV2a, coup4, 22.0e-9);     // C57 = .022
-        c.addResistor (coup4, g4, 470.0e3);              // series into grid
-        c.addResistor (g4, gnd, 1.0e6);                  // R32 grid leak
-        c.addTriode (b.plateV2b, g4, k4, triode12AX7());
-        c.addCapacitor (g4, b.plateV2b, cgp);
-        c.addResistor (vccV2, b.plateV2b, 220.0e3);      // R4
-        c.addResistor (k4, gnd, 10.0e3);                 // unbypassed — compression
-        c.setInitialGuess (b.plateV2b, 380.0);
-        c.setInitialGuess (k4, 4.0);
-
-        // V5B: 220K plate (V2 rail), 1M grid leak, 100K series stopper, 2.2K cathode bypassed with 1µF.
-        const auto g5 = c.addNode(), k5 = c.addNode(), coup5 = c.addNode();
-        b.plateV5b = c.addNode();
-        c.addCapacitor (b.plateV2b, coup5, 22.0e-9);     // coupling
-        b.rBypassV2ab = c.addResistor (coup3, coup5, 100.0e6); // Rhythm bypass: 1 ohm to skip V2A+V2B
-        c.addResistor (coup5, g5, 100.0e3);              // R101 series stopper
-        c.addResistor (g5, gnd, 1.0e6);                  // R87 grid leak
-        c.addTriode (b.plateV5b, g5, k5, triode12AX7());
-        c.addCapacitor (g5, b.plateV5b, cgp);
-        c.addResistor (vccV2, b.plateV5b, 220.0e3);      // R96
-        c.addResistor (k5, gnd, 2.2e3);                  // R102
-        c.addCapacitor (k5, gnd, 1.0e-6);                // bypassed
-        c.setInitialGuess (b.plateV5b, 200.0);
-        c.setInitialGuess (k5, 1.6);
-
-        // V5A: cathode follower — drives the tone stack through a low-impedance output.
-        b.follower = c.addNode();
-        c.addFollower (b.plateV5b, b.follower, followerDrop);
-        return b;
-    }
-
+    // NFB: R56 39K from the 8-ohm tap (T2's "W" lead, the J1 jack) to the Presence/Resonance network.
+    constexpr double feedbackResistor = 39.0e3;
 }
 
-/** Eco-tier preamp: the real preamp is five triodes + follower (~24 nodes) and is the dominant
-    reducedOrder cost on the A7S budget, so this collapses it to the three clip zones that dominate
-    the transfer -- V1A's input clip, a middle stage standing in for V1B+V2A+V2B's aggregate
-    gain+clip (voiced like V2A), and the V5B output clip driving the follower -- keeping the real
-    voicing parts (grid stopper/leaks, bypassed cathodes, plate loads, the ULTRA GAIN pot) so the
-    gain knob still drives the output clip the same way. ~17 nodes vs the full ~24. */
-void EVH5150StyleAmplifierProcessor::buildReducedPreamp (Channel& ch, double followerDrop)
+/** Block A: input (R22 68K / R25 1M), V1A (220K, 1.82K || 1uF), C6 .022 into BOTH pre networks -- ULTRA: R29 470K ||
+    C17 .0022 series, R41 1M down, VR2 1M with C19 .001 || R40 1M across its top leg; CLEAN: R19 470K || C51 270p, R21 1M,
+    VA1 1M with C27 180p across its top leg -- K2A picking one wiper into R82 470K and V1B (100K, 1.82K || 1uF).
+    C2 .022 -> R6 470K -> R9 1M is block B's input network, carried here as V1B's load (V2A draws no grid current
+    behind its 39K cathode). Simplified: K4A's bright/drive voicing paths (C13/R43, C10/R75, R23/C63) and V1B's
+    C26 22uF + R18 47K leg (in series with 47K, it changes nothing above a few hertz). */
+void EVH5150StyleAmplifierProcessor::buildPreA (Channel& ch) const
 {
-        auto& c = ch.preReduced;
-        const auto gnd = NodalCircuit::ground;
+    auto& c = ch.preA;
+    const auto gnd = NodalCircuit::ground;
+    const auto v1 = c.addNode(), in = c.addNode();
+    ch.aSrcV1 = c.addSource (v1, 330.0);
+    ch.aSrcIn = c.addSource (in, 0.0);
 
-        const auto vcc = c.addNode(), in = c.addNode();
-        ch.prRail = vcc;
-        ch.prSrcRail = c.addSource (vcc, 410.0);
-        ch.prSrcIn = c.addSource (in, 0.0);
+    const auto g1 = c.addNode(), k1 = c.addNode();
+    ch.aPlateV1a = c.addNode();
+    c.addResistor (in, g1, 68.0e3);                       // R22
+    c.addResistor (g1, gnd, 1.0e6);                       // R25
+    c.addTriode (ch.aPlateV1a, g1, k1, triode12AX7());
+    c.addCapacitor (g1, ch.aPlateV1a, cgp);
+    c.addResistor (v1, ch.aPlateV1a, 220.0e3);            // R2
+    c.addResistor (k1, gnd, 1.82e3);                      // R12
+    c.addCapacitor (k1, gnd, 1.0e-6);                     // C3
+    c.setInitialGuess (ch.aPlateV1a, 170.0);
+    c.setInitialGuess (k1, 1.5);
 
-        // V1A: same voicing as the full stage (68K stopper, 1M leak, 220K plate, 1.82K/1uF cathode).
-        const auto g1 = c.addNode(), k1 = c.addNode();
-        ch.prPlateA = c.addNode();
-        c.addResistor (in, g1, 68.0e3);
-        c.addResistor (g1, gnd, 1.0e6);
-        c.addTriode (ch.prPlateA, g1, k1, triode12AX7());
-        c.addCapacitor (g1, ch.prPlateA, cgp);
-        c.addResistor (vcc, ch.prPlateA, 220.0e3);
-        c.addResistor (k1, gnd, 1.82e3);
-        // 0.1uF (vs the real 1uF): lifts the bypass shelf to ~870 Hz so the lumped stage sheds the
-        // low-band gain the dropped stages' extra compression would have eaten (measured vs full
-        // netlist: +6 dB relative bass without it).
-        c.addCapacitor (k1, gnd, 0.1e-6);
-        c.setInitialGuess (ch.prPlateA, 200.0);
-        c.setInitialGuess (k1, 1.6);
+    const auto na = c.addNode();
+    c.addCapacitor (ch.aPlateV1a, na, 22.0e-9);           // C6
 
-        // ULTRA GAIN pot: same .022uF coupling + 470K bias reference into the same 1M audio-taper legs.
-        const auto gainIn = c.addNode(), gainWiper = c.addNode();
-        c.addCapacitor (ch.prPlateA, gainIn, 22.0e-9);
-        c.addResistor (gainIn, gnd, 470.0e3);
-        ch.prGainTop = c.addResistor (gainIn, gainWiper, 1.0e6);
-        ch.prGainBot = c.addResistor (gainWiper, gnd, 1.0e6);
+    // ULTRA pre network
+    const auto nb = c.addNode(), wu = c.addNode();
+    c.addResistor (na, nb, 470.0e3);                      // R29
+    c.addCapacitor (na, nb, 2.2e-9);                      // C17
+    c.addResistor (nb, gnd, 1.0e6);                       // R41
+    ch.rUltraTop = c.addResistor (nb, wu, 500.0e3);       // VR2 ULTRA PRE
+    ch.rUltraBot = c.addResistor (wu, gnd, 500.0e3);
+    c.addResistor (nb, wu, 1.0e6);                        // R40
+    c.addCapacitor (nb, wu, 1.0e-9);                      // C19
 
-        // Middle stage standing in for V1B+V2A+V2B: voiced like V2A (100K plate, 470K leak,
-        // 1.82K/1uF bypassed cathode) so the wiper feeds a real second clip.
-        const auto g2 = c.addNode(), k2 = c.addNode(), plateMid = c.addNode();
-        c.addResistor (gainWiper, g2, 10.0e3);
-        c.addResistor (g2, gnd, 470.0e3);
-        c.addTriode (plateMid, g2, k2, triode12AX7());
-        c.addCapacitor (g2, plateMid, cgp);
-        c.addResistor (vcc, plateMid, 100.0e3);
-        c.addResistor (k2, gnd, 1.82e3);
-        c.addCapacitor (k2, gnd, 1.0e-6);
-        c.setInitialGuess (plateMid, 250.0);
-        c.setInitialGuess (k2, 1.6);
+    // CLEAN pre network
+    const auto nd = c.addNode(), ne = c.addNode(), wc = c.addNode();
+    c.addResistor (na, nd, 470.0e3);                      // R19
+    c.addCapacitor (na, nd, 270.0e-12);                   // C51
+    c.addResistor (nd, ne, 1.0e6);                        // R21
+    ch.rCleanTop = c.addResistor (ne, wc, 500.0e3);       // VA1 CLEAN PRE
+    ch.rCleanBot = c.addResistor (wc, gnd, 500.0e3);
+    c.addCapacitor (ne, wc, 180.0e-12);                   // C27
 
-        // Output stage voiced like V5B (220K plate, 1M leak, 2.2K/1uF cathode) into the follower.
-        const auto g3 = c.addNode(), k3 = c.addNode(), coup3 = c.addNode();
-        ch.prPlateB = c.addNode();
-        c.addCapacitor (plateMid, coup3, 22.0e-9);
-        c.addResistor (coup3, g3, 100.0e3);
-        c.addResistor (g3, gnd, 1.0e6);
-        c.addTriode (ch.prPlateB, g3, k3, triode12AX7());
-        c.addCapacitor (g3, ch.prPlateB, cgp);
-        c.addResistor (vcc, ch.prPlateB, 220.0e3);
-        c.addResistor (k3, gnd, 2.2e3);
-        c.addCapacitor (k3, gnd, 1.0e-6);
-        c.setInitialGuess (ch.prPlateB, 200.0);
-        c.setInitialGuess (k3, 1.6);
+    // K2A
+    const auto k2 = c.addNode();
+    ch.rSelUltra = c.addResistor (wu, k2, 1.0);
+    ch.rSelClean = c.addResistor (wc, k2, 1.0e9);
 
-        ch.prFollower = c.addNode();
-        c.addFollower (ch.prPlateB, ch.prFollower, followerDrop);
+    const auto g2 = c.addNode(), kk2 = c.addNode();
+    ch.aPlateV1b = c.addNode();
+    c.addResistor (k2, g2, 470.0e3);                      // R82
+    c.addTriode (ch.aPlateV1b, g2, kk2, triode12AX7());
+    c.addCapacitor (g2, ch.aPlateV1b, cgp);
+    c.addResistor (v1, ch.aPlateV1b, 100.0e3);            // R3
+    c.addResistor (kk2, gnd, 1.82e3);                     // R17
+    c.addCapacitor (kk2, gnd, 1.0e-6);                    // C4
+    c.setInitialGuess (ch.aPlateV1b, 200.0);
+    c.setInitialGuess (kk2, 1.5);
+
+    // block B's input network as the load
+    const auto lc = c.addNode(), lx = c.addNode();
+    c.addCapacitor (ch.aPlateV1b, lc, 22.0e-9);           // C2
+    c.addResistor (lc, lx, 470.0e3);                      // R6
+    c.addResistor (lx, gnd, 1.0e6);                       // R9
 }
 
-void EVH5150StyleAmplifierProcessor::Channel::ShelfBiquad::setShelf (double sampleRate, double freq, double q, double gainDb, bool high)
+/** Block B: driven by V1B's plate. C2 .022 -> R6 470K -> V2A grid (R9 1M down; R20 220K down too on Rhythm, K1B with
+    Crunch off) -> V2A (100K, 39K unbypassed: the cold clipper) -> C1 .022 -> C48 .001 || R11 330K down -> R7 220K ->
+    V2B (220K, 1.82K || 1uF). R32 1M -> C57 .022 -> R101 100K is block C's input network, carried as V2B's load. */
+void EVH5150StyleAmplifierProcessor::buildPreB (Channel& ch) const
 {
-    const double A = std::pow (10.0, gainDb / 40.0);
-    const double w0 = 2.0 * juce::MathConstants<double>::pi * juce::jmin (freq, 0.49 * sampleRate) / sampleRate;
-    const double cs = std::cos (w0), alpha = std::sin (w0) / (2.0 * q), sa = 2.0 * std::sqrt (A) * alpha;
-    double n0, n1, n2, d0, d1, d2;
-    if (high) // RBJ highshelf
-    {
-        n0 = A * ((A + 1) + (A - 1) * cs + sa); n1 = -2.0 * A * ((A - 1) + (A + 1) * cs); n2 = A * ((A + 1) + (A - 1) * cs - sa);
-        d0 = (A + 1) - (A - 1) * cs + sa;        d1 = 2.0 * ((A - 1) - (A + 1) * cs);             d2 = (A + 1) - (A - 1) * cs - sa;
-    }
-    else // RBJ lowshelf
-    {
-        n0 = A * ((A + 1) - (A - 1) * cs + sa); n1 = 2.0 * A * ((A - 1) - (A + 1) * cs); n2 = A * ((A + 1) - (A - 1) * cs - sa);
-        d0 = (A + 1) + (A - 1) * cs + sa;       d1 = -2.0 * ((A - 1) + (A + 1) * cs);            d2 = (A + 1) + (A - 1) * cs - sa;
-    }
-    b0 = n0 / d0; b1 = n1 / d0; b2 = n2 / d0; a1 = d1 / d0; a2 = d2 / d0;
-    x1 = x2 = y1 = y2 = 0.0;
+    auto& c = ch.preB;
+    const auto gnd = NodalCircuit::ground;
+    const auto v1 = c.addNode(), v2 = c.addNode(), in = c.addNode();
+    ch.bSrcV1 = c.addSource (v1, 330.0);
+    ch.bSrcV2 = c.addSource (v2, 380.0);
+    ch.bSrcIn = c.addSource (in, 200.0);
+
+    const auto nc = c.addNode(), g3 = c.addNode(), k3 = c.addNode();
+    ch.bPlateV2a = c.addNode();
+    c.addCapacitor (in, nc, 22.0e-9);                     // C2
+    c.addResistor (nc, g3, 470.0e3);                      // R6
+    c.addResistor (g3, gnd, 1.0e6);                       // R9
+    ch.rCrunchShunt = c.addResistor (g3, gnd, 1.0e9);     // R20 via K1B
+    c.addTriode (ch.bPlateV2a, g3, k3, triode12AX7());
+    c.addCapacitor (g3, ch.bPlateV2a, cgp);
+    c.addResistor (v1, ch.bPlateV2a, 100.0e3);            // R1
+    c.addResistor (k3, gnd, 39.0e3);                      // R15
+    c.setInitialGuess (ch.bPlateV2a, 290.0);
+    c.setInitialGuess (k3, 1.2);
+
+    const auto ny = c.addNode(), g4 = c.addNode(), k4 = c.addNode();
+    ch.bPlateV2b = c.addNode();
+    c.addCapacitor (ch.bPlateV2a, ny, 22.0e-9);           // C1
+    c.addCapacitor (ny, gnd, 1.0e-9);                     // C48
+    c.addResistor (ny, gnd, 330.0e3);                     // R11
+    c.addResistor (ny, g4, 220.0e3);                      // R7
+    c.addTriode (ch.bPlateV2b, g4, k4, triode12AX7());
+    c.addCapacitor (g4, ch.bPlateV2b, cgp);
+    c.addResistor (v2, ch.bPlateV2b, 220.0e3);            // R4
+    c.addResistor (k4, gnd, 1.82e3);                      // R13
+    c.addCapacitor (k4, gnd, 1.0e-6);                     // C5
+    c.setInitialGuess (ch.bPlateV2b, 220.0);
+    c.setInitialGuess (k4, 1.0);
+
+    const auto la = c.addNode(), lb = c.addNode();
+    c.addResistor (ch.bPlateV2b, la, 1.0e6);              // R32
+    c.addCapacitor (la, lb, 22.0e-9);                     // C57
+    c.addResistor (lb, gnd, 100.0e3);                     // R101
+}
+
+/** Block C: driven by V2B's plate. R32 1M -> C57 .022 -> V5B grid (R101 100K down) -> V5B (220K, 2.2K unbypassed).
+    The load is block D's input as V5B sees it: R87 1M -> C56 .022 into V5A's grid, which its 1M plate-to-grid
+    feedback holds near ~40K (1M / (1 + the stage's gain of ~23), || R91 1M). */
+void EVH5150StyleAmplifierProcessor::buildPreC (Channel& ch) const
+{
+    auto& c = ch.preC;
+    const auto gnd = NodalCircuit::ground;
+    const auto v2 = c.addNode(), in = c.addNode();
+    ch.cSrcV2 = c.addSource (v2, 380.0);
+    ch.cSrcIn = c.addSource (in, 220.0);
+
+    const auto na = c.addNode(), g5 = c.addNode(), k5 = c.addNode();
+    ch.cPlateV5b = c.addNode();
+    c.addResistor (in, na, 1.0e6);                        // R32
+    c.addCapacitor (na, g5, 22.0e-9);                     // C57
+    c.addResistor (g5, gnd, 100.0e3);                     // R101
+    c.addTriode (ch.cPlateV5b, g5, k5, triode12AX7());
+    c.addCapacitor (g5, ch.cPlateV5b, cgp);
+    c.addResistor (v2, ch.cPlateV5b, 220.0e3);            // R96
+    c.addResistor (k5, gnd, 2.2e3);                       // R102
+    c.setInitialGuess (ch.cPlateV5b, 230.0);
+    c.setInitialGuess (k5, 1.3);
+
+    const auto la = c.addNode(), lb = c.addNode();
+    c.addResistor (ch.cPlateV5b, la, 1.0e6);              // R87
+    c.addCapacitor (la, lb, 22.0e-9);                     // C56
+    c.addResistor (lb, gnd, 40.0e3);                      // V5A's grid as seen through its feedback
 }
 
 namespace
@@ -331,7 +266,7 @@ EVH5150StyleAmplifierProcessor::EVH5150StyleAmplifierProcessor()
     auto resonance = make ("evh_resonance", "Resonance", 0.3f);
     auto post = make ("evh_post", "Volume", 0.5f);
     auto output = make ("evh_output", "Output", 0.5f);
-    auto power = make ("evh_power", "Power Drive", 0.5f);
+    auto power = make ("evh_power", "Power Drive", 1.0f); // 1 = the real amp (no such control)
     auto bias = make ("evh_bias", "Bias", 0.5f);
     auto feel = make ("evh_tube_feel", "Tube Feel", 1.0f);
     auto speaker = std::make_unique<juce::AudioParameterFloat> (
@@ -439,92 +374,102 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.sE, 410.0);
     }
 
-    // ================================================================ preamp (two-pass for cathode follower DC offset)
-    {
-        auto probe = buildPreamp (ch.pre, 0.0, 410.0, 420.0);
-        ch.pre.prepare (48000.0);
-        const double plate = ch.pre.voltage (probe.plateV5b);
-        const double drop = plate - cathodeFollowerDc (420.0, plate);
-        ch.pre = NodalCircuit {};
-        auto b = buildPreamp (ch.pre, drop, 410.0, 420.0);
-        ch.pSrcV1 = b.srcV1;
-        ch.pSrcV2 = b.srcV2;
-        ch.pSrcIn = b.srcIn;
-        ch.rGainTop = b.rGainTop;
-        ch.rGainBot = b.rGainBot;
-        ch.rV2aSeries = b.rV2aSeries;
-        ch.rBypassV2ab = b.rBypassV2ab;
-        ch.pPlateV1a = b.plateV1a;
-        ch.pPlateV1b = b.plateV1b;
-        ch.pPlateV2a = b.plateV2a;
-        ch.pPlateV2b = b.plateV2b;
-        ch.pPlateV5b = b.plateV5b;
-        ch.pFollower = b.follower;
+    buildPreA (ch);
+    buildPreB (ch);
+    buildPreC (ch);
 
-        if (reducedOrder)
-        {
-            // Same two-pass trick as the full preamp: build once to measure the follower's DC drop,
-            // rebuild with it so the output node sits at the real follower operating point.
-            buildReducedPreamp (ch, 0.0);
-            ch.preReduced.prepare (48000.0);
-            const double plate = ch.preReduced.voltage (ch.prPlateB);
-            const double drop = plate - cathodeFollowerDc (420.0, plate);
-            ch.preReduced = NodalCircuit {};
-            buildReducedPreamp (ch, drop);
-        }
+    // ================================================================ V5A
+    // A gain stage with its plate fed back to its grid through C58 and R88 1M. Its load is R89 470K into the tone
+    // stack's input node (R24 33K, C59 .01 + R94 47K and the stack itself hold that node at a few tens of kilohms),
+    // carried here as R89 + R24 + C59/R94; the stack block is then driven from C58's output.
+    {
+        auto& c = ch.driver;
+        const auto in = c.addNode(), v2 = c.addNode();
+        ch.dSrcIn = c.addSource (in, 230.0);              // V5B's plate (block C)
+        ch.dSrcV2 = c.addSource (v2, 380.0);
+        const auto na = c.addNode(), gw = c.addNode(), k6 = c.addNode(), st = c.addNode(), m = c.addNode();
+        ch.dPlateV5a = c.addNode();
+        ch.dOut = c.addNode();
+        c.addResistor (in, na, 1.0e6);                    // R87
+        c.addCapacitor (na, gw, 22.0e-9);                 // C56
+        c.addResistor (gw, gnd, 1.0e6);                   // R91
+        c.addTriode (ch.dPlateV5a, gw, k6, triode12AX7());
+        c.addCapacitor (gw, ch.dPlateV5a, cgp);
+        c.addResistor (v2, ch.dPlateV5a, 100.0e3);        // R86
+        c.addResistor (k6, gnd, 2.2e3);                   // R93
+        c.addCapacitor (ch.dPlateV5a, ch.dOut, 22.0e-9);  // C58
+        c.addResistor (ch.dOut, gw, 1.0e6);               // R88
+        c.addResistor (ch.dOut, st, 470.0e3);             // R89
+        c.addResistor (st, gnd, 33.0e3);                  // R24
+        c.addCapacitor (st, m, 0.01e-6);                  // C59
+        c.addResistor (m, gnd, 47.0e3);                   // R94
+        c.setInitialGuess (ch.dPlateV5a, 220.0);
+        c.setInitialGuess (k6, 1.6);
     }
 
-    // ================================================================ tone stack + post-tonestack gain recovery
-    // 5150 tone stack: 33K slope, 470pF treble, 250K treble pot, 1M bass, 50K mid, .022µF bass/mid caps.
-    // Post (master) after tone stack. Then V3B gain recovery stage before the PI.
+    // ================================================================ tone stack, posts, effects loop (linear)
+    {
+        auto& c = ch.stack;
+        const auto q = c.addNode();
+        ch.sSrcIn = c.addSource (q, 0.0);                 // C58's output (V5A block)
+        const auto st = c.addNode(), m = c.addNode();
+        ch.wStackIn = st;
+        c.addResistor (q, st, 470.0e3);                   // R89
+        c.addResistor (st, gnd, 33.0e3);                  // R24
+        c.addCapacitor (st, m, 0.01e-6);                  // C59
+        c.addResistor (m, gnd, 47.0e3);                   // R94
+
+        // TMB: C14 470p || C60 100p to HIGH (250K lin); R28 47K slope; C18 .022 bass cap to HIGH's bottom / LOW (1M audio,
+        // wired as a rheostat); MID 50K lin with C21 .022 on its wiper; R85 47K from LOW's bottom to ground. The schematic
+        // draws a line across C18 -- read as a drafting slip, a shorted bass cap would leave LOW without its capacitor.
+        const auto t1 = c.addNode(), tw = c.addNode(), tb = c.addNode(), n = c.addNode(), pm = c.addNode(), mw = c.addNode();
+        c.addCapacitor (st, t1, 570.0e-12);               // C14 + C60
+        ch.rTrebleTop = c.addResistor (t1, tw, 125.0e3);
+        ch.rTrebleBottom = c.addResistor (tw, tb, 125.0e3);
+        c.addResistor (st, n, 47.0e3);                    // R28
+        c.addCapacitor (n, tb, 0.022e-6);                 // C18
+        ch.rBass = c.addResistor (tb, pm, 500.0e3);       // VR3
+        ch.rMidTop = c.addResistor (pm, mw, 25.0e3);      // VR4
+        ch.rMidBottom = c.addResistor (mw, gnd, 25.0e3);
+        c.addCapacitor (n, mw, 0.022e-6);                 // C21
+        c.addResistor (pm, gnd, 47.0e3);                  // R85 (47K)
+
+        // ULTRA POST (VR7) and CLEAN POST (VR6), both 1M audio from HIGH's wiper; K2B picks one.
+        const auto up = c.addNode(), cp = c.addNode();
+        ch.wPost = c.addNode();
+        ch.rUltraPostTop = c.addResistor (tw, up, 500.0e3);
+        ch.rUltraPostBot = c.addResistor (up, gnd, 500.0e3);
+        ch.rCleanPostTop = c.addResistor (tw, cp, 500.0e3);
+        ch.rCleanPostBot = c.addResistor (cp, gnd, 500.0e3);
+        ch.rSelPostUltra = c.addResistor (up, ch.wPost, 1.0);
+        ch.rSelPostClean = c.addResistor (cp, ch.wPost, 1.0e9);
+        c.addResistor (ch.wPost, gnd, 2.2e6);             // R81
+        // Effects loop switched off: C53 .33 / C65 .33 (a ~3 Hz high-pass, left out) with R103 100K, R33 100K and
+        // R85 220K down, then C11 .047 into V3A's grid leak R26 1M.
+        c.addResistor (ch.wPost, gnd, 100.0e3);           // R103
+        c.addResistor (ch.wPost, gnd, 100.0e3);           // R33
+        c.addResistor (ch.wPost, gnd, 220.0e3);           // R85 (220K)
+        ch.sOut = c.addNode();
+        c.addCapacitor (ch.wPost, ch.sOut, 0.047e-6);     // C11
+        c.addResistor (ch.sOut, gnd, 1.0e6);              // R26
+    }
+
+    // ================================================================ V3A (+ PI and power stage in the full reference)
+    // V3A's grid is driven from the stack block: it draws no grid current until the Post is far up.
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
-        const auto cf = c.addNode();
-        ch.wSrcCf = c.addSource (cf, 0.0);
-
-        const auto ti = c.addNode(), top = c.addNode(), nB = c.addNode(), nT = c.addNode(), nM = c.addNode(), nMw = c.addNode();
-        ch.wToneIn = ti;
-        const auto postNode = c.addNode();
-        ch.wTone = c.addNode();
-        c.addResistor (cf, ti, cathodeFollowerImpedance);
-        c.addCapacitor (ti, top, 470.0e-12);               // treble coupling cap (470pF)
-        c.addResistor (ti, nB, 33.0e3);                    // R24: 33K slope
-        ch.rTrebleTop = c.addResistor (top, postNode, 125.0e3);    // HIGH 250K, split
-        ch.rTrebleBottom = c.addResistor (postNode, nT, 125.0e3);
-        c.addResistor (nT, nB, 22.0e3);                    // series between treble and bass
-        c.addCapacitor (nB, nT, 0.022e-6);                 // bass cap (.022µF)
-        ch.rBass = c.addResistor (nT, nM, 500.0e3);        // LOW 1M, rheostat
-        ch.rMidTop = c.addResistor (nM, nMw, 25.0e3);      // MID 50K, split
-        ch.rMidBottom = c.addResistor (nMw, gnd, 25.0e3);
-        c.addCapacitor (nB, nMw, 0.022e-6);                // mid cap (.022µF)
-        // Post (master 1M) as a real two-leg divider, not a lone series leg: without a bottom leg
-        // to ground the wiper is an unloaded tap once V3B is gone (reducedOrder), and in the full
-        // path it divides against a fixed 1M load -- inverting and compressing the sweep.
-        ch.rPostTop = c.addResistor (postNode, ch.wTone, 500.0e3);
-        ch.rPostBottom = c.addResistor (ch.wTone, gnd, 500.0e3);
-
-        // V3B: post-tone-stack gain recovery (12AX7). 100K plate (V3/PI rail), 1M grid leak,
-        // 1K cathode bypassed with 1µF. Coupling from tone stack wiper through .047µF.
-        // reducedOrder removes this last nonlinear stage too -- its contribution is folded into the
-        // behavioural power stage's fitted knee/filters, leaving the whole always-solved block linear.
-        if (! reducedOrder)
-        {
-            const auto gRec = c.addNode(), kRec = c.addNode(), coupRec = c.addNode();
-            const auto vccRec = c.addNode();
-            ch.wRecoveryPlate = c.addNode();
-            ch.wSrcRecovery = c.addSource (vccRec, 435.0);    // fed from sC (PI/V3 rail)
-            c.addCapacitor (ch.wTone, coupRec, 0.047e-6);     // coupling from master/tonestack
-            c.addResistor (coupRec, gRec, 100.0e3);           // series stopper
-            c.addResistor (gRec, gnd, 1.0e6);                 // R79 grid leak
-            c.addTriode (ch.wRecoveryPlate, gRec, kRec, triode12AX7());
-            c.addCapacitor (gRec, ch.wRecoveryPlate, cgp);
-            c.addResistor (vccRec, ch.wRecoveryPlate, 100.0e3); // R16 plate load
-            c.addResistor (kRec, gnd, 1.0e3);                 // R80 cathode
-            c.addCapacitor (kRec, gnd, 1.0e-6);               // bypassed
-            c.setInitialGuess (ch.wRecoveryPlate, 250.0);
-            c.setInitialGuess (kRec, 1.6);
-        }
+        const auto g7 = c.addNode(), v2 = c.addNode(), k7 = c.addNode();
+        ch.wSrcIn = c.addSource (g7, 0.0);
+        ch.wSrcV2 = c.addSource (v2, 380.0);
+        ch.wPlateV3a = c.addNode();
+        c.addTriode (ch.wPlateV3a, g7, k7, triode12AX7());
+        c.addCapacitor (g7, ch.wPlateV3a, cgp);
+        c.addResistor (v2, ch.wPlateV3a, 68.0e3);         // R5
+        c.addResistor (k7, gnd, 3.3e3);                   // R14
+        c.addCapacitor (k7, gnd, 4.7e-9);                 // C61
+        c.setInitialGuess (ch.wPlateV3a, 250.0);
+        c.setInitialGuess (k7, 1.8);
     }
 
     // ================================================================ phase inverter, power amp (full reference only)
@@ -536,46 +481,37 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcBias = c.addSource (vc18, biasSupplyVolts);
 
-        // The recovery stage also gets its supply from the PI rail
-        // (already wired above to vccRec, but we need to tie vccRec to vpi)
-        // Actually, vccRec was created in the power block scope but needs a source.
-        // We handle it by adding a low-R connection from vpi to the recovery plate supply.
-
-        // Phase inverter: 12AX7 long-tailed pair.
-        // V4B: 82K plate (V3 rail), V4A: 100K plate (V3 rail).
-        // 10K combined tail resistor. .047µF coupling to power tubes.
-        // 1M grid leaks. 75pF compensation cap between plates.
-        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
+        // C49 .022 -> Power Drive (a 1M pot standing in for R50 1M, so at full it IS R50) -> R48 100K -> V4B, the
+        // driven half. Tail: R52 470 -> R51 10K -> R57 4.7K; V4A's grid sits on R53 1M with C31 .047 to the R51/R57 node.
+        const auto n0 = c.addNode(), n1 = c.addNode(), g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(),
+                   k = c.addNode(), t = c.addNode(), u = c.addNode();
         ch.wGridA = g1;
         ch.wPlateA = pa;
         ch.wPlateB = pb;
-        ch.wTail = nm;
-        ch.wFeedback = fp;
-        c.addCapacitor (ch.wRecoveryPlate, g1, 0.022e-6); // C49: coupling from V3B to PI
-        c.addResistor (g1, nm, 1.0e6);                    // R50 grid leak
-        c.addResistor (g2, nm, 1.0e6);                    // R53 grid leak -- to the tail midpoint so grid 2 sits
-                                                          // at the same elevated DC as grid 1 (referencing the ~0 V
-                                                          // feedback node instead left V4B ~27 V below cutoff)
-        // R48=100K feedback from V4B plate to V4A grid
-        // R48 omitted: wired pb->g1 it loads the driver into a ~14 dB loss; measured wrong either way
+        ch.wTail = t;
+        ch.wFeedback = u;
+        c.addCapacitor (ch.wPlateV3a, n0, 0.022e-6);      // C49
+        ch.rDriveTop = c.addResistor (n0, n1, 1.0);
+        ch.rDriveBot = c.addResistor (n1, t, 1.0e6);      // R50
+        c.addResistor (n1, g1, 100.0e3);                  // R48
+        c.addResistor (g2, t, 1.0e6);                     // R53
+        c.addCapacitor (g2, u, 0.047e-6);                 // C31
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
         c.addCapacitor (g2, pb, cgp);
-        c.addResistor (vpi, pa, 82.0e3);                    // R46
-        c.addResistor (vpi, pb, 100.0e3);                   // R58
-        c.addCapacitor (pa, pb, 75.0e-12);                   // compensation
-        c.addResistor (k, nm, 1.0e3);                       // cathode to tail midpoint
-        c.addResistor (nm, fp, 10.0e3);                   // tail returns through the feedback node (same shape as
-                                                          // SuperLead: elevates fp, and the NFB summed there drives
-                                                          // the shared cathode through the tail)
+        c.addResistor (vpi, pa, 82.0e3);                  // R46
+        c.addResistor (vpi, pb, 100.0e3);                 // R58
+        c.addResistor (k, t, 470.0);                      // R52
+        c.addResistor (t, u, 10.0e3);                     // R51
+        c.addResistor (u, gnd, 4.7e3);                    // R57
         c.setInitialGuess (pa, 250.0);
         c.setInitialGuess (pb, 245.0);
-        c.setInitialGuess (k, 30.0);
-        c.setInitialGuess (nm, 27.0);
-        c.setInitialGuess (g1, 27.0);
-        c.setInitialGuess (g2, 27.0);
-        c.setInitialGuess (fp, 2.0);
+        c.setInitialGuess (k, 40.0);
+        c.setInitialGuess (t, 40.0);
+        c.setInitialGuess (u, 13.0);
+        c.setInitialGuess (g1, 40.0);
+        c.setInitialGuess (g2, 40.0);
 
         // Power amplifier: 4 × 6L6GC as two push-pull pairs. .047µF couplings, 2.2K grid stoppers (per pair: 2.2K each half),
         // 220K grid leaks to the fixed bias rail.
@@ -587,8 +523,8 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wPP2 = pp2;
         const auto sw = c.addNode();
         ch.wOut = c.addNode();
-        c.addCapacitor (pa, g3, 0.047e-6);                  // C29
-        c.addCapacitor (pb, g4, 0.047e-6);                  // C28
+        c.addCapacitor (pa, g3, 0.047e-6);                  // C29 (V4B plate)
+        c.addCapacitor (pb, g4, 0.047e-6);                  // C28 (V4A plate)
         c.addResistor (g3, nb, 220.0e3);                    // R55
         c.addResistor (g4, nb, 220.0e3);                    // R54
         c.addResistor (g3, g3s, 2.2e3);                     // R206 grid stopper
@@ -631,17 +567,15 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: from speaker terminal through feedbackResistor to PI grid 2, with Presence 10K shunt and caps.
-        const auto wp = c.addNode();
-        ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        ch.rPresTop = c.addResistor (fp, wp, 5.0e3);      // Presence 10K, split
-        ch.rPresBottom = c.addResistor (wp, gnd, 5.0e3);
-        c.addCapacitor (fp, wp, 0.01e-6);                  // C8
-        c.addCapacitor (fp, gnd, 1.5e-9);                  // stray for HF stability
-
-        // Resonance: 1MA pot from speaker to feedback point + 22nF cap (low-freq emphasis)
-        ch.rResonancePot = c.addResistor (ch.wOut, fp, 1.0e6);
-        c.addCapacitor (ch.wOut, fp, 22.0e-9);
+        // NFB: R56 39K -> [C12 .0068 || RESONANCE 1M] -> C30 22uF into the R51/R57 node; from the same point
+        // C8 .1 || C62 .033 -> PRESENCE 10K to ground.
+        const auto nf = c.addNode(), r = c.addNode(), pq = c.addNode();
+        ch.rFeedback = c.addResistor (ch.wOut, nf, feedbackResistor);
+        c.addCapacitor (nf, r, 6.8e-9);                   // C12
+        ch.rResonance = c.addResistor (nf, r, 500.0e3);   // VR8
+        c.addCapacitor (r, u, 22.0e-6);                   // C30
+        c.addCapacitor (r, pq, 0.133e-6);                 // C8 + C62
+        ch.rPresence = c.addResistor (pq, gnd, 5.0e3);    // VR9
 
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
@@ -653,50 +587,63 @@ void EVH5150StyleAmplifierProcessor::buildChannel (Channel& ch)
     }
 }
 
+void EVH5150StyleAmplifierProcessor::applyChannel (Channel& ch, int channelChoice) const
+{
+    const bool lead = channelChoice != 0;
+    ch.preA.setResistance (ch.rSelUltra, lead ? 1.0 : 1.0e9);
+    ch.preA.setResistance (ch.rSelClean, lead ? 1.0e9 : 1.0);
+    // K1B: R20 220K on V2A's grid with the Rhythm channel's Crunch off.
+    ch.preB.setResistance (ch.rCrunchShunt, lead ? 1.0e9 : 220.0e3);
+    ch.stack.setResistance (ch.rSelPostUltra, lead ? 1.0 : 1.0e9);
+    ch.stack.setResistance (ch.rSelPostClean, lead ? 1.0e9 : 1.0);
+}
+
 void EVH5150StyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
+    const double gainBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.gain));
+    const double gainTop = juce::jmax (1.0, 1.0e6 - gainBottom);
     const double trebleBottom = juce::jmax (1.0, 250.0e3 * k.treble);
     const double trebleTop = juce::jmax (1.0, 250.0e3 - trebleBottom);
     const double bassR = juce::jmax (1.0, 1.0e6 * pots::audio (k.bass));
     const double midBottom = juce::jmax (1.0, 50.0e3 * k.mid);
     const double midTop = juce::jmax (1.0, 50.0e3 - midBottom);
-    const double presBottom = juce::jmax (1.0, 10.0e3 * (1.0 - k.presence));
-    const double presTop = juce::jmax (1.0, 10.0e3 - presBottom);
     const double postBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.post));
     const double postTop = juce::jmax (1.0, 1.0e6 - postBottom);
+    // Presence: turning it up takes VR9 toward 0, shunting the feedback's top end to ground. Resonance: turning it up
+    // raises VR8, leaving the low end of the feedback only C12 .0068.
+    const double presence = juce::jmax (1.0, 10.0e3 * (1.0 - pots::audio (k.presence)));
+    const double resonance = juce::jmax (1.0, 1.0e6 * pots::audio (k.resonance));
+    driveFraction = juce::jmax (0.002, pots::audio (k.powerDrive));
+    const double driveBottom = juce::jmax (1.0, 1.0e6 * driveFraction);
+    const double driveTop = juce::jmax (1.0, 1.0e6 - driveBottom);
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
-    const double resonanceR = juce::jmax (1.0, 1.0e6 * (1.0 - pots::audio (k.resonance)));
 
     for (auto& ch : channels)
     {
-        const double gainBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.gain));
-        if (reducedOrder)
-        {
-            ch.preReduced.setResistance (ch.prGainBot, gainBottom);
-            ch.preReduced.setResistance (ch.prGainTop, juce::jmax (1.0, 1.0e6 - gainBottom));
-        }
-        else
-        {
-            ch.pre.setResistance (ch.rGainBot, gainBottom);
-            ch.pre.setResistance (ch.rGainTop, juce::jmax (1.0, 1.0e6 - gainBottom));
-        }
-        ch.power.setResistance (ch.rTrebleTop, trebleTop);
-        ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
-        ch.power.setResistance (ch.rBass, bassR);
-        ch.power.setResistance (ch.rMidTop, midTop);
-        ch.power.setResistance (ch.rMidBottom, midBottom);
-        ch.power.setResistance (ch.rPostTop, postTop);
-        ch.power.setResistance (ch.rPostBottom, postBottom);
+        ch.preA.setResistance (ch.rUltraTop, gainTop);
+        ch.preA.setResistance (ch.rUltraBot, gainBottom);
+        ch.preA.setResistance (ch.rCleanTop, gainTop);
+        ch.preA.setResistance (ch.rCleanBot, gainBottom);
+        ch.stack.setResistance (ch.rTrebleTop, trebleTop);
+        ch.stack.setResistance (ch.rTrebleBottom, trebleBottom);
+        ch.stack.setResistance (ch.rBass, bassR);
+        ch.stack.setResistance (ch.rMidTop, midTop);
+        ch.stack.setResistance (ch.rMidBottom, midBottom);
+        ch.stack.setResistance (ch.rUltraPostTop, postTop);
+        ch.stack.setResistance (ch.rUltraPostBot, postBottom);
+        ch.stack.setResistance (ch.rCleanPostTop, postTop);
+        ch.stack.setResistance (ch.rCleanPostBot, postBottom);
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rPresTop, presTop);
-            ch.power.setResistance (ch.rPresBottom, presBottom);
+            ch.power.setResistance (ch.rDriveTop, driveTop);
+            ch.power.setResistance (ch.rDriveBot, driveBottom);
+            ch.power.setResistance (ch.rPresence, presence);
+            ch.power.setResistance (ch.rResonance, resonance);
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
-            ch.power.setResistance (ch.rResonancePot, resonanceR);
         }
         if (! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
@@ -741,8 +688,11 @@ void EVH5150StyleAmplifierProcessor::debugSetResistiveLoad (double ohms)
 void EVH5150StyleAmplifierProcessor::recover (Channel& ch) const
 {
     ++recoveries;
-    if (reducedOrder) ch.preReduced.restoreDynamicState (ch.preReducedRest);
-    else ch.pre.restoreDynamicState (ch.preRest);
+    ch.preA.restoreDynamicState (ch.restA);
+    ch.preB.restoreDynamicState (ch.restB);
+    ch.preC.restoreDynamicState (ch.restC);
+    ch.driver.restoreDynamicState (ch.restD);
+    ch.stack.restoreDynamicState (ch.restS);
     ch.power.restoreDynamicState (ch.powerRest);
     ch.supply.restoreDynamicState (ch.supplyRest);
     ch.screenDropA = ch.screenDropB = 0.0;
@@ -770,23 +720,51 @@ void EVH5150StyleAmplifierProcessor::updateSupply (Channel& ch) const
         ch.power.setSource (ch.wSrcCt, rail (ch.sA, 560.0));
         ch.power.setSource (ch.wSrcPi, rail (ch.sC, 520.0));
     }
-    if (! reducedOrder) ch.power.setSource (ch.wSrcRecovery, rail (ch.sC, 520.0)); // V3B recovery from PI rail
-    if (reducedOrder)
-    {
-        // Stamp the rail first, then re-baseline the follower DC. The read still reflects the
-        // pre-stamp solve (one supply tick of lag): a zero-input probe solve per tick measured
-        // worse -- it kicked the consistency band delta from 2.06 dB to a marginal 3.0 dB fail
-        // and dropped PedalUnityLevel by ~1.2 dB. The rail moves slowly, so one tick of stale
-        // baseline is a bounded, sub-audible transient; probe-free is the better trade.
-        ch.preReduced.setSource (ch.prSrcRail, rail (ch.sE, 480.0));
-        ch.reducedFollowerDc = ch.preReduced.voltage (ch.prFollower);
-    }
-    else
-    {
-        ch.pre.setSource (ch.pSrcV2, rail (ch.sD, 480.0));   // V2B/V5B/V5A from D
-        ch.pre.setSource (ch.pSrcV1, rail (ch.sE, 480.0));   // V1A/V1B/V2A from E
-    }
+    const double v1 = rail (ch.sE, 480.0), v2 = rail (ch.sD, 480.0);
+    ch.preA.setSource (ch.aSrcV1, v1);
+    ch.preB.setSource (ch.bSrcV1, v1);
+    ch.preB.setSource (ch.bSrcV2, v2);
+    ch.preC.setSource (ch.cSrcV2, v2);
+    ch.driver.setSource (ch.dSrcV2, v2);
+    ch.power.setSource (ch.wSrcV2, v2);
     ch.vScreen = rail (ch.sB, 560.0);
+}
+
+bool EVH5150StyleAmplifierProcessor::solvePreamp (Channel& ch, double x) const
+{
+    ch.preA.setSource (ch.aSrcIn, x);
+    bool ok = ch.preA.solveSample();
+    ch.preB.setSource (ch.bSrcIn, ch.preA.voltage (ch.aPlateV1b));
+    ok = ch.preB.solveSample() && ok;
+    ch.preC.setSource (ch.cSrcIn, ch.preB.voltage (ch.bPlateV2b));
+    ok = ch.preC.solveSample() && ok;
+    ch.driver.setSource (ch.dSrcIn, ch.preC.voltage (ch.cPlateV5b));
+    ok = ch.driver.solveSample() && ok;
+    ch.stack.setSource (ch.sSrcIn, ch.driver.voltage (ch.dOut));
+    ok = ch.stack.solveSample() && ok;
+    ch.power.setSource (ch.wSrcIn, ch.stack.voltage (ch.sOut));
+    return ok;
+}
+
+void EVH5150StyleAmplifierProcessor::preparePreamp (Channel& ch, double rate, bool& ok) const
+{
+    const double v1 = ch.supply.voltage (ch.sE), v2 = ch.supply.voltage (ch.sD);
+    ch.preA.setSource (ch.aSrcV1, v1);
+    ok = ch.preA.prepare (rate) && ok;
+    ch.preB.setSource (ch.bSrcV1, v1);
+    ch.preB.setSource (ch.bSrcV2, v2);
+    ch.preB.setSource (ch.bSrcIn, ch.preA.voltage (ch.aPlateV1b));
+    ok = ch.preB.prepare (rate) && ok;
+    ch.preC.setSource (ch.cSrcV2, v2);
+    ch.preC.setSource (ch.cSrcIn, ch.preB.voltage (ch.bPlateV2b));
+    ok = ch.preC.prepare (rate) && ok;
+    ch.driver.setSource (ch.dSrcV2, v2);
+    ch.driver.setSource (ch.dSrcIn, ch.preC.voltage (ch.cPlateV5b));
+    ok = ch.driver.prepare (rate) && ok;
+    ch.stack.setSource (ch.sSrcIn, ch.driver.voltage (ch.dOut));
+    ok = ch.stack.prepare (rate) && ok;
+    ch.power.setSource (ch.wSrcV2, v2);
+    ch.power.setSource (ch.wSrcIn, ch.stack.voltage (ch.sOut));
 }
 
 double EVH5150StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept
@@ -838,10 +816,7 @@ double EVH5150StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double
     ch.bmCutState += cut * (notch - ch.bmCutState);
     // physical ceiling: the stages this replaces clip at the rail -- the fitted filters' resonance can overshoot
     // the knee's bound by ~2x on saturated LF, which would otherwise trip the pluck peak and sanity bounds.
-    // reducedOutGain sits inside the ceiling: it restores the output level the shrunken preamp
-    // cannot reach at noon (post-saturation, so it leaves the knee's drive point alone) while the
-    // rail clamp and the sanity bound keep their physical meaning.
-    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, ch.bmTail.process ((notch - ch.bmCutState) * bmLevelTrim) * Channel::reducedOutGain);
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, ch.bmTail.process ((notch - ch.bmCutState) * bmLevelTrim));
     return ch.bmOutput;
 }
 
@@ -879,14 +854,14 @@ double EVH5150StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
     const auto& ch = channels[0];
     switch (p)
     {
-        case Probe::v1aPlate: return reducedOrder ? ch.preReduced.voltage (ch.prPlateA) : ch.pre.voltage (ch.pPlateV1a);
-        case Probe::v1bPlate: return reducedOrder ? ch.preReduced.voltage (ch.prPlateA) : ch.pre.voltage (ch.pPlateV1b);
-        case Probe::v2aPlate: return reducedOrder ? ch.preReduced.voltage (ch.prPlateB) : ch.pre.voltage (ch.pPlateV2a);
-        case Probe::v2bPlate: return reducedOrder ? ch.preReduced.voltage (ch.prPlateB) : ch.pre.voltage (ch.pPlateV2b);
-        case Probe::v5bPlate: return reducedOrder ? ch.preReduced.voltage (ch.prPlateB) : ch.pre.voltage (ch.pPlateV5b);
-        case Probe::followerOut: return reducedOrder ? ch.preReduced.voltage (ch.prFollower) : ch.pre.voltage (ch.pFollower);
-        case Probe::toneStackOut: return ch.power.voltage (ch.wTone);
-        case Probe::recoveryPlate: return ch.power.voltage (ch.wRecoveryPlate);
+        case Probe::v1aPlate: return ch.preA.voltage (ch.aPlateV1a);
+        case Probe::v1bPlate: return ch.preA.voltage (ch.aPlateV1b);
+        case Probe::v2aPlate: return ch.preB.voltage (ch.bPlateV2a);
+        case Probe::v2bPlate: return ch.preB.voltage (ch.bPlateV2b);
+        case Probe::v5bPlate: return ch.preC.voltage (ch.cPlateV5b);
+        case Probe::v5aPlate: return ch.driver.voltage (ch.dPlateV5a);
+        case Probe::toneStackOut: return ch.stack.voltage (ch.wPost);
+        case Probe::recoveryPlate: return ch.power.voltage (ch.wPlateV3a);
         case Probe::phaseInverterGrid: return ch.power.voltage (ch.wGridA);
         case Probe::phaseInverterPlateA: return ch.power.voltage (ch.wPlateA);
         case Probe::phaseInverterPlateB: return ch.power.voltage (ch.wPlateB);
@@ -903,8 +878,15 @@ double EVH5150StyleAmplifierProcessor::debugVoltage (Probe p) const noexcept
 
 double EVH5150StyleAmplifierProcessor::debugIterations (int block) const noexcept
 {
-    if (block != 0) return channels[0].power.averageIterations();
-    return reducedOrder ? channels[0].preReduced.averageIterations() : channels[0].pre.averageIterations();
+    const auto& ch = channels[0];
+    switch (block)
+    {
+        case 0: return ch.preA.averageIterations();
+        case 1: return ch.preB.averageIterations();
+        case 2: return ch.preC.averageIterations();
+        case 3: return ch.driver.averageIterations();
+        default: return ch.power.averageIterations();
+    }
 }
 
 int EVH5150StyleAmplifierProcessor::debugLastPowerIterations() const noexcept { return channels[0].power.lastIterations(); }
@@ -976,43 +958,22 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
                   juce::roundToInt (speakerParam->get()) });
 
     dcOk = true;
+    const int chSel = juce::roundToInt (channelParam->get());
     for (auto& ch : channels)
     {
+        applyChannel (ch, chSel);
         const double supplyRate = newSampleRate / (double) supplyInterval;
         const double feel = 0.05 + 0.95 * (double) tubeFeelParam->get();
         bool passOk = true;
-        double iPiRun = 0.003, iV2Run = 0.003, iV1Run = 0.003, ipRun = 0.16, isRun = 0.012;
+        double iPiRun = 0.0025, iV2Run = 0.004, iV1Run = 0.002, ipRun = 0.16, isRun = 0.012;
         for (int pass = 0; pass < 10; ++pass)
         {
             passOk = ch.supply.prepare (supplyRate);
-
-            if (reducedOrder)
-            {
-                ch.preReduced.setSource (ch.prSrcRail, ch.supply.voltage (ch.sE));
-                passOk = ch.preReduced.prepare (newSampleRate) && passOk;
-                ch.reducedFollowerDc = ch.preReduced.voltage (ch.prFollower);
-                ch.followerDc = ch.reducedFollowerDc;
-                // Compensation fitted to the measured full-vs-mini band deltas: the dropped mid
-                // stages' grid-current compression tilts the mini's output bass-heavy and its last
-                // stage clips less treble. Low shelf restores bass, high shelf trims the treble
-                // excess; the flat part of the level gap is handled post-saturation instead
-                // (reducedOutGain) so the saturator's drive point is unaffected.
-                ch.redShelfLow.setShelf (newSampleRate, 250.0, 0.9, 6.5, false);
-                ch.redShelfHigh.setShelf (newSampleRate, 1200.0, 0.707, -4.5, true);
-            }
-            else
-            {
-                ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sD));
-                ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sE));
-                passOk = ch.pre.prepare (newSampleRate) && passOk;
-                ch.followerDc = ch.pre.voltage (ch.pFollower);
-            }
-
-            ch.power.setSource (ch.wSrcCf, ch.followerDc);
-            ch.power.setInitialGuess (ch.wToneIn, ch.followerDc);
-            if (! reducedOrder) ch.power.setSource (ch.wSrcRecovery, ch.supply.voltage (ch.sC)); // recovery supply
+            preparePreamp (ch, newSampleRate, passOk);
             ch.vScreen = ch.supply.voltage (ch.sB);
-            double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0, iPi = 0.0;
+            double ipA = 0.0, ipB = 0.0, isA = 0.0, isB = 0.0;
+            // reducedOrder has no PI in the netlist: the full reference's two plates draw ~2.5 mA from C.
+            double iPi = 0.0025;
             if (! reducedOrder)
             {
                 ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
@@ -1022,7 +983,6 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             }
             passOk = ch.power.prepare (newSampleRate) && passOk;
             ch.power.solveSample();
-
             if (! reducedOrder)
             {
                 ch.power.pentodeCurrents (ch.penA, ipA, isA);
@@ -1030,33 +990,22 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
                 const double vPi = ch.supply.voltage (ch.sC);
                 iPi = (vPi - ch.power.voltage (ch.wPlateA)) / 82.0e3 + (vPi - ch.power.voltage (ch.wPlateB)) / 100.0e3;
             }
-            // Recovery stage also draws from PI rail (sC); it does not exist under reducedOrder
-            const double vPiR = ch.supply.voltage (ch.sC);
-            const double iRecovery = reducedOrder ? 0.0 : (vPiR - ch.power.voltage (ch.wRecoveryPlate)) / 100.0e3;
-            const double vV2 = ch.supply.voltage (ch.sD);
-            const double vV1 = ch.supply.voltage (ch.sE);
-            double iV2, iV1;
-            if (reducedOrder)
-            {
-                iV2 = (vV2 - ch.preReduced.voltage (ch.prPlateB)) / 220.0e3;
-                iV1 = (vV1 - ch.preReduced.voltage (ch.prPlateA)) / 220.0e3;
-            }
-            else
-            {
-                iV2 = (vV2 - ch.pre.voltage (ch.pPlateV2b)) / 220.0e3
-                    + (vV2 - ch.pre.voltage (ch.pPlateV5b)) / 220.0e3;
-                iV1 = (vV1 - ch.pre.voltage (ch.pPlateV1a)) / 220.0e3
-                    + (vV1 - ch.pre.voltage (ch.pPlateV1b)) / 100.0e3
-                    + (vV1 - ch.pre.voltage (ch.pPlateV2a)) / 100.0e3;
-            }
+            const double vV2 = ch.supply.voltage (ch.sD), vV1 = ch.supply.voltage (ch.sE);
+            const double iV2 = (vV2 - ch.preB.voltage (ch.bPlateV2b)) / 220.0e3
+                             + (vV2 - ch.preC.voltage (ch.cPlateV5b)) / 220.0e3
+                             + (vV2 - ch.driver.voltage (ch.dPlateV5a)) / 100.0e3
+                             + (vV2 - ch.power.voltage (ch.wPlateV3a)) / 68.0e3;
+            const double iV1 = (vV1 - ch.preA.voltage (ch.aPlateV1a)) / 220.0e3
+                             + (vV1 - ch.preA.voltage (ch.aPlateV1b)) / 100.0e3
+                             + (vV1 - ch.preB.voltage (ch.bPlateV2a)) / 100.0e3;
             ipRun += 0.5 * ((ipA + ipB) - ipRun);
             isRun += 0.5 * ((isA + isB) - isRun);
-            iPiRun += 0.5 * (iPi + iRecovery - iPiRun);
+            iPiRun += 0.5 * (iPi - iPiRun);
             iV2Run += 0.5 * (iV2 - iV2Run);
             iV1Run += 0.5 * (iV1 - iV1Run);
             ch.supply.setCurrentSource (ch.iA, -ipRun);
             ch.supply.setCurrentSource (ch.iB, -isRun);
-            ch.supply.setCurrentSource (ch.iC, -(iPiRun));
+            ch.supply.setCurrentSource (ch.iC, -iPiRun);
             ch.supply.setCurrentSource (ch.iD, -iV2Run);
             ch.supply.setCurrentSource (ch.iE, -iV1Run);
             idleSupplyCurrent = ipRun + isRun + iPiRun + iV2Run + iV1Run + (ch.vScreen / bleeder);
@@ -1066,6 +1015,9 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         }
         dcOk = passOk && ch.supply.prepare (supplyRate) && dcOk;
         ch.vScreen = ch.supply.voltage (ch.sB);
+        // The blocks' last DC solves saw the previous pass's rails; solve them again at the rails they will run on
+        // (a rail step through this much gain is a startup thump).
+        preparePreamp (ch, newSampleRate, dcOk);
         if (! reducedOrder)
         {
             ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
@@ -1073,39 +1025,24 @@ void EVH5150StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             ch.power.setPentodeScreen (ch.penA, ch.vScreen - 1.5);
             ch.power.setPentodeScreen (ch.penB, ch.vScreen - 1.5);
         }
-        // The blocks' last DC solves saw the previous pass's rails; the final supply solve moved them a little and the
-        // rail step through this much gain was a startup thump (ENGL 0.65, 2026-10-24). Solve them again at the rails
-        // they will run on.
         dcOk = ch.power.prepare (newSampleRate) && dcOk;
-        if (reducedOrder)
-        {
-            ch.preReduced.setSource (ch.prSrcRail, ch.supply.voltage (ch.sE));
-            dcOk = ch.preReduced.prepare (newSampleRate) && dcOk;
-            ch.preReduced.saveDynamicState (ch.preReducedRest);
-            // Seed the bass-trim HP at the resting delta so its first samples don't emit a step.
-
-        }
-        else
-        {
-            ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sD));
-            ch.pre.setSource (ch.pSrcV1, ch.supply.voltage (ch.sE));
-            dcOk = ch.pre.prepare (newSampleRate) && dcOk;
-            ch.pre.saveDynamicState (ch.preRest);
-        }
+        ch.preA.saveDynamicState (ch.restA);
+        ch.preB.saveDynamicState (ch.restB);
+        ch.preC.saveDynamicState (ch.restC);
+        ch.driver.saveDynamicState (ch.restD);
+        ch.stack.saveDynamicState (ch.restS);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.failStreak = 0;
         ch.bmRail = railPlatesNominal;
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
-        ch.bmOutput = 0.0;
         ch.bmAX1 = ch.bmAX2 = ch.bmAY1 = ch.bmAY2 = 0.0;
         ch.bmBX1 = ch.bmBX2 = ch.bmBY1 = ch.bmBY2 = 0.0;
         ch.bmCX1 = ch.bmCX2 = ch.bmCY1 = ch.bmCY2 = 0.0;
         ch.bmCutState = 0.0;
         ch.bmPresState = 0.0;
-        ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6,
-                               ch.power.voltage (reducedOrder ? ch.wTone : ch.wRecoveryPlate));
+        ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6, ch.power.voltage (ch.wPlateV3a));
     }
     designPowerFilters();
     updatePots (lastKnobs);
@@ -1155,31 +1092,10 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             controlCounter = 0;
             updatePots ({ gn, tr, mi, ba, pr, rs, ps, pw, bi, fe, speakerChoice });
-
             const int chSel = juce::roundToInt (channelParam->get());
             for (auto& ch : channels)
-            {
-                if (reducedOrder)
-                {
-                    // measured-vs-full: raise the reduced output to match the reference at BOTH
-                    // the consistency calib (power=1) and PedalUnityLevel noon (power=0.5).
-                    ch.reducedPreTrim = chSel == 0 ? 0.9 : 0.65;
-                    ch.reducedDrive = chSel == 0 ? Channel::reducedDriveBoostRhythm : Channel::reducedDriveBoost;
-                }
-                else
-                {
-                    ch.pre.setResistance (ch.rV2aSeries, chSel == 0 ? 100.0e6 : 39.0e3);
-                    ch.pre.setResistance (ch.rBypassV2ab, chSel == 0 ? 1.0 : 100.0e6);
-                }
-            }
+                applyChannel (ch, chSel);
         }
-
-        const double mgRaw = juce::jmax (0.002, pots::audio ((double) pw));
-        // The full path's V3B recovery triode re-amplifies behind the master taper, so its output
-        // does not collapse the ~16.5 dB the audio-law pot costs at noon. The reduced path has no
-        // recovery stage -- fold a mild lift into the follower drive instead (identity at pw = 1,
-        // ~+7 dB at noon, measured against PedalUnityLevel).
-        const double masterGain = reducedOrder ? mgRaw * (1.0 + 1.4 * (1.0 - mgRaw)) : mgRaw;
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
@@ -1190,27 +1106,9 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             auto* data = buffer.getWritePointer (chIdx);
 
             const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
-            double followerDelta;
-            bool okPre;
-            if (reducedOrder)
-            {
-                // The full cascade runs ~5 stages of gain into the final clip, so its output is
-                // compressed flat vs input level; two stages alone leave the second clip idle at
-                // low drive (measured: -56 dB relative treble at rms 0.03). The drive boost stands
-                // in for the missing inter-stage gain; reducedPreTrim restores output level.
-                ch.preReduced.setSource (ch.prSrcIn, x * ch.reducedDrive);
-                okPre = ch.preReduced.solveSample();
-                followerDelta = ch.redShelfHigh.process (ch.redShelfLow.process ((ch.preReduced.voltage (ch.prFollower) - ch.reducedFollowerDc) * ch.reducedPreTrim));
-            }
-            else
-            {
-                ch.pre.setSource (ch.pSrcIn, x);
-                okPre = ch.pre.solveSample();
-                followerDelta = ch.pre.voltage (ch.pFollower) - ch.followerDc;
-            }
+            const bool okPre = solvePreamp (ch, x);
             bool ok = okPre;
 
-            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * followerDelta);
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
@@ -1241,8 +1139,10 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 updateSupply (ch);
             }
 
-            // negated: V3B (bypassed in this mode) is an inverting common-cathode stage in the full path.
-            const double speakerVolts = reducedOrder ? behavioralPowerStage (ch, -ch.piCoupling.process (ch.power.voltage (ch.wTone))) : ch.power.voltage (ch.wOut);
+            // reducedOrder: C49 into the PI, scaled by Power Drive (the full path's pot in front of R48).
+            const double speakerVolts = reducedOrder
+                ? behavioralPowerStage (ch, driveFraction * ch.piCoupling.process (ch.power.voltage (ch.wPlateV3a)))
+                : ch.power.voltage (ch.wOut);
             constexpr double saneLimit = 150.0;
             const bool sane = std::isfinite (speakerVolts) && std::abs (speakerVolts) < saneLimit;
             ok = ok && sane;
@@ -1257,8 +1157,11 @@ void EVH5150StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 if (++ch.restRefreshCounter >= restRefreshInterval)
                 {
                     ch.restRefreshCounter = 0;
-                    if (reducedOrder) ch.preReduced.saveDynamicState (ch.preReducedRest);
-                    else ch.pre.saveDynamicState (ch.preRest);
+                    ch.preA.saveDynamicState (ch.restA);
+                    ch.preB.saveDynamicState (ch.restB);
+                    ch.preC.saveDynamicState (ch.restC);
+                    ch.driver.saveDynamicState (ch.restD);
+                    ch.stack.saveDynamicState (ch.restS);
                     ch.power.saveDynamicState (ch.powerRest);
                     ch.supply.saveDynamicState (ch.supplyRest);
                 }
