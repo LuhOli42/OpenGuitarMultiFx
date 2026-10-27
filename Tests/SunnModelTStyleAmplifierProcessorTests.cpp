@@ -103,6 +103,38 @@ public:
             expectLessThan (peak, 5.0);
         }
 
+        beginTest ("the global feedback is negative: closing it lowers the gain");
+        {
+            const auto rmsAt = [&] (double feedbackOhms)
+            {
+                SunnModelTStyleAmplifierProcessor amp;
+                setParam (amp, "smt_vol_brite", 0.2f);
+                setParam (amp, "smt_vol_normal", 0.0f);
+                amp.prepare (sr, 128, 2);
+                amp.debugSetFeedbackResistance (feedbackOhms);
+                juce::AudioBuffer<float> buf (2, 128);
+                double sum = 0.0;
+                long long n = 0, counted = 0;
+                for (int b = 0; b < (int) (1.0 * sr / 128); ++b)
+                {
+                    for (int i = 0; i < 128; ++i, ++n)
+                    {
+                        const float x = (float) (0.003 * std::sin (2.0 * juce::MathConstants<double>::pi * 440.0 * (double) n / sr));
+                        buf.setSample (0, i, x);
+                        buf.setSample (1, i, x);
+                    }
+                    amp.process (buf);
+                    if (b > (int) (0.5 * sr / 128))
+                        for (int i = 0; i < 128; ++i, ++counted)
+                            sum += juce::square ((double) buf.getSample (0, i));
+                }
+                return std::sqrt (sum / (double) juce::jmax (1LL, counted));
+            };
+            const double closed = rmsAt (22.0e3), open = rmsAt (1.0e12);
+            logMessage ("NFB closed vs open: " + juce::String (20.0 * std::log10 (closed / juce::jmax (1.0e-12, open)), 2) + " dB");
+            expectLessThan (closed, open * 0.9);
+        }
+
         beginTest ("page 2 parameters move without crashing");
         {
             SunnModelTStyleAmplifierProcessor amp;

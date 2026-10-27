@@ -601,13 +601,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // in reducedOrder; the preamp is two netlists so only the selected channel is solved per sample.
     RiveraKnuckleheadStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("RiveraKnuckleheadStyleAmplifier");
-    registry.registerType ("RiveraKnuckleheadStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<RiveraKnuckleheadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 12.77f); }, "High-Gain");
+    registry.registerType ("RiveraKnuckleheadStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<RiveraKnuckleheadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 13.57f); }, "High-Gain");
     // Diezel VH4 (docs/circuits/Diezel.md): four channel netlists (Clean / Crunch / Mega / Lead,
     // progressively hotter), LTP PI, 4xKT77, global NFB with Presence + Deep. reducedOrder power stage;
     // the preamp nets are per-channel so only the selected channel solves per sample.
     DiezelStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DiezelStyleAmplifier");
-    registry.registerType ("DiezelStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DiezelStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 29.56f); }, "High-Gain");
+    registry.registerType ("DiezelStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DiezelStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 30.17f); }, "High-Gain");
     // Carr Rambler (docs/circuits/CarrRambler.md): blackface-like single-channel preamp, LTP PI, cathode-biased
     // 2x6L6GC, zero global feedback, bias-vary tremolo, pentode/triode switch. reducedOrder behavioral power stage.
     CarrRamblerStyleAmplifierProcessor::reducedOrder = true;
@@ -633,7 +633,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 10.72f); }, "Clean");
     SunnModelTStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SunnModelTStyleAmplifier");
-    registry.registerType ("SunnModelTStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 16.70f); }, "High-Gain");
+    registry.registerType ("SunnModelTStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.06f); }, "Crunch");
     FryetteDeliveranceD120StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("FryetteDeliveranceD120StyleAmplifier");
     registry.registerType ("FryetteDeliveranceD120StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.49f); }, "High-Gain");

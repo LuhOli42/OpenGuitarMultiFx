@@ -101,7 +101,7 @@ namespace
     constexpr double primaryHalfResistance = 40.0;
     constexpr double secondaryResistance = 0.15;
     // NFB: R26 10K from the secondary into the PI's feedback node.
-    constexpr double feedbackResistor = 10.0e3;   // R26: 10K from the secondary
+    constexpr double feedbackResistor = 22.0e3;   // R20: 22K from the secondary into the feedback node (R26 10K shunts it)
 
     constexpr double biasSupplyVolts = -55.0;  // 6550 fixed bias (E -55V on the schematic)
 
@@ -125,10 +125,10 @@ namespace
         NodalCircuit::Node nodeV3 = 0, nodeV2 = 0, nodeE = 0;
     };
 
-    /** The Model T preamp (ECN441): two independent first stages -- V1A BRITE (680R cathode + 250uF
-        bypass, the hot input) and V1B NORMAL (unbypassed cathode, the tame input) -- each followed by
-        its own 1M Volume pot, mixed through 100K resistors into the shared V2A second stage, then a
-        cathode follower into the tone stack. */
+    /** The Model T preamp (ECN441, 9/25/1973): V1A BRITE and V1B NORMAL, 100K plates, sharing ONE cathode resistor
+        (R5 680R + C1 250uF), each into its own 1M linear Volume (R8 / R9) and a 470K mix resistor (R10 / R11) into V2A's
+        grid. BRITE's 470K carries C4 470pF -- that is the whole difference between the channels. V2A: 100K plate,
+        R13 820R with a 22uF bypass, DC-coupled into the V2B cathode follower (R14 100K) that drives the stack. */
     PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double eGuess, double dGuess, double cGuess)
     {
         const auto gnd = NodalCircuit::ground;
@@ -143,57 +143,55 @@ namespace
         b.srcV3 = c.addSource (vccC, cGuess);
         b.srcIn = c.addSource (in, 0.0);
 
-        // V1A BRITE: 100K plate (E rail), 68K stopper, 1M leak, 680R cathode + 250uF bypass.
-        const auto g1 = c.addNode(), k1 = c.addNode();
+        // The shared cathode: R5 680R || C1 250uF.
+        const auto k1 = c.addNode();
+        c.addResistor (k1, gnd, 680.0);                  // R5
+        c.addCapacitor (k1, gnd, 250.0e-6);              // C1
+        c.setInitialGuess (k1, 1.7);
+
+        // V1A BRITE: R1 68K stopper, R2 1M leak, R6 100K plate.
+        const auto g1 = c.addNode();
         b.plateV1a = c.addNode();
         c.addResistor (in, g1, 68.0e3);                  // R1
         c.addResistor (g1, gnd, 1.0e6);                  // R2
         c.addTriode (b.plateV1a, g1, k1, triode12AX7());
         c.addCapacitor (g1, b.plateV1a, cgp);
         c.addResistor (vccE, b.plateV1a, 100.0e3);       // R6
-        c.addResistor (k1, gnd, 680.0);                  // R5
-        c.addCapacitor (k1, gnd, 250.0e-6);              // C1
-        c.setInitialGuess (b.plateV1a, 190.0);
-        c.setInitialGuess (k1, 1.5);
+        c.setInitialGuess (b.plateV1a, 227.0);
 
-        // BRITE VOLUME: V1A plate -> .022uF (C2) -> 1M volume pot -> mix node.
-        const auto briteIn = c.addNode(), briteWiper = c.addNode(), mix = c.addNode();
-        c.addCapacitor (b.plateV1a, briteIn, 0.022e-6);  // C2
-        b.rVolBriteTop = c.addResistor (briteIn, briteWiper, 500.0e3);
-        b.rVolBriteBot = c.addResistor (briteWiper, gnd, 500.0e3);
-        c.addResistor (briteWiper, mix, 100.0e3);
-
-        // V1B NORMAL: 100K plate (E rail), own 68K stopper + 1M leak, 2.7K unbypassed cathode
-        // (cathode values per channel on the schematic; the Normal side runs cooler).
-        const auto g1n = c.addNode(), k1n = c.addNode();
+        // V1B NORMAL: R4 68K stopper, R3 1M leak, R7 100K plate, same cathode.
+        const auto g1n = c.addNode();
         b.plateV1b = c.addNode();
         c.addResistor (in, g1n, 68.0e3);                 // R4
         c.addResistor (g1n, gnd, 1.0e6);                 // R3
-        c.addTriode (b.plateV1b, g1n, k1n, triode12AX7());
+        c.addTriode (b.plateV1b, g1n, k1, triode12AX7());
         c.addCapacitor (g1n, b.plateV1b, cgp);
         c.addResistor (vccE, b.plateV1b, 100.0e3);       // R7
-        c.addResistor (k1n, gnd, 2.7e3);                 // unbypassed
-        c.setInitialGuess (b.plateV1b, 250.0);
-        c.setInitialGuess (k1n, 2.2);
+        c.setInitialGuess (b.plateV1b, 227.0);
 
-        // NORMAL VOLUME: V1B plate -> .022uF (C3) -> 1M volume pot -> same mix node.
-        const auto normIn = c.addNode(), normWiper = c.addNode();
+        // BRITE: C2 .022 -> R8 1M -> R10 470K || C4 470pF; NORMAL: C3 .022 -> R9 1M -> R11 470K; both into V2A's grid.
+        const auto briteIn = c.addNode(), briteWiper = c.addNode(), normIn = c.addNode(), normWiper = c.addNode();
+        const auto g2 = c.addNode();
+        c.addCapacitor (b.plateV1a, briteIn, 0.022e-6);  // C2
+        b.rVolBriteTop = c.addResistor (briteIn, briteWiper, 500.0e3);
+        b.rVolBriteBot = c.addResistor (briteWiper, gnd, 500.0e3);
+        c.addResistor (briteWiper, g2, 470.0e3);         // R10
+        c.addCapacitor (briteWiper, g2, 470.0e-12);      // C4
         c.addCapacitor (b.plateV1b, normIn, 0.022e-6);   // C3
-        b.rVolNormTop = c.addResistor (normIn, normWiper, 1.0e6);
-        b.rVolNormBot = c.addResistor (normWiper, gnd, 1.0e6);
-        c.addResistor (normWiper, mix, 100.0e3);
+        b.rVolNormTop = c.addResistor (normIn, normWiper, 500.0e3);
+        b.rVolNormBot = c.addResistor (normWiper, gnd, 500.0e3);
+        c.addResistor (normWiper, g2, 470.0e3);          // R11
 
-        // V2A shared second stage: 100K plate (D rail), 820R unbypassed cathode (R13), 470K leak.
-        const auto g2 = c.addNode(), k2 = c.addNode();
+        // V2A: R12 100K plate (C rail), R13 820R || 22uF.
+        const auto k2 = c.addNode();
         b.plateV2a = c.addNode();
-        c.addResistor (mix, g2, 39.0e3);
-        c.addResistor (g2, gnd, 470.0e3);
         c.addTriode (b.plateV2a, g2, k2, triode12AX7());
         c.addCapacitor (g2, b.plateV2a, cgp);
-        c.addResistor (vccD, b.plateV2a, 100.0e3);
-        c.addResistor (k2, gnd, 820.0);                  // R13, unbypassed
-        c.setInitialGuess (b.plateV2a, 230.0);
-        c.setInitialGuess (k2, 2.0);
+        c.addResistor (vccD, b.plateV2a, 100.0e3);       // R12
+        c.addResistor (k2, gnd, 820.0);                  // R13
+        c.addCapacitor (k2, gnd, 22.0e-6);
+        c.setInitialGuess (b.plateV2a, 205.0);
+        c.setInitialGuess (k2, 1.3);
 
         // Cathode follower: drives the tone stack through a low-impedance output.
         b.follower = c.addNode();
@@ -367,34 +365,36 @@ void SunnModelTStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcBias = c.addSource (vc18, biasSupplyVolts);
 
-        // Phase inverter: 12AX7A long-tailed pair. R27=82K / R28=120K plates, R22 4.7K + R23 470R tail,
-        // .025uF couplings (C12/C13). NFB lands on grid 2 through R24 1M.
+        // Phase inverter: 12AX7A long-tailed pair, ECN441. R27 82K / R28 120K plates, C11 270pF between them. Tail: the
+        // cathodes -> R23 470R -> T -> R22 4.7K -> the feedback node F -> R26 10K to ground; both grids return to T through
+        // R21 / R24 1M, and V3B's grid is tied to F by C10 0.1uF. The ~12K total puts the cathodes near the chart's 38 V.
         const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
         ch.wGridA = g1;
         ch.wPlateA = pa;
         ch.wPlateB = pb;
         ch.wTail = nm;
         ch.wFeedback = fp;
-        c.addCapacitor (ch.wTone, g1, 0.022e-6);
-        c.addResistor (g1, nm, 1.0e6);
-        c.addResistor (g2, nm, 1.0e6);                   // R24 -- to the tail midpoint (same elevated DC as grid 1);
-                                                          // the ~0 V feedback node left the second triode below cutoff
+        c.addCapacitor (ch.wTone, g1, 0.022e-6);            // C8
+        c.addResistor (g1, nm, 1.0e6);                      // R21
+        c.addResistor (g2, nm, 1.0e6);                      // R24
+        c.addCapacitor (g2, fp, 0.1e-6);                    // C10
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
         c.addCapacitor (g2, pb, cgp);
         c.addResistor (vpi, pa, 82.0e3);                    // R27
         c.addResistor (vpi, pb, 120.0e3);                   // R28
-        c.addCapacitor (pa, pb, 47.0e-12);
-        c.addResistor (k, nm, 4.7e3);                       // R22
-        c.addResistor (nm, fp, 470.0);                      // R23 -- tail returns through the feedback node
+        c.addCapacitor (pa, pb, 270.0e-12);                 // C11
+        c.addResistor (k, nm, 470.0);                       // R23
+        c.addResistor (nm, fp, 4.7e3);                      // R22
+        c.addResistor (fp, gnd, 10.0e3);                    // R26
         c.setInitialGuess (pa, 250.0);
         c.setInitialGuess (pb, 245.0);
-        c.setInitialGuess (k, 30.0);
-        c.setInitialGuess (nm, 27.0);
-        c.setInitialGuess (g1, 27.0);
-        c.setInitialGuess (g2, 27.0);
-        c.setInitialGuess (fp, 2.0);
+        c.setInitialGuess (k, 38.0);
+        c.setInitialGuess (nm, 36.0);
+        c.setInitialGuess (g1, 36.0);
+        c.setInitialGuess (g2, 36.0);
+        c.setInitialGuess (fp, 22.0);
 
         // Power amplifier: 4 x 6550 as two push-pull pairs, ULTRALINEAR screens (the 43% OT taps are
         // applied per sample in process()). .025uF couplings (C12/C13), 100K grid leaks (R29/R30) to the
@@ -451,13 +451,12 @@ void SunnModelTStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: R26 10K from the secondary to PI grid 2, with the PRESENCE network (R25 25K REV LOG
-        // shunt + C9 .022uF) in the feedback path.
+        // NFB: R20 22K from the secondary into F; PRESENCE: C9 .022 from F to R25's wiper, R25 (25K reverse log) from
+        // the wiper to ground -- turning it up lowers that resistance and shunts more of the feedback's top end.
         const auto wp = c.addNode();
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        ch.rPresTop = c.addResistor (fp, wp, 12.5e3);     // R25, split
-        ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
         c.addCapacitor (fp, wp, 0.022e-6);                // C9
+        ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3); // R25
         c.addCapacitor (fp, gnd, 1.5e-9);
 
         c.setInitialGuess (pp1, railPlatesNominal);
@@ -475,22 +474,21 @@ void SunnModelTStyleAmplifierProcessor::updatePots (const Knobs& k)
     lastKnobs = k;
     const double trebleBottom = juce::jmax (1.0, 250.0e3 * k.treble);
     const double trebleTop = juce::jmax (1.0, 250.0e3 - trebleBottom);
-    const double bassR = juce::jmax (1.0, 1.0e6 * pots::audio (k.bass));
+    const double bassR = juce::jmax (1.0, 1.0e6 * k.bass);                 // R16: linear (ECN441 notes)
     const double midBottom = juce::jmax (1.0, 25.0e3 * k.mid);
     const double midTop = juce::jmax (1.0, 25.0e3 - midBottom);
-    const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
-    const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
-    const double masterR = juce::jmax (1.0, 1.0e6 * pots::audio (k.master));
+    const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - pots::reverseAudio (k.presence)));
+    const double masterR = juce::jmax (1.0, 1.0e6 * k.master);             // R19: linear
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
 
     for (auto& ch : channels)
     {
-        const double briteBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volBrite));
+        const double briteBottom = juce::jmax (1.0, 1.0e6 * k.volBrite);   // R8: linear (ECN441 notes)
         ch.pre.setResistance (ch.rVolBriteBot, briteBottom);
         ch.pre.setResistance (ch.rVolBriteTop, juce::jmax (1.0, 1.0e6 - briteBottom));
-        const double normBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.volNormal));
+        const double normBottom = juce::jmax (1.0, 1.0e6 * k.volNormal);    // R9: linear
         ch.pre.setResistance (ch.rVolNormBot, normBottom);
         ch.pre.setResistance (ch.rVolNormTop, juce::jmax (1.0, 1.0e6 - normBottom));
         ch.power.setResistance (ch.rTrebleTop, trebleTop);
@@ -502,7 +500,6 @@ void SunnModelTStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.power.setResistance (ch.rMasterTop, juce::jmax (1.0, 1.0e6 - masterR));
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rPresTop, presTop);
             ch.power.setResistance (ch.rPresBottom, presBottom);
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);

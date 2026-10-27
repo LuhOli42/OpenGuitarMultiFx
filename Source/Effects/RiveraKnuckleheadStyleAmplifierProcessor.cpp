@@ -172,6 +172,14 @@ RiveraKnuckleheadStyleAmplifierProcessor::RiveraKnuckleheadStyleAmplifierProcess
     page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
+
+    // The real panel has one tone row + Master for CH1 and another for CH2/CH3 (CH3 is CH2 with the Ninja stage):
+    // the visible knobs carry the selected channel's set. The CH2/CH3 Master starts lower, balancing it with CH1
+    // (AmpDynamicsBench, 0.2 V in) -- one shared set left the Lead channels ~19 dB louder, into the output limiter.
+    knobMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
+        std::vector<juce::AudioParameterFloat*> { trebleParam, middleParam, bassParam, masterParam }, std::vector<int> { 0, 1, 1 });
+    knobMemory->setDefaults (0, { 0.5f, 0.5f, 0.5f, 0.8f });
+    knobMemory->setDefaults (1, { 0.5f, 0.5f, 0.5f, 0.18f });
 }
 
 void RiveraKnuckleheadStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -1007,9 +1015,20 @@ void RiveraKnuckleheadStyleAmplifierProcessor::setState (const juce::XmlElement&
     // with no knk_ninja is legacy: remap its saved 1 (Lead) to the new 2.
     const bool legacy = ! state.hasAttribute ("knk_ninja");
     const float savedChannel = (float) state.getDoubleAttribute ("knk_channel", -1.0);
-    EffectProcessor::setState (state);
-    if (legacy && juce::approximatelyEqual (savedChannel, 1.0f))
-        *channelParam = 2.0f;
+    {
+        const ChannelKnobMemory::ScopedSuspend suspend (*knobMemory);
+        EffectProcessor::setState (state);
+        if (legacy && juce::approximatelyEqual (savedChannel, 1.0f))
+            *channelParam = 2.0f;
+    }
+    knobMemory->readState (state);
+}
+
+std::unique_ptr<juce::XmlElement> RiveraKnuckleheadStyleAmplifierProcessor::getState() const
+{
+    auto xml = EffectProcessor::getState();
+    knobMemory->writeState (*xml);
+    return xml;
 }
 
 void RiveraKnuckleheadStyleAmplifierProcessor::migrateLegacySnapshotParams (
