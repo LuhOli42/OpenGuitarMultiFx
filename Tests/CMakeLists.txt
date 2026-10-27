@@ -125,6 +125,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   CallbackOverheadBench.cpp
   PitchDetectorRangeTests.cpp
   AmpDynamicsBench.cpp
+  AmpPanelPageTests.cpp
   RePrepareTransparencyTests.cpp
   OversampledEffectTests.cpp
   PedalUnityLevelTests.cpp
