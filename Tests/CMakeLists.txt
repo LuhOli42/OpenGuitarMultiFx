@@ -18,6 +18,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PresetLibraryTests.cpp
   PresetSpilloverTests.cpp
   MidiLearnPresetXmlTests.cpp
+  SceneMidiTests.cpp
   MasterEqTests.cpp
   SnapshotPresetXmlTests.cpp
   UpdateCoreTests.cpp

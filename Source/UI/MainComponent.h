@@ -7,6 +7,7 @@
 #include "OverlayHost.h"
 #include "ParameterPanel.h"
 #include "PresetBadge.h"
+#include "SceneMidi.h"
 #include "SnapshotBar.h"
 #include "SnapshotPresetXml.h"
 #include "../EffectRegistry.h"
@@ -147,6 +148,11 @@ private:
         part of the preset (a change marks it unsaved); copying overwrites only the target's knobs/bypass, it keeps the
         target's own name and colour. */
     void showSnapshotMenu (int index);
+    /** Pedal -> scene (docs/PresetsAndSnapshots.md, "Footswitch"): learn or clear the footswitch CC for scene
+        `action` (0-7, or scenemidi::nextScene / previousScene). Learning arms the action; the next CC press on any
+        MIDI input is bound to it. Global, saved in scene_midi.xml -- not part of a preset. */
+    void toggleScenePedal (int action);
+    void refreshScenePedalDisplay();
     void copySnapshot (int from, int to);
     juce::Colour colourOfSnapshot (int index) const;
     /** Pushes the live snapshot's colour everywhere it owns the accent: the
@@ -260,6 +266,8 @@ private:
     std::map<int, juce::AudioParameterFloat*> midiCcBindings;
     juce::AudioParameterFloat* midiLearnArmedParam = nullptr;
     void handleMidiCc (int ccNumber, int ccValue);
+    scenemidi::Bindings sceneMidi;
+    int sceneMidiArmed = scenemidi::noAction;
     void clearMidiBindingsFor (EffectProcessor* processor);
 
     // Chain tile size -- SQUARE (blockWidth == blockHeight always) and

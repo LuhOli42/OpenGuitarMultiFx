@@ -43,6 +43,12 @@ public:
     void setLabels (const std::array<juce::String, snapshotxml::maxSnapshots>& names,
                     const std::array<juce::Colour, snapshotxml::maxSnapshots>& colours);
 
+    /** The footswitch CC learned for each cell (-1 = none), drawn small in the cell's corner, and the
+        caption over the cells: normally the gesture hint, while a pedal is being learned it says so
+        (empty = back to the hint). */
+    void setPedalCcs (const std::array<int, snapshotxml::maxSnapshots>& ccs);
+    void setCaptionOverride (const juce::String& text);
+
     /** The heavier display weight for the letters -- same
         OpenGuitarMultiFxLookAndFeel::getExtraBoldTypeface() PresetBadge
         uses (the target build has no system fonts at all). Falls back to
@@ -73,6 +79,8 @@ private:
     bool longPressFired = false;
     std::array<juce::String, snapshotxml::maxSnapshots> labels;
     std::array<juce::Colour, snapshotxml::maxSnapshots> cellColours;
+    std::array<int, snapshotxml::maxSnapshots> pedalCcs { -1, -1, -1, -1, -1, -1, -1, -1 };
+    juce::String captionOverride;
     juce::Typeface::Ptr displayTypeface;
 };
 

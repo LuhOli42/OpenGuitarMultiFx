@@ -26,6 +26,24 @@ void SnapshotBar::setLabels (const std::array<juce::String, snapshotxml::maxSnap
     }
 }
 
+void SnapshotBar::setPedalCcs (const std::array<int, snapshotxml::maxSnapshots>& ccs)
+{
+    if (ccs != pedalCcs)
+    {
+        pedalCcs = ccs;
+        repaint();
+    }
+}
+
+void SnapshotBar::setCaptionOverride (const juce::String& text)
+{
+    if (text != captionOverride)
+    {
+        captionOverride = text;
+        repaint();
+    }
+}
+
 void SnapshotBar::setDisplayTypeface (juce::Typeface::Ptr typeface)
 {
     displayTypeface = std::move (typeface);
@@ -73,10 +91,11 @@ void SnapshotBar::paint (juce::Graphics& g)
 {
     // First-run discoverability for the hidden long-press (audit #93 item 3),
     // one dim line over the cells -- gone from muscle-memory territory.
-    g.setColour (juce::Colours::grey.withAlpha (0.55f));
+    const bool learning = captionOverride.isNotEmpty();
+    g.setColour (learning ? juce::Colours::orange : juce::Colours::grey.withAlpha (0.55f));
     g.setFont (juce::Font (juce::FontOptions (11.0f)));
-    g.drawText ("tap: recall -- hold: edit", getLocalBounds().removeFromTop (hintHeight),
-                juce::Justification::centred);
+    g.drawText (learning ? captionOverride : juce::String ("tap: recall -- hold: edit"),
+                getLocalBounds().removeFromTop (hintHeight), juce::Justification::centred);
 
     const float cellsTop = (float) hintHeight;
     const float cellWidth = (float) getWidth() / (float) snapshotxml::maxSnapshots;
@@ -104,6 +123,13 @@ void SnapshotBar::paint (juce::Graphics& g)
             g.drawRoundedRectangle (cell.reduced (0.5f), 8.0f, 1.0f);
         }
         g.setColour (textColour);
+
+        if (pedalCcs[(size_t) i] >= 0)
+        {
+            g.setFont (juce::FontOptions (9.0f));
+            g.drawText ("CC" + juce::String (pedalCcs[(size_t) i]), cell.reduced (4.0f, 2.0f),
+                        juce::Justification::topRight);
+        }
 
         const auto& label = labels[(size_t) i];
         auto letterArea = cell;
