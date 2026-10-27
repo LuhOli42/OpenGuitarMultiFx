@@ -39,6 +39,34 @@ constexpr int pressThreshold = 64;
 /** A second stomp on the same CC this soon after the first is contact bounce, not a new stomp. */
 constexpr juce::uint32 debounceMs = 150;
 
+/** Footswitch press detection shared by every "pedal does X" binding (scenes here, effect on/off in BypassPedalXml.h). */
+class StompDetector
+{
+public:
+    /** True when this message is a stomp: a value at or above the threshold, not within debounceMs of the previous
+        stomp on the same CC. Deliberately does NOT wait for a release (value 0) before accepting the next press --
+        many footswitches send 127 on every stomp and never send 0, and a press-after-release rule then fires
+        once and ignores the pedal forever. The release (or any value below the threshold) is simply ignored, so a
+        switch that sends 127 then 0 still counts once per stomp. */
+    bool isPress (int cc, int value, juce::uint32 nowMs)
+    {
+        if (value < pressThreshold)
+            return false;
+
+        const auto it = lastPressMs.find (cc);
+        if (it != lastPressMs.end() && nowMs - it->second < debounceMs)
+            return false;
+
+        lastPressMs[cc] = nowMs;
+        return true;
+    }
+
+    void clear() { lastPressMs.clear(); }
+
+private:
+    std::map<int, juce::uint32> lastPressMs;
+};
+
 class Bindings
 {
 public:
@@ -71,26 +99,11 @@ public:
         return -1;
     }
 
+    /** Marks a stomp as seen without acting on it (the stomp that was just used to learn the binding). */
+    bool isPress (int cc, int value, juce::uint32 nowMs) { return stomps.isPress (cc, value, nowMs); }
+
     bool hasCc (int cc) const { return byCc.find (cc) != byCc.end(); }
     bool empty() const { return byCc.empty(); }
-
-    /** True when this message is a stomp: a value at or above the threshold, not within debounceMs of the previous
-        stomp on the same CC. Deliberately does NOT wait for a release (value 0) before accepting the next press --
-        many footswitches send 127 on every stomp and never send 0, and a press-after-release rule then fires
-        once and ignores the pedal forever. The release (or any value below the threshold) is simply ignored, so a
-        switch that sends 127 then 0 still counts once per stomp. */
-    bool isPress (int cc, int value, juce::uint32 nowMs)
-    {
-        if (value < pressThreshold)
-            return false;
-
-        const auto it = lastPressMs.find (cc);
-        if (it != lastPressMs.end() && nowMs - it->second < debounceMs)
-            return false;
-
-        lastPressMs[cc] = nowMs;
-        return true;
-    }
 
     /** What a CC message should do right now: the scene to switch to, or -1 for nothing (unbound CC, a release, or
         a bounce). Call it once per incoming message. */
@@ -99,7 +112,7 @@ public:
         const auto it = byCc.find (cc);
         if (it == byCc.end())
             return -1;
-        if (! isPress (cc, value, nowMs))
+        if (! stomps.isPress (cc, value, nowMs))
             return -1;
 
         constexpr int count = snapshotxml::maxSnapshots;
@@ -127,7 +140,7 @@ public:
     void fromXml (const juce::XmlElement* xml)
     {
         byCc.clear();
-        lastPressMs.clear();
+        stomps.clear();
         if (xml == nullptr || ! xml->hasTagName ("SceneMidi"))
             return;
 
@@ -137,7 +150,7 @@ public:
 
 private:
     std::map<int, int> byCc;
-    std::map<int, juce::uint32> lastPressMs;
+    StompDetector stomps;
 };
 
 inline juce::File settingsFile()

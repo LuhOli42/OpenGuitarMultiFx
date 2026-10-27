@@ -17,7 +17,8 @@ namespace openguitarmultifx
     contract (bypass, name, status) so it works for any registered effect
     type without knowing about it.
 */
-class EffectBlockComponent : public juce::Component
+class EffectBlockComponent : public juce::Component,
+                             private juce::Timer
 {
 public:
     explicit EffectBlockComponent (EffectProcessor& processorToShow);
@@ -28,6 +29,10 @@ public:
     void mouseUp (const juce::MouseEvent& event) override;
 
     void setSelected (bool shouldBeSelected);
+
+    /** The footswitch CC that toggles this block (-1 = none), drawn small in the corner; `armed` while the app waits
+        for the stomp that will be learned (drawn "..."). */
+    void setPedal (int cc, bool armed);
 
     /** Which of the maxVisibleRows x chainColumns grid cells this block
         currently occupies (row*columns+col) -- independent of this block's
@@ -41,6 +46,11 @@ public:
         MainComponent::layoutChain()/addEffect()/handleBlockDragEnded(). */
     int gridSlot = 0;
 
+    /** Press and hold (longPressMs) without dragging: the block's footswitch menu. A tap still selects and a drag still
+        moves, so this is the same hidden-gesture pattern as the snapshot bar and MIDI Learn. */
+    std::function<void()> onLongPressed;
+    static constexpr int longPressMs = 550;
+
     /** A plain click (no meaningful drag) selects the block for editing. */
     std::function<void()> onClicked;
 
@@ -52,6 +62,11 @@ public:
     EffectProcessor& processor;
 
 private:
+    void timerCallback() override;
+
+    int pedalCc = -1;
+    bool pedalArmed = false;
+    bool longPressFired = false;
     bool selected = false;
     bool isDragging = false;
     juce::ComponentDragger dragger;

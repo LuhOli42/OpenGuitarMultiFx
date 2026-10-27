@@ -212,6 +212,7 @@ MainComponent::MainComponent()
 
     parameterPanel.onMidiLearnRequested = [this] (juce::AudioParameterFloat* param)
     {
+        bypassPedalArmed = nullptr;
         if (sceneMidiArmed != scenemidi::noAction)
         {
             sceneMidiArmed = scenemidi::noAction;
@@ -403,6 +404,7 @@ void MainComponent::addEffect (const juce::String& registryName, int targetGridS
     // re-opening it on itself -- same block, second tap, gone.
     block->onClicked = [this, raw] { selectBlock (selectedProcessor == raw ? nullptr : raw); };
     block->onDragEnded = [this] (EffectBlockComponent& b) { handleBlockDragEnded (b); };
+    block->onLongPressed = [this, raw] { showBypassPedalMenu (raw); };
     chainContainer.addAndMakeVisible (*block);
     blocks.insert (arrayIndex, block.release());
 
@@ -1060,6 +1062,7 @@ void MainComponent::applyRenderQuality (EffectRegistry::OversamplingQuality qual
         block->gridSlot = slot;
         block->onClicked = [this, raw] { selectBlock (selectedProcessor == raw ? nullptr : raw); };
         block->onDragEnded = [this] (EffectBlockComponent& b) { handleBlockDragEnded (b); };
+    block->onLongPressed = [this, raw] { showBypassPedalMenu (raw); };
         chainContainer.addAndMakeVisible (*block);
         blocks.set (i, block.release()); // deletes the old block component; its processor is alive in the graveyard
         rebuilt = true;
@@ -1626,6 +1629,7 @@ void MainComponent::toggleScenePedal (int action)
     {
         sceneMidiArmed = action;
         midiLearnArmedParam = nullptr; // one learn at a time
+        bypassPedalArmed = nullptr;
     }
 
     refreshScenePedalDisplay();
@@ -1647,6 +1651,101 @@ void MainComponent::refreshScenePedalDisplay()
         caption = "press the footswitch for " + what + " ...";
     }
     snapshotBar.setCaptionOverride (caption);
+}
+
+void MainComponent::freeCcForLearning (int cc)
+{
+    midiCcBindings.erase (cc);
+    bypassPedals.erase (cc);
+    if (sceneMidi.hasCc (cc))
+    {
+        sceneMidi.clearCc (cc);
+        scenemidi::save (sceneMidi);
+        refreshScenePedalDisplay();
+    }
+}
+
+void MainComponent::showBypassPedalMenu (EffectProcessor* processor)
+{
+    int boundCc = -1;
+    for (auto& [cc, bound] : bypassPedals)
+        if (bound == processor)
+            boundCc = cc;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader (processor->getName());
+    menu.addItem (1, boundCc >= 0 ? "Clear pedal (CC " + juce::String (boundCc) + ")" : "Learn pedal (on/off)",
+                  true, bypassPedalArmed == processor);
+    if (bypassPedalArmed != nullptr && bypassPedalArmed != processor)
+        menu.addItem (2, "Cancel learning");
+
+    juce::Component* target = nullptr;
+    for (auto* block : blocks)
+        if (&block->processor == processor)
+            target = block;
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target)
+                                                   .withStandardItemHeight (touch::minTapTarget),
+                        [this, processor, boundCc, alive = aliveFlag] (int result)
+    {
+        if (! alive->load() || result == 0)
+            return;
+
+        // The processor can be removed while the menu is open; only act if it is still in the chain.
+        const bool stillThere = std::any_of (chain.begin(), chain.end(),
+                                             [processor] (const auto& p) { return p.get() == processor; });
+        if (! stillThere)
+            return;
+
+        if (result == 2)
+        {
+            bypassPedalArmed = nullptr;
+        }
+        else if (boundCc >= 0)
+        {
+            bypassPedals.erase (boundCc);
+            bypassPedalArmed = nullptr;
+        }
+        else if (bypassPedalArmed == processor)
+        {
+            bypassPedalArmed = nullptr;
+        }
+        else
+        {
+            bypassPedalArmed = processor;
+            midiLearnArmedParam = nullptr; // one learn at a time
+            if (sceneMidiArmed != scenemidi::noAction)
+            {
+                sceneMidiArmed = scenemidi::noAction;
+                refreshScenePedalDisplay();
+            }
+        }
+    });
+}
+
+void MainComponent::toggleBypassPedal (EffectProcessor* processor)
+{
+    // Never touch a pointer that has left the chain (removed/replaced blocks are dropped from the map, this is the
+    // belt to that pair of braces).
+    for (auto* block : blocks)
+        if (&block->processor == processor)
+        {
+            processor->setBypassed (! processor->isBypassed());
+            block->repaint();
+            return;
+        }
+}
+
+void MainComponent::refreshBypassPedalDisplay()
+{
+    for (auto* block : blocks)
+    {
+        int cc = -1;
+        for (auto& [boundCc, bound] : bypassPedals)
+            if (bound == &block->processor)
+                cc = boundCc;
+        block->setPedal (cc, bypassPedalArmed == &block->processor);
+    }
 }
 
 juce::Colour MainComponent::colourOfSnapshot (int index) const
@@ -1759,7 +1858,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     {
         if (ccValue >= scenemidi::pressThreshold)
         {
-            midiCcBindings.erase (ccNumber); // a CC drives one thing: scene or knob
+            freeCcForLearning (ccNumber);
             if (sceneMidi.bind (ccNumber, sceneMidiArmed))
             {
                 sceneMidi.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()); // the learning stomp must not also switch scene
@@ -1771,6 +1870,21 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         return;
     }
 
+    // Same for a block armed for its on/off pedal.
+    if (bypassPedalArmed != nullptr)
+    {
+        if (ccValue >= scenemidi::pressThreshold)
+        {
+            freeCcForLearning (ccNumber);
+            for (auto it = bypassPedals.begin(); it != bypassPedals.end();)
+                it = it->second == bypassPedalArmed ? bypassPedals.erase (it) : std::next (it);
+            bypassPedals[ccNumber] = bypassPedalArmed;
+            bypassStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()); // the learning stomp must not also toggle
+            bypassPedalArmed = nullptr;
+        }
+        return;
+    }
+
     // A knob armed for MIDI Learn takes priority over an existing binding
     // on the same CC -- the next CC message received while armed is what
     // gets learned, even if that CC number was already bound to something
@@ -1778,12 +1892,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     // from the old one, since a CC can only ever drive one parameter).
     if (midiLearnArmedParam != nullptr)
     {
-        if (sceneMidi.hasCc (ccNumber))
-        {
-            sceneMidi.clearCc (ccNumber);
-            scenemidi::save (sceneMidi);
-            refreshScenePedalDisplay();
-        }
+        freeCcForLearning (ccNumber);
 
         for (auto it = midiCcBindings.begin(); it != midiCcBindings.end(); )
             it = it->second == midiLearnArmedParam ? midiCcBindings.erase (it) : std::next (it);
@@ -1800,6 +1909,13 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     }
     if (sceneMidi.hasCc (ccNumber))
         return; // a scene pedal's release/repeat never drives a knob
+
+    if (const auto pedal = bypassPedals.find (ccNumber); pedal != bypassPedals.end())
+    {
+        if (bypassStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()))
+            toggleBypassPedal (pedal->second);
+        return; // likewise for an on/off pedal
+    }
 
     const auto it = midiCcBindings.find (ccNumber);
     if (it == midiCcBindings.end())
@@ -1818,6 +1934,11 @@ void MainComponent::clearMidiBindingsFor (EffectProcessor* processor)
 {
     if (processor == nullptr)
         return;
+
+    if (bypassPedalArmed == processor)
+        bypassPedalArmed = nullptr;
+    for (auto it = bypassPedals.begin(); it != bypassPedals.end();)
+        it = it->second == processor ? bypassPedals.erase (it) : std::next (it);
 
     auto* group = processor->getParameters();
     if (group == nullptr)
@@ -1894,6 +2015,7 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
 {
     auto xml = std::make_unique<juce::XmlElement> ("Preset");
     midilearnxml::BlockGroups savedBlockGroups; // one per <Block> written, in order -- what a binding's "block" indexes
+    bypasspedal::Blocks savedBlocks;
 
     for (int i = 0; i < (int) chain.size(); ++i)
     {
@@ -1912,9 +2034,11 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
         blockXml->setAttribute ("gridSlot", blocks[i]->gridSlot);
         blockXml->addChildElement (p->getState().release());
         savedBlockGroups.push_back (p->getParameters());
+        savedBlocks.push_back (p.get());
     }
 
     midilearnxml::write (*xml, midiCcBindings, savedBlockGroups);
+    bypasspedal::write (*xml, bypassPedals, savedBlocks);
 
     // Snapshots (docs/PresetsAndSnapshots.md, stage 3): the current slot's
     // stored copy is refreshed from the LIVE chain here -- a knob edit only
@@ -2011,6 +2135,8 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
             graveyard.push_back ({ std::move (processor), juce::Time::getMillisecondCounter() });
 
     midilearnxml::BlockGroups loadedBlockGroups; // one per <Block> element, nullptr where it was skipped
+    bypasspedal::Blocks loadedBlocks;
+    bypassPedalArmed = nullptr; // the blocks it pointed at are going away
 
     for (int i = 0; i < xml.getNumChildElements(); ++i)
     {
@@ -2020,6 +2146,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 
         auto processor = registry.create (blockXml->getStringAttribute ("key"));
         loadedBlockGroups.push_back (processor != nullptr ? processor->getParameters() : nullptr);
+        loadedBlocks.push_back (processor.get());
         if (processor == nullptr)
             continue; // an unknown key (e.g. a preset from a future build) -- skip, don't fail the whole load
 
@@ -2037,6 +2164,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         block->gridSlot = blockXml->getIntAttribute ("gridSlot", blocks.size());
         block->onClicked = [this, raw] { selectBlock (selectedProcessor == raw ? nullptr : raw); };
         block->onDragEnded = [this] (EffectBlockComponent& b) { handleBlockDragEnded (b); };
+    block->onLongPressed = [this, raw] { showBypassPedalMenu (raw); };
         chainContainer.addAndMakeVisible (*block);
         blocks.add (block.release());
     }
@@ -2084,6 +2212,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 
     // Per-preset, like a hardware pedalboard's controller assignments: a preset saved without any leaves none active.
     midiCcBindings = midilearnxml::read (xml, loadedBlockGroups);
+    bypassPedals = bypasspedal::read (xml, loadedBlocks);
 
     // Snapshots: read them if the file has them (current = whichever was
     // live at save time), else default every slot to the just-loaded state
@@ -2136,6 +2265,8 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 
 void MainComponent::timerCallback()
 {
+    refreshBypassPedalDisplay();
+
     // Re-derive device liveness every tick rather than latching it from
     // start()/rate-switch results -- a mid-session unplug, a start() that
     // returned true with no device left open, or a failed rate switch that
