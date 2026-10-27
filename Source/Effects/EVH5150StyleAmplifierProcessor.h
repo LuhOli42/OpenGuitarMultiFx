@@ -13,18 +13,17 @@ namespace openguitarmultifx
 
 /**
     A Peavey/EVH 5150-style guitar amplifier, modelled at component level on NodalCircuit from the factory
-    Peavey EVH 5150 schematic (docs/circuits/EVH5150.md). The 5150 is one of the defining high-gain
-    amplifiers, known for its aggressive, tight distortion and mid-forward voicing that became the
-    standard for modern metal rhythm tones.
+    Peavey EVH 5150 schematic (docs/circuits/EVH5150.md -- read that file to understand this processor).
 
-    Both the LEAD (Ultra) and RHYTHM channels are modelled. The Lead channel uses all five preamp gain
-    stages (V1A -> V1B -> V2A -> V2B -> V5B); the Rhythm channel bypasses V2A and V2B via switchable
-    series resistors, going from V1B directly to V5B for a tighter, less-saturated crunch tone.
+    The signal path is the schematic's: V1A -> the ULTRA (Lead) or CLEAN (Rhythm) pre network -> V1B (470K grid
+    feed) -> R6/R9 divider -> V2A (39K unbypassed cathode, the cold clipper) -> V2B -> R32 1M / R101 100K divider ->
+    V5B (2.2K unbypassed) -> R87 1M -> V5A (a gain stage with 1M plate-to-grid feedback, NOT a cathode follower) ->
+    R89 470K into the 33K / .01+47K loaded tone-stack input -> TMB stack -> Ultra/Clean Post -> V3A recovery ->
+    long-tailed-pair PI (470 + 10K + 4.7K tail) with the Presence/Resonance NFB network -> 4x 6L6GC.
 
-    Architecture: up to FIVE cascaded 12AX7 gain stages (V1A -> V1B -> [V2A -> V2B] -> V5B) plus a V5A
-    cathode follower, tone stack, a post-tone-stack gain recovery stage (V3B), a 12AX7 long-tailed-pair
-    phase inverter (V4A/V4B) with global negative feedback, and four 6L6GC beam tetrodes as two push-pull
-    pairs in a fixed-bias output stage.
+    The preamp is four NodalCircuit blocks cut at the big series resistors (R82 470K is inside block A; the cuts are
+    at V1B's plate, V2B's plate and V5B's plate, each followed by >= 470K): each upstream block carries a passive copy
+    of the next block's input network as its load, the downstream block is driven by the upstream plate.
 
     Controls, page 1 (the real panel's labels): Channel (Rhythm / Lead), Gain, Low, Mid, High, Volume -- each channel
     keeps its own set (ChannelKnobMemory.h), like the real amp's separate pots -- plus the shared Presence and
@@ -55,27 +54,21 @@ public:
     // Softer than the shared fitted 6.0: at hot gain the knee's high-order harmonics flooded the
     // 8-20 kHz band past this amp's own full-netlist level (Oct-11 audit fizz regression).
     static constexpr double bmKneeN = 4.0;
-    // Fitted to THIS amp's own full-order lock-in sweep (toneStackOut -> speaker): LF bump ~+5 dB at ~80-90 Hz
-    // falling ~15 dB/oct below (resonant high-pass + one-pole low cut at bmCutHz), flat mids, +2.5 dB ridge at
-    // ~4-5 kHz into the top rolloff (-13 dB @ 10.8 kHz). The V3B recovery triode the reduced path removes is
-    // absorbed into the knee/filter fit; the reference's presence/resonance pots sit in the dead NFB loop
-    // (kg1 collapse) and measure ~0.1 dB at every setting, so there is no presence feed here.
-    static constexpr double bmBumpHz = 80.0, bmBumpQp = 2.0;
+    // Fitted against this amp's own full netlist (AmpFullVsReducedConsistency, rms 0.03 and 0.40): the knee and
+    // filters stand for C49 -> PI -> 4x 6L6 -> OT with the Presence/Resonance NFB. Resonant high-pass LF bump at
+    // ~80 Hz, a zero/pole top section (2 kHz / 6.5 kHz), a 12 kHz notch, a one-pole low cut at bmCutHz.
+    static constexpr double bmBumpHz = 80.0, bmBumpQp = 1.6;
     static constexpr double bmCutHz = 15.0;
-    static constexpr double bmTopZHz = 4000.0, bmTopPHz = 6500.0, bmTopQp = 1.4;
-    // the OT/NFB path has a real notch in this amp's own sweep -- a third (notch) biquad reproduces it.
-    // Hot-rendered, this amp's own full netlist sits ~-24 dB at 12 kHz, so the 12 kHz fit stands; the
-    // earlier -46 dB reading was the cold cab folding the band under the notch's skirt, and the top-band
-    // rebalance now comes from the cab voicing (cabNotchHz/cabNotchDb + lifted corners), not this biquad.
+    static constexpr double bmTopZHz = 2000.0, bmTopPHz = 6500.0, bmTopQp = 1.4;
     static constexpr double bmNotchHz = 12000.0, bmNotchQ = 1.0;
     // physical ceiling: same rail-clip rationale as the other fitted amps -- keeps the resonant overshoot
-    // of a saturated LF signal inside the sanity bound (also the unity-at-noon trim point).
+    // of a saturated LF signal inside the sanity bound.
     static constexpr double bmOutMax = 115.0;
-    static constexpr double bmLevelTrim = 0.59;
+    static constexpr double bmLevelTrim = 0.53;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
-    enum class Probe { v1aPlate, v1bPlate, v2aPlate, v2bPlate, v5bPlate, followerOut, toneStackOut,
+    enum class Probe { v1aPlate, v1bPlate, v2aPlate, v2bPlate, v5bPlate, v5aPlate, toneStackOut,
                        recoveryPlate, phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB,
                        phaseInverterTail, powerPlateA, powerPlateB, powerGridA, speaker, biasNode,
                        feedbackNode };
@@ -106,60 +99,32 @@ public:
 private:
     struct Channel
     {
-        NodalCircuit pre, power, supply;
-        NodalCircuit::DynamicState preRest, powerRest, supplyRest;
+        // preamp blocks A (V1A, pre network, V1B), B (V2A, V2B), C (V5B), `driver` (V5A), `stack` (the linear tone
+        // stack, posts and loop); `power` holds V3A and -- full reference only -- the PI and power stage.
+        NodalCircuit preA, preB, preC, driver, stack, power, supply;
+        NodalCircuit::DynamicState restA, restB, restC, restD, restS, powerRest, supplyRest;
         int failStreak = 0;
         int restRefreshCounter = 0;
         double lastEmitted = 0.0, declick = 0.0;
         bool alignOutput = false;
 
-        // preamp: five cascaded 12AX7 gain stages + cathode follower
-        int pSrcV2 = 0, pSrcV1 = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0, rV2aSeries = 0, rBypassV2ab = 0;
-        NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pPlateV2b = 0,
-                           pPlateV5b = 0, pFollower = 0;
-        double followerDc = 0.0;
+        int aSrcIn = 0, aSrcV1 = 0;
+        int rUltraTop = 0, rUltraBot = 0, rCleanTop = 0, rCleanBot = 0, rSelUltra = 0, rSelClean = 0;
+        NodalCircuit::Node aPlateV1a = 0, aPlateV1b = 0;
+        int bSrcIn = 0, bSrcV1 = 0, bSrcV2 = 0, rCrunchShunt = 0;
+        NodalCircuit::Node bPlateV2a = 0, bPlateV2b = 0;
+        int cSrcIn = 0, cSrcV2 = 0;
+        NodalCircuit::Node cPlateV5b = 0;
+        int dSrcIn = 0, dSrcV2 = 0, sSrcIn = 0;
+        NodalCircuit::Node dPlateV5a = 0, dOut = 0, sOut = 0;
 
-        // Eco tier only: the full `pre` netlist above (~24 nodes, 5 triodes + follower) is what keeps
-        // this amp over the ~10%-of-a-core A7S budget even in reducedOrder -- the power stage went
-        // behavioural but the preamp kept being Newton-solved every sample. `preReduced` keeps the
-        // same topology shrunk to three triode clip stages + follower (~17 nodes): every clip point
-        // in a high-gain cascade regenerates the harmonics the next stage soft-clips, so dropping
-        // stages collapses the treble -- measured -18 to -40 dB relative HF when any one is folded.
-        // Everything downstream is untouched. Only built/solved when reducedOrder is set.
-        NodalCircuit preReduced;
-        NodalCircuit::DynamicState preReducedRest, preReducedTmp;
-        int prSrcIn = 0, prSrcRail = 0, prGainTop = 0, prGainBot = 0;
-        NodalCircuit::Node prPlateA = 0, prPlateB = 0, prFollower = 0, prRail = 0;
-        double reducedFollowerDc = 0.0;
-        // Copyable biquad (Channels are copied for dual-mono; juce::dsp::IIR::Filter is not).
-        struct ShelfBiquad
-        {
-            double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0, x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0;
-            void setShelf (double sampleRate, double freq, double q, double gainDb, bool high);
-            double process (double x) noexcept
-            {
-                const double y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-                x2 = x1; x1 = x; y2 = y1; y1 = y;
-                return y;
-            }
-        };
-        ShelfBiquad redShelfLow, redShelfHigh; // fitted compensation on the reduced follower delta
-        double reducedPreTrim = 1.0;    // per-channel level trim, set at control rate
-        double reducedDrive = 3.5;      // per-channel input drive, set at control rate
-        static constexpr double reducedDriveBoost = 3.5;        // Lead: extra drive for the dropped stages
-        static constexpr double reducedDriveBoostRhythm = 1.2;  // Rhythm: V2A/V2B are bypassed in the real amp --
-                                                                // a lighter drive keeps the mini's mid stage mostly
-                                                                // linear instead of clipping like Lead
-        static constexpr double reducedOutGain = 2.4;    // +7.6 dB post-saturation, restores noon level
-
-        // power section (tone stack + gain recovery + PI + power amp)
-        int wSrcCf = 0, wSrcRecovery = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
+        int wSrcIn = 0, wSrcV2 = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rPostTop = 0, rPostBottom = 0, rResonancePot = 0;
+            rUltraPostTop = 0, rUltraPostBot = 0, rCleanPostTop = 0, rCleanPostBot = 0, rSelPostUltra = 0, rSelPostClean = 0,
+            rDriveTop = 0, rDriveBot = 0, rPresence = 0, rResonance = 0, rBiasTrim = 0;
         int penA = 0, penB = 0;
-        NodalCircuit::Node wToneIn = 0, wTone = 0, wRecoveryPlate = 0, wOut = 0, wPlateA = 0,
+        NodalCircuit::Node wStackIn = 0, wPost = 0, wPlateV3a = 0, wOut = 0, wPlateA = 0,
                            wPlateB = 0, wGridA = 0, wTail = 0, wPP1 = 0, wPP2 = 0,
                            wPowerGridA = 0, wBias = 0, wFeedback = 0;
         double screenDropA = 0.0, screenDropB = 0.0;
@@ -173,7 +138,7 @@ private:
         double bmCX1 = 0.0, bmCX2 = 0.0, bmCY1 = 0.0, bmCY2 = 0.0;
         double bmCutState = 0.0;
         double bmPresState = 0.0;   // presence HF-shelf lowpass state (reducedOrder only)
-        tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
+        tubeamp::CouplingCapHighpass piCoupling; // C49 into the PI's 1M, which reducedOrder otherwise skips
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, srcVoc = 0;
@@ -190,12 +155,18 @@ private:
         double gain, treble, mid, bass, presence, resonance, post, powerDrive, bias, tubeFeel;
         int speaker;
     };
-    void buildReducedPreamp (Channel& ch, double followerDrop);
+    void buildPreA (Channel& ch) const;
+    void buildPreB (Channel& ch) const;
+    void buildPreC (Channel& ch) const;
+    void applyChannel (Channel& ch, int channelChoice) const;
+    void preparePreamp (Channel& ch, double rate, bool& ok) const;
+    bool solvePreamp (Channel& ch, double x) const;
     void updatePots (const Knobs& k);
     void recover (Channel& ch) const;
     void applySpeaker (Channel& ch, int index) const;
     int appliedSpeaker = -1;
     double speakerGain = 1.0;
+    double driveFraction = 1.0; // Power Drive: the fraction of V3A's swing the PI sees (reducedOrder reads it directly)
     bool resistiveLoadForced = false;
     mutable int recoveries = 0;
     long long sanityRejects = 0;
