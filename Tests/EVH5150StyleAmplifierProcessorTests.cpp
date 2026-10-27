@@ -42,12 +42,16 @@ public:
                         + ", V2a plate " + juce::String (amp.debugVoltage (P::v2aPlate), 1)
                         + ", V2b plate " + juce::String (amp.debugVoltage (P::v2bPlate), 1)
                         + ", V5b plate " + juce::String (amp.debugVoltage (P::v5bPlate), 1)
-                        + ", follower out " + juce::String (amp.debugVoltage (P::followerOut), 1)
+                        + ", V5a plate " + juce::String (amp.debugVoltage (P::v5aPlate), 1)
                         + ", recovery plate " + juce::String (amp.debugVoltage (P::recoveryPlate), 1)
                         + ", PI tail " + juce::String (amp.debugVoltage (P::phaseInverterTail), 1)
                         + ", bias node " + juce::String (amp.debugVoltage (P::powerGridA), 1));
             expect (amp.railPlates() > 400.0 && amp.railPlates() < 520.0);
             expect (amp.railV1() > 100.0 && amp.railV1() < 480.0);
+            // V2A is the cold clipper: 39K unbypassed cathode, a fraction of a milliamp, its plate near the rail --
+            // the stage that a misplaced 39K (as a grid resistor) turned into one more hot gain stage.
+            expectGreaterThan (amp.debugVoltage (P::v2aPlate), amp.debugVoltage (P::v1bPlate) + 50.0);
+            expectGreaterThan (amp.debugVoltage (P::v2aPlate), amp.railV1() - 40.0);
         }
 
         beginTest ("the model settles: no drift and no failures with silence at the input");
@@ -105,6 +109,39 @@ public:
                         + ", recoveries " + juce::String (amp.debugRecoveries()));
             expect (finite);
             expectLessThan (peak, 5.0);
+        }
+
+        beginTest ("the global feedback is negative: closing it lowers the gain");
+        {
+            const auto rmsAt = [&] (double feedbackOhms)
+            {
+                EVH5150StyleAmplifierProcessor amp;
+                setParam (amp, "evh_gain", 0.0f);
+                setParam (amp, "evh_post", 0.3f);
+                amp.prepare (sr, 128, 2);
+                amp.debugSetFeedbackResistance (feedbackOhms);
+                juce::AudioBuffer<float> buf (2, 128);
+                double sum = 0.0;
+                long long n = 0, counted = 0;
+                for (int b = 0; b < (int) (1.0 * sr / 128); ++b)
+                {
+                    for (int i = 0; i < 128; ++i, ++n)
+                    {
+                        const float s = (float) (0.003 * std::sin (2.0 * juce::MathConstants<double>::pi * 440.0 * (double) n / sr));
+                        buf.setSample (0, i, s);
+                        buf.setSample (1, i, s);
+                    }
+                    amp.process (buf);
+                    if (b > (int) (0.5 * sr / 128))
+                        for (int i = 0; i < 128; ++i, ++counted)
+                            sum += juce::square ((double) buf.getSample (0, i));
+                }
+                return std::sqrt (sum / (double) juce::jmax (1LL, counted));
+            };
+            const double closed = rmsAt (39.0e3), open = rmsAt (1.0e12);
+            logMessage ("NFB closed " + juce::String (closed, 5) + ", open " + juce::String (open, 5)
+                        + " (" + juce::String (20.0 * std::log10 (closed / juce::jmax (1.0e-12, open)), 2) + " dB)");
+            expectLessThan (closed, open * 0.9);
         }
 
         beginTest ("page 2 parameters move without crashing");
@@ -234,7 +271,7 @@ public:
 
         if (juce::SystemStats::getEnvironmentVariable ("OGMFX_DIAG", "").isNotEmpty())
         {
-            EVH5150StyleAmplifierProcessor::reducedOrder = false;
+            EVH5150StyleAmplifierProcessor::reducedOrder = juce::SystemStats::getEnvironmentVariable ("OGMFX_DIAG", "") == "reduced";
             beginTest ("ENV: full model diagnostic sweep");
             {
                 EVH5150StyleAmplifierProcessor amp;
@@ -254,6 +291,8 @@ public:
                     }
                     amp.process (buf);
                 }
+                logMessage ("diag: iterations A " + juce::String (amp.debugIterations (0), 2) + " B " + juce::String (amp.debugIterations (1), 2)
+                            + " C " + juce::String (amp.debugIterations (2), 2) + " D " + juce::String (amp.debugIterations (3), 2));
                 logMessage ("diag: failures " + juce::String (amp.getSolveFailureRate(), 6)
                             + ", recoveries " + juce::String (amp.debugRecoveries())
                             + ", worst sane " + juce::String (amp.debugWorstSaneVolts(), 1));
