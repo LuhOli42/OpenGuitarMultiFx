@@ -123,6 +123,19 @@ public:
         remembers the choice for the next launch. Returns an empty string on success, otherwise why it failed (the previous rate is restored). */
     juce::String setSampleRate (double newRate);
 
+    /** Buffer sizes (samples) the OPEN device supports (empty when no device is open) and the one it runs at (0 when stopped). Control thread. */
+    juce::Array<int> getAvailableBufferSizes() const;
+    int getCurrentBufferSize() const;
+
+    /** Control thread. Same as setSampleRate() for the buffer size: smaller = less latency (felt as a softer, late attack when too big),
+        more CPU headroom needed per block. Remembered in buffer_size.txt. */
+    juce::String setBufferSize (int newSize);
+
+    /** Which interface the audio really goes through, e.g. "In: XTONE -- Out: UR44 + Sub". Through PipeWire's ALSA passthrough the JUCE
+        device is only "PipeWire Media Server", so the names come from PipeWire's default source/sink (wpctl); otherwise the device name.
+        Control thread only: runs a short child process. */
+    juce::String describeInterface() const;
+
     // -- Input/output routing -----------------------------------------
     // Both are plain atomics read once per block on the audio thread and
     // written from the UI thread -- no graph rebuild needed, same idea as

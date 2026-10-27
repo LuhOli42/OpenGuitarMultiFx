@@ -45,6 +45,12 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     qualityHintLabel.setFont (juce::Font (14.0f));
     refreshQualityHint();
 
+    content.addAndMakeVisible (interfaceSectionLabel);
+    interfaceSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
+    interfaceSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    content.addAndMakeVisible (interfaceLabel);
+    interfaceLabel.setFont (juce::Font (16.0f));
+
     content.addAndMakeVisible (rateSectionLabel);
     rateSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
     rateSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
@@ -64,6 +70,13 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     content.addAndMakeVisible (rateHintLabel);
     rateHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     rateHintLabel.setFont (juce::Font (14.0f));
+
+    content.addAndMakeVisible (bufferSectionLabel);
+    bufferSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
+    bufferSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    content.addAndMakeVisible (bufferHintLabel);
+    bufferHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    bufferHintLabel.setFont (juce::Font (14.0f));
 
     content.addAndMakeVisible (tone3000SectionLabel);
     tone3000SectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
@@ -168,6 +181,50 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
     // The recovery action only exists while there is nothing to recover
     // against -- once rates show up a retry would just interrupt audio.
     retryDeviceButton.setVisible (rateValues.isEmpty());
+    resized();
+}
+
+void Tone3000Panel::showBufferSizes (const juce::Array<int>& sizes, int current, double rate)
+{
+    bufferButtons.clear();
+    bufferValues.clear();
+    currentBuffer = current;
+    bufferRate = rate > 0.0 ? rate : 48000.0;
+
+    for (int n : { 32, 64, 128, 256, 512 })
+        if (sizes.contains (n))
+            bufferValues.add (n);
+
+    const auto ms = [this] (int n) { return juce::String (1000.0 * n / bufferRate, 1) + " ms"; };
+
+    for (int n : bufferValues)
+    {
+        auto* b = bufferButtons.add (new juce::TextButton (juce::String (n)));
+        content.addAndMakeVisible (b);
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (4713);
+        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5c56));
+        b->setToggleState (n == current, juce::dontSendNotification);
+        b->onClick = [this, n, ms]
+        {
+            if (! onBufferSizeChanged)
+                return;
+            const auto err = onBufferSizeChanged (n);
+            if (err.isEmpty())
+                currentBuffer = n;
+            else
+                for (int i = 0; i < bufferButtons.size(); ++i)
+                    bufferButtons[i]->setToggleState (bufferValues[i] == currentBuffer, juce::dontSendNotification);
+            bufferHintLabel.setText (err.isEmpty() ? "Audio restarted with " + juce::String (n) + " samples (" + ms (n) + " per block). "
+                                                       "If it crackles, go one step up."
+                                                 : "Could not switch: " + err, juce::dontSendNotification);
+        };
+    }
+
+    bufferHintLabel.setText (bufferValues.isEmpty() ? "No buffer size reported by the audio device."
+                                                    : "Samples per block, now " + juce::String (current) + " (" + ms (current) + "). Smaller = "
+                                                      "tighter attack, more CPU per block; go up if it crackles.",
+                             juce::dontSendNotification);
     resized();
 }
 
@@ -366,6 +423,11 @@ int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
     qualityHintLabel.setBounds (area.removeFromTop (50));
     area.removeFromTop (14);
 
+    interfaceSectionLabel.setBounds (area.removeFromTop (20));
+    area.removeFromTop (6);
+    interfaceLabel.setBounds (area.removeFromTop (24));
+    area.removeFromTop (14);
+
     rateSectionLabel.setBounds (area.removeFromTop (20));
     area.removeFromTop (6);
     auto rateRow = area.removeFromTop (touch::minTapTarget);
@@ -378,6 +440,18 @@ int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
         retryDeviceButton.setBounds (rateRow.removeFromLeft (180));
     area.removeFromTop (6);
     rateHintLabel.setBounds (area.removeFromTop (34));
+    area.removeFromTop (14);
+
+    bufferSectionLabel.setBounds (area.removeFromTop (20));
+    area.removeFromTop (6);
+    auto bufferRow = area.removeFromTop (touch::minTapTarget);
+    for (auto* b : bufferButtons)
+    {
+        b->setBounds (bufferRow.removeFromLeft (100));
+        bufferRow.removeFromLeft (8);
+    }
+    area.removeFromTop (6);
+    bufferHintLabel.setBounds (area.removeFromTop (34));
     area.removeFromTop (14);
 
     tone3000SectionLabel.setBounds (area.removeFromTop (20));
