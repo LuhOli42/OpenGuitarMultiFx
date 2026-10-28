@@ -1,11 +1,33 @@
 #include "EffectBlockComponent.h"
 
+#include "../Effects/IconKit.h"
+
+#include <IconData.h>
+
 namespace openguitarmultifx
 {
 
 EffectBlockComponent::EffectBlockComponent (EffectProcessor& processorToShow)
     : processor (processorToShow)
 {
+    // Same `*_cab` convention the Add Effect browser and MainComponent::addEffect use.
+    if (auto* params = processor.getParameters())
+        for (auto* p : params->getParameters (true))
+            if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p);
+                f != nullptr && juce::String (f->paramID).endsWith ("_cab"))
+                cabParam = f;
+    paintedHeadOnly = showsHeadOnlyIcon();
+}
+
+bool EffectBlockComponent::showsHeadOnlyIcon() const
+{
+    return cabParam != nullptr && cabParam->get() < 0.5f; // index 0 = Off
+}
+
+void EffectBlockComponent::refreshIconVariant()
+{
+    if (showsHeadOnlyIcon() != paintedHeadOnly)
+        repaint();
 }
 
 void EffectBlockComponent::setSelected (bool shouldBeSelected)
@@ -129,7 +151,18 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     if (bypassed)
         g.beginTransparencyLayer (0.4f);
 
-    processor.drawIcon (g, squareIconArea);
+    // Every cab-capable amp draws amp.svg (head+cabinet); with its Cab selector Off it is just a head.
+    paintedHeadOnly = showsHeadOnlyIcon();
+    if (paintedHeadOnly)
+    {
+        static const std::unique_ptr<juce::Drawable> headIcon =
+            icon::loadSvg (IconData::amp_head_svg, IconData::amp_head_svgSize);
+        icon::drawSvg (g, squareIconArea, headIcon.get());
+    }
+    else
+    {
+        processor.drawIcon (g, squareIconArea);
+    }
 
     if (bypassed)
         g.endTransparencyLayer();

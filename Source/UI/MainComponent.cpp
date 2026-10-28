@@ -2298,7 +2298,10 @@ void MainComponent::timerCallback()
     // has a synced binding) and keeps every synced knob tracking BPM live.
     const auto bpm = footerBar.getBpm();
     for (auto* block : blocks)
+    {
         block->processor.updateTempoSyncedParams (bpm);
+        block->refreshIconVariant();
+    }
 
     const auto now = juce::Time::getMillisecondCounter();
     graveyard.erase (std::remove_if (graveyard.begin(), graveyard.end(),
