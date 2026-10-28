@@ -77,3 +77,11 @@ Page 2 (synthetic): Power Drive, Bias (fixed-bias trimmer), Tube Feel, Speaker, 
 - NFB stable at all settings (silence AC RMS < 0.01 on all four channels).
 - Per-channel output rises Clean → Crunch → Mega → Lead at matched knobs; each channel has its own stage count
   and stack values, so their waveshapes differ, not just their loudness.
+
+## Channel balance (2026-10-27)
+
+Every channel used to start at Volume 0.8 with Master 0.8. The Mega and Lead preamps swing ~25 dB more than Clean's, so
+switching from Clean jumped straight into the output limiter, and with the power stage pinned the channel Volumes did
+nothing. Master now starts at 0.5 and each channel's default Volume balances it with Clean at 0.2 V in
+(AmpDynamicsBench): Clean 0.8, Crunch 0.53, Mega 0.075, Lead 0.07 -- output 0.19 / 0.18 / 0.19 / 0.18. That is what each
+channel's own Volume is for on the real amp. Unity trim 30.17 dB.
