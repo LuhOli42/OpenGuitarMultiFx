@@ -205,7 +205,7 @@ namespace
         int srcV1 = 0, srcV2 = 0, srcV3 = 0, srcIn = 0;
         int rGainTop = 0, rGainBot = 0, rNGainTop = 0, rNGainBot = 0;
         int rCrunchSeries = 0, rCrunchShunt = 0, rBrightSeries = 0;
-        NodalCircuit::Node plateV1b = 0, plateV1a = 0, plateV2a = 0, plateV2b = 0, plateV3b = 0, follower = 0;
+        NodalCircuit::Node plateV1b = 0, plateV1a = 0, plateV2a = 0, plateV2b = 0, plateV3b = 0, plateV4b = 0, follower = 0;
     };
 
     NodalCircuit::Node gainStage (NodalCircuit& c, NodalCircuit::Node grid, NodalCircuit::Node vcc, double rPlate,
@@ -230,7 +230,8 @@ namespace
         branch's 2.2M path into V3B changes the output by < 0.01 dB, and in Normal LDR1 grounds V2B's grid, so the
         inactive branch's tubes contribute nothing). Each still carries the OTHER branch's passive input network as a
         load on V1B. `normal` selects which branch's tubes are built. */
-    PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double v1Guess, double v2Guess, double v3Guess, bool normal)
+    PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double v1Guess, double v2Guess, double v3Guess, bool normal,
+                             double bufferDrop = 0.0)
     {
         const auto gnd = NodalCircuit::ground;
         PreampBuild b { c };
@@ -294,12 +295,24 @@ namespace
         }
         c.addResistor (v3in, gnd, 330.0e3);
 
-        // ---- OD Preamp 4 (V3B, both channels): 220K grid stop, 220K plate, 1.8K + 1uF; V3A cathode follower.
+        // ---- OD Preamp 4 (V3B, both channels): 220K grid stop, 220K plate, 1.8K + 1uF.
         const auto g4 = c.addNode();
         c.addResistor (v3in, g4, 220.0e3);
         b.plateV3b = gainStage (c, g4, vcc3, 220.0e3, 1.8e3, 1.0e-6, 220.0, 1.5);
+
+        // ---- The series effects loop's buffer and recovery, in the path with nothing plugged in (the jacks' switches
+        // join send to return): V3A cathode follower (DC-coupled, 100K cathode) -> 1K "RL" to ground at the bottom of
+        // that 100K (the attenuator keeps ~1%) -> 1uF -> V4B recovery (1M grid leak, 220K plate, 2.2K + 25uF) -> V4A
+        // cathode follower (DC-coupled) into the tone stack. The send / return jacks themselves are not modelled.
+        const auto v3aCathode = c.addNode(), send = c.addNode(), g5 = c.addNode();
+        c.addFollower (b.plateV3b, v3aCathode, bufferDrop);
+        c.addResistor (v3aCathode, send, 100.0e3);            // V3A's cathode resistor
+        c.addResistor (send, gnd, 1.0e3);                     // RL
+        c.addCapacitor (send, g5, 1.0e-6);                    // coupling to the send / return
+        c.addResistor (g5, gnd, 1.0e6);                       // V4B grid leak
+        b.plateV4b = gainStage (c, g5, vcc3, 220.0e3, 2.2e3, 25.0e-6, 230.0, 1.4);
         b.follower = c.addNode();
-        c.addFollower (b.plateV3b, b.follower, followerDrop);
+        c.addFollower (b.plateV4b, b.follower, followerDrop);
         return b;
     }
 }
@@ -358,18 +371,20 @@ void SLO100StyleAmplifierProcessor::buildChannel (Channel& ch)
     {
         auto& p = ch.pre[(size_t) side];
         const bool normal = side == 0;
-        // The follower's DC drop needs V3B's own plate voltage: build once with no drop, read it, rebuild.
+        // The followers' DC drops need the plates they sit on: build once with no drop, read them, rebuild.
         auto probe = buildPreamp (p.net, 0.0, 359.0, 350.0, 378.0, normal);
         p.net.prepare (48000.0);
-        const double plate = p.net.voltage (probe.plateV3b);
+        const double plate = p.net.voltage (probe.plateV4b);
         const double drop = plate - cathodeFollowerDc (378.0, plate);
+        const double plate3 = p.net.voltage (probe.plateV3b);
+        const double bufferDrop = plate3 - cathodeFollowerDc (378.0, plate3);
         p.net = NodalCircuit {};
-        auto b = buildPreamp (p.net, drop, 359.0, 350.0, 378.0, normal);
+        auto b = buildPreamp (p.net, drop, 359.0, 350.0, 378.0, normal, bufferDrop);
         p.srcV1 = b.srcV1;  p.srcV2 = b.srcV2;  p.srcV3 = b.srcV3;  p.srcIn = b.srcIn;
         p.rGainTop = b.rGainTop;  p.rGainBot = b.rGainBot;  p.rNGainTop = b.rNGainTop;  p.rNGainBot = b.rNGainBot;
         p.rCrunchSeries = b.rCrunchSeries;  p.rCrunchShunt = b.rCrunchShunt;  p.rBrightSeries = b.rBrightSeries;
         p.plateV1b = b.plateV1b;  p.plateV1a = b.plateV1a;  p.plateV2a = b.plateV2a;  p.plateV2b = b.plateV2b;
-        p.plateV3b = b.plateV3b;  p.follower = b.follower;
+        p.plateV3b = b.plateV3b;  p.plateV4b = b.plateV4b;  p.follower = b.follower;
     }
 
     // ================================================================ tone stack (always built and solved)
@@ -877,7 +892,8 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             const double vV3 = ch.supply.voltage (ch.sC);
             const auto& od = ch.pre[1];
             const auto& nm = ch.pre[0];
-            const double iV3 = (vV3 - od.net.voltage (od.plateV3b)) / 220.0e3 + ch.followerDc / 100.0e3;
+            const double iV3 = (vV3 - od.net.voltage (od.plateV3b)) / 220.0e3 + (vV3 - od.net.voltage (od.plateV4b)) / 220.0e3
+                             + od.net.voltage (od.plateV3b) / 101.0e3 + ch.followerDc / 100.0e3;
             const double vV2 = ch.supply.voltage (ch.sD);
             const double iV2 = (vV2 - od.net.voltage (od.plateV2b)) / 100.0e3;
             const double vV1 = ch.supply.voltage (ch.sF);
