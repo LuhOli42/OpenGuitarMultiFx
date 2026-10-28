@@ -13,15 +13,22 @@ SpringReverbProcessor::SpringReverbProcessor()
     auto toneParam = std::make_unique<juce::AudioParameterFloat> (
         "spring_tone", "Tone", juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "spring_mix", "Mix", juce::NormalisableRange<float> (0.0f, 1.0f), 0.3f);
+        "spring_wet", "Wet", juce::NormalisableRange<float> (0.0f, 1.0f), 0.43f);
 
     decay = decayParam.get();
     tone = toneParam.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "spring_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "spring_mix");
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "spring", "Spring", "|",
         std::move (decayParam), std::move (toneParam), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void SpringReverbProcessor::prepare (double sampleRate, int, int)
@@ -51,7 +58,9 @@ void SpringReverbProcessor::prepare (double sampleRate, int, int)
     smoothedTone.reset (sampleRate, paramRampSeconds);
     smoothedTone.setCurrentAndTargetValue (tone->get());
     smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedDry.reset (sampleRate, 0.02);
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     reset();
 }
@@ -85,12 +94,14 @@ void SpringReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     // brightness, so invert it for the damping coefficient.
     const float dampCoeff = 1.0f - smoothedTone.skip (numSamples);
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     // Sample-major so smoothedMix.getNextValue() advances once per sample
     // (not once per channel-sample) and both channels share the ramp.
     for (int i = 0; i < numSamples; ++i)
     {
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -111,7 +122,7 @@ void SpringReverbProcessor::process (juce::AudioBuffer<float>& buffer)
                 c.pos = 0;
 
             wetMatch[(size_t) ch].accumulate (input, bufferOut);
-            data[i] = input * (1.0f - wet) + bufferOut * wet * wetMatch[(size_t) ch].gain();
+            data[i] = input * dry + bufferOut * wet * wetMatch[(size_t) ch].gain();
         }
     }
 

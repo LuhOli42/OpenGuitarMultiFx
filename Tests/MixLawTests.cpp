@@ -82,8 +82,10 @@ public:
             juce::AudioParameterFloat* mix = nullptr;
             for (auto* prm : fx->getParameters()->getParameters (true))
                 if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (prm))
-                    if (f->getName (32) == "Mix")
+                    if (f->getName (32) == "Mix" || f->getName (32) == "Wet")
                         mix = f;
+                    else if (f->getName (32) == "Kill Dry")
+                        *f = 1.0f;
             *mix = 1.0f;
             fx->prepare (sr, 512, 2);
             juce::AudioBuffer<float> buf (2, 512);
@@ -123,8 +125,10 @@ public:
             for (auto* prm : fx->getParameters()->getParameters (true))
                 if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (prm))
                 {
-                    if (f->getName (32) == "Mix")
+                    if (f->getName (32) == "Mix" || f->getName (32) == "Wet")
                         mix = f;
+                    else if (f->getName (32) == "Kill Dry")
+                        *f = 1.0f;
                     else
                         knobs.push_back (f);
                 }
@@ -149,7 +153,7 @@ public:
 
         // Every algorithmic reverb, across the grid of its other knobs at 0 / 0.5 / 1: the wet path is as loud as the dry. (The
         // spread that remains is the signal: a plucked note through a comb bank is not white noise.)
-        beginTest ("reverbs: Mix 1 is as loud as the dry signal at every Decay / Tone / Size setting");
+        beginTest ("reverbs: Wet 1 with Kill Dry is as loud as the dry signal at every Decay / Tone / Size setting");
         for (const char* key : { "Ambient", "Hall", "Plate", "Room", "Spring", "Shimmer", "GatedReverb" })
         {
             auto fx = registry.create (key);
@@ -160,8 +164,10 @@ public:
             for (auto* prm : fx->getParameters()->getParameters (true))
                 if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (prm))
                 {
-                    if (f->getName (32) == "Mix")
+                    if (f->getName (32) == "Wet")
                         mix = f;
+                    else if (f->getName (32) == "Kill Dry")
+                        *f = 1.0f;
                     else
                         knobs.push_back (f);
                 }
@@ -182,8 +188,92 @@ public:
                 }
                 worst = juce::jmax (worst, std::abs (energyGainDb (*fx, *mix, 1.0f, in)));
             }
-            logMessage (juce::String (key).paddedRight (' ', 14) + "worst |Mix 1 - dry| over " + juce::String (combos) + " knob settings: " + juce::String (worst, 2) + " dB");
+            logMessage (juce::String (key).paddedRight (' ', 14) + "worst |Wet 1 - dry| over " + juce::String (combos) + " knob settings: " + juce::String (worst, 2) + " dB");
             expectLessThan (worst, 2.5);
+        }
+
+        // Delays and reverbs (2026-10-27): the dry path stays at unity and Wet only adds the effect on top -- the old
+        // crossfading Mix made the guitar quieter as the knob went up. Kill Dry removes the dry for parallel routing.
+        beginTest ("every effect with a Wet knob: Wet 0 is the input, raising Wet never lowers the dry, Kill Dry leaves the wet");
+        for (const auto& key : registry.getRegisteredNames())
+        {
+            auto fx = registry.create (key);
+            if (fx == nullptr || fx->getParameters() == nullptr)
+                continue;
+            juce::AudioParameterFloat *wet = nullptr, *killDry = nullptr;
+            for (auto* prm : fx->getParameters()->getParameters (true))
+                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (prm))
+                {
+                    if (f->getName (32) == "Wet")
+                        wet = f;
+                    else if (f->getName (32) == "Kill Dry")
+                        killDry = f;
+                }
+            if (wet == nullptr)
+                continue;
+            expect (killDry != nullptr, key + " has Wet but no Kill Dry");
+            if (killDry == nullptr)
+                continue;
+            const float full = wet->range.end;
+            *killDry = 0.0f;
+            const double g0 = energyGainDb (*fx, *wet, 0.0f, in);
+            const double gHalf = energyGainDb (*fx, *wet, 0.5f * full, in);
+            const double g1 = energyGainDb (*fx, *wet, full, in);
+            *killDry = 1.0f;
+            const double gKill = energyGainDb (*fx, *wet, full, in);
+            logMessage (key.paddedRight (' ', 26) + "Wet 0: " + juce::String (g0, 2).paddedLeft (' ', 7) + " dB   Wet 0.5: "
+                        + juce::String (gHalf, 2).paddedLeft (' ', 7) + " dB   Wet 1: " + juce::String (g1, 2).paddedLeft (' ', 7)
+                        + " dB   Wet 1 + Kill Dry: " + juce::String (gKill, 2).paddedLeft (' ', 7) + " dB");
+            expectWithinAbsoluteError (g0, 0.0, 0.5);
+            expectGreaterThan (gHalf, g0 - 0.5);
+            expectGreaterThan (g1, g0 - 0.5);
+            // The Multi-Type blocks voice each type's wet level themselves (and carry a Level knob); a ducking type drops its
+            // wet while the guitar plays. Their wet path is not level-matched to the dry, so only the dry-path rules apply.
+            // (Before Wet existed, the Mix check here set 1.0 on their 0-100 % knob and so never looked at it.)
+            if (! key.startsWith ("Mt") && ! key.startsWith ("MultiType"))
+                expectWithinAbsoluteError (gKill, 0.0, 4.0);
+        }
+
+        beginTest ("an old preset's crossfading Mix loads as the same wet : dry ratio (setState and snapshot recall)");
+        {
+            const auto paramById = [] (EffectProcessor& fx, const juce::String& id) -> juce::AudioParameterFloat*
+            {
+                for (auto* prm : fx.getParameters()->getParameters (true))
+                    if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (prm))
+                        if (f->paramID == id)
+                            return f;
+                return nullptr;
+            };
+            auto fx = registry.create ("DigitalDelay");
+            juce::XmlElement old ("EffectState");
+            old.setAttribute ("delay_mix", 0.3);
+            fx->setState (old);
+            expectWithinAbsoluteError (paramById (*fx, "delay_wet")->get(), 0.3f / 0.7f, 0.01f);
+            expectEquals (paramById (*fx, "delay_kill_dry")->get(), 0.0f);
+            old.setAttribute ("delay_mix", 1.0);
+            fx->setState (old);
+            expectEquals (paramById (*fx, "delay_wet")->get(), 1.0f);
+            expectEquals (paramById (*fx, "delay_kill_dry")->get(), 1.0f);
+
+            std::vector<std::pair<juce::String, float>> snapshot { { "delay_time", 300.0f }, { "delay_mix", 0.2f } };
+            fx->migrateLegacySnapshotParams (snapshot);
+            bool sawWet = false, sawKill = false;
+            for (auto& [id, value] : snapshot)
+            {
+                sawWet = sawWet || (id == "delay_wet" && std::abs (value - 0.25f) < 0.01f);
+                sawKill = sawKill || (id == "delay_kill_dry" && value == 0.0f);
+            }
+            expect (sawWet && sawKill);
+
+            // Multi-Type Delay kept the dry full to 50 % with the wet at 2x Mix: Wet = 2x Mix, in percent.
+            auto mt = registry.create ("MultiTypeDelay");
+            if (mt != nullptr)
+            {
+                juce::XmlElement mtOld ("EffectState");
+                mtOld.setAttribute ("mix", 30.0);
+                mt->setState (mtOld);
+                expectWithinAbsoluteError (paramById (*mt, "wet")->get(), 60.0f, 0.5f);
+            }
         }
 
         beginTest ("every effect with a Mix knob: Mix 0 is the input at unity, Mix 1 is about as loud as the input");

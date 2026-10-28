@@ -264,7 +264,27 @@ public:
         positions) overrides this to remap the pairs before they're applied. Default: untouched. */
     virtual void migrateLegacySnapshotParams (std::vector<std::pair<juce::String, float>>& params) const
     {
-        juce::ignoreUnused (params);
+        migrateLegacyMixParams (params);
+    }
+
+    /** Delays and reverbs replaced a crossfading Mix (dry * (1 - mix) + wet * mix: raising it lowered the guitar) with
+        a Wet level over a dry signal that stays at unity, plus Kill Dry (2026-10-27). A preset or snapshot that still
+        carries the old Mix id gets the same wet : dry ratio back -- Wet = mix / (1 - mix), capped at 1 -- and Mix = 1
+        (wet only) becomes Wet 1 with Kill Dry on. */
+    /** How the old Mix blended: `crossfade` = dry * (1 - mix) + wet * mix; `centreFull` = both at full at 50 % (dry
+        fades above it, wet below it -- the Multi-Type blocks). */
+    enum class LegacyMixLaw { crossfade, centreFull };
+
+    /** `mix` and `wet` as fractions 0..1. */
+    static void legacyMixToWet (double mix, float& wet, float& killDry, LegacyMixLaw law = LegacyMixLaw::crossfade) noexcept
+    {
+        killDry = mix >= 0.99 ? 1.0f : 0.0f;
+        if (mix >= 0.99)
+            wet = 1.0f;
+        else if (law == LegacyMixLaw::centreFull)
+            wet = (float) juce::jlimit (0.0, 1.0, 2.0 * mix);
+        else
+            wet = (float) juce::jlimit (0.0, 1.0, mix / (1.0 - mix));
     }
 
     virtual void setState (const juce::XmlElement& state)
@@ -274,6 +294,15 @@ public:
                 if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*> (param))
                     if (state.hasAttribute (floatParam->paramID))
                         *floatParam = (float) state.getDoubleAttribute (floatParam->paramID);
+
+        for (auto& legacy : legacyMixes)
+            if (! state.hasAttribute (legacy.wet->paramID) && state.hasAttribute (legacy.oldMixId))
+            {
+                float wet = 0.0f, killDry = 0.0f;
+                legacyMixToWet (state.getDoubleAttribute (legacy.oldMixId) / legacy.scale, wet, killDry, legacy.law);
+                *legacy.wet = wet * (float) legacy.scale;
+                *legacy.killDry = killDry;
+            }
 
         for (auto& binding : tempoSyncBindings)
         {
@@ -364,6 +393,36 @@ protected:
         constructed, to mark it as eligible for BPM-synced note-subdivision
         control instead of a raw ms drag -- e.g. a Delay's "Time" param.
         Registration order is display order for the inline toggle. */
+    /** A delay / reverb whose Wet parameter replaced an older crossfading Mix: setState() and snapshot recall convert a
+        saved `oldMixId` into Wet + Kill Dry (see legacyMixToWet). */
+    void registerLegacyMix (juce::AudioParameterFloat* wet, juce::AudioParameterFloat* killDry, const juce::String& oldMixId,
+                            LegacyMixLaw law = LegacyMixLaw::crossfade, double scale = 1.0)
+    {
+        legacyMixes.push_back ({ wet, killDry, oldMixId, law, scale });
+    }
+
+    void migrateLegacyMixParams (std::vector<std::pair<juce::String, float>>& params) const
+    {
+        for (auto& legacy : legacyMixes)
+        {
+            bool hasWet = false;
+            for (auto& [id, value] : params)
+                hasWet = hasWet || id == legacy.wet->paramID;
+            if (hasWet)
+                continue;
+            for (auto& [id, value] : params)
+                if (id == legacy.oldMixId)
+                {
+                    float wet = 0.0f, killDry = 0.0f;
+                    legacyMixToWet (value / legacy.scale, wet, killDry, legacy.law);
+                    id = legacy.wet->paramID;
+                    value = wet * (float) legacy.scale;
+                    params.emplace_back (legacy.killDry->paramID, killDry);
+                    break;
+                }
+        }
+    }
+
     void registerTempoSyncParam (juce::AudioParameterFloat* param)
     {
         tempoSyncBindings.push_back ({ param, false, tempoSync::defaultSubdivisionIndex });
@@ -380,6 +439,15 @@ private:
 
     std::atomic<bool> bypassed { false };
     std::vector<TempoSyncBinding> tempoSyncBindings;
+    struct LegacyMix
+    {
+        juce::AudioParameterFloat* wet;
+        juce::AudioParameterFloat* killDry;
+        juce::String oldMixId;
+        LegacyMixLaw law;
+        double scale; // the parameters' full scale (1, or 100 for percent)
+    };
+    std::vector<LegacyMix> legacyMixes;
 
     // Audio-thread state of processWithBypass(). wetAmount < 0 = not heard yet.
     juce::AudioBuffer<float> bypassDry; // sized in prepareIfNeeded(), never on the audio thread

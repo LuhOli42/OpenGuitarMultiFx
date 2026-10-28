@@ -206,14 +206,17 @@ struct Lfo
 };
 
 /** Mix/Level stage shared by every block: dry/wet mix and output level in dB, smoothed. */
+/** Wet over a dry path that stays at unity (Kill Dry ramps the dry out), then the block's Level. `mix` carries the Wet
+    fraction. */
 struct MixLevel
 {
-    juce::SmoothedValue<float> mix, level;
-    void prepare (double fs) { mix.reset (fs, 0.03); level.reset (fs, 0.03); }
-    void setTargets (float mixPercent, float levelDb)
+    juce::SmoothedValue<float> mix, level, dry;
+    void prepare (double fs) { mix.reset (fs, 0.03); level.reset (fs, 0.03); dry.reset (fs, 0.02); }
+    void setTargets (float wetPercent, float levelDb, bool killDry = false)
     {
-        mix.setTargetValue (mixPercent / 100.0f);
+        mix.setTargetValue (wetPercent / 100.0f);
         level.setTargetValue (juce::Decibels::decibelsToGain (levelDb));
+        dry.setTargetValue (killDry ? 0.0f : 1.0f);
     }
 };
 

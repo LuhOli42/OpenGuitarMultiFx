@@ -142,3 +142,15 @@ Every physically-modelled (non-neural) pedal/amp gets a `docs/circuits/<Name>.md
 ### Never
 - Add effect-type-specific special cases to `SignalGraph` — it must stay ignorant of concrete types.
 - Call `loadModel()`/`loadImpulseResponse()` from the audio thread — control thread only, both mutate in place.
+
+## Delays and reverbs: Wet over a unity dry (2026-10-27)
+Every delay and reverb (Digital, Analog, Tape, Dual, Multi Tap, Ping Pong, Reverse; Ambient, Room, Hall, Plate, Spring,
+Shimmer, Gated; Multi-Type Delay / Reverb) replaced its crossfading **Mix** (`dry * (1 - mix) + wet * mix`: turning it up
+made the guitar quieter -- user: "o mix knob é bem estranho") with **Wet** over a dry path that stays at unity, plus a
+**Kill Dry** switch for parallel lanes. User picked the name "Wet" (not "Level"). Old presets / snapshots load with the
+same wet : dry ratio: `EffectProcessor::registerLegacyMix()` + `legacyMixToWet()` (crossfade: Wet = mix / (1 - mix);
+Multi-Type Delay's dry-full-to-50 % law: Wet = 2 x Mix; Mix 1 = Wet 1 + Kill Dry). New ids `<prefix>_wet` /
+`<prefix>_kill_dry`. Left as they were: the BBD pedal replicas (their Blend / Mix / E.Level are the real pedals' pots), the
+IR Loader (its Mix also serves the Cab role, where 100 % wet is right), and modulation / pitch effects. `MixLawTests`
+asserts Wet 0 = unity, raising Wet never lowers the dry, and Wet 1 + Kill Dry is as loud as the dry (not for Multi-Type,
+whose wet level is voiced per type).

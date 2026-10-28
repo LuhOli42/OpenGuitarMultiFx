@@ -20,8 +20,8 @@ DualDelayProcessor::DualDelayProcessor()
         "dualdelay_feedback", "Feedback",
         juce::NormalisableRange<float> (0.0f, 0.95f), 0.3f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "dualdelay_mix", "Mix",
-        juce::NormalisableRange<float> (0.0f, 1.0f), 0.35f);
+        "dualdelay_wet", "Wet",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.54f);
 
     timeA = timeAParam.get();
     timeB = timeBParam.get();
@@ -29,10 +29,17 @@ DualDelayProcessor::DualDelayProcessor()
     registerTempoSyncParam (timeB);
     feedback = fb.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "dualdelay_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "dualdelay_mix");
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "dualdelay", "Dual Delay", "|",
         std::move (timeAParam), std::move (timeBParam), std::move (fb), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void DualDelayProcessor::prepare (double sampleRate, int, int numChannels)
@@ -47,11 +54,13 @@ void DualDelayProcessor::prepare (double sampleRate, int, int numChannels)
     smoothedTimeB.reset (sampleRate, 0.03);
     smoothedFeedback.reset (sampleRate, 0.03);
     smoothedMix.reset (sampleRate, 0.03);
+    smoothedDry.reset (sampleRate, 0.02);
 
     smoothedTimeA.setCurrentAndTargetValue ((float) (timeA->get() * 0.001 * sampleRate));
     smoothedTimeB.setCurrentAndTargetValue ((float) (timeB->get() * 0.001 * sampleRate));
     smoothedFeedback.setCurrentAndTargetValue (feedback->get());
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     reset();
 }
@@ -71,6 +80,7 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedTimeB.setTargetValue ((float) (timeB->get() * 0.001 * currentSampleRate));
     smoothedFeedback.setTargetValue (feedback->get());
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     const int numChannels = juce::jmin (buffer.getNumChannels(), taps[0].buffer.getNumChannels());
     const int numSamples = buffer.getNumSamples();
@@ -82,6 +92,7 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float delaySamplesB = smoothedTimeB.getNextValue();
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
 
         // Read position/fraction depend only on each tap's own writePos/
         // delaySamples/bufferLength, not on channel -- computed once per tap
@@ -112,7 +123,7 @@ void DualDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             }
 
             // 1/sqrt (2), not 1/2: two decorrelated copies add in energy (Mix = 1 was -3.9 dB against the dry signal with 0.5)
-            data[i] = input * (1.0f - wet) + (wetSum * 0.70710678f) * wet;
+            data[i] = input * dry + (wetSum * 0.70710678f) * wet;
         }
 
         for (auto& tap : taps)

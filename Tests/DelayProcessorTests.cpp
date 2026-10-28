@@ -38,7 +38,7 @@ public:
             }
 
             expectWithinAbsoluteError (peakIndex, delaySamples, 4);
-            expectWithinAbsoluteError (peak, 0.35f, 0.05f);
+            expectWithinAbsoluteError (peak, 0.54f, 0.05f); // the default Wet: the echo rides on top of a unity dry
         }
 
         beginTest ("repeated blocks of a bounded signal never produce NaN/Inf or runaway output");

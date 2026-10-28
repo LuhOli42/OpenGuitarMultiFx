@@ -58,12 +58,14 @@ private:
     juce::AudioParameterFloat* timeMs = nullptr;
     juce::AudioParameterFloat* feedback = nullptr;
     juce::AudioParameterFloat* mix = nullptr;
+    juce::AudioParameterFloat* killDry = nullptr;
 
     std::vector<ChannelState> channels;
     double currentSampleRate = 0.0;
 
     juce::SmoothedValue<float> smoothedFeedback;
     juce::SmoothedValue<float> smoothedMix;
+    juce::SmoothedValue<float> smoothedDry; // the dry path stays at unity; Kill Dry ramps it out
 };
 
 } // namespace openguitarmultifx
