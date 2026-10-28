@@ -1,5 +1,7 @@
+#include "EffectRegistry.h"
 #include "UI/MainComponent.h"
 #include "UI/OpenGuitarMultiFxLookAndFeel.h"
+#include "UI/ParameterPanel.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -42,8 +44,58 @@ public:
     // version comparison see what the release actually was.
     const juce::String getApplicationVersion() override { return OGMFX_VERSION; }
 
-    void initialise (const juce::String&) override
+    /** `--panel-snapshot <dir> <key,key,...>`: render each effect's parameter drawer, every knob page, off-screen to
+        <dir>/<key>-page<N>.png and quit -- no window is opened. For checking the drawer's layout without a screen grab. */
+    static void writePanelSnapshots (const juce::String& dir, const juce::StringArray& keys)
     {
+        EffectRegistry registry;
+        registerBuiltInEffects (registry);
+        for (auto& key : keys)
+        {
+            auto fx = registry.create (key);
+            if (fx == nullptr)
+                continue;
+            ParameterPanel panel;
+            panel.setProcessor (fx.get());
+            const int pages = (int) fx->getParameterPages().size();
+            for (int page = 0; page < pages; ++page)
+            {
+                panel.setBounds (0, 0, 1280, juce::jmax (240, panel.getPreferredContentHeight (1280)));
+                const auto image = panel.createComponentSnapshot (panel.getLocalBounds(), true, 1.0f);
+                juce::File out (dir + "/" + key + "-page" + juce::String (page + 1) + ".png");
+                out.deleteFile();
+                juce::FileOutputStream stream (out);
+                juce::PNGImageFormat().writeImageToStream (image, stream);
+                std::function<void (juce::Component&)> clickNext = [&] (juce::Component& root)
+                {
+                    for (auto* child : root.getChildren())
+                    {
+                        if (auto* b = dynamic_cast<juce::Button*> (child))
+                            if (b->isVisible() && b->getButtonText().startsWith ("Page " + juce::String (page + 2)) && b->onClick)
+                            {
+                                b->onClick();
+                                return;
+                            }
+                        clickNext (*child);
+                    }
+                };
+                clickNext (panel);
+            }
+        }
+    }
+
+    void initialise (const juce::String& commandLine) override
+    {
+        const auto args = juce::StringArray::fromTokens (commandLine, true);
+        if (const int at = args.indexOf ("--panel-snapshot"); at >= 0 && at + 2 < args.size())
+        {
+            lookAndFeel = std::make_unique<OpenGuitarMultiFxLookAndFeel>();
+            juce::LookAndFeel::setDefaultLookAndFeel (lookAndFeel.get());
+            writePanelSnapshots (args[at + 1].unquoted(), juce::StringArray::fromTokens (args[at + 2].unquoted(), ",", ""));
+            quit();
+            return;
+        }
+
 #if JUCE_LINUX
         // JUCE's WebBrowserComponent runs WebKitGTK in a child process
         // (this same executable, re-exec'd) that calls

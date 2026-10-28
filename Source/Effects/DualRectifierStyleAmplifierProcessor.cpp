@@ -271,10 +271,10 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
     group->addChild (std::move (master));
+    group->addChild (std::move (spongy));   // the real rear-panel Rectifier switch
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("drec_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
-    page2->addChild (std::move (spongy));
     page2->addChild (std::move (speaker));
     page2->addChild (std::move (output));
     auto cab = tubeamp::makeCabParam ("drec_cab", "4x12 Recto", cabAlts);

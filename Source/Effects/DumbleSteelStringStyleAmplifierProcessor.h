@@ -25,10 +25,9 @@ namespace openguitarmultifx
     The FET input, the direct-coupled driver stage (simplified to capacitive coupling), and the reverb
     send/return are not modelled.
 
-    Controls, page 1 (mirrors the front panel knobs): Volume, Treble, Middle, Bass, Presence, Master.
-    Page 2 (front-panel switches): Filter (Hi), Filter (Lo), Bright, Mid Boost, Deep, Accent,
-    Voicing (Jazz / PAB / Rock).
-    Page 3 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
+    Controls, page 1 (the front panel): Volume, Treble, Middle, Bass, Presence, Master, and the switches and rotaries --
+    Filter (Hi), Filter (Lo), Bright, Mid Boost, Deep, Accent, Voicing (Jazz / PAB / Rock).
+    Page 2 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class DumbleSteelStringStyleAmplifierProcessor : public EffectProcessor
 {
