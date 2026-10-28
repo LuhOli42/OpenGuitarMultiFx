@@ -237,6 +237,14 @@ void ParameterPanel::rebuildForCurrentProcessor()
                     };
                     row.slider->updateText();
                 }
+                else if (floatParam->paramID == "smooth") // amp Smooth reads Off / -x.x dB, not 0..1
+                {
+                    row.slider->textFromValueFunction = [floatParam] (double v)
+                    {
+                        return static_cast<juce::AudioProcessorParameter*> (floatParam)->getText (floatParam->convertTo0to1 ((float) v), 32);
+                    };
+                    row.slider->updateText();
+                }
 
                 auto* rawSlider = row.slider.get();
 

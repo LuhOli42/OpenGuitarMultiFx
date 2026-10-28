@@ -88,6 +88,7 @@ public:
     public:
         static constexpr double cornerHz = 5000.0, slope = 0.7, maxCutDb = -6.0;
         static constexpr int controlInterval = 16;
+        static constexpr int tailSamples = 256; // keeps running at 0 dB until the shelf's state has decayed to nothing
 
         static juce::AudioParameterFloat* addParameter (juce::AudioProcessorParameterGroup* group)
         {
@@ -98,6 +99,11 @@ public:
                 juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
                 {
                     return v <= 0.0f ? juce::String ("Off") : juce::String (maxCutDb * (double) v, 1) + " dB";
+                })
+                .withValueFromStringFunction ([] (const juce::String& text)
+                {
+                    const double db = std::abs (text.trim().getDoubleValue()); // "-3", "3 dB" and "Off" (0) all work
+                    return (float) juce::jlimit (0.0, 1.0, db / -maxCutDb);
                 }));
             auto* raw = param.get();
             // the amps' secondary controls live on their last sub-group ("page 2"); an amp without one gets it on page 1
@@ -122,6 +128,7 @@ public:
                 s = {};
             current = -1.0;
             counter = 0;
+            idleSamples = tailSamples;
         }
 
         void process (juce::AudioBuffer<float>& buffer, float target) noexcept
@@ -130,7 +137,7 @@ public:
                 return;
             if (current < 0.0) // first block after prepare/reset: no ramp from silence
                 current = (double) target;
-            if (juce::exactlyEqual (current, 0.0) && target <= 0.0f)
+            if (juce::exactlyEqual (current, 0.0) && target <= 0.0f && idleSamples >= tailSamples)
             {
                 if (active)
                 {
@@ -152,6 +159,7 @@ public:
                     const double t = (double) target;
                     current = current < t ? juce::jmin (t, current + step) : juce::jmax (t, current - step);
                     design (maxCutDb * current);
+                    idleSamples = juce::exactlyEqual (current, 0.0) ? idleSamples + controlInterval : 0;
                 }
                 for (int ch = 0; ch < numChannels; ++ch)
                 {
@@ -186,7 +194,7 @@ public:
         std::vector<State> state;
         double sampleRate = 0.0, current = -1.0;
         double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0;
-        int counter = 0;
+        int counter = 0, idleSamples = 0;
         bool active = false;
     };
 

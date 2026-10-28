@@ -153,6 +153,49 @@ public:
             expect (run (20, true), "not bit-exact again after the knob went back to 0");
             expectLessThan (maxJump, cleanJump * 1.05, "knob moves made a step bigger than the signal's own slope");
         }
+
+        beginTest ("switching Smooth off lets the shelf's tail decay instead of clearing it mid-signal");
+        {
+            OutputTrimEffect amp (std::make_unique<Passthrough>(), 0.0f, true);
+            amp.prepare (sr, 1, 1);
+            auto* smooth = findSmooth (amp);
+            juce::AudioBuffer<float> buf (1, 1);
+            juce::Random rng (3);
+            double lastNonZeroErr = 0.0;
+            bool exactAgain = false;
+            *smooth = 1.0f;
+            for (int n = 0; n < 4000; ++n)
+            {
+                if (n == 1000)
+                    *smooth = 0.0f;
+                const float x = 0.3f * (rng.nextFloat() * 2.0f - 1.0f);
+                buf.setSample (0, 0, x);
+                amp.process (buf);
+                const double err = std::abs ((double) buf.getSample (0, 0) - tubeamp::outputCeiling (x));
+                if (n > 1000 && err > 0.0)
+                    lastNonZeroErr = err;
+                if (n == 3000)
+                    exactAgain = true;
+                if (exactAgain && err > 0.0)
+                    exactAgain = false, n = 4000;
+            }
+            expect (exactAgain, "not bit-exact again 2000 samples after switching off");
+            expectLessThan (lastNonZeroErr, 1.0e-6, "the filter state was dropped while still carrying signal");
+        }
+
+        beginTest ("Smooth reads and parses as Off / dB");
+        {
+            OutputTrimEffect amp (std::make_unique<Passthrough>(), 0.0f, true);
+            auto* smooth = findSmooth (amp);
+            auto* p = static_cast<juce::AudioProcessorParameter*> (smooth);
+            expectEquals (p->getText (0.0f, 32), juce::String ("Off"));
+            expectEquals (p->getText (0.5f, 32), juce::String ("-3.0 dB"));
+            expectEquals (p->getText (1.0f, 32), juce::String ("-6.0 dB"));
+            expectWithinAbsoluteError (p->getValueForText ("-3.0 dB"), 0.5f, 1.0e-6f);
+            expectWithinAbsoluteError (p->getValueForText ("6"), 1.0f, 1.0e-6f);
+            expectWithinAbsoluteError (p->getValueForText ("Off"), 0.0f, 1.0e-6f);
+            expectWithinAbsoluteError (p->getValueForText ("-20"), 1.0f, 1.0e-6f);
+        }
     }
 };
 
