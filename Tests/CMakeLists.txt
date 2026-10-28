@@ -21,6 +21,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   SceneMidiTests.cpp
   BypassPedalXmlTests.cpp
   MasterEqTests.cpp
+  AmpSmoothTests.cpp
   SnapshotPresetXmlTests.cpp
   UpdateCoreTests.cpp
   GateProcessorTests.cpp

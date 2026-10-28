@@ -91,7 +91,7 @@ jobs:
             ./build-x86_64/Tests/OpenGuitarMultiFx_Tests_artefacts/Release/OpenGuitarMultiFx_Tests \
               SignalGraph DeferredReclaimer ParameterManager PresetManager \
               NodalCircuit OversampledEffect SuperLeadStyleAmplifier \
-              TubeScreamerStyleOverdrive
+              TubeScreamerStyleOverdrive AmpSmooth
 
       - name: Smoke test (aarch64 — light suites under qemu)
         if: matrix.arch == 'aarch64'
