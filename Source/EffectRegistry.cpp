@@ -538,7 +538,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated placeholder (Twin Reverb's 6L6GC constants).
     SLO100StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SLO100StyleAmplifier");
-    registry.registerType ("SLO100StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SLO100StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -17.42f); }, "High-Gain");
+    registry.registerType ("SLO100StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SLO100StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -13.98f); }, "High-Gain");
     // docs/circuits/MarkIICPlus.md. Mesa/Boogie Mark IIC+ Lead channel. Five cascaded 12AX7 gain stages with unique
     // inter-stage EQ/gain network, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated
     // placeholder (Twin Reverb's 6L6GC constants).
