@@ -18,15 +18,22 @@ HallReverbProcessor::HallReverbProcessor()
     auto toneParam = std::make_unique<juce::AudioParameterFloat> (
         "hall_tone", "Tone", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "hall_mix", "Mix", juce::NormalisableRange<float> (0.0f, 1.0f), 0.35f);
+        "hall_wet", "Wet", juce::NormalisableRange<float> (0.0f, 1.0f), 0.54f);
 
     decay = decayParam.get();
     tone = toneParam.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "hall_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "hall_mix");
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "hall", "Hall", "|",
         std::move (decayParam), std::move (toneParam), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void HallReverbProcessor::prepare (double sampleRate, int, int)
@@ -69,7 +76,9 @@ void HallReverbProcessor::prepare (double sampleRate, int, int)
     smoothedTone.reset (sampleRate, paramRampSeconds);
     smoothedTone.setCurrentAndTargetValue (tone->get());
     smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedDry.reset (sampleRate, 0.02);
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     reset();
 }
@@ -104,6 +113,7 @@ void HallReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     const float damp1 = smoothedTone.skip (numSamples);
     const float damp2 = 1.0f - damp1;
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     std::array<float*, 2> dataPtrs {};
     for (int ch = 0; ch < numChannels; ++ch)
@@ -123,6 +133,7 @@ void HallReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     for (int i = 0; i < numSamples; ++i)
     {
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -142,7 +153,7 @@ void HallReverbProcessor::process (juce::AudioBuffer<float>& buffer)
                 diffused = a.process (diffused);
 
             wetMatch[(size_t) ch].accumulate (input, diffused);
-            data[i] = input * (1.0f - wet) + diffused * wet * wetMatch[(size_t) ch].gain();
+            data[i] = input * dry + diffused * wet * wetMatch[(size_t) ch].gain();
         }
     }
 

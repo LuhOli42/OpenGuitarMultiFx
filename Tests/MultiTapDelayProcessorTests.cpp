@@ -21,7 +21,8 @@ public:
             auto state = delay.getState();
             state->setAttribute ("multitap_time", 400.0);
             state->setAttribute ("multitap_feedback", 0.0); // isolate the four taps, no repeats
-            state->setAttribute ("multitap_mix", 1.0);
+            state->setAttribute ("multitap_wet", 1.0);
+            state->setAttribute ("multitap_kill_dry", 1.0);
             delay.setState (*state);
 
             const int baseSamples = (int) (0.400 * 48000.0);
@@ -64,7 +65,8 @@ public:
                 auto state = delay.getState();
                 state->setAttribute ("multitap_time", 50.0);
                 state->setAttribute ("multitap_feedback", (double) feedbackValue);
-                state->setAttribute ("multitap_mix", 1.0);
+                state->setAttribute ("multitap_wet", 1.0);
+                state->setAttribute ("multitap_kill_dry", 1.0);
                 delay.setState (*state);
 
                 const int baseSamples = (int) (0.050 * 48000.0);

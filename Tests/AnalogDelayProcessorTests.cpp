@@ -53,7 +53,8 @@ public:
             auto darkState = darkDelay.getState();
             darkState->setAttribute ("analogdelay_tone", 0.05);
             darkState->setAttribute ("analogdelay_feedback", 0.8);
-            darkState->setAttribute ("analogdelay_mix", 1.0);
+            darkState->setAttribute ("analogdelay_wet", 1.0);
+            darkState->setAttribute ("analogdelay_kill_dry", 1.0);
             darkDelay.setState (*darkState);
 
             AnalogDelayProcessor brightDelay;
@@ -61,7 +62,8 @@ public:
             auto brightState = brightDelay.getState();
             brightState->setAttribute ("analogdelay_tone", 1.0);
             brightState->setAttribute ("analogdelay_feedback", 0.8);
-            brightState->setAttribute ("analogdelay_mix", 1.0);
+            brightState->setAttribute ("analogdelay_wet", 1.0);
+            brightState->setAttribute ("analogdelay_kill_dry", 1.0);
             brightDelay.setState (*brightState);
 
             const int totalSamples = (int) (48000.0 * 1.5);

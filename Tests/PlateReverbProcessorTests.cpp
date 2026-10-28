@@ -48,7 +48,8 @@ public:
             plate.prepare (48000.0, 512, 2);
             auto state = plate.getState();
             state->setAttribute ("plate_decay", 0.8);
-            state->setAttribute ("plate_mix", 1.0);
+            state->setAttribute ("plate_wet", 1.0);
+            state->setAttribute ("plate_kill_dry", 1.0);
             plate.setState (*state);
 
             juce::AudioBuffer<float> buffer (2, 512);

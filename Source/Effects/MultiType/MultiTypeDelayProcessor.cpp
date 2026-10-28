@@ -65,7 +65,10 @@ MultiTypeDelayProcessor::MultiTypeDelayProcessor()
     type = add (*parameters, choiceParam ("type", "Type", typeNames, 0));
     time = add (*parameters, floatParam ("time", "Time", 1, (float) kMaxSeconds * 1000.0f - 50.0f, 500, 0.4f, "ms", 0));
     feedback = add (*parameters, floatParam ("feedback", "Feedback", -100, 100, 35, 1.0f, "%", 0));
-    mix = add (*parameters, floatParam ("mix", "Mix", 0, 100, 30, 1.0f, "%", 0));
+    mix = add (*parameters, floatParam ("wet", "Wet", 0, 100, 60, 1.0f, "%", 0));
+    killDry = add (*parameters, choiceParam ("killDry", "Kill Dry", { "Off", "On" }, 0));
+    // The old Mix kept the dry full up to 50 % with the wet at 2x Mix: Wet = 2x Mix is the same sound.
+    registerLegacyMix (mix, killDry, "mix", LegacyMixLaw::centreFull, 100.0);
     level = add (*parameters, floatParam ("level", "Level", -30, 12, 0, 1.0f, "dB"));
 
     auto* cfg = parameters.get(); // one page: every control is a direct child
@@ -120,7 +123,7 @@ void MultiTypeDelayProcessor::applyType (int index)
 {
     const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, index)];
     setParam (time, t.time); setParam (ratio, t.ratio); setParam (feedback, t.feedback); setParam (feedbackR, t.feedbackR);
-    setParam (crossFeedback, t.cross); setParam (mix, t.mix); setParam (lowCut, t.lowCut); setParam (highCut, t.highCut);
+    setParam (crossFeedback, t.cross); setParam (mix, juce::jmin (100.0f, 2.0f * t.mix)); /* the table's Mix column, as Wet */ setParam (lowCut, t.lowCut); setParam (highCut, t.highCut);
     setParam (drive, t.drive); setParam (bitReduction, t.bits);
     setParam (lfo1Rate, t.lfo1Rate); setParam (lfo1Depth, t.lfo1Depth); setParam (lfo2Rate, t.lfo2Rate); setParam (lfo2Depth, t.lfo2Depth);
     setParam (diffusion, t.diffusion); setParam (diffusionTime, t.diffTime); setParam (compander, t.compander);
@@ -170,7 +173,7 @@ void MultiTypeDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     float* R = nc > 1 ? buffer.getWritePointer (1) : nullptr;
 
     smoothTime.setTargetValue (time->get());
-    mixLevel.setTargets (mix->get(), level->get());
+    mixLevel.setTargets (mix->get(), level->get(), killDry->get() > 0.5f);
     const double master = masterFeedback->get() / 100.0;
     const double fbL = feedback->get() / 100.0 * master, fbR = feedbackR->get() / 100.0 * master, cross = crossFeedback->get() / 100.0 * master;
     const double r = ratio->get() / 100.0, sp = spread->get() / 100.0, inG = inputGain->get() / 100.0;
@@ -324,7 +327,7 @@ void MultiTypeDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         wetR = (mid - side) * duck;
 
         const double m = mixLevel.mix.getNextValue(), g = mixLevel.level.getNextValue();
-        const double dryG = m <= 0.5 ? 1.0 : 2.0 * (1.0 - m), wetG = m >= 0.5 ? 1.0 : 2.0 * m;
+        const double dryG = mixLevel.dry.getNextValue(), wetG = m;
         L[i] = (float) ((inL * dryG + wetL * wetG) * g);
         if (R != nullptr) R[i] = (float) ((inR * dryG + wetR * wetG) * g);
         else L[i] = (float) ((inL * dryG + 0.5 * (wetL + wetR) * wetG) * g);

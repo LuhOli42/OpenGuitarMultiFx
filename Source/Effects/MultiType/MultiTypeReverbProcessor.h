@@ -44,7 +44,7 @@ private:
     float pitchShift (int voice, float x, double ratio);
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
-    juce::AudioParameterFloat *type, *time, *size, *predelay, *mix, *level;
+    juce::AudioParameterFloat *type, *time, *size, *predelay, *mix, *level, *killDry = nullptr;
     juce::AudioParameterFloat *earlyLevel, *lateLevel, *hfTime, *lfTime, *crossover, *echoDensity, *earlyDiffusion, *earlyDiffTime,
         *earlyDecay, *lateInputMix, *wallDiffusion, *inputDiffusion, *inputDiffTime, *micSpacing, *stackHold, *predelayFeedback,
         *predelayMix, *spread, *inputGain;

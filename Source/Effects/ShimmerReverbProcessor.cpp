@@ -18,15 +18,22 @@ ShimmerReverbProcessor::ShimmerReverbProcessor()
     auto shimmerParam = std::make_unique<juce::AudioParameterFloat> (
         "shimmer_amount", "Shimmer", juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "shimmer_mix", "Mix", juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
+        "shimmer_wet", "Wet", juce::NormalisableRange<float> (0.0f, 1.0f), 0.67f);
 
     decay = decayParam.get();
     shimmerAmount = shimmerParam.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "shimmer_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "shimmer_mix");
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "shimmer", "Shimmer", "|",
         std::move (decayParam), std::move (shimmerParam), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void ShimmerReverbProcessor::prepare (double sampleRate, int, int)
@@ -59,7 +66,9 @@ void ShimmerReverbProcessor::prepare (double sampleRate, int, int)
     smoothedShimmerAmount.reset (sampleRate, paramRampSeconds);
     smoothedShimmerAmount.setCurrentAndTargetValue (shimmerAmount->get());
     smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedDry.reset (sampleRate, 0.02);
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     reset();
 }
@@ -96,6 +105,7 @@ void ShimmerReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedShimmerAmount.setTargetValue (shimmerAmount->get());
     const float shimmerGain = smoothedShimmerAmount.skip (numSamples) * 0.1f;
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     std::array<float*, 2> dataPtrs {};
     for (int ch = 0; ch < numChannels; ++ch)
@@ -111,6 +121,7 @@ void ShimmerReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     for (int i = 0; i < numSamples; ++i)
     {
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -140,7 +151,7 @@ void ShimmerReverbProcessor::process (juce::AudioBuffer<float>& buffer)
                 diffused = a.process (diffused);
 
             wetMatch[(size_t) ch].accumulate (input, diffused);
-            data[i] = input * (1.0f - wet) + diffused * wet * wetMatch[(size_t) ch].gain();
+            data[i] = input * dry + diffused * wet * wetMatch[(size_t) ch].gain();
         }
     }
 

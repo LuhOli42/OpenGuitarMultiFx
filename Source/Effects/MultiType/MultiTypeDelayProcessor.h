@@ -45,7 +45,7 @@ private:
     float readTape (double delaySamples);
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
-    juce::AudioParameterFloat *type, *time, *feedback, *mix, *level;
+    juce::AudioParameterFloat *type, *time, *feedback, *mix, *level, *killDry = nullptr;
     juce::AudioParameterFloat *ratio, *spread, *feedbackR, *crossFeedback, *masterFeedback, *drive, *bitReduction, *phaseReverse,
         *inputGain, *motorSpeed, *head2Ratio, *head2Level, *echoPan;
     juce::AudioParameterFloat *lowCut, *highCut, *eq1Freq, *eq1Gain, *eq2Freq, *eq2Gain;

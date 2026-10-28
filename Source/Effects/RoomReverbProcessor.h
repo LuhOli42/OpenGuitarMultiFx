@@ -38,6 +38,7 @@ private:
     juce::AudioParameterFloat* decay = nullptr;
     juce::AudioParameterFloat* tone = nullptr;
     juce::AudioParameterFloat* mix = nullptr;
+    juce::AudioParameterFloat* killDry = nullptr;
     std::array<WetLevelMatcher, 2> wetMatch; // keeps Mix = 1 as loud as the dry signal (docs/circuits/MixLaw.md)
 
     static constexpr int numCombs = 4;
@@ -50,6 +51,7 @@ private:
     juce::SmoothedValue<float> smoothedDecay;
     juce::SmoothedValue<float> smoothedTone;
     juce::SmoothedValue<float> smoothedMix;
+    juce::SmoothedValue<float> smoothedDry; // the dry path stays at unity; Kill Dry ramps it out
 };
 
 } // namespace openguitarmultifx

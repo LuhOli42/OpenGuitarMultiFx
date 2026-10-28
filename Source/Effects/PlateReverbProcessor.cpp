@@ -13,15 +13,22 @@ PlateReverbProcessor::PlateReverbProcessor()
     auto toneParam = std::make_unique<juce::AudioParameterFloat> (
         "plate_tone", "Tone", juce::NormalisableRange<float> (0.0f, 1.0f), 0.7f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "plate_mix", "Mix", juce::NormalisableRange<float> (0.0f, 1.0f), 0.35f);
+        "plate_wet", "Wet", juce::NormalisableRange<float> (0.0f, 1.0f), 0.54f);
 
     decay = decayParam.get();
     tone = toneParam.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "plate_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "plate_mix");
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "plate", "Plate", "|",
         std::move (decayParam), std::move (toneParam), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void PlateReverbProcessor::prepare (double sampleRate, int, int)
@@ -52,7 +59,9 @@ void PlateReverbProcessor::prepare (double sampleRate, int, int)
     smoothedTone.reset (sampleRate, paramRampSeconds);
     smoothedTone.setCurrentAndTargetValue (tone->get());
     smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedDry.reset (sampleRate, 0.02);
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     reset();
 }
@@ -89,6 +98,7 @@ void PlateReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     const float damp1 = 1.0f - smoothedTone.skip (numSamples);
     const float damp2 = 1.0f - damp1;
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     std::array<float*, 2> channelData {};
     for (int ch = 0; ch < numChannels; ++ch)
@@ -97,6 +107,7 @@ void PlateReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     for (int i = 0; i < numSamples; ++i)
     {
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
         std::array<float, 2> diffused { 0.0f, 0.0f };
 
         for (int ch = 0; ch < numChannels; ++ch)
@@ -130,7 +141,7 @@ void PlateReverbProcessor::process (juce::AudioBuffer<float>& buffer)
             const float wetSample = ch == 0 ? outA : outB;
             const float input = channelData[(size_t) ch][i];
             wetMatch[(size_t) ch].accumulate (input, wetSample);
-            channelData[(size_t) ch][i] = input * (1.0f - wet) + wetSample * wet * wetMatch[(size_t) ch].gain();
+            channelData[(size_t) ch][i] = input * dry + wetSample * wet * wetMatch[(size_t) ch].gain();
         }
     }
 
