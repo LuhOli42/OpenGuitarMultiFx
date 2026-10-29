@@ -27,6 +27,7 @@
 #include "Effects/SuperLeadStyleAmplifierProcessor.h"
 #include "Effects/TwinReverbStyleAmplifierProcessor.h"
 #include "Effects/DeluxeReverbStyleAmplifierProcessor.h"
+#include "Effects/SuperSonicStyleAmplifierProcessor.h"
 #include "Effects/JC120StyleAmplifierProcessor.h"
 #include "Effects/JTM45StyleAmplifierProcessor.h"
 #include "Effects/JCM800StyleAmplifierProcessor.h"
@@ -494,6 +495,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     DeluxeReverbStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DeluxeReverbStyleAmplifier");
     registry.registerType ("DeluxeReverbStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DeluxeReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.06f); }, "Clean");
+    // Fender Super-Sonic 22 (docs/circuits/SuperSonic22.md): Vintage / Burn channels, Fat, spring reverb.
+    SuperSonicStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("SuperSonicStyleAmplifier");
+    registry.registerType ("SuperSonicStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SuperSonicStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.19f); }, "High-Gain");
     // docs/circuits/JC120JazzChorus.md. Solid-state (op-amp preamp, a saturating-op-amp power stage standing in for the
     // real discrete Class AB output pair, real BBD chorus).
     registry.registerType ("JC120StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (std::make_unique<JC120StyleAmplifierProcessor>(), 14.10f); }, "Clean");

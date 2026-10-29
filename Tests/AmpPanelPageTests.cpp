@@ -6,7 +6,7 @@ namespace openguitarmultifx
 {
 
 /** Every control on a modelled amp's real front panel lives on page 1; page 2 and later hold only the synthetic ones
-    (Power Drive, Bias, Tube Feel, Speaker, Output, Cab, Sag). A real switch hidden on page 2 -- the Dumble's
+    (Power Drive, Bias, Tube Feel, Speaker, Output, Cab, Sag, Smooth). A real switch hidden on page 2 -- the Dumble's
     Voicing / Bright / Deep / Filter switches were -- is a bug (user, 2026-10-27). */
 class AmpPanelPageTests : public juce::UnitTest
 {
@@ -15,7 +15,7 @@ public:
 
     static bool isSynthetic (const juce::String& name)
     {
-        for (auto* s : { "Power Drive", "Bias", "Tube Feel", "Speaker", "Output", "Cab", "Sag" })
+        for (auto* s : { "Power Drive", "Bias", "Tube Feel", "Speaker", "Output", "Cab", "Sag", "Smooth" })
             if (name.startsWithIgnoreCase (s))
                 return true;
         return false;

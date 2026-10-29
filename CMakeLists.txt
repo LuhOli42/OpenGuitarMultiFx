@@ -216,6 +216,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/SuperLeadStyleAmplifierProcessor.cpp
   Source/Effects/TwinReverbStyleAmplifierProcessor.cpp
   Source/Effects/DeluxeReverbStyleAmplifierProcessor.cpp
+  Source/Effects/SuperSonicStyleAmplifierProcessor.cpp
   Source/Effects/JC120StyleAmplifierProcessor.cpp
   Source/Effects/JTM45StyleAmplifierProcessor.cpp
   Source/Effects/JCM800StyleAmplifierProcessor.cpp
