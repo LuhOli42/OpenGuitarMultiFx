@@ -29,7 +29,7 @@ public:
 
         beginTest ("every modeled amp emits audible, finite, bounded, varying output");
         for (const char* key : { "BassmanStyleAmplifier", "SuperLeadStyleAmplifier", "TwinReverbStyleAmplifier",
-                                 "DeluxeReverbStyleAmplifier", "JC120StyleAmplifier", "JTM45StyleAmplifier",
+                                 "DeluxeReverbStyleAmplifier", "SuperSonicStyleAmplifier", "JC120StyleAmplifier", "JTM45StyleAmplifier",
                                  "JCM800StyleAmplifier", "AC15StyleAmplifier", "AC30StyleAmplifier",
                                  "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier", "DualRectifierStyleAmplifier",
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",
@@ -103,7 +103,7 @@ public:
         // silence, swallowing the real signal). Healthy amps emit ~1e-7 or exactly zero here.
         beginTest ("every modeled amp stays quiet on silence (no self-oscillation)");
         for (const char* key : { "BassmanStyleAmplifier", "SuperLeadStyleAmplifier", "TwinReverbStyleAmplifier",
-                                 "DeluxeReverbStyleAmplifier", "JC120StyleAmplifier", "JTM45StyleAmplifier",
+                                 "DeluxeReverbStyleAmplifier", "SuperSonicStyleAmplifier", "JC120StyleAmplifier", "JTM45StyleAmplifier",
                                  "JCM800StyleAmplifier", "AC15StyleAmplifier", "AC30StyleAmplifier",
                                  "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier", "DualRectifierStyleAmplifier",
                                  "EVH5150StyleAmplifier", "ENGLPowerballStyleAmplifier", "RockerverbStyleAmplifier",

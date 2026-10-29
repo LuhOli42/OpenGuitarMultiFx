@@ -15,6 +15,7 @@
 #include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
 #include "Effects/ENGLPowerballStyleAmplifierProcessor.h"
 #include "Effects/EVH5150StyleAmplifierProcessor.h"
+#include "Effects/SuperSonicStyleAmplifierProcessor.h"
 #include "Effects/FryetteDeliveranceD120StyleAmplifierProcessor.h"
 #include "Effects/GarnetHerzogStyleAmplifierProcessor.h"
 #include "Effects/GibsonEH150StyleAmplifierProcessor.h"
@@ -386,6 +387,7 @@ public:
             { "v4b",         2.0,  4.0, 0.0 }, { "mesa400",     2.0,  4.0, 0.0 },
             { "acoustic360", 4.0,  9.0, 0.0 }, { "svt",         2.5,  5.0, 0.0 },
             { "trainwreck",   1.5,  1.5, 0.0 }, { "komet",       1.5,  5.0, 0.0 },
+            { "supersonic",   1.0,  2.0, 0.0 },
         };
         for (const auto& e : b)
             if (juce::String (e.ampName) == ampName)
@@ -595,6 +597,7 @@ public:
         AMP_ENTRY ("svt",        SVTStyleAmplifierProcessor)
         AMP_ENTRY ("trainwreck", TrainwreckExpressStyleAmplifierProcessor)
         AMP_ENTRY ("komet",      KometConcordeStyleAmplifierProcessor)
+        AMP_ENTRY ("supersonic", SuperSonicStyleAmplifierProcessor)
 
 #undef AMP_ENTRY
     }

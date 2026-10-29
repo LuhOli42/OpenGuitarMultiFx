@@ -47,6 +47,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   SuperLeadStyleAmplifierProcessorTests.cpp
   TwinReverbStyleAmplifierProcessorTests.cpp
   DeluxeReverbStyleAmplifierProcessorTests.cpp
+  SuperSonicStyleAmplifierProcessorTests.cpp
   JC120StyleAmplifierProcessorTests.cpp
   JTM45StyleAmplifierProcessorTests.cpp
   JCM800StyleAmplifierProcessorTests.cpp
