@@ -27,6 +27,7 @@
 #include "Effects/SuperLeadStyleAmplifierProcessor.h"
 #include "Effects/TwinReverbStyleAmplifierProcessor.h"
 #include "Effects/DeluxeReverbStyleAmplifierProcessor.h"
+#include "Effects/SuperSonicStyleAmplifierProcessor.h"
 #include "Effects/JC120StyleAmplifierProcessor.h"
 #include "Effects/JTM45StyleAmplifierProcessor.h"
 #include "Effects/JCM800StyleAmplifierProcessor.h"
@@ -494,6 +495,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     DeluxeReverbStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DeluxeReverbStyleAmplifier");
     registry.registerType ("DeluxeReverbStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DeluxeReverbStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.06f); }, "Clean");
+    // Fender Super-Sonic 22 (docs/circuits/SuperSonic22.md): Vintage / Burn channels, Fat, spring reverb.
+    SuperSonicStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("SuperSonicStyleAmplifier");
+    registry.registerType ("SuperSonicStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SuperSonicStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -20.19f); }, "High-Gain");
     // docs/circuits/JC120JazzChorus.md. Solid-state (op-amp preamp, a saturating-op-amp power stage standing in for the
     // real discrete Class AB output pair, real BBD chorus).
     registry.registerType ("JC120StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (std::make_unique<JC120StyleAmplifierProcessor>(), 14.10f); }, "Clean");
@@ -538,7 +543,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated placeholder (Twin Reverb's 6L6GC constants).
     SLO100StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SLO100StyleAmplifier");
-    registry.registerType ("SLO100StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SLO100StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -17.42f); }, "High-Gain");
+    registry.registerType ("SLO100StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SLO100StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -13.98f); }, "High-Gain");
     // docs/circuits/MarkIICPlus.md. Mesa/Boogie Mark IIC+ Lead channel. Five cascaded 12AX7 gain stages with unique
     // inter-stage EQ/gain network, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated
     // placeholder (Twin Reverb's 6L6GC constants).
@@ -554,7 +559,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // post-tonestack gain recovery, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     EVH5150StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("EVH5150StyleAmplifier");
-    registry.registerType ("EVH5150StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -11.24f); }, "High-Gain");
+    registry.registerType ("EVH5150StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<EVH5150StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -2.92f); }, "High-Gain");
     // docs/circuits/ENGLPowerball.md. ENGL Powerball Hi Lead channel. Six cascaded 12AX7 gain stages
     // (3 pre-tonestack + 3 post-tonestack), FMV tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     ENGLPowerballStyleAmplifierProcessor::reducedOrder = true;
@@ -601,13 +606,13 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // in reducedOrder; the preamp is two netlists so only the selected channel is solved per sample.
     RiveraKnuckleheadStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("RiveraKnuckleheadStyleAmplifier");
-    registry.registerType ("RiveraKnuckleheadStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<RiveraKnuckleheadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 12.77f); }, "High-Gain");
+    registry.registerType ("RiveraKnuckleheadStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<RiveraKnuckleheadStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 13.57f); }, "High-Gain");
     // Diezel VH4 (docs/circuits/Diezel.md): four channel netlists (Clean / Crunch / Mega / Lead,
     // progressively hotter), LTP PI, 4xKT77, global NFB with Presence + Deep. reducedOrder power stage;
     // the preamp nets are per-channel so only the selected channel solves per sample.
     DiezelStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DiezelStyleAmplifier");
-    registry.registerType ("DiezelStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DiezelStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 29.56f); }, "High-Gain");
+    registry.registerType ("DiezelStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DiezelStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 30.17f); }, "High-Gain");
     // Carr Rambler (docs/circuits/CarrRambler.md): blackface-like single-channel preamp, LTP PI, cathode-biased
     // 2x6L6GC, zero global feedback, bias-vary tremolo, pentode/triode switch. reducedOrder behavioral power stage.
     CarrRamblerStyleAmplifierProcessor::reducedOrder = true;
@@ -633,7 +638,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 10.72f); }, "Clean");
     SunnModelTStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SunnModelTStyleAmplifier");
-    registry.registerType ("SunnModelTStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 16.70f); }, "High-Gain");
+    registry.registerType ("SunnModelTStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.06f); }, "Crunch");
     FryetteDeliveranceD120StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("FryetteDeliveranceD120StyleAmplifier");
     registry.registerType ("FryetteDeliveranceD120StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<FryetteDeliveranceD120StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.49f); }, "High-Gain");

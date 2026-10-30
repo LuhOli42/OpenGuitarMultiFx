@@ -41,6 +41,7 @@ private:
     juce::AudioParameterFloat* size = nullptr;
     juce::AudioParameterFloat* damping = nullptr;
     juce::AudioParameterFloat* mix = nullptr;
+    juce::AudioParameterFloat* killDry = nullptr;
     juce::AudioParameterFloat* width = nullptr;
 
     juce::dsp::Reverb reverb;
@@ -50,6 +51,7 @@ private:
     juce::SmoothedValue<float> smoothedSize;
     juce::SmoothedValue<float> smoothedDamping;
     juce::SmoothedValue<float> smoothedMix;
+    juce::SmoothedValue<float> smoothedDry; // the dry path stays at unity; Kill Dry ramps it out
     juce::SmoothedValue<float> smoothedWidth;
 };
 

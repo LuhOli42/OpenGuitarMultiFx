@@ -67,7 +67,9 @@ MultiTypeReverbProcessor::MultiTypeReverbProcessor()
     time = add (*parameters, floatParam ("time", "Time", 0.1f, 30, 2.2f, 0.4f, "s", 2));
     size = add (*parameters, floatParam ("size", "Size", 0, 100, 75, 1.0f, "%", 0));
     predelay = add (*parameters, floatParam ("predelay", "Pre-Delay", 0, 250, 18, 0.6f, "ms", 0));
-    mix = add (*parameters, floatParam ("mix", "Mix", 0, 100, 25, 1.0f, "%", 0));
+    mix = add (*parameters, floatParam ("wet", "Wet", 0, 100, 33, 1.0f, "%", 0));
+    killDry = add (*parameters, choiceParam ("killDry", "Kill Dry", { "Off", "On" }, 0));
+    registerLegacyMix (mix, killDry, "mix", LegacyMixLaw::crossfade, 100.0);
     level = add (*parameters, floatParam ("level", "Level", -30, 12, 0, 1.0f, "dB"));
 
     auto* adv = parameters.get(); // one page: every control is a direct child
@@ -133,7 +135,7 @@ void MultiTypeReverbProcessor::applyType (int index)
     setParam (shift1, t.shift1); setParam (shift2, t.shift2); setParam (pitchFeedback, t.pitchFb);
     if (t.spring) setParam (numSprings, t.springs);
     setParam (lowMidGain, 0); setParam (highMidGain, 0); setParam (stackHold, 0); setParam (predelayFeedback, 0);
-    setParam (predelayMix, 0); setParam (mix, t.spring ? 30.0f : 25.0f); setParam (level, 0);
+    setParam (predelayMix, 0); setParam (mix, t.spring ? 43.0f : 33.0f); setParam (level, 0);
 }
 
 void MultiTypeReverbProcessor::setState (const juce::XmlElement& state)
@@ -254,7 +256,7 @@ void MultiTypeReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     const int n = buffer.getNumSamples();
     float* L = buffer.getWritePointer (0);
     float* R = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
-    mixLevel.setTargets (mix->get(), level->get());
+    mixLevel.setTargets (mix->get(), level->get(), killDry->get() > 0.5f);
     const double inG = inputGain->get() / 100.0;
     const double pd = juce::jmax (1.0, predelay->get() * 1e-3 * fs), pdFb = predelayFeedback->get() / 100.0, pdMix = predelayMix->get() / 100.0;
     const double eL = earlyLevel->get() / 100.0, lL = lateLevel->get() / 100.0, lateIn = lateInputMix->get() / 100.0;
@@ -370,14 +372,14 @@ void MultiTypeReverbProcessor::process (juce::AudioBuffer<float>& buffer)
         wetL = (mid + side) * duck;
         wetR = (mid - side) * duck;
 
-        const double m = mixLevel.mix.getNextValue(), g = mixLevel.level.getNextValue();
+        const double m = mixLevel.mix.getNextValue(), g = mixLevel.level.getNextValue(), d = mixLevel.dry.getNextValue();
         if (R != nullptr)
         {
-            L[i] = (float) ((inL * (1.0 - m) + wetL * m) * g);
-            R[i] = (float) ((inR * (1.0 - m) + wetR * m) * g);
+            L[i] = (float) ((inL * d + wetL * m) * g);
+            R[i] = (float) ((inR * d + wetR * m) * g);
         }
         else
-            L[i] = (float) ((inL * (1.0 - m) + 0.5 * (wetL + wetR) * m) * g);
+            L[i] = (float) ((inL * d + 0.5 * (wetL + wetR) * m) * g);
     }
 }
 

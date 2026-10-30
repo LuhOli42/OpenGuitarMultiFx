@@ -14,16 +14,40 @@ void EffectBlockComponent::setSelected (bool shouldBeSelected)
     repaint();
 }
 
+void EffectBlockComponent::setPedal (int cc, bool armed)
+{
+    if (pedalCc != cc || pedalArmed != armed)
+    {
+        pedalCc = cc;
+        pedalArmed = armed;
+        repaint();
+    }
+}
+
 void EffectBlockComponent::mouseDown (const juce::MouseEvent& event)
 {
     dragger.startDraggingComponent (this, event);
     isDragging = false; // only becomes true in mouseDrag, once past a small threshold
+    longPressFired = false;
+    if (onLongPressed != nullptr)
+        startTimer (longPressMs);
+}
+
+void EffectBlockComponent::timerCallback()
+{
+    stopTimer();
+    if (! isDragging && isMouseButtonDown() && onLongPressed != nullptr)
+    {
+        longPressFired = true;
+        onLongPressed();
+    }
 }
 
 void EffectBlockComponent::mouseDrag (const juce::MouseEvent& event)
 {
     if (! isDragging && event.getDistanceFromDragStart() > 4)
     {
+        stopTimer();
         isDragging = true;
         toFront (true); // stay above sibling blocks while dragging over them
     }
@@ -34,6 +58,13 @@ void EffectBlockComponent::mouseDrag (const juce::MouseEvent& event)
 
 void EffectBlockComponent::mouseUp (const juce::MouseEvent&)
 {
+    stopTimer();
+    if (longPressFired)
+    {
+        longPressFired = false;
+        return;
+    }
+
     if (isDragging)
     {
         isDragging = false;
@@ -106,6 +137,14 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white.withAlpha (bypassed ? 0.5f : 1.0f));
     g.setFont (18.0f);
     g.drawFittedText (processor.getName(), nameArea.toNearestInt(), juce::Justification::centred, 2);
+
+    if (pedalCc >= 0 || pedalArmed)
+    {
+        g.setColour (pedalArmed ? juce::Colours::orange : juce::Colours::white.withAlpha (bypassed ? 0.5f : 0.8f));
+        g.setFont (juce::FontOptions (10.0f));
+        g.drawText (pedalArmed ? juce::String ("...") : "CC" + juce::String (pedalCc),
+                    bounds.reduced (5.0f, 3.0f).toNearestInt(), juce::Justification::topRight);
+    }
 }
 
 } // namespace openguitarmultifx

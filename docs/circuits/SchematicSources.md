@@ -30,6 +30,7 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 | Boss BD-2 | factory board schematic (hobby-hour, Free Info Society); Gauss Markov redraw | the model already uses the factory board |
 | Mu-Tron III | mu-tron.com owner's manual (schematic on p.14 per MEF); GGG "Neutron" replica schematic | the randtronics "complete manual" link has 3 pages only |
 | A/DA Flanger | "adadepot" archive (per MEF) | SAD1024 (1977) vs MN3010 (from 5/78) revisions; model uses the Charlie Barth / moosapotamus SAD1024 trace (2007) + FlangerClone rev5 calibration |
+| Fender Super-Sonic 22 | thetubestore.com `Fender-Super-Sonic-22-Schematic.pdf`: Fender service diagram 0078327000 rev A, 3 sheets, 600 dpi, printed rails and test voltages | factory | the model is built from it (docs/circuits/SuperSonic22.md) |
 | SansAmp Bass Driver DI | DIYStompboxes thread (Russian archive, PIC switching omitted) | the model uses kanengomibako's V1 teardown |
 
 ## Not found (no public schematic; the model stays an estimate)

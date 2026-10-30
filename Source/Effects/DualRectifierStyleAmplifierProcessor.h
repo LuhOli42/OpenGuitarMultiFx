@@ -28,7 +28,8 @@ namespace openguitarmultifx
     and four 6L6GC beam tetrodes as two push-pull pairs in a fixed-bias output stage.
 
     Controls, page 1: Channel (Clean / Orange / Red), Gain (1MA), Treble, Mid, Bass, Presence, Master -- each channel
-    keeps its own full set (ChannelKnobMemory.h), like the real amp's three rows of pots. Page 2 (synthetic): Power
+    keeps its own full set (ChannelKnobMemory.h), like the real amp's three rows of pots -- plus the real Rectifier
+    switch (Bold / Spongy). Page 2 (synthetic): Power
     Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class DualRectifierStyleAmplifierProcessor : public EffectProcessor

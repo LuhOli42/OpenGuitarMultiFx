@@ -66,7 +66,8 @@ public:
             hall.prepare (48000.0, 512, 2);
             auto state = hall.getState();
             state->setAttribute ("hall_decay", 0.8);
-            state->setAttribute ("hall_mix", 1.0);
+            state->setAttribute ("hall_wet", 1.0);
+            state->setAttribute ("hall_kill_dry", 1.0);
             hall.setState (*state);
 
             juce::AudioBuffer<float> buffer (2, 512);

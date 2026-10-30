@@ -40,6 +40,7 @@ private:
     juce::AudioParameterFloat* timeB = nullptr;
     juce::AudioParameterFloat* feedback = nullptr;
     juce::AudioParameterFloat* mix = nullptr;
+    juce::AudioParameterFloat* killDry = nullptr;
 
     std::array<FractionalDelayLine, 2> taps;
     double currentSampleRate = 0.0;
@@ -48,6 +49,7 @@ private:
     juce::SmoothedValue<float> smoothedTimeB;
     juce::SmoothedValue<float> smoothedFeedback;
     juce::SmoothedValue<float> smoothedMix;
+    juce::SmoothedValue<float> smoothedDry; // the dry path stays at unity; Kill Dry ramps it out
 };
 
 } // namespace openguitarmultifx

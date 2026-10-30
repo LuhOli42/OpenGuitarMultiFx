@@ -15,17 +15,24 @@ ReverseDelayProcessor::ReverseDelayProcessor()
         "reversedelay_feedback", "Feedback",
         juce::NormalisableRange<float> (0.0f, 0.9f), 0.3f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "reversedelay_mix", "Mix",
-        juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
+        "reversedelay_wet", "Wet",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 1.00f);
 
     timeMs = time.get();
     feedback = fb.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "reversedelay_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "reversedelay_mix");
     registerTempoSyncParam (timeMs);
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "reversedelay", "Reverse Delay", "|",
         std::move (time), std::move (fb), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void ReverseDelayProcessor::prepare (double sampleRate, int, int numChannels)
@@ -50,7 +57,9 @@ void ReverseDelayProcessor::prepare (double sampleRate, int, int numChannels)
     smoothedFeedback.reset (sampleRate, paramRampSeconds);
     smoothedFeedback.setCurrentAndTargetValue (feedback->get());
     smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedDry.reset (sampleRate, 0.02);
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 }
 
 void ReverseDelayProcessor::reset()
@@ -81,6 +90,7 @@ void ReverseDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedFeedback.setTargetValue (feedback->get());
     const float fb = smoothedFeedback.skip (numSamples);
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
     const int maxChunkSamples = (int) channels[0].chunkBuffers[0].size();
 
     // Sample-major so smoothedMix.getNextValue() advances once per sample
@@ -88,6 +98,7 @@ void ReverseDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     for (int i = 0; i < numSamples; ++i)
     {
         const float wetAmount = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -105,7 +116,7 @@ void ReverseDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             if (c.recordPos < (int) recordBuffer.size())
                 recordBuffer[(size_t) c.recordPos] = input + fb * wet;
 
-            data[i] = input * (1.0f - wetAmount) + wet * wetAmount;
+            data[i] = input * dry + wet * wetAmount;
 
             ++c.recordPos;
             --c.playbackPos;

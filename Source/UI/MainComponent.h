@@ -7,6 +7,7 @@
 #include "OverlayHost.h"
 #include "ParameterPanel.h"
 #include "PresetBadge.h"
+#include "BypassPedalXml.h"
 #include "SceneMidi.h"
 #include "SnapshotBar.h"
 #include "SnapshotPresetXml.h"
@@ -152,6 +153,13 @@ private:
         `action` (0-7, or scenemidi::nextScene / previousScene). Learning arms the action; the next CC press on any
         MIDI input is bound to it. Global, saved in scene_midi.xml -- not part of a preset. */
     void toggleScenePedal (int action);
+    /** Pedal -> effect on/off (BypassPedalXml.h): press and hold a block on the grid for its footswitch menu. The
+        learned CC flips that block's bypass on every stomp. Per preset. */
+    void showBypassPedalMenu (EffectProcessor* processor);
+    void toggleBypassPedal (EffectProcessor* processor);
+    void refreshBypassPedalDisplay();
+    /** A CC drives one thing -- scene, effect on/off or knob. Called before a CC is learned onto any of them. */
+    void freeCcForLearning (int cc);
     void refreshScenePedalDisplay();
     void copySnapshot (int from, int to);
     juce::Colour colourOfSnapshot (int index) const;
@@ -266,6 +274,9 @@ private:
     std::map<int, juce::AudioParameterFloat*> midiCcBindings;
     juce::AudioParameterFloat* midiLearnArmedParam = nullptr;
     void handleMidiCc (int ccNumber, int ccValue);
+    bypasspedal::Bindings bypassPedals;
+    EffectProcessor* bypassPedalArmed = nullptr;
+    scenemidi::StompDetector bypassStomps;
     scenemidi::Bindings sceneMidi;
     int sceneMidiArmed = scenemidi::noAction;
     void clearMidiBindingsFor (EffectProcessor* processor);

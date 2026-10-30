@@ -71,7 +71,8 @@ Output.
 - **Reverb is not modelled** — the real spring tank (V3A driver / recovery) is documented but out of scope; use the
   chain's own reverb block after the amp.
 - CH3 is voiced as the Ninja-always-on variant of CH2 (TRE behaviour; the FS-7 routes Ninja to CH2 only).
-- All channels' EQs are driven by one set of T/M/B params (the real amp has one tone row per channel; the knobs track).
+- CH1 has its own Treble / Middle / Bass / Master and CH2 / CH3 share another set, as on the real panel
+  (`ChannelKnobMemory`, slots { 0, 1, 1 }); the visible knobs carry the selected channel's values.
 - The pull-switch functions are modelled at their switch positions (bright cap, mid notch/scoop shunts, bass contour,
   the V3B ninja triode); the CH2 gain-pot PULL NOTCH (C105) is folded into Scoop's voicing rather than given a
   separate eighth switch.
@@ -87,3 +88,9 @@ Output.
 - The NFB loop is stable at all settings (silence AC RMS < 0.01 on both channels).
 - Lead channel out-gains the clean channel at matched settings; Presence lifts HF, Focus lifts LF.
 - CH1 Boost and CH2 Ninja each add a stage's worth of gain (>1.5× RMS in the sweep test).
+
+## Channel balance (2026-10-27)
+
+One shared Treble / Middle / Bass / Master left Crunch and Lead ~19 dB above Clean, into the output limiter. With the
+per-channel sets, the CH2 / CH3 Master starts at 0.18: Clean / Crunch / Lead read 0.41 / 0.40 / 0.47 at 0.2 V in
+(AmpDynamicsBench). Unity trim 13.57 dB.

@@ -19,7 +19,8 @@ public:
             auto state = gated.getState();
             state->setAttribute ("gatedreverb_decay", 1.0); // longest possible natural tail
             state->setAttribute ("gatedreverb_hold", 10.0); // shortest hold, so the cut happens soon
-            state->setAttribute ("gatedreverb_mix", 1.0);
+            state->setAttribute ("gatedreverb_wet", 1.0);
+            state->setAttribute ("gatedreverb_kill_dry", 1.0);
             gated.setState (*state);
 
             juce::AudioBuffer<float> impulse (1, 512);
@@ -59,14 +60,16 @@ public:
             shortHold.prepare (48000.0, 512, 1);
             auto shortState = shortHold.getState();
             shortState->setAttribute ("gatedreverb_hold", 10.0);
-            shortState->setAttribute ("gatedreverb_mix", 1.0);
+            shortState->setAttribute ("gatedreverb_wet", 1.0);
+            shortState->setAttribute ("gatedreverb_kill_dry", 1.0);
             shortHold.setState (*shortState);
 
             GatedReverbProcessor longHold;
             longHold.prepare (48000.0, 512, 1);
             auto longState = longHold.getState();
             longState->setAttribute ("gatedreverb_hold", 400.0);
-            longState->setAttribute ("gatedreverb_mix", 1.0);
+            longState->setAttribute ("gatedreverb_wet", 1.0);
+            longState->setAttribute ("gatedreverb_kill_dry", 1.0);
             longHold.setState (*longState);
 
             juce::AudioBuffer<float> shortImpulse (1, 512);

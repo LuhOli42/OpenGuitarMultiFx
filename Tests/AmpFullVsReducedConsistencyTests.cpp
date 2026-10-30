@@ -15,6 +15,7 @@
 #include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
 #include "Effects/ENGLPowerballStyleAmplifierProcessor.h"
 #include "Effects/EVH5150StyleAmplifierProcessor.h"
+#include "Effects/SuperSonicStyleAmplifierProcessor.h"
 #include "Effects/FryetteDeliveranceD120StyleAmplifierProcessor.h"
 #include "Effects/GarnetHerzogStyleAmplifierProcessor.h"
 #include "Effects/GibsonEH150StyleAmplifierProcessor.h"
@@ -374,18 +375,19 @@ public:
             { "ac15",        5.0, 10.0, 0.0 }, { "ac30",         6.0,  6.0, 0.0 },
             { "matchless",   3.0,  5.0, 0.0 }, { "hotcat",       3.0, 11.0, 0.0 },
             { "carmenghia",  4.0,  8.0, 0.0 }, { "astroverb",    4.0,  7.0, 0.0 },
-            { "slo100",       8.0,  5.0, 0.0 }, { "markiic",      5.0,  6.0, 0.0 },
-            { "dualrect",     4.0,  5.0, 0.0 }, { "evh5150",     12.0,  3.0, 0.0 },
+            { "slo100",       1.0,  4.0, 0.0 }, { "markiic",      5.0,  6.0, 0.0 },
+            { "dualrect",     4.0,  5.0, 0.0 }, { "evh5150",      2.0,  2.0, 0.0 },
             { "powerball",    7.0,  3.0, 0.0 }, { "rockerverb",  17.0,  8.0, 0.0 },
             { "eh150",       2.0,  4.0, 0.0 }, { "herzog",       4.0,  7.0, 0.0 },
             { "knucklehead", 4.0, 12.0, 0.0 }, { "diezel",       4.0,  6.0, 0.0 },
             { "carr",        1.5,  5.5, 0.0 },
             { "ftr37",       2.0,  4.0, 0.0 }, { "dumble",       4.0,  9.0, 0.0 },
-            { "sunn",        18.0, 15.0, 0.0 }, { "deliverance",  3.0,  4.0, 0.0 },
+            { "sunn",         1.5,  3.0, 0.0 }, { "deliverance",  3.0,  4.0, 0.0 },
             { "uberschall",   3.0, 14.0, 0.0 }, { "b15",         2.0,  4.0, 0.0 },
             { "v4b",         2.0,  4.0, 0.0 }, { "mesa400",     2.0,  4.0, 0.0 },
             { "acoustic360", 4.0,  9.0, 0.0 }, { "svt",         2.5,  5.0, 0.0 },
             { "trainwreck",   1.5,  1.5, 0.0 }, { "komet",       1.5,  5.0, 0.0 },
+            { "supersonic",   1.0,  2.0, 0.0 },
         };
         for (const auto& e : b)
             if (juce::String (e.ampName) == ampName)
@@ -595,6 +597,7 @@ public:
         AMP_ENTRY ("svt",        SVTStyleAmplifierProcessor)
         AMP_ENTRY ("trainwreck", TrainwreckExpressStyleAmplifierProcessor)
         AMP_ENTRY ("komet",      KometConcordeStyleAmplifierProcessor)
+        AMP_ENTRY ("supersonic", SuperSonicStyleAmplifierProcessor)
 
 #undef AMP_ENTRY
     }

@@ -45,7 +45,7 @@ public:
             // linear interpolation, so the peak reads measurably lower than
             // a plain wet-mix value (confirmed empirically, not a bug: real
             // tape wow smears transients the same way).
-            expectWithinAbsoluteError (peak, 0.35f, 0.09f);
+            expectWithinAbsoluteError (peak, 0.54f, 0.09f); // the default Wet
         }
 
         beginTest ("feedback saturation keeps repeats bounded even with a loud sustained input");

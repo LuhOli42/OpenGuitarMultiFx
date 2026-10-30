@@ -20,7 +20,8 @@ public:
             state->setAttribute ("dualdelay_timeA", 100.0);
             state->setAttribute ("dualdelay_timeB", 300.0);
             state->setAttribute ("dualdelay_feedback", 0.0); // isolate the two taps, no repeats
-            state->setAttribute ("dualdelay_mix", 1.0);
+            state->setAttribute ("dualdelay_wet", 1.0);
+            state->setAttribute ("dualdelay_kill_dry", 1.0);
             delay.setState (*state);
 
             const int samplesA = (int) (0.100 * 48000.0);

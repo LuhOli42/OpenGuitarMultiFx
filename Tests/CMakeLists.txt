@@ -19,7 +19,9 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PresetSpilloverTests.cpp
   MidiLearnPresetXmlTests.cpp
   SceneMidiTests.cpp
+  BypassPedalXmlTests.cpp
   MasterEqTests.cpp
+  AmpSmoothTests.cpp
   SnapshotPresetXmlTests.cpp
   UpdateCoreTests.cpp
   GateProcessorTests.cpp
@@ -45,6 +47,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   SuperLeadStyleAmplifierProcessorTests.cpp
   TwinReverbStyleAmplifierProcessorTests.cpp
   DeluxeReverbStyleAmplifierProcessorTests.cpp
+  SuperSonicStyleAmplifierProcessorTests.cpp
   JC120StyleAmplifierProcessorTests.cpp
   JTM45StyleAmplifierProcessorTests.cpp
   JCM800StyleAmplifierProcessorTests.cpp
@@ -124,6 +127,8 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   CallbackOverheadBench.cpp
   PitchDetectorRangeTests.cpp
   AmpDynamicsBench.cpp
+  AmpPanelPageTests.cpp
+  AmpVoicingBench.cpp
   RePrepareTransparencyTests.cpp
   OversampledEffectTests.cpp
   PedalUnityLevelTests.cpp

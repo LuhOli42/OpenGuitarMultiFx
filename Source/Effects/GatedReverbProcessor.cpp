@@ -20,16 +20,23 @@ GatedReverbProcessor::GatedReverbProcessor()
         "gatedreverb_hold", "Hold",
         juce::NormalisableRange<float> (10.0f, 500.0f, 0.0f, 0.5f), 150.0f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "gatedreverb_mix", "Mix", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
+        "gatedreverb_wet", "Wet", juce::NormalisableRange<float> (0.0f, 1.0f), 1.00f);
 
     decay = decayParam.get();
     holdMs = holdParam.get();
     registerTempoSyncParam (holdMs);
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "gatedreverb_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "gatedreverb_mix");
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "gatedreverb", "Gated", "|",
         std::move (decayParam), std::move (holdParam), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void GatedReverbProcessor::prepare (double sampleRate, int, int)
@@ -81,7 +88,9 @@ void GatedReverbProcessor::prepare (double sampleRate, int, int)
     smoothedDecay.reset (sampleRate, paramRampSeconds);
     smoothedDecay.setCurrentAndTargetValue (decay->get());
     smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedDry.reset (sampleRate, 0.02);
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     reset();
 }
@@ -114,6 +123,7 @@ void GatedReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedDecay.setTargetValue (decay->get());
     const float feedback = 0.75f + smoothedDecay.skip (numSamples) * 0.2f;
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
     const float thresholdLinear = juce::Decibels::decibelsToGain (thresholdDb);
     // holdMs stays unsmoothed -- it is only read when the gate re-arms
     // (a discrete event), so a mid-ramp value could never glitch audio,
@@ -131,6 +141,7 @@ void GatedReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     for (int i = 0; i < numSamples; ++i)
     {
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
 
         // Trigger off the loudest channel's dry input -- the same
         // peak-across-channels convention GateProcessor uses, so a mono
@@ -174,7 +185,7 @@ void GatedReverbProcessor::process (juce::AudioBuffer<float>& buffer)
                 diffused = a.process (diffused);
 
             wetMatch[(size_t) ch].accumulate (input, diffused * gateGain);
-            data[i] = input * (1.0f - wet) + (diffused * gateGain) * wet * wetMatch[(size_t) ch].gain();
+            data[i] = input * dry + (diffused * gateGain) * wet * wetMatch[(size_t) ch].gain();
         }
     }
 

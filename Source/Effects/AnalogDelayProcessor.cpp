@@ -19,18 +19,25 @@ AnalogDelayProcessor::AnalogDelayProcessor()
     auto toneParam = std::make_unique<juce::AudioParameterFloat> (
         "analogdelay_tone", "Tone", juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "analogdelay_mix", "Mix",
-        juce::NormalisableRange<float> (0.0f, 1.0f), 0.35f);
+        "analogdelay_wet", "Wet",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.54f);
 
     timeMs = time.get();
     registerTempoSyncParam (timeMs);
     feedback = fb.get();
     tone = toneParam.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "analogdelay_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "analogdelay_mix");
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "analogdelay", "Analog Delay", "|",
         std::move (time), std::move (fb), std::move (toneParam), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void AnalogDelayProcessor::prepare (double sampleRate, int, int numChannels)
@@ -43,10 +50,12 @@ void AnalogDelayProcessor::prepare (double sampleRate, int, int numChannels)
     smoothedDelaySamples.reset (sampleRate, 0.03);
     smoothedFeedback.reset (sampleRate, 0.03);
     smoothedMix.reset (sampleRate, 0.03);
+    smoothedDry.reset (sampleRate, 0.02);
 
     smoothedDelaySamples.setCurrentAndTargetValue ((float) (timeMs->get() * 0.001 * sampleRate));
     smoothedFeedback.setCurrentAndTargetValue (feedback->get());
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     reset();
 }
@@ -65,6 +74,7 @@ void AnalogDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedDelaySamples.setTargetValue ((float) (timeMs->get() * 0.001 * currentSampleRate));
     smoothedFeedback.setTargetValue (feedback->get());
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     // Same decay/tone-to-coefficient convention as SpringReverbProcessor's
     // damping, just applied to a single feedback-loop filter instead of a
@@ -80,6 +90,7 @@ void AnalogDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float delaySamples = smoothedDelaySamples.getNextValue();
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
 
         int readIndex0, readIndex1;
         float frac;
@@ -102,7 +113,7 @@ void AnalogDelayProcessor::process (juce::AudioBuffer<float>& buffer)
             const float saturated = std::tanh (lp * saturationDrive) * invTanhDrive;
 
             delayData[line.writePos] = input + fb * saturated;
-            data[i] = input * (1.0f - wet) + delayed * wet;
+            data[i] = input * dry + delayed * wet;
         }
 
         line.advance();

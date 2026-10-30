@@ -184,7 +184,14 @@ void ParameterPanel::rebuildForCurrentProcessor()
     // follow-up feedback the same day: the band reads better than coloured
     // text at this size, and the knob-area background behind the knobs
     // stays the ordinary panel grey, only the header/knob strip is tinted).
-    const auto accent = current->getAccentColour();
+    // Knobs, selectors and toggles draw in the effect's accent colour on a near-black panel; an amp whose accent is
+    // itself near black (the 5150's dark grey, the Rectifier's navy) left its knob arcs and switches unreadable.
+    // Keep the hue, lift the brightness until it reads.
+    const auto rawAccent = current->getAccentColour();
+    const auto accent = rawAccent.getPerceivedBrightness() < 0.45f
+                            ? rawAccent.withBrightness (juce::jmax (0.8f, rawAccent.getBrightness()))
+                                       .withSaturation (juce::jmin (0.6f, rawAccent.getSaturation()))
+                            : rawAccent;
     titleLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     bypassToggle.setColour (juce::ToggleButton::tickColourId, accent);
     for (auto* b : { &browseInstalledButton, &searchTone3000Button, &removeButton })
@@ -231,6 +238,14 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 if (isSelector || range.interval >= 1.0f)
                 {
                     row.slider->setNumDecimalPlacesToDisplay (0);
+                    row.slider->textFromValueFunction = [floatParam] (double v)
+                    {
+                        return static_cast<juce::AudioProcessorParameter*> (floatParam)->getText (floatParam->convertTo0to1 ((float) v), 32);
+                    };
+                    row.slider->updateText();
+                }
+                else if (floatParam->paramID == "smooth") // amp Smooth reads Off / -x.x dB, not 0..1
+                {
                     row.slider->textFromValueFunction = [floatParam] (double v)
                     {
                         return static_cast<juce::AudioProcessorParameter*> (floatParam)->getText (floatParam->convertTo0to1 ((float) v), 32);
@@ -552,6 +567,8 @@ void ParameterPanel::showPage (int page)
         const bool shown = row.page == currentPage;
         row.widget()->setVisible (shown);
         row.label->setVisible (shown);
+        if (row.valueBox != nullptr)
+            row.valueBox->setVisible (shown); // a previous page's value boxes stayed on screen, unlabelled
         if (row.syncToggle != nullptr)
             row.syncToggle->setVisible (shown);
     }

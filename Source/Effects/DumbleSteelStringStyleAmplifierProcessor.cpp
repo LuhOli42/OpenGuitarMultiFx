@@ -353,17 +353,17 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
     group->addChild (std::move (master));
-    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("sss_page2", "Switches", "|", std::move (filterHi));
-    page2->addChild (std::move (filterLo));
-    page2->addChild (std::move (bright));
-    page2->addChild (std::move (midBoost));
-    page2->addChild (std::move (deep));
-    page2->addChild (std::move (accent));
-    page2->addChild (std::move (voicing));
-    group->addChild (std::move (page2));
+    // The front panel's switches and rotaries are real controls: page 1, with the knobs.
+    group->addChild (std::move (filterHi));
+    group->addChild (std::move (filterLo));
+    group->addChild (std::move (bright));
+    group->addChild (std::move (midBoost));
+    group->addChild (std::move (deep));
+    group->addChild (std::move (accent));
+    group->addChild (std::move (voicing));
     auto cab = tubeamp::makeCabParam ("sss_cab", "1x12 EV", cabAlts);
     cabParam = cab.get();
-    auto page3 = std::make_unique<juce::AudioProcessorParameterGroup> ("sss_page3", "Page 3", "|", std::move (power));
+    auto page3 = std::make_unique<juce::AudioProcessorParameterGroup> ("sss_page3", "Page 2", "|", std::move (power));
     page3->addChild (std::move (bias));
     page3->addChild (std::move (feel));
     page3->addChild (std::move (speaker));

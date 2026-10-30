@@ -189,3 +189,6 @@ The Settings screen has a **Sample rate** row (44.1 / 48 / 88.2 / 96 kHz, only t
 
 ## Audio interface + Buffer (2026-10-26)
 Settings' audio part now starts with an **Audio interface** line ("In: XTONE - Out: UR44 + Sub", from `AudioEngine::describeInterface()`) and has a **Buffer (latency)** row after Sample rate: 32-512 samples (those the device offers), each hint showing the ms per block. Same restart/remember pattern as Sample rate (`showBufferSizes`, `onBufferSizeChanged`, `buffer_size.txt`).
+
+## Page switching and dark accents (2026-10-27)
+`showPage()` hides each row's value box with its knob (it used to leave the previous page's boxes on screen, unlabelled -- reported as "valores invisíveis" on the amps' Bias/Cab page). Knobs/selectors use the effect's accent lifted to a readable brightness when it is near black (5150, Dual Rectifier). `OpenGuitarMultiFx --panel-snapshot <dir> <key,key>` renders each effect's drawer, every page, off-screen to PNGs and quits -- look at the drawer without a desktop screenshot.

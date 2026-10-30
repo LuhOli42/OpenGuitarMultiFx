@@ -66,10 +66,9 @@ that can swing the grids without sagging. Stevie Ray Vaughan's amps (#006–#009
 
 ## Controls
 
-Page 1 mirrors the front-panel knobs: Volume, Treble, Middle, Bass, Presence, Master.
-Page 2 (front-panel switches/filters): Filter (Hi), Filter (Lo) — the real 7-position rotaries —
-Bright, Mid Boost, Deep, Accent, Voicing (Jazz / PAB / Rock).
-Page 3 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
+Page 1 is the front panel: Volume, Treble, Middle, Bass, Presence, Master, and its switches -- Filter (Hi), Filter (Lo)
+(the real 7-position rotaries), Bright, Mid Boost, Deep, Accent, Voicing (Jazz / PAB / Rock).
+Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
 
 ## Stability / verification
 

@@ -107,7 +107,7 @@ DiezelStyleAmplifierProcessor::DiezelStyleAmplifierProcessor()
     auto middle = make ("middle", "Middle", 0.5f);
     auto bass = make ("bass", "Bass", 0.5f);
     auto volume = make ("volume", "Volume", 0.8f);
-    auto master = make ("master", "Master", 0.8f);
+    auto master = make ("master", "Master", 0.5f); // 0.8 left the power stage pinned: the channel Volumes did nothing
     auto presence = make ("presence", "Presence", 0.5f);
     auto deep = make ("deep", "Deep", 0.5f);
     auto power = make ("power", "Power Drive", 1.0f);
@@ -159,10 +159,13 @@ DiezelStyleAmplifierProcessor::DiezelStyleAmplifierProcessor()
     // the VH4 stores Gain/TMB/Volume per channel (its MIDI memory); the visible knobs carry per-channel values.
     knobMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
         std::vector<juce::AudioParameterFloat*> { gainParam, trebleParam, middleParam, bassParam, volumeParam });
+    // Default Volumes balance the channels at Master 0.5 (AmpDynamicsBench, 0.2 V in): the Mega/Lead preamps swing
+    // ~25 dB more than Clean's, which is what each channel's own Volume is for on the real amp. With every Volume at
+    // 0.8, switching from Clean jumped straight into the output limiter.
     knobMemory->setDefaults (0, { 0.25f, 0.55f, 0.50f, 0.60f, 0.80f });   // Clean: high headroom
-    knobMemory->setDefaults (1, { 0.50f, 0.55f, 0.50f, 0.55f, 0.80f });   // Crunch
-    knobMemory->setDefaults (2, { 0.60f, 0.50f, 0.55f, 0.50f, 0.80f });   // Mega
-    knobMemory->setDefaults (3, { 0.70f, 0.50f, 0.55f, 0.45f, 0.80f });   // Lead
+    knobMemory->setDefaults (1, { 0.50f, 0.55f, 0.50f, 0.55f, 0.53f });   // Crunch
+    knobMemory->setDefaults (2, { 0.60f, 0.50f, 0.55f, 0.50f, 0.075f });  // Mega
+    knobMemory->setDefaults (3, { 0.70f, 0.50f, 0.55f, 0.45f, 0.07f });   // Lead
 }
 
 void DiezelStyleAmplifierProcessor::buildChannel (Channel& ch)

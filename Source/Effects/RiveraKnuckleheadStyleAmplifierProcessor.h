@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ChannelKnobMemory.h"
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
@@ -47,6 +48,7 @@ public:
     const char* getName() const override { return "Rivera Knucklehead"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff274a63); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
+    std::unique_ptr<juce::XmlElement> getState() const override;
     void setState (const juce::XmlElement& state) override;
     void migrateLegacySnapshotParams (std::vector<std::pair<juce::String, float>>& params) const override;
 
@@ -161,6 +163,7 @@ private:
 
     juce::AudioParameterFloat* cabParam = nullptr;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
+    std::unique_ptr<ChannelKnobMemory> knobMemory; // CH1 has its own Treble/Middle/Bass/Master, CH2 and CH3 share one set
     juce::AudioParameterFloat* channelParam = nullptr;
     juce::AudioParameterFloat* volumeParam = nullptr;
     juce::AudioParameterFloat* gainParam = nullptr;

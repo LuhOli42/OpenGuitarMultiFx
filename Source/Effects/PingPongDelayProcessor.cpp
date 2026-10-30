@@ -17,17 +17,24 @@ PingPongDelayProcessor::PingPongDelayProcessor()
         "pingpong_feedback", "Feedback",
         juce::NormalisableRange<float> (0.0f, 0.95f), 0.4f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "pingpong_mix", "Mix",
-        juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f);
+        "pingpong_wet", "Wet",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.67f);
 
     timeMs = time.get();
     registerTempoSyncParam (timeMs);
     feedback = fb.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "pingpong_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "pingpong_mix");
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "pingpong", "Ping Pong", "|",
         std::move (time), std::move (fb), std::move (mixParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void PingPongDelayProcessor::prepare (double sampleRate, int, int numChannels)
@@ -41,10 +48,12 @@ void PingPongDelayProcessor::prepare (double sampleRate, int, int numChannels)
     smoothedDelaySamples.reset (sampleRate, 0.03);
     smoothedFeedback.reset (sampleRate, 0.03);
     smoothedMix.reset (sampleRate, 0.03);
+    smoothedDry.reset (sampleRate, 0.02);
 
     smoothedDelaySamples.setCurrentAndTargetValue ((float) (timeMs->get() * 0.001 * sampleRate));
     smoothedFeedback.setCurrentAndTargetValue (feedback->get());
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     reset();
 }
@@ -62,6 +71,7 @@ void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedDelaySamples.setTargetValue ((float) (timeMs->get() * 0.001 * currentSampleRate));
     smoothedFeedback.setTargetValue (feedback->get());
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
 
     const int numSamples = buffer.getNumSamples();
 
@@ -75,6 +85,7 @@ void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         const float delaySamples = smoothedDelaySamples.getNextValue();
         const float fb = smoothedFeedback.getNextValue();
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
 
         int readIndex0, readIndex1;
         float frac;
@@ -97,8 +108,8 @@ void PingPongDelayProcessor::process (juce::AudioBuffer<float>& buffer)
         lineL[line.writePos] = inputR + fb * delayedR;
         lineR[line.writePos] = inputL + fb * delayedL;
 
-        left[i] = inputL * (1.0f - wet) + delayedL * wet;
-        right[i] = inputR * (1.0f - wet) + delayedR * wet;
+        left[i] = inputL * dry + delayedL * wet;
+        right[i] = inputR * dry + delayedR * wet;
 
         line.advance();
     }

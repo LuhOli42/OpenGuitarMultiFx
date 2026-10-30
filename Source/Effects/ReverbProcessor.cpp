@@ -13,18 +13,25 @@ ReverbProcessor::ReverbProcessor()
     auto dampingParam = std::make_unique<juce::AudioParameterFloat> (
         "ambient_damping", "Damping", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f);
     auto mixParam = std::make_unique<juce::AudioParameterFloat> (
-        "ambient_mix", "Mix", juce::NormalisableRange<float> (0.0f, 1.0f), 0.3f);
+        "ambient_wet", "Wet", juce::NormalisableRange<float> (0.0f, 1.0f), 0.43f);
     auto widthParam = std::make_unique<juce::AudioParameterFloat> (
         "ambient_width", "Width", juce::NormalisableRange<float> (0.0f, 1.0f), 1.0f);
 
     size = sizeParam.get();
     damping = dampingParam.get();
     mix = mixParam.get();
+    auto killDryParam = std::make_unique<juce::AudioParameterFloat> (
+        "ambient_kill_dry", "Kill Dry", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("On") : juce::String ("Off"); }));
+    killDry = killDryParam.get();
+    registerLegacyMix (mix, killDry, "ambient_mix");
     width = widthParam.get();
 
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> (
         "ambient", "Ambient", "|",
         std::move (sizeParam), std::move (dampingParam), std::move (mixParam), std::move (widthParam));
+    parameters->addChild (std::move (killDryParam));
 }
 
 void ReverbProcessor::prepare (double sampleRate, int maxBlockSize, int numChannels)
@@ -39,7 +46,9 @@ void ReverbProcessor::prepare (double sampleRate, int maxBlockSize, int numChann
     smoothedDamping.reset (sampleRate, paramRampSeconds);
     smoothedDamping.setCurrentAndTargetValue (damping->get());
     smoothedMix.reset (sampleRate, paramRampSeconds);
+    smoothedDry.reset (sampleRate, 0.02);
     smoothedMix.setCurrentAndTargetValue (mix->get());
+    smoothedDry.setCurrentAndTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
     smoothedWidth.reset (sampleRate, paramRampSeconds);
     smoothedWidth.setCurrentAndTargetValue (width->get());
     updateReverbParameters();
@@ -60,7 +69,7 @@ void ReverbProcessor::updateReverbParameters()
     params.damping = smoothedDamping.getCurrentValue();
     // juce::dsp::Reverb scales its wet level by 3 and its dry level by 2 internally: with the knob's own numbers Mix = 0 came out
     // 6 dB LOUDER than the input. The reverb here runs fully wet at unity (wetLevel 1/3, dryLevel 0) and the dry/wet crossfade is
-    // done in process(), with the wet path level-matched to the dry (WetLevelMatcher).
+    // done in process(): the dry stays at unity (Kill Dry ramps it out) and Wet sets the level-matched wet path on top.
     params.wetLevel = 1.0f / 3.0f;
     params.dryLevel = 0.0f;
     params.width = smoothedWidth.getCurrentValue();
@@ -81,6 +90,7 @@ void ReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedWidth.setTargetValue (width->get());
     smoothedWidth.skip (numSamples);
     smoothedMix.setTargetValue (mix->get());
+    smoothedDry.setTargetValue (killDry->get() > 0.5f ? 0.0f : 1.0f);
     updateReverbParameters(); // cheap struct assignment, no allocation -- safe every block
     for (int ch = 0; ch < numChannels; ++ch)
         dryScratch.copyFrom (ch, 0, buffer, ch, 0, numSamples);
@@ -102,10 +112,11 @@ void ReverbProcessor::process (juce::AudioBuffer<float>& buffer)
     for (int i = 0; i < numSamples; ++i)
     {
         const float wet = smoothedMix.getNextValue();
+        const float dry = smoothedDry.getNextValue();
         for (int ch = 0; ch < numChannels; ++ch)
         {
             wetMatch[(size_t) ch].accumulate (dryPtrs[(size_t) ch][i], dataPtrs[(size_t) ch][i]);
-            dataPtrs[(size_t) ch][i] = dryPtrs[(size_t) ch][i] * (1.0f - wet)
+            dataPtrs[(size_t) ch][i] = dryPtrs[(size_t) ch][i] * dry
                 + dataPtrs[(size_t) ch][i] * wet * wetMatch[(size_t) ch].gain();
         }
     }

@@ -27,7 +27,8 @@ public:
             auto state = reverseDelay.getState();
             state->setAttribute ("reversedelay_time", 100.0);
             state->setAttribute ("reversedelay_feedback", 0.0);
-            state->setAttribute ("reversedelay_mix", 1.0);
+            state->setAttribute ("reversedelay_wet", 1.0);
+            state->setAttribute ("reversedelay_kill_dry", 1.0);
             reverseDelay.setState (*state);
 
             reverseDelay.prepare (48000.0, 512, 1);
@@ -60,7 +61,8 @@ public:
             // BEFORE prepare() snaps it -- a post-prepare write ramps the
             // dry blend down over ~10 ms, so early samples leak the input.
             auto state = reverseDelay.getState();
-            state->setAttribute ("reversedelay_mix", 1.0); // fully wet -- isolates the (silent) reverse tap
+            state->setAttribute ("reversedelay_wet", 1.0);      // fully wet -- isolates the (silent) reverse tap
+            state->setAttribute ("reversedelay_kill_dry", 1.0);
             reverseDelay.setState (*state);
 
             reverseDelay.prepare (48000.0, 512, 1);
