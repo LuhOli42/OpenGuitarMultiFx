@@ -29,6 +29,23 @@ namespace
         sampleRateFile().replaceWithText (juce::String (rate, 0));
     }
 
+    juce::File bufferSizeFile()
+    {
+        return sampleRateFile().getSiblingFile ("buffer_size.txt");
+    }
+
+    int loadBufferSizePreference()
+    {
+        const auto f = bufferSizeFile();
+        return f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : 0;
+    }
+
+    void saveBufferSizePreference (int size)
+    {
+        bufferSizeFile().getParentDirectory().createDirectory();
+        bufferSizeFile().replaceWithText (juce::String (size));
+    }
+
     // A defensive ceiling, not a real one: on this dev machine, PipeWire
     // already holds the real audio interface open exclusively (confirmed
     // live -- see AGENT.md), so JUCE's ALSA backend can only reach it
@@ -193,6 +210,23 @@ juce::String AudioEngine::openDevice()
         }
     }
 
+    // The buffer: the user's saved choice, otherwise 128 samples (the project's default, ~2.7 ms at 48 kHz). JUCE's own default on the
+    // PipeWire ALSA device was far larger, and a big buffer is heard as a late, soft attack.
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+    {
+        const auto wanted = loadBufferSizePreference();
+        const int target = wanted > 0 ? wanted : 128;
+        if (device->getAvailableBufferSizes().contains (target) && device->getCurrentBufferSizeSamples() != target)
+        {
+            juce::AudioDeviceManager::AudioDeviceSetup setup;
+            deviceManager.getAudioDeviceSetup (setup);
+            setup.bufferSize = target;
+            const auto err = deviceManager.setAudioDeviceSetup (setup, true);
+            if (err.isNotEmpty())
+                juce::Logger::writeToLog ("AudioEngine: could not open the device with a " + juce::String (target) + "-sample buffer -- " + err);
+        }
+    }
+
     if (auto* device = deviceManager.getCurrentAudioDevice())
         juce::Logger::writeToLog ("AudioEngine: using \"" + device->getName() + "\" -- "
                                    + juce::String (device->getInputChannelNames().size()) + " input(s), "
@@ -241,6 +275,85 @@ juce::String AudioEngine::setSampleRate (double newRate)
     }
     deviceManager.addAudioCallback (this);
     return err;
+}
+
+juce::Array<int> AudioEngine::getAvailableBufferSizes() const
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        return device->getAvailableBufferSizes();
+    return {};
+}
+
+int AudioEngine::getCurrentBufferSize() const
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        return device->getCurrentBufferSizeSamples();
+    return 0;
+}
+
+juce::String AudioEngine::setBufferSize (int newSize)
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (device == nullptr)
+        return "no audio device is open";
+    if (device->getCurrentBufferSizeSamples() == newSize)
+    {
+        saveBufferSizePreference (newSize);
+        return {};
+    }
+
+    juce::AudioDeviceManager::AudioDeviceSetup previous, setup;
+    deviceManager.getAudioDeviceSetup (previous);
+    setup = previous;
+    setup.bufferSize = newSize;
+
+    // Same restart discipline as setSampleRate(): the graph is re-prepared for the new block size in audioDeviceAboutToStart.
+    deviceManager.removeAudioCallback (this);
+    auto err = deviceManager.setAudioDeviceSetup (setup, true);
+    if (err.isNotEmpty())
+    {
+        juce::Logger::writeToLog ("AudioEngine: could not switch to a " + juce::String (newSize) + "-sample buffer -- " + err + " -- restoring the previous one");
+        const auto restoreErr = deviceManager.setAudioDeviceSetup (previous, true);
+        if (restoreErr.isNotEmpty())
+            juce::Logger::writeToLog ("AudioEngine: failed to restore the previous buffer too -- " + restoreErr);
+    }
+    else
+    {
+        saveBufferSizePreference (newSize);
+    }
+    deviceManager.addAudioCallback (this);
+    return err;
+}
+
+namespace
+{
+    juce::String pipeWireNodeDescription (const char* target)
+    {
+        juce::ChildProcess wpctl;
+        if (! wpctl.start (juce::StringArray { "wpctl", "inspect", target }, juce::ChildProcess::wantStdOut))
+            return {};
+        const auto out = wpctl.readAllProcessOutput();
+        wpctl.waitForProcessToFinish (1000);
+        for (auto line : juce::StringArray::fromLines (out))
+            if (line.contains ("node.description"))
+                return line.fromFirstOccurrenceOf ("=", false, false).trim().unquoted();
+        return {};
+    }
+}
+
+juce::String AudioEngine::describeInterface() const
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (device == nullptr)
+        return "No audio device open";
+    if (! device->getName().containsIgnoreCase ("PipeWire"))
+        return device->getName();
+
+    const auto in = pipeWireNodeDescription ("@DEFAULT_AUDIO_SOURCE@");
+    const auto out = pipeWireNodeDescription ("@DEFAULT_AUDIO_SINK@");
+    if (in.isEmpty() && out.isEmpty())
+        return device->getName();
+    return "In: " + (in.isNotEmpty() ? in : "?") + "  -  Out: " + (out.isNotEmpty() ? out : "?") + "  (PipeWire defaults)";
 }
 
 void AudioEngine::stop()

@@ -1008,18 +1008,31 @@ void MainComponent::showSettingsPanel()
     // The return value only reports whether the REQUESTED rate applied (Settings
     // shows it) -- a failed switch can still leave a device open, and timerCallback
     // re-derives audioDeviceOk from the device itself every tick regardless.
-    panel->onSampleRateChanged = [this] (double rate) { return audioEngine.setSampleRate (rate); };
     auto* rawPanel = panel.get();
+    panel->onSampleRateChanged = [this, rawPanel] (double rate)
+    {
+        const auto err = audioEngine.setSampleRate (rate);
+        // The ms readout of each buffer size depends on the rate.
+        rawPanel->showBufferSizes (audioEngine.getAvailableBufferSizes(), audioEngine.getCurrentBufferSize(), audioEngine.getCurrentSampleRate());
+        return err;
+    };
+    panel->onBufferSizeChanged = [this] (int size) { return audioEngine.setBufferSize (size); };
     panel->onRetryDevice = [this, rawPanel]
     {
         const auto err = audioEngine.retryDevice();
         if (err.isEmpty() && rawPanel != nullptr)
             // Re-derive the section from the now-open device: rate
             // buttons appear and the retry action hides itself.
+        {
             rawPanel->showSampleRates (audioEngine.getAvailableSampleRates(), audioEngine.getCurrentSampleRate());
+            rawPanel->showBufferSizes (audioEngine.getAvailableBufferSizes(), audioEngine.getCurrentBufferSize(), audioEngine.getCurrentSampleRate());
+            rawPanel->showInterface (audioEngine.describeInterface());
+        }
         return err;
     };
     panel->showSampleRates (audioEngine.getAvailableSampleRates(), audioEngine.getCurrentSampleRate());
+    panel->showBufferSizes (audioEngine.getAvailableBufferSizes(), audioEngine.getCurrentBufferSize(), audioEngine.getCurrentSampleRate());
+    panel->showInterface (audioEngine.describeInterface());
 
     overlayHost.pushOverlay (std::move (panel));
 }

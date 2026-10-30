@@ -55,6 +55,15 @@ public:
     /** The user picked a sample rate: the host restarts the device at it and returns an error message (empty on success). */
     std::function<juce::String (double)> onSampleRateChanged;
 
+    /** The buffer sizes the device offers and the one it runs at, plus the rate (for the ms readout); the host calls this with showSampleRates. */
+    void showBufferSizes (const juce::Array<int>& sizes, int current, double rate);
+
+    /** The interface line at the top of the audio section (AudioEngine::describeInterface). */
+    void showInterface (const juce::String& description) { interfaceLabel.setText (description, juce::dontSendNotification); }
+
+    /** The user picked a buffer size: the host restarts the device with it and returns an error message (empty on success). */
+    std::function<juce::String (int)> onBufferSizeChanged;
+
     /** The user tapped "Retry audio device" while no device is open (the NO
         AUDIO DEVICE state's recovery action -- audit #93 item 2): the host
         re-runs the device open and returns its error (empty on success,
@@ -85,6 +94,8 @@ private:
     juce::TextButton ecoButton { "Eco" }, normalButton { "Normal" }, highButton { "High" };
     juce::Label qualityHintLabel;
     void refreshQualityHint();
+    juce::Label interfaceSectionLabel { {}, "Audio interface" };
+    juce::Label interfaceLabel;
     juce::Label rateSectionLabel { {}, "Sample rate" };
     juce::OwnedArray<juce::TextButton> rateButtons;
     juce::Array<double> rateValues;
@@ -93,6 +104,12 @@ private:
     /** Only visible while the device reports no usable rate -- the state a
         failed device open leaves this section in. */
     juce::TextButton retryDeviceButton { "Retry audio device" };
+    juce::Label bufferSectionLabel { {}, "Buffer (latency)" };
+    juce::OwnedArray<juce::TextButton> bufferButtons;
+    juce::Array<int> bufferValues;
+    int currentBuffer = 0;
+    double bufferRate = 48000.0;
+    juce::Label bufferHintLabel;
     juce::Label tone3000SectionLabel { {}, "TONE3000 account" };
 
     juce::Label clientIdLabel { {}, "client_id" };

@@ -108,3 +108,6 @@ Post-graph, pre-OUT-meter: input gain -> SignalGraph (its parallel spill already
 
 ## Sample rate (2026-09-24)
 `start()` opens the device at the user's saved rate (`sample_rate.txt`) or, without one, at **48 kHz when the device offers it** (JUCE's own default had picked 44.1 kHz on the UR44 while PipeWire ran at 48 kHz). `setSampleRate()` restarts the device at another rate; `audioDeviceAboutToStart()` now **re-prepares the already-published SignalGraph** for the device's actual rate and block size (the callback is not running yet, so that is safe), which also covers any other device restart. Processors ignore a `prepare()` at an unchanged rate.
+
+## Buffer size and interface name (2026-10-26)
+`start()` also opens the device with the saved buffer (`buffer_size.txt`) or **128 samples** by default; `setBufferSize()` restarts it the same way `setSampleRate()` does. Reported as a "mushy attack": JUCE's default on PipeWire's ALSA passthrough was 512+ and PipeWire's `min-quantum` was pinned at 512 (`~/.config/pipewire/pipewire.conf.d/30-ur44-latency.conf`, now 64), ~25 ms round trip. `describeInterface()` asks PipeWire (`wpctl inspect @DEFAULT_AUDIO_SOURCE@/SINK@`) for the real interface names, since through the passthrough JUCE only sees "PipeWire Media Server"; it runs a child process, so control thread only.
