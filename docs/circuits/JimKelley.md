@@ -74,3 +74,11 @@ placeholders pending this amp's own POWERCAL calibration (the JCM800 precedent).
 Page 1: Gain, Volume, Treble, Bass, Reverb, Presence (pull), Bright (pull), Mid Boost
 (pull), Power Select (60W/30W). Page 2: Power Drive, Bias, Tube Feel, Speaker (4/8/16 ohm
 on the 8 ohm tap), Output, Cab.
+
+## Crackles at full Gain, and the category (2026-10-31)
+User report: crackles at full Gain. The two series 1N914s each way on V1b's grid were built as four junctions with a
+floating node between each pair. While every junction was reverse-biased, Newton had nothing to hold that node, so it
+failed on hot plucks. The channel then recovered (state restore) ~8 times a second, in both paths, and each recovery was
+a click. Each chain now uses one equivalent diode (`SeriesDiodes.h`: 2× nVt, same Is), the same fix as the Zendrive.
+Hard plucks at full Gain give zero failures and zero recoveries, guarded by a test. Unity is unchanged (−0.32 dB on the
+old trim). The amp moves from Clean to **Crunch** in the add-effect browser.

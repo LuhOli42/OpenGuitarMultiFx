@@ -1,4 +1,5 @@
 #include "JimKelleyStyleAmplifierProcessor.h"
+#include "SeriesDiodes.h"
 #include "FastMath.h"
 #include "PotTaper.h"
 #include "DualMono.h"
@@ -275,12 +276,12 @@ void JimKelleyStyleAmplifierProcessor::buildChannel (Channel& ch)
         // V1b: the clip stage. Its grid carries the anti-parallel 1N914 pairs (~1.2 V soft clip -- Kelley's
         // anti-blocking-distortion fix; Amp Garage describes the pair). 100k plate, 1k5 + 10uF cathode.
         const auto g2 = stage (gWip, 68.0e3, 0.0, 1.5e3, 10.0e-6, 100.0e3, ch.pPlate2, ch.pK2, 160.0, 1.6);
-        // Two series 1N914s each way between grid and ground (~1.2 V knee, per the schematic discussion).
-        const auto d1 = c.addNode(), d2 = c.addNode();
-        c.addDiode (g2, d1, 2.5e-9, 45.0e-3);
-        c.addDiode (d1, gnd, 2.5e-9, 45.0e-3);
-        c.addDiode (gnd, d2, 2.5e-9, 45.0e-3);
-        c.addDiode (d2, g2, 2.5e-9, 45.0e-3);
+        // Two series 1N914s each way between grid and ground (~1.2 V knee, per the schematic discussion). Each chain
+        // carries one current, so it is ONE diode (SeriesDiodes.h): the floating node between two junctions made Newton
+        // fail and the channel recover ~8 times a second at hot Gain -- the user's crackles (2026-10-31).
+        const auto pair = seriesDiodes ({ { 2.5e-9, 45.0e-3 }, { 2.5e-9, 45.0e-3 } });
+        c.addDiode (g2, gnd, pair.Is, pair.nVt);
+        c.addDiode (gnd, g2, pair.Is, pair.nVt);
 
         // Baxandall-style shelving stack (values off the published schematic): 22nF coupling -> 100k series
         // feed -> treble leg (.01uF -> TREBLE 500k-LIN -> gnd) and bass leg (.001uF -> BASS 500k-LIN ->
