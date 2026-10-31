@@ -34,6 +34,10 @@ public:
         for the stomp that will be learned (drawn "..."). */
     void setPedal (int cc, bool armed);
 
+    /** Repaints when an amp's page-2 Cab selector crossed Off <-> on since the last paint, so the tile swaps between
+        the head-only and head+cabinet glyphs. Cheap; MainComponent polls it from its UI timer. */
+    void refreshIconVariant();
+
     /** Which of the maxVisibleRows x chainColumns grid cells this block
         currently occupies (row*columns+col) -- independent of this block's
         position in MainComponent's `blocks`/`chain` arrays, which stay
@@ -63,6 +67,10 @@ public:
 
 private:
     void timerCallback() override;
+    bool showsHeadOnlyIcon() const;
+
+    juce::AudioParameterFloat* cabParam = nullptr; // the amp's `*_cab` selector, if it has one
+    bool paintedHeadOnly = false;
 
     int pedalCc = -1;
     bool pedalArmed = false;
