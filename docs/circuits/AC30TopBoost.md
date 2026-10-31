@@ -130,3 +130,21 @@ After the #99 audit (rail / PI rework) the reduced stage was no longer refitted 
 what the full stage does (it compresses progressively from the smallest level). Worst deviation now 0.65 dB, and the
 AmpFullVsReducedConsistency entry passes (level 5.37 dB, bound 6). The registry trim moved -11.63 -> -9.77 dB to keep
 the AC30 at unity.
+
+## Reduced path refit (2026-10-31)
+User report: at full Volume it sounded strange and had more gain than an AC30. The shipped behavioural stage was the
+cause, not the netlist. Its knee of 0.75 (softer than any physical curve) compressed at every level and saturated at
+~2/3 of the real output (20.6 V rms against 30 V rms). It also ran 4-5 dB hot with +7 dB in the mids. The bound that
+let this through was 6 / 6 dB.
+
+Refitted against the full netlist on the per-amp sine sweep (5 mV to 0.6 V, Volume 0.8) and on chords at Volume 0.4
+and 0.8. The new constants are `bmGain0` 20, `bmYmax` 0.29, knee 1.5 and level trim 0.40. A peaking cut (500 Hz, Q 0.5,
+−6 dB) stands for the mid dip the PI and output transformer put after the tone stack.
+
+| Check | Result |
+|---|---|
+| Sine sweep | every level within 2 dB |
+| Chords | level ≤ 3.45 dB, band ≤ 1.8 dB (bound 3.5 / 2) |
+| Unity trim | −9.77 → −7.79 dB |
+
+At Volume 0.2 the amp is now linear with normal picking: 0.05 V in gives 0.042 out.

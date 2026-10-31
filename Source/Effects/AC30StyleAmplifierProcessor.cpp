@@ -538,7 +538,12 @@ double AC30StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double to
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState));
+    double y = ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState);
+    // The full netlist's PI + output transformer dip the mids against the tone stack's own output: a peaking cut
+    // stands for it (without it the reduced path ran ~7 dB hot in the mids).
+    const double o = midB0 * y + midB1 * ch.mx1 + midB2 * ch.mx2 - midA1 * ch.my1 - midA2 * ch.my2;
+    ch.mx2 = ch.mx1; ch.mx1 = y; ch.my2 = ch.my1; ch.my1 = o;
+    ch.bmOutput = ch.bmTail.process (o * bmLevelTrim);
     return ch.bmOutput;
 }
 
@@ -650,8 +655,15 @@ void AC30StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
+        ch.mx1 = ch.mx2 = ch.my1 = ch.my2 = 0.0;
         ch.cutFilterState = 0.0;
         ch.piCoupling.prepare (newSampleRate, 0.01e-6, 1.0e6, ch.power.voltage (ch.wTone)); // the real 0.01uF into the PI grid
+    }
+    {   // RBJ peaking cut for the reduced stage
+        const double A = std::pow (10.0, bmMidDb / 40.0), w0 = 2.0 * juce::MathConstants<double>::pi * bmMidHz / newSampleRate;
+        const double al = std::sin (w0) / (2.0 * bmMidQ), cs = std::cos (w0), a0 = 1.0 + al / A;
+        midB0 = (1.0 + al * A) / a0; midB1 = -2.0 * cs / a0; midB2 = (1.0 - al * A) / a0;
+        midA1 = midB1; midA2 = (1.0 - al / A) / a0;
     }
     updatePots (lastKnobs);
 
