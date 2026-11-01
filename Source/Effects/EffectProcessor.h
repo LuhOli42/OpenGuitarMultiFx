@@ -210,6 +210,9 @@ public:
         (a rotary switch with many positions, like the Steel String's 7-way filters). */
     virtual bool prefersSteppedKnob (const juce::AudioParameterFloat&) const { return false; }
 
+    /** Editor hint: draw this control as a vertical fader, not a knob -- a graphic EQ's band sliders. */
+    virtual bool prefersFader (const juce::AudioParameterFloat&) const { return false; }
+
     /** The editor's pages of knobs. Page 0 is the float parameters that are direct children of getParameters(); every
         sub-group of it is a further page (its float parameters, in order). Almost every effect has one page; the
         amplifiers keep their "second page" controls (power drive, bias, ...) in a sub-group. All of them stay in

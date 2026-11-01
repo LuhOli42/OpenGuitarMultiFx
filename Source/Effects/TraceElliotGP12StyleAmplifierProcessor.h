@@ -4,7 +4,9 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "TubeAmpCommon.h"
 
+#include <algorithm>
 #include <array>
 
 namespace openguitarmultifx
@@ -38,6 +40,11 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** The 12-band graphic and its level are sliders on the real panel. */
+    bool prefersFader (const juce::AudioParameterFloat& p) const override
+    {
+        return &p == graphicLevel || std::find (bands.begin(), bands.end(), &p) != bands.end();
+    }
     const char* getName() const override { return "Trace Elliot GP12"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2f8f6f); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
@@ -72,6 +79,9 @@ private:
         int srcEq1 = 0, srcEq2 = 0;
         NodalCircuit::Node nEq1Out = 0, nEq2Out = 0;
         std::array<int, numBands> rUp {}, rDown {};
+        // Page 2's Cab: the shared cabinet voicing after the preamp (the GP12 itself has no speaker)
+        tubeamp::CabSim cab;
+        double cabMix = 0.0;
     };
     std::array<Channel, 2> channels;
 
@@ -88,7 +98,10 @@ private:
     juce::AudioParameterFloat* graphic = nullptr;
     juce::AudioParameterFloat* graphicLevel = nullptr;
     juce::AudioParameterFloat* output = nullptr;
+    juce::AudioParameterFloat* cabParam = nullptr; // page 2: Off (default) / 1x15 Bass / 8x10 Fridge / 4x10 Tweed
     std::array<juce::AudioParameterFloat*, numBands> bands {};
+    int appliedCab = -1;
+    void updateCab();
 
     std::array<float, numBands> appliedSliders {};
     int appliedShape = -1;

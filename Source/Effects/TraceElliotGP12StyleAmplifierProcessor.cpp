@@ -1,6 +1,7 @@
 #include "TraceElliotGP12StyleAmplifierProcessor.h"
 #include "PotTaper.h"
 #include "IconKit.h"
+#include "TubeAmpCommon.h"
 
 #include <IconData.h>
 
@@ -125,7 +126,34 @@ TraceElliotGP12StyleAmplifierProcessor::TraceElliotGP12StyleAmplifierProcessor()
         group->addChild (std::move (p));
     }
 
+    // Page 2 (synthetic, like every amp's): a Cab selector. Off by default -- the GP12 is a DI preamp with no speaker.
+    auto cab = std::make_unique<juce::AudioParameterFloat> (
+        "tegp12_cab", "Cab", juce::NormalisableRange<float> (0.0f, 3.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        {
+            switch (juce::roundToInt (v)) { case 1: return juce::String ("1x15 Bass"); case 2: return juce::String ("8x10 Fridge");
+                                            case 3: return juce::String ("4x10 Tweed"); default: return juce::String ("Off"); }
+        }));
+    cabParam = cab.get();
+    auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("tegp12_page2", "Page 2", "|", std::move (cab));
+    group->addChild (std::move (page2));
+
     parameters = std::move (group);
+}
+
+void TraceElliotGP12StyleAmplifierProcessor::updateCab()
+{
+    const int sel = juce::roundToInt (cabParam->get());
+    if (sel == appliedCab)
+        return;
+    const tubeamp::CabOption* options[] = { &tubeamp::cabs::bass115, &tubeamp::cabs::bass810, &tubeamp::cabs::tweed410 };
+    if (sel > 0)
+    {
+        const auto& c = options[(size_t) juce::jlimit (0, 2, sel - 1)]->profile;
+        for (auto& ch : channels)
+            ch.cab.prepare (sampleRate, c.resHz, c.resDb, c.loHz, c.lpHz, c.airHz, c.notchHz, c.notchDb);
+    }
+    appliedCab = sel;
 }
 
 void TraceElliotGP12StyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -266,6 +294,10 @@ void TraceElliotGP12StyleAmplifierProcessor::prepare (double newSampleRate, int,
 
     appliedSliders.fill (1.0e9f);
     appliedShape = -1;
+    appliedCab = -1;
+    updateCab();
+    for (auto& ch : channels)
+        ch.cabMix = appliedCab > 0 ? 1.0 : 0.0;
     appliedGraphic = false;
     updatePreShape();
     updateSliders();
@@ -298,6 +330,9 @@ void TraceElliotGP12StyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
     smoothedOutput.setTargetValue ((float) (4.0 * pots::audio (output->get())));
 
     const double ts = 1.0 / sampleRate;
+    updateCab();
+    const double cabTarget = appliedCab > 0 ? 1.0 : 0.0;
+    const double cabFade = 1.0 - std::exp (-1.0 / (0.004 * sampleRate)); // ~4 ms crossfade on a Cab change
     const double kCross = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 250.0 * ts);
     const double kLoAtk = 1.0 - std::exp (-ts / loAtkSec);
     const double kLoRel = 1.0 - std::exp (-ts / loRelSec);
@@ -373,7 +408,14 @@ void TraceElliotGP12StyleAmplifierProcessor::process (juce::AudioBuffer<float>& 
                 wet = ch.eq2.voltage (ch.nEq2Out) - vBias;
             wet *= gLevel;
 
-            data[i] = (float) (wet * gOut);
+            double out = wet * gOut;
+            if (ch.cabMix > 1.0e-6 || cabTarget > 0.0)
+            {
+                const double cabbed = ch.cab.process (out);
+                out += ch.cabMix * (cabbed - out);
+            }
+            ch.cabMix += cabFade * (cabTarget - ch.cabMix);
+            data[i] = (float) out;
         }
     }
 

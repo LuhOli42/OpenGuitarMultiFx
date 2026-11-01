@@ -71,3 +71,10 @@ power-stage/speaker-impedance model here.
 - Input/output buffers and the preamp gain block are linear gains (they are clean
   solid-state stages).
 - No power amp, cabinet or speaker-impedance stage: the unit is a preamp/DI.
+
+## Page 2 and faders (2026-11-01)
+
+Every other amp has a page 2; the GP12 had none. It now carries a **Cab** selector (Off by default -- the GP12 is a DI
+preamp with no speaker -- then 1x15 Bass, 8x10 Fridge, 4x10 Tweed: the shared `tubeamp::CabSim` voicings, faded over
+~4 ms on a change). The 12 graphic bands and Graphic Level draw as vertical faders, as on the panel.
+

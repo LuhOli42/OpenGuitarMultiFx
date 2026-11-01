@@ -5,6 +5,7 @@
 #include "NodalCircuit.h"
 #include "TubeAmpCommon.h"
 
+#include <algorithm>
 #include <array>
 
 namespace openguitarmultifx
@@ -37,6 +38,11 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** The five-band graphic EQ is a row of sliders on the real panel. */
+    bool prefersFader (const juce::AudioParameterFloat& p) const override
+    {
+        return std::find (std::begin (geqParams), std::end (geqParams), &p) != std::end (geqParams);
+    }
     /** Lead Drive and Lead Master only act on the Lead channel (Master is shared). */
     bool isParameterActive (const juce::AudioParameterFloat& p) const override
     {
