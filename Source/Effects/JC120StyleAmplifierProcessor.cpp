@@ -53,12 +53,14 @@ namespace
 
 JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
 {
-    auto input = std::make_unique<juce::AudioParameterFloat> (
-        "jc_input", "Input", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 0.0f,
+    auto channel = std::make_unique<juce::AudioParameterFloat> (
+        "jc_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-        {
-            switch (juce::roundToInt (v)) { case 1: return juce::String ("Channel 2"); case 2: return juce::String ("Both"); default: return juce::String ("Channel 1"); }
-        }));
+        { return v < 0.5f ? juce::String ("CH-1") : juce::String ("CH-2"); }));
+    auto input = std::make_unique<juce::AudioParameterFloat> (
+        "jc_input_jack", "Input", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        { return v < 0.5f ? juce::String ("High") : juce::String ("Low"); }));
     auto bright = std::make_unique<juce::AudioParameterFloat> (
         "jc_bright", "Bright", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
@@ -72,10 +74,8 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
     auto bass = make ("jc_bass", "Bass", 0.5f);
     auto middle = make ("jc_middle", "Middle", 0.5f);
     auto output = make ("jc_output", "Output", 0.5f);
-    auto distortion = std::make_unique<juce::AudioParameterFloat> (
-        "jc_distortion", "Distortion", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
-        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-        { return juce::roundToInt (v) == 0 ? juce::String ("Off") : juce::String ("On"); }));
+    auto distortion = make ("jc_distortion", "Distortion", 0.0f);
+    auto reverb = make ("jc_reverb", "Reverb", 0.0f);
     auto effect = std::make_unique<juce::AudioParameterFloat> (
         "jc_effect", "Effect", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
@@ -89,8 +89,10 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
         { return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm"; }));
 
+    channelParam = channel.get();
     inputParam = input.get();
     brightParam = bright.get();
+    reverbParam = reverb.get();
     volumeParam = volume.get();
     trebleParam = treble.get();
     bassParam = bass.get();
@@ -103,21 +105,61 @@ JC120StyleAmplifierProcessor::JC120StyleAmplifierProcessor()
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "jc120", "JC-120", "|", std::move (input));
+        "jc120", "JC-120", "|", std::move (channel));
+    group->addChild (std::move (input));
     group->addChild (std::move (bright));
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));
-    group->addChild (std::move (bass));
     group->addChild (std::move (middle));
+    group->addChild (std::move (bass));
     group->addChild (std::move (distortion));
+    group->addChild (std::move (reverb));
     group->addChild (std::move (effect));
     group->addChild (std::move (speed));
     group->addChild (std::move (depth));
-    group->addChild (std::move (output));
 
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("jc120_page2", "Page 2", "|", std::move (speaker));
+    page2->addChild (std::move (output));
     group->addChild (std::move (page2));
     parameters = std::move (group);
+
+    // Each channel has its own Bright, Volume, Treble, Middle and Bass on the real panel: the visible knobs carry the
+    // selected channel's set.
+    knobMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
+        std::vector<juce::AudioParameterFloat*> { brightParam, volumeParam, trebleParam, middleParam, bassParam });
+
+    // The tank: the spring engine fully wet (the amp's own Reverb pot sets how much returns).
+    for (auto* p : spring.getParameters()->getParameters (true))
+        if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+        {
+            if (f->paramID == "spring_wet" || f->paramID == "spring_kill_dry")
+                *f = 1.0f;
+            else if (f->paramID == "spring_decay")
+                *f = 0.65f;
+            else if (f->paramID == "spring_tone")
+                *f = 0.6f;
+        }
+}
+
+std::unique_ptr<juce::XmlElement> JC120StyleAmplifierProcessor::getState() const
+{
+    auto xml = EffectProcessor::getState();
+    knobMemory->writeState (*xml);
+    return xml;
+}
+
+void JC120StyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    {
+        const ChannelKnobMemory::ScopedSuspend suspend (*knobMemory);
+        EffectProcessor::setState (state);
+        // Presets from before the real panel: jc_input was Channel 1 / Channel 2 / Both, and Distortion a switch.
+        if (! state.hasAttribute ("jc_channel") && state.hasAttribute ("jc_input"))
+            *channelParam = state.getDoubleAttribute ("jc_input") >= 0.5 ? 1.0f : 0.0f;
+        if (! state.hasAttribute ("jc_reverb") && state.getDoubleAttribute ("jc_distortion", 0.0) >= 0.5)
+            *distortionParam = 0.6f;
+    }
+    knobMemory->readState (state);
 }
 
 void JC120StyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -173,10 +215,9 @@ void JC120StyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.rVolBot[ch2] = c.addResistor (w, vb, 100.0e3);
             c.addResistor (w, ch.pMix, 47.0e3);
 
-            if (ch2 == 0)
             {
                 const auto brightMid = c.addNode();
-                ch.rBrightSeries = c.addResistor (tone, brightMid, 100.0e6);
+                ch.rBrightSeries[ch2] = c.addResistor (tone, brightMid, 100.0e6);
                 c.addCapacitor (brightMid, w, 100.0e-12);
             }
         }
@@ -322,8 +363,11 @@ void JC120StyleAmplifierProcessor::updatePots (const Knobs& k)
             ch.pre.setResistance (ch.rVolBot[i], volBottom);
             ch.pre.setResistance (ch.rVolTop[i], juce::jmax (1.0, 100.0e3 - volBottom));
         }
-        const bool distOn = k.distortion >= 0.5;
-        ch.power.setResistance (ch.rDistCouple, distOn ? 2.2e3 : 1.0e9);
+        // Distortion: off at 0, otherwise the knob sets how much of the signal reaches the clipper's boost transistor --
+        // the series resistance into its 10k base leg (drive = 10k / (10k + R), from 5 % up to the old fixed 82 %, linear).
+        const bool distOn = k.distortion > 0.01;
+        const double drive = 0.05 + 0.77 * k.distortion;
+        ch.power.setResistance (ch.rDistCouple, distOn ? 10.0e3 * (1.0 / drive - 1.0) : 1.0e9);
         ch.power.setResistance (ch.rCleanCouple, distOn ? 1.0e9 : 1.0e3);
         if (k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
@@ -403,6 +447,14 @@ void JC120StyleAmplifierProcessor::prepare (double newSampleRate, int maxBlockSi
     setup (smoothedSpeed, speedParam, 0.05);
     setup (smoothedDepth, depthParam, 0.05);
 
+    maxBlock = juce::jmax (maxBlock, maxBlockSize);
+    spring.prepare (newSampleRate, maxBlock, 2);
+    reverbSend.setSize (2, maxBlock);
+    reverbReturn.setSize (2, maxBlock);
+    reverbSend.clear();
+    reverbReturn.clear();
+    reverbReturnLength = 0;
+
     appliedSpeaker = matchedSpeaker;
     updatePots ({ volumeParam->get(), trebleParam->get(), bassParam->get(), middleParam->get(), distortionParam->get(),
                   effectParam->get(), speedParam->get(), depthParam->get(), juce::roundToInt (speakerParam->get()) });
@@ -412,6 +464,7 @@ void JC120StyleAmplifierProcessor::prepare (double newSampleRate, int maxBlockSi
     {
         dcOk = ch.pre.prepare (newSampleRate) && dcOk;
         const double mixDc = ch.pre.voltage (ch.pMix);
+        ch.mixDc = mixDc;
         ch.power.setSource (ch.wSrcCf, mixDc);
         dcOk = ch.power.prepare (newSampleRate) && dcOk;
         ch.pre.saveDynamicState (ch.preRest);
@@ -449,11 +502,16 @@ void JC120StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedSpeed.setTargetValue (speedParam->get());
     smoothedDepth.setTargetValue (depthParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
-    const int inputChoice = juce::roundToInt (inputParam->get());
-    const bool inputConnects1 = inputChoice != 1;
-    const bool inputConnects2 = inputChoice != 0;
-    const double distortionKnob = distortionParam->get();
-    const int effectChoice = juce::roundToInt (effectParam->get());
+    // The guitar goes into the selected channel's jack; Low is the 82K / 47K divider (-8.8 dB). Distortion, Reverb
+    // and the chorus / vibrato are CH-2's.
+    const bool channel2 = channelParam->get() >= 0.5f;
+    const double inputGain = inputParam->get() >= 0.5f ? 47.0 / (82.0 + 47.0) : 1.0;
+    const bool inputConnects1 = ! channel2;
+    const bool inputConnects2 = channel2;
+    const double distortionKnob = channel2 ? (double) distortionParam->get() : 0.0;
+    const int effectChoice = channel2 ? juce::roundToInt (effectParam->get()) : 0;
+    const double reverbLevel = channel2 ? pots::audio ((double) reverbParam->get()) : 0.0;
+    const int blockLength = juce::jmin (numSamples, maxBlock);
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -470,9 +528,13 @@ void JC120StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             controlCounter = 0;
             updatePots ({ vo, tr, ba, mi, distortionKnob, (double) effectChoice, sp, de, speakerChoice });
 
+            // Bright belongs to the selected channel's knob set (ChannelKnobMemory swaps it with the others).
             const bool brightOn = brightParam->get() >= 0.5f;
             for (auto& ch : channels)
-                ch.pre.setResistance (ch.rBrightSeries, brightOn ? 1.0 : 100.0e6);
+            {
+                ch.pre.setResistance (ch.rBrightSeries[channel2 ? 1 : 0], brightOn ? 1.0 : 100.0e6);
+                ch.pre.setResistance (ch.rBrightSeries[channel2 ? 0 : 1], 100.0e6);
+            }
         }
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
@@ -485,13 +547,24 @@ void JC120StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             auto& ch = channels[(size_t) chIdx];
             auto* data = buffer.getWritePointer (chIdx);
 
-            const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
+            const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i] * inputGain) : 0.0;
             ch.pre.setSource (ch.pSrcIn1, inputConnects1 ? x : 0.0);
             ch.pre.setSource (ch.pSrcIn2, inputConnects2 ? x : 0.0);
             const bool okPre = ch.pre.solveSample();
 
+            // Reverb: the channel's signal (AC, around the 17 V virtual ground) into the tank; the return, scaled by the
+            // Reverb pot, joins ahead of the master stage. The tank runs one block behind.
             const double mixV = ch.pre.voltage (ch.pMix);
-            ch.power.setSource (ch.wSrcCf, mixV);
+            const double mixAc = mixV - ch.mixDc;
+            ch.mixDc += 1.0e-4 * (mixV - ch.mixDc);
+            if (i < blockLength)
+            {
+                reverbSend.setSample (chIdx, i, (float) mixAc);
+                if (solveChannels == 1)
+                    reverbSend.setSample (1, i, (float) mixAc);
+            }
+            const double ret = (reverbLevel > 0.0 && i < reverbReturnLength) ? reverbLevel * reverbReturn.getSample (chIdx, i) : 0.0;
+            ch.power.setSource (ch.wSrcCf, mixV + ret);
             const bool okPower = ch.power.solveSample();
             const bool ok = okPre && okPower;
 
@@ -542,6 +615,14 @@ void JC120StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                     ++failureCount;
             }
         }
+    }
+
+    {   // always run, so a tail keeps ringing after the Reverb pot is turned down
+        juce::AudioBuffer<float> sendView (reverbSend.getArrayOfWritePointers(), 2, blockLength);
+        spring.process (sendView);
+        for (int c = 0; c < 2; ++c)
+            reverbReturn.copyFrom (c, 0, sendView, c, 0, blockLength);
+        reverbReturnLength = blockLength;
     }
 
     shortcut.end (buffer);

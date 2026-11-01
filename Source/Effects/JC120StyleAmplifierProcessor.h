@@ -1,9 +1,11 @@
 #pragma once
 
+#include "ChannelKnobMemory.h"
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "EnvelopeFollower.h"
 #include "NodalCircuit.h"
+#include "SpringReverbProcessor.h"
 
 #include <array>
 
@@ -20,15 +22,14 @@ namespace openguitarmultifx
     and its DC bias point could not be made to pass any AC signal in the time available (docs/circuits/JC120JazzChorus.md
     has the full story); no tubes, no NodalCircuit power-tube machinery reused here either way.
 
-    Scope: the clean amplification path AND the amp's own real BBD chorus/vibrato circuit (an MN3002 bucket-brigade
-    device driven by a modulated clock, per explicit user request 2026-09-28 -- an exception to this project's usual
-    "never model a built-in modulation effect" call, since the chorus is this amp's entire reason for existing,
-    unlike a secondary reverb tank). The real amp's spring reverb tank is NOT modelled (same "never model an
-    effects loop" call as every other amp here -- ReverbProcessor covers that ground) and the built-in Distortion
-    footswitch clipper IS modelled (it is part of the amp's own core signal path, not an add-on effect).
+    Scope: both channels' preamps, the Distortion clipper, the power amp, the amp's own BBD chorus/vibrato (an MN3002
+    driven by a modulated clock, per explicit user request 2026-09-28), and -- since 2026-10-31 -- the CH-2 spring reverb
+    (SpringReverbProcessor as the tank, one block behind).
 
-    Controls, page 1: Input (Channel 1 / Channel 2 / Both), Volume, Treble, Bass, Middle, Output. Page 2: Distortion
-    (footswitch on/off), Effect (Off / Vibrato / Chorus), Speed, Depth, Speaker (4 / 8 / 16 ohm).
+    Controls, page 1 (the real panel, 2026-10-31): Channel (1 / 2), Input (High / Low -- Low is the 82K / 47K divider,
+    -8.8 dB), and each channel's own Bright, Volume, Treble, Middle, Bass (ChannelKnobMemory: switching Channel swaps the
+    visible set); CH-2 only: Distortion (a knob, as on current JC-120s; the 1979 drawing has a switch), Reverb, Effect
+    (Off / Vibrato / Chorus), Speed, Depth. Page 2: Speaker (4 / 8 / 16 ohm), Output.
 */
 class JC120StyleAmplifierProcessor : public EffectProcessor
 {
@@ -38,6 +39,9 @@ public:
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
+    bool hasTrails() const override { return true; }
+    std::unique_ptr<juce::XmlElement> getState() const override;
+    void setState (const juce::XmlElement& state) override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "JC-120"; }
@@ -65,12 +69,13 @@ private:
         int failStreak = 0;
         int restRefreshCounter = 0;
         double lastEmitted = 0.0, declick = 0.0;
+        double mixDc = 0.0; // the preamp mix node's DC, tracked so only AC reaches the reverb tank
         bool alignOutput = false;
 
         // preamp: both channels' input op-amp + tone stack live here, mixing into pMix
         int pSrcIn1 = 0, pSrcIn2 = 0;
         int rTrebleTop[2] {}, rTrebleBottom[2] {}, rBass[2] {}, rMid[2] {}, rVolTop[2] {}, rVolBot[2] {};
-        int rBrightSeries = 0;
+        int rBrightSeries[2] {};
         NodalCircuit::Node pPlate1 = 0, pPlate2 = 0, pMix = 0;
 
         // power: master gain, distortion clipper, driver, output pair
@@ -111,7 +116,13 @@ private:
     DualMonoShortcut shortcut;
 
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
-    juce::AudioParameterFloat* inputParam = nullptr;
+    juce::AudioParameterFloat* inputParam = nullptr;   // High / Low
+    juce::AudioParameterFloat* channelParam = nullptr;
+    juce::AudioParameterFloat* reverbParam = nullptr;
+    std::unique_ptr<ChannelKnobMemory> knobMemory;
+    SpringReverbProcessor spring;
+    juce::AudioBuffer<float> reverbSend, reverbReturn;
+    int reverbReturnLength = 0, maxBlock = 512;
     juce::AudioParameterFloat* brightParam = nullptr;
     juce::AudioParameterFloat* volumeParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
@@ -138,7 +149,7 @@ private:
             return;
         const double sr = sampleRate;
         sampleRate = 0.0;
-        prepare (sr, 0, 0);
+        prepare (sr, maxBlock, 2);
     }
 
     double sampleRate = 0.0;
