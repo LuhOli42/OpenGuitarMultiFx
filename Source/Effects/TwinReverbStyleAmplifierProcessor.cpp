@@ -120,10 +120,10 @@ const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tub
 TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
-        "tr_input", "Input", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 1.0f,
+        "tr_input", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
         {
-            switch (juce::roundToInt (v)) { case 0: return juce::String ("Normal"); case 2: return juce::String ("Both"); default: return juce::String ("Vibrato"); }
+            return v < 0.5f ? juce::String ("Normal") : juce::String ("Vibrato");
         }));
     auto makeBright = [] (const char* id, const char* name)
     {
@@ -138,16 +138,11 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
     };
     // Two full knob sets, as on the real AB763 panel. The Vibrato channel keeps the original parameter ids (it is the
     // default input), so presets saved before the Normal channel got its own knobs still sound the same.
-    auto nBright = makeBright ("tr_n_bright", "Normal Bright");
-    auto nVolume = make ("tr_n_volume", "Normal Volume", 0.4f);
-    auto nTreble = make ("tr_n_treble", "Normal Treble", 0.5f);
-    auto nMiddle = make ("tr_n_middle", "Normal Middle", 0.5f);
-    auto nBass = make ("tr_n_bass", "Normal Bass", 0.5f);
-    auto bright = makeBright ("tr_bright", "Vibrato Bright");
-    auto volume = make ("tr_volume", "Vibrato Volume", 0.4f);
-    auto treble = make ("tr_treble", "Vibrato Treble", 0.5f);
-    auto middle = make ("tr_middle", "Vibrato Middle", 0.5f);
-    auto bass = make ("tr_bass", "Vibrato Bass", 0.5f);
+    auto bright = makeBright ("tr_bright", "Bright");
+    auto volume = make ("tr_volume", "Volume", 0.4f);
+    auto treble = make ("tr_treble", "Treble", 0.5f);
+    auto middle = make ("tr_middle", "Middle", 0.5f);
+    auto bass = make ("tr_bass", "Bass", 0.5f);
     auto speed = make ("tr_speed", "Speed", 0.5f);
     auto intensity = make ("tr_intensity", "Intensity", 0.0f);
     auto output = make ("tr_output", "Output", 0.5f);
@@ -160,16 +155,11 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
         { return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm"; }));
 
     inputParam = input.get();
-    brightParam[0] = nBright.get();
-    volumeParam[0] = nVolume.get();
-    trebleParam[0] = nTreble.get();
-    middleParam[0] = nMiddle.get();
-    bassParam[0] = nBass.get();
-    brightParam[1] = bright.get();
-    volumeParam[1] = volume.get();
-    trebleParam[1] = treble.get();
-    middleParam[1] = middle.get();
-    bassParam[1] = bass.get();
+    brightParam[0] = brightParam[1] = bright.get();
+    volumeParam[0] = volumeParam[1] = volume.get();
+    trebleParam[0] = trebleParam[1] = treble.get();
+    middleParam[0] = middleParam[1] = middle.get();
+    bassParam[0] = bassParam[1] = bass.get();
     speedParam = speed.get();
     intensityParam = intensity.get();
     outputParam = output.get();
@@ -180,11 +170,6 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "twinreverb", "Twin Reverb", "|", std::move (input));
-    group->addChild (std::move (nBright));
-    group->addChild (std::move (nVolume));
-    group->addChild (std::move (nTreble));
-    group->addChild (std::move (nMiddle));
-    group->addChild (std::move (nBass));
     group->addChild (std::move (bright));
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));
@@ -202,6 +187,38 @@ TwinReverbStyleAmplifierProcessor::TwinReverbStyleAmplifierProcessor()
     page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
+
+    // One knob set on screen, swapped with the Channel selector: the two channels are almost never used together on an
+    // AB763 reverb amp -- the Vibrato channel's extra (reverb-recovery) stage puts it out of phase with Normal, so a
+    // jumper cable thins the sound out (user request 2026-10-31; TDPRI / Hoffman / Rob Robinette).
+    knobMemory = std::make_unique<ChannelKnobMemory> (*inputParam, std::vector<juce::AudioParameterFloat*> { brightParam[1], volumeParam[1], trebleParam[1], middleParam[1], bassParam[1] });
+}
+
+std::unique_ptr<juce::XmlElement> TwinReverbStyleAmplifierProcessor::getState() const
+{
+    auto xml = EffectProcessor::getState();
+    knobMemory->writeState (*xml);
+    return xml;
+}
+
+void TwinReverbStyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    // Presets from before the single knob set kept the Normal channel's knobs as tr_n_*, the Vibrato's as tr_*, and an
+    // Input "Both" (2, now clamped to Vibrato). Hand them to the per-channel memory.
+    juce::XmlElement migrated (state);
+    for (auto* key : { "bright", "volume", "treble", "middle", "bass" })
+    {
+        const juce::String id = juce::String ("tr_") + key;
+        if (! migrated.hasAttribute (id + "_ch0") && migrated.hasAttribute (juce::String ("tr_n_") + key))
+            migrated.setAttribute (id + "_ch0", migrated.getDoubleAttribute (juce::String ("tr_n_") + key));
+        if (! migrated.hasAttribute (id + "_ch1") && migrated.hasAttribute (id))
+            migrated.setAttribute (id + "_ch1", migrated.getDoubleAttribute (id));
+    }
+    {
+        const ChannelKnobMemory::ScopedSuspend suspend (*knobMemory);
+        EffectProcessor::setState (migrated);
+    }
+    knobMemory->readState (migrated);
 }
 
 void TwinReverbStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -726,7 +743,7 @@ void TwinReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffe
     smoothedBias.setTargetValue (biasParam->get());
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
-    const int inputChoice = juce::roundToInt (inputParam->get()); // 0 Normal, 1 Vibrato, 2 Both
+    const int inputChoice = juce::roundToInt (inputParam->get()); // the Channel: 0 Normal, 1 Vibrato
     const bool inputConnectsNormal = inputChoice != 1;
     const bool inputConnectsVibrato = inputChoice != 0;
 

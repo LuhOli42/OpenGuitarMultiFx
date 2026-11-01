@@ -27,6 +27,28 @@ public:
 
     void runTest() override
     {
+        beginTest ("one knob set per Channel; an old two-set preset lands on the right channels");
+        {
+            TwinReverbStyleAmplifierProcessor amp;
+            juce::XmlElement old ("EffectState");
+            old.setAttribute ("tr_input", 0.0);       // Normal
+            old.setAttribute ("tr_n_volume", 0.2);
+            old.setAttribute ("tr_volume", 0.9);
+            amp.setState (old);
+            const auto get = [&] (const char* id)
+            {
+                for (auto* p : amp.getParameters()->getParameters (true))
+                    if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+                        if (f->paramID == id)
+                            return f;
+                return (juce::AudioParameterFloat*) nullptr;
+            };
+            expectWithinAbsoluteError (get ("tr_volume")->get(), 0.2f, 1.0e-4f);
+            *get ("tr_input") = 1.0f;                 // Vibrato
+            expectWithinAbsoluteError (get ("tr_volume")->get(), 0.9f, 1.0e-4f);
+            expect (get ("tr_n_volume") == nullptr);
+        }
+
         TwinReverbStyleAmplifierProcessor::reducedOrder = false;
 
         beginTest ("operating points match the schematic (its voltages are printed, +-20%)");

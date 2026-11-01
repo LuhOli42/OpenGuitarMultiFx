@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ChannelKnobMemory.h"
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
@@ -36,6 +37,8 @@ public:
     void prepare (double sampleRate, int maxBlockSize, int numChannels) override;
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override { forceReprepare(); }
+    std::unique_ptr<juce::XmlElement> getState() const override;
+    void setState (const juce::XmlElement& state) override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return "Deluxe Reverb"; }
@@ -157,7 +160,8 @@ private:
 
     juce::AudioParameterFloat* cabParam = nullptr;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
-    juce::AudioParameterFloat* inputParam = nullptr;
+    juce::AudioParameterFloat* inputParam = nullptr; // the Channel selector (Normal / Vibrato)
+    std::unique_ptr<ChannelKnobMemory> knobMemory;   // one visible knob set; each channel keeps its own values
     // [0] Normal, [1] Vibrato
     juce::AudioParameterFloat* volumeParam[2] {};
     juce::AudioParameterFloat* trebleParam[2] {};

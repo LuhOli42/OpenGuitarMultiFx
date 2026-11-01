@@ -117,3 +117,12 @@ Same mechanism as the Twin Reverb/Super Lead/Bassman; see the Super Lead's own d
 Full reference netlist: not separately profiled (reducedOrder shipped from the start, per the user's request).
 **The shipped default (reducedOrder) is ~4.08% average, ~7.0% worst block, zero failures.** Orders {0, 0, 1} (2x
 only at High), same tier convention as the other amps on this pattern. Unity trim +0.0 dB.
+
+## One knob set per Channel (2026-10-31)
+The panel showed both channels' knobs at once, with an Input selector of Normal / Vibrato / Both. On an AB763 reverb amp
+the two channels are almost never jumpered. The Vibrato channel's extra reverb-recovery stage puts it out of phase with
+Normal, so summing them thins the sound (TDPRI, Hoffman forum, Rob Robinette). The Input selector is now **Channel**
+(Normal / Vibrato) and there is one knob set, swapped with it (`ChannelKnobMemory`): each channel keeps its own values,
+like its own pots. Old presets map onto it: `*_n_*` becomes the Normal channel's values and "Both" becomes Vibrato. The
+circuit is unchanged; the input simply feeds the selected channel only. Jumper-friendly amps (Super Lead, Bassman,
+JTM45) keep both sets.
