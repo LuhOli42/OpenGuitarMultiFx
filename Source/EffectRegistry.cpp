@@ -484,7 +484,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // 2026-09-27 user approval as the Super Lead's own switch just above.
     BassmanStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("BassmanStyleAmplifier");
-    registry.registerType ("BassmanStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<BassmanStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -24.18f); }, "Crunch");
+    registry.registerType ("BassmanStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<BassmanStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -24.76f); }, "Crunch");
     // docs/circuits/TwinReverbAB763.md. reducedOrder calibrated (TR_POWERCAL) and verified (level tracks the reference
     // within 0.01-0.06 dB, PedalUnityLevelTests passing) -- shipped as the default, same as the Super Lead/Bassman.
     TwinReverbStyleAmplifierProcessor::reducedOrder = true;
