@@ -15,7 +15,7 @@ where a drawing can actually be found. **Verified** = downloaded and opened. Use
 | Ampeg V-4 / V-4B | V-4B: factory drawing 4010267 (5-71), photos at ampegv4.com `images/schematics/V4B.jpg` and irationaudio.com (2016/02 "ampeg-v4b"); V-4 / VT-22: el34world `Ampeg/Ampegv4_v22.service_manual.pdf`, `Ampegvt22_v4_reva.pdf` | factory, verified | model rebuilt to 4010267; the P.E.C. module contents, L101 and the OT are estimates |
 | Mesa Bass 400 | el34world `Mesa_Boogie/Boogie_bass400.pdf` (2 pages) | factory, verified | it is the original 1983 Bass 400; the model uses it for the 400+ (same architecture per the Plus manual, which adds a 7th EQ band) |
 | Trace Elliot GP12 | el34world `Trace_elliot/Trace_Elliot_GP12_serie6-preamp.pdf` (11 pages), `Trace_Elliot_GP12_250Watt.pdf` | factory, verified | Series 6 (no SMX): the model's graphic EQ and Pre Shape 1 are now the drawing's circuits; the SMX compressor and Shape 2 stay behavioural |
-| Dumble (ODS family) | el34world `Dumble/*.pdf` (full schematic, pre / power / mods) | community traces | not the Steel String Singer |
+| Dumble (ODS family) | el34world `Dumble/*.pdf` and schematicheaven.net `dumbleamps/*.pdf`: the 70s ODS `preamp.pdf`, `distorto.pdf`, `power.pdf`, `output.pdf`, the 1997 `97fullschem.pdf` (a 2 x EL34 late ODS), mods and notes | community traces | used for the ODS model (70s set). Not the Steel String Singer. The #124 schematic and layouts sit behind an Amp Garage login |
 
 ## Found, behind a login / captcha / bot block (fetch by hand)
 

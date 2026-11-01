@@ -76,7 +76,7 @@ public:
             expect (registry.subcategoryForKey (key) == "Clean",
                     juce::String (key) + " should be a Clean amp");
         for (const char* key : { "AC15StyleAmplifier", "AC30StyleAmplifier", "JTM45StyleAmplifier",
-                                 "BassmanStyleAmplifier", "MatchlessHC30StyleAmplifier" })
+                                 "BassmanStyleAmplifier", "MatchlessHC30StyleAmplifier", "DumbleODSStyleAmplifier" })
             expect (registry.subcategoryForKey (key) == "Crunch",
                     juce::String (key) + " should be a Crunch amp");
         for (const char* key : { "JCM800StyleAmplifier", "SLO100StyleAmplifier", "MarkIICPlusStyleAmplifier",

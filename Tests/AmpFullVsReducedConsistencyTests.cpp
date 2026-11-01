@@ -13,6 +13,7 @@
 #include "Effects/DiezelStyleAmplifierProcessor.h"
 #include "Effects/DualRectifierStyleAmplifierProcessor.h"
 #include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
+#include "Effects/DumbleODSStyleAmplifierProcessor.h"
 #include "Effects/ENGLPowerballStyleAmplifierProcessor.h"
 #include "Effects/EVH5150StyleAmplifierProcessor.h"
 #include "Effects/SuperSonicStyleAmplifierProcessor.h"
@@ -387,7 +388,7 @@ public:
             { "v4b",         2.0,  4.0, 0.0 }, { "mesa400",     2.0,  4.0, 0.0 },
             { "acoustic360", 4.0,  9.0, 0.0 }, { "svt",         2.5,  5.0, 0.0 },
             { "trainwreck",   1.5,  1.5, 0.0 }, { "komet",       1.5,  5.0, 0.0 },
-            { "supersonic",   1.0,  2.0, 0.0 },
+            { "supersonic",   1.0,  2.0, 0.0 }, { "ods",          1.5,  5.0, 0.0 },
         };
         for (const auto& e : b)
             if (juce::String (e.ampName) == ampName)
@@ -587,6 +588,7 @@ public:
         AMP_ENTRY ("carr",        CarrRamblerStyleAmplifierProcessor)
         AMP_ENTRY ("ftr37",       DividedBy13FTR37StyleAmplifierProcessor)
         AMP_ENTRY ("dumble",      DumbleSteelStringStyleAmplifierProcessor)
+        AMP_ENTRY ("ods",         DumbleODSStyleAmplifierProcessor)
         AMP_ENTRY ("sunn",        SunnModelTStyleAmplifierProcessor)
         AMP_ENTRY ("deliverance", FryetteDeliveranceD120StyleAmplifierProcessor)
         AMP_ENTRY ("uberschall",  BognerUberschallStyleAmplifierProcessor)

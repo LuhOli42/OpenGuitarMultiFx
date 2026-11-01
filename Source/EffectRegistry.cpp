@@ -54,6 +54,7 @@
 #include "Effects/JimKelleyStyleAmplifierProcessor.h"
 #include "Effects/DividedBy13FTR37StyleAmplifierProcessor.h"
 #include "Effects/DumbleSteelStringStyleAmplifierProcessor.h"
+#include "Effects/DumbleODSStyleAmplifierProcessor.h"
 #include "Effects/SunnModelTStyleAmplifierProcessor.h"
 #include "Effects/FryetteDeliveranceD120StyleAmplifierProcessor.h"
 #include "Effects/BognerUberschallStyleAmplifierProcessor.h"
@@ -636,6 +637,10 @@ void registerBuiltInEffects (EffectRegistry& registry)
     DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DumbleSteelStringStyleAmplifier");
     registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 24.07f); }, "Clean");
+    // The Overdrive Special: the 70s trace with the #124 switches (docs/circuits/DumbleODS.md).
+    DumbleODSStyleAmplifierProcessor::reducedOrder = true;
+    registry.markQualityDependent ("DumbleODSStyleAmplifier");
+    registry.registerType ("DumbleODSStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DumbleODSStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 6.89f); }, "Crunch");
     SunnModelTStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("SunnModelTStyleAmplifier");
     registry.registerType ("SunnModelTStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SunnModelTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.06f); }, "Crunch");

@@ -36,7 +36,7 @@ public:
                                  "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier",
                                  "MatchlessHC30StyleAmplifier", "HotCat30StyleAmplifier",
                                  "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier",
-                                 "DumbleSteelStringStyleAmplifier", "SunnModelTStyleAmplifier",
+                                 "DumbleSteelStringStyleAmplifier", "DumbleODSStyleAmplifier", "SunnModelTStyleAmplifier",
                                  "FryetteDeliveranceD120StyleAmplifier", "BognerUberschallStyleAmplifier",
                                  "AmpegB15StyleAmplifier", "AmpegV4BStyleAmplifier",
                                  "MesaBass400PlusStyleAmplifier", "Acoustic360StyleAmplifier" })
@@ -110,7 +110,7 @@ public:
                                  "SVTStyleAmplifier", "TrainwreckExpressStyleAmplifier", "KometConcordeStyleAmplifier",
                                  "MatchlessHC30StyleAmplifier", "HotCat30StyleAmplifier",
                                  "CarmenGhiaStyleAmplifier", "Astroverb16StyleAmplifier",
-                                 "DumbleSteelStringStyleAmplifier", "SunnModelTStyleAmplifier",
+                                 "DumbleSteelStringStyleAmplifier", "DumbleODSStyleAmplifier", "SunnModelTStyleAmplifier",
                                  "FryetteDeliveranceD120StyleAmplifier", "BognerUberschallStyleAmplifier",
                                  "AmpegB15StyleAmplifier", "AmpegV4BStyleAmplifier",
                                  "MesaBass400PlusStyleAmplifier", "Acoustic360StyleAmplifier" })
