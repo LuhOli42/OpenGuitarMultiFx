@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <thread>
 #include <cmath>
 #include <vector>
 
@@ -75,7 +76,8 @@ public:
         EffectRegistry registry;
         registerBuiltInEffects (registry);
         constexpr double sr = 48000.0;
-        constexpr int block = 128;
+        // BENCH_BLOCK=n: the host buffer size (the app's own setting can be as small as 64).
+        const int block = juce::jmax (16, juce::SystemStats::getEnvironmentVariable ("BENCH_BLOCK", "128").getIntValue());
         const bool flush = juce::SystemStats::getEnvironmentVariable ("BENCH_FTZ", {}).isNotEmpty();
         std::vector<std::pair<double, juce::String>> results;
         struct Row { double playing, tail; juce::String key; double worstBlock = 0.0; };
@@ -114,6 +116,7 @@ public:
                         if (f->getNormalisableRange().interval < 1.0f)
                             knobs.push_back (f);
             double worstBlock = 0.0;
+            const bool paced = juce::SystemStats::getEnvironmentVariable ("BENCH_REALTIME", {}).isNotEmpty();
             const auto run = [&] (double seconds, bool signal)
             {
                 double sec = 0.0;
@@ -137,6 +140,10 @@ public:
                     const auto t0 = std::chrono::steady_clock::now();
                     fx->process (buf);
                     const double dt = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+                    // BENCH_REALTIME=1: pace the blocks the way a sound card does (one per block period, idle in between),
+                    // so the CPU's frequency governor sees the app's duty cycle instead of a flat-out loop.
+                    if (paced)
+                        std::this_thread::sleep_until (t0 + std::chrono::duration<double> ((double) block / sr));
                     sec += dt;
                     if (signal) worstBlock = std::max (worstBlock, 100.0 * dt * sr / block);
                 }

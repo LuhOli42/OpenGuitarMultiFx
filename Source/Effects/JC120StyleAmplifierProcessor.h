@@ -44,6 +44,16 @@ public:
     void setState (const juce::XmlElement& state) override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Distortion, Reverb and the chorus / vibrato are CH-2's (hidden on CH-1); Speed and Depth need the effect on. */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        const bool channel2 = channelParam->get() >= 0.5f;
+        if (&p == distortionParam || &p == reverbParam || &p == effectParam)
+            return channel2;
+        if (&p == speedParam || &p == depthParam)
+            return channel2 && effectParam->get() >= 0.5f;
+        return true;
+    }
     const char* getName() const override { return "JC-120"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff7ec9e8); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

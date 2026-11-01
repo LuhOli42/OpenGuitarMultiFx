@@ -40,6 +40,16 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Plugged into Normal, the Bright volume does nothing (and the other way round); Jumped uses both. */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        const int input = juce::roundToInt (inputParam->get()); // 0 Normal, 1 Jumped, 2 Bright
+        if (&p == volBrightParam)
+            return input != 0;
+        if (&p == volNormalParam)
+            return input != 2;
+        return true;
+    }
     const char* getName() const override { return "Bassman"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffc9a24a); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

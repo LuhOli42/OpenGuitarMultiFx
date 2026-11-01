@@ -90,7 +90,8 @@ The tank runs one audio block behind, as on the Super-Sonic.
 ## Controls
 
 Page 1 follows the #002 faceplate: Volume, Bright, Deep, Guitar / Mic, Treble, Middle, Bass, Filter (Hi), Filter (Lo),
-Reverb (On / Off), Send, Return, Accent, Level.
+Reverb (On / Off), Accent, Level. The Filters draw as 7-position stepped knobs. Send and Return are not on the panel
+(user request 2026-11-01): both sit at 0.7, where the reverb is clearly there without washing the dry signal out.
 
 Page 2:
 
@@ -104,8 +105,8 @@ Boost is dropped.
 ## Verification
 
 - **DC:** plates ~470 V, screens ~464 V.
-- **Reverb:** wet / dry at full Send and Return is 1.005 (sustained 1 kHz). A note's tail energy at Send and Return
-  0.7 is ~150 times that with the reverb off.
+- **Reverb:** wet / dry at full Send and Return was 1.005 (sustained 1 kHz) when `reverbReturnGain` was set. At the
+  fixed 0.7 / 0.7, a note's tail energy is ~150 times that with the reverb off.
 - **Reduced vs full:** level 2.35 dB, worst band 3.93 dB (bound 3 / 4.5), after the refit below.
 - **Unity trim:** +20.34 dB (PedalUnityLevel 0.00). The 220K / 220K mixer halves the dry signal, as on the amp.
 - **CPU:** 9.1 % playing, 7.1 % silent, worst block 12.5 % (EffectCostBench).

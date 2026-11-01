@@ -86,6 +86,8 @@ public:
     }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return inner->getParameters(); }
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override { return inner->isParameterActive (p); }
+    bool prefersSteppedKnob (const juce::AudioParameterFloat& p) const override { return inner->prefersSteppedKnob (p); }
     std::unique_ptr<juce::XmlElement> getState() const override { return inner->getState(); }
     void setState (const juce::XmlElement& s) override { inner->setState (s); }
     const char* getName() const override { return inner->getName(); }

@@ -46,6 +46,16 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** The Normal channel's preamp, master and switches hide on Overdrive; Overdrive Preamp / Master hide on Normal. */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        const bool overdrive = channelParam->get() >= 0.5f;
+        if (&p == nGainParam || &p == nMasterParam || &p == inputParam || &p == crunchParam)
+            return ! overdrive;
+        if (&p == gainParam || &p == powerParam)
+            return overdrive;
+        return true;
+    }
     const char* getName() const override { return "SLO-100"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8b0000); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

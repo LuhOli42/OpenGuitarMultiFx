@@ -47,6 +47,11 @@ public:
     void setState (const juce::XmlElement& state) override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Speed and Intensity only reach the Vibrato channel: hidden on Normal. */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        return (&p != speedParam && &p != intensityParam) || inputParam->get() >= 0.5f;
+    }
     const char* getName() const override { return "Twin Reverb"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff7ab8d8); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

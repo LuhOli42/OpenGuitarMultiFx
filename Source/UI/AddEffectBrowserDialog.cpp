@@ -187,7 +187,13 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
 
     rowList.onRowTap = [this] (EffectRow& row)
     {
-        if (row.key.isNotEmpty() && onEffectChosen)
+        if (row.key.isEmpty())
+            return;
+        // Picked from the open tab: remember it with its chip. Picked from a search: remember the effect's own tab.
+        const int tab = tabForRow (row);
+        lastTab = tab;
+        lastSubcategory = (searchField.isEmpty() && tab == selectedTab) ? selectedSubcategory : juce::String();
+        if (onEffectChosen)
             onEffectChosen (row.key, row.cabOn);
     };
 
@@ -203,9 +209,33 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
+    if (lastTab >= 0 && lastTab < (int) railTabs.size())
+    {
+        selectedTab = lastTab;
+        if (registry.subcategoriesForCategory (railTabs[(size_t) selectedTab].category).contains (lastSubcategory))
+            selectedSubcategory = lastSubcategory;
+        for (int i = 0; i < categoryButtons.size(); ++i)
+            categoryButtons[i]->setToggleState (i == selectedTab, juce::dontSendNotification);
+    }
+
     rebuildChips();
     rebuildRows();
     setSize (1040, 700);
+}
+
+int AddEffectBrowserDialog::tabForRow (const EffectRow& row) const
+{
+    const auto category = registry.categoryForKey (row.key);
+    for (int i = 0; i < (int) railTabs.size(); ++i)
+    {
+        const auto& tab = railTabs[(size_t) i];
+        if (tab.category != category)
+            continue;
+        if (category == EffectRegistry::Category::amps && (tab.rows == RailTab::Rows::cabOnly) != row.cabOn)
+            continue;
+        return i;
+    }
+    return 0;
 }
 
 const EffectProcessor* AddEffectBrowserDialog::probeForKey (const juce::String& key)

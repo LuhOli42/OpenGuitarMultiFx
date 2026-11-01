@@ -31,6 +31,28 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override;
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Two-channel models: the unselected channel's own knobs hide (HC-30 Ch1 / Ch2, Hot Cat Gain / Clean). */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        if (channelParam == nullptr)
+            return true;
+        const bool second = channelParam->get() >= 0.5f;
+        if (model == Model::matchlessHC30)
+        {
+            if (&p == volume1Param || &p == bass1Param || &p == treble1Param)
+                return ! second;
+            if (&p == volume2Param || &p == tone2Param)
+                return second;
+        }
+        else if (model == Model::hotCat30)
+        {
+            if (&p == gainParam || &p == edgeParam || &p == bassParam || &p == trebleParam || &p == levelParam)
+                return ! second;
+            if (&p == volume1Param)
+                return second;
+        }
+        return true;
+    }
     const char* getName() const override { return displayName; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2a2a2a); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> bounds) const override;

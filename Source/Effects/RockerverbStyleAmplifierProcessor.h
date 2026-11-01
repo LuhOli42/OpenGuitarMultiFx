@@ -34,6 +34,16 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** The Clean channel's knobs hide on Dirty and the other way round. */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        const bool dirty = channelParam->get() >= 0.5f;
+        if (&p == cVolumeParam || &p == cTrebleParam || &p == cBassParam)
+            return ! dirty;
+        if (&p == gainParam || &p == trebleParam || &p == midParam || &p == bassParam || &p == postParam)
+            return dirty;
+        return true;
+    }
     const char* getName() const override { return "Rockerverb"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffcc5500); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
