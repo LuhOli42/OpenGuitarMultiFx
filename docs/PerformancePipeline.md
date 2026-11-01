@@ -236,6 +236,21 @@ not exported yet, so power stages cannot be compiled. On the Tube Driver it matc
 when the triodes are the expensive part. It pays off only where the linear part dominates (big tone stacks, many
 passive nodes per tube), which is the case to measure on the amps.
 
+### Measured on a tube amp: the 5150 (2026-11-01)
+
+Per-block cost of the 5150's shipped (reduced-order) path, Lead channel, 20.0 % of a core in total: preA 4.4 %, preB
+5.7 %, preC 3.1 %, driver 2.7 %, the linear tone stack 0.5 %. Compiling only the linear part saves nothing worth having.
+Compiling the four triode blocks (CompiledAmpPipeline harness, 3 knob sets) failed both ways:
+
+- **Accuracy:** level up to 3.5 dB off, band 4.6 dB, peaks 2 dB, and 5 ms envelopes up to 35 dB off on the gated bursts.
+  The fixed two-step triode Newton can't follow cascaded, hard-clipping stages.
+- **Speed:** ×0.79, slower than the netlist.
+
+It is not applied. The Koren evaluations are already tabulated (`TubeModels.h`: one sqrt and two Hermite lookups per
+triode), so the time is the Newton solve itself. Fewer iterations per sample, or a cheaper preamp model fitted
+against the netlist, are what is left to try on the amps. The SLO-100 has the same shape (five cascaded stages), so the
+same result is expected and it was not compiled.
+
 ## Next candidates (drive bench, 2026-10-15)
 
 Over budget, worst first: Metal Zone 27 %, HM-2 16 %, DT-1 16 %, Bass Big Muff 14 %, Darkglass B7K 13 %, OCD 12 %,
