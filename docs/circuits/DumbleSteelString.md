@@ -107,7 +107,7 @@ Boost is dropped.
 - **Reverb:** wet / dry at full Send and Return is 1.005 (sustained 1 kHz). A note's tail energy at Send and Return
   0.7 is ~150 times that with the reverb off.
 - **Reduced vs full:** level 2.35 dB, worst band 3.93 dB (bound 3 / 4.5), after the refit below.
-- **Unity trim:** +20.10 dB (PedalUnityLevel 0.00). The 220K / 220K mixer halves the dry signal, as on the amp.
+- **Unity trim:** +20.34 dB (PedalUnityLevel 0.00). The 220K / 220K mixer halves the dry signal, as on the amp.
 - **CPU:** 9.1 % playing, 7.1 % silent, worst block 12.5 % (EffectCostBench).
 
 The tests are in `Tests/DumbleSteelStringStyleAmplifierProcessorTests.cpp`:
@@ -129,5 +129,5 @@ rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constan
 | After | 2.35 | 3.93 |
 | Bound | 3 | 4.5 |
 
-Changed: `bmGain0` 11.875, `bmYmax` 0.1188, `bmKneeN` 7.5, `bmShelfHz` 72, `bmLevelTrim` 0.8648. The unity trim moved +24.07 → +20.10 dB to keep the amp at unity.
+Changed: `bmGain0` 11.875, `bmYmax` 0.1188, `bmKneeN` 7.5, `bmShelfHz` 72, `bmLevelTrim` 0.8648. The unity trim moved +24.07 → +20.34 dB to keep the amp at unity.
 

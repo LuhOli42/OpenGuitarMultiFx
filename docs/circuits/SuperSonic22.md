@@ -81,7 +81,7 @@ is the real amp), Bias, Tube Feel, Speaker (4 / 8 / 16 Ω), Output, Cab.
 - **Reduced vs full:** level 0.10 dB, worst band 1.39 dB (bound 1 / 2). The reduced stage is `bmGain0` 10, `bmYmax`
   0.08, shelf 0.65, trim 1.1.
 - **Channel balance** at the default knobs, 0.2 V in: Vintage 0.134, Vintage Fat 0.138, Burn 0.131.
-- **Unity trim:** −20.19 dB (PedalUnityLevel 0.00).
+- **Unity trim:** −19.85 dB (PedalUnityLevel 0.00).
 - **CPU:** 12.1 % playing, 9.1 % silent, worst block 15.5 % (EffectCostBench).
 
 The tests are in `Tests/SuperSonicStyleAmplifierProcessorTests.cpp`:
