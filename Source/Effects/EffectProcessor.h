@@ -201,6 +201,15 @@ public:
 
     virtual juce::AudioProcessorParameterGroup* getParameters() = 0;
 
+    /** Editor hint: false hides this control because, at the current settings, it does nothing -- a vibrato's Speed on
+        an amp's Normal channel, the JC-120's Distortion on CH-1. Presets, MIDI Learn and automation still see it. The
+        editor polls this on its refresh timer (message thread), so it must be cheap and read only parameter values. */
+    virtual bool isParameterActive (const juce::AudioParameterFloat&) const { return true; }
+
+    /** Editor hint: draw this stepped parameter as a knob that clicks through its positions, not as a row of buttons
+        (a rotary switch with many positions, like the Steel String's 7-way filters). */
+    virtual bool prefersSteppedKnob (const juce::AudioParameterFloat&) const { return false; }
+
     /** The editor's pages of knobs. Page 0 is the float parameters that are direct children of getParameters(); every
         sub-group of it is a further page (its float parameters, in order). Almost every effect has one page; the
         amplifiers keep their "second page" controls (power drive, bias, ...) in a sub-group. All of them stay in

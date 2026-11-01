@@ -26,7 +26,7 @@ namespace openguitarmultifx
     the direct-coupled driver stage (simplified to capacitive coupling) are not modelled.
 
     Controls, page 1 (the front panel): Volume, Bright, Deep, Guitar / Mic, Treble, Middle, Bass, Filter (Hi),
-    Filter (Lo), Reverb (On / Off), Send, Return, Accent, Level. Page 2: Presence Trim (an internal trim on #002), Power
+    Filter (Lo), Reverb (On / Off), Accent, Level (Send / Return fixed at 0.7). Page 2: Presence Trim (an internal trim on #002), Power
     Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output, Cab.
 */
 class DumbleSteelStringStyleAmplifierProcessor : public EffectProcessor
@@ -39,6 +39,8 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** The 7-position Filter rotaries read as stepped knobs, like the panel's own. */
+    bool prefersSteppedKnob (const juce::AudioParameterFloat& p) const override { return &p == filterHiParam || &p == filterLoParam; }
     std::unique_ptr<juce::XmlElement> getState() const override { return EffectProcessor::getState(); }
     /** Presets from before 2026-10-31 carry `sss_voicing` (Jazz / PAB / Rock) and `sss_mid_boost`: Jazz becomes Mic,
         PAB and Rock become Guitar, Mid Boost is dropped. */
@@ -151,7 +153,6 @@ private:
         double volume, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
         int speaker;
         bool bright = false, deep = false, accent = false, mic = false, reverbOn = false;
-        double send = 0.5, returnLevel = 0.5;
         int filterHi = 0, filterLo = 0; // 0..6, matching the real 7-position filter rotaries
     };
     void updatePots (const Knobs& k);
@@ -198,8 +199,6 @@ private:
     juce::AudioParameterFloat* accentParam = nullptr;
     juce::AudioParameterFloat* guitarMicParam = nullptr;
     juce::AudioParameterFloat* reverbParam = nullptr;
-    juce::AudioParameterFloat* sendParam = nullptr;
-    juce::AudioParameterFloat* returnParam = nullptr;
 
     // The spring tank, shared by both channels, fed this block's sends and read one block later.
     SpringReverbProcessor spring;

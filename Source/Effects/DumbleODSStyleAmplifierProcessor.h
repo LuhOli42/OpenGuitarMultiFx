@@ -36,6 +36,12 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Overdrive, Ratio and the OD trim only act on the Overdrive channel: hidden on Normal. */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        return (&p != smoothedParams[sOverdrive] && &p != smoothedParams[sRatio] && &p != smoothedParams[sOdTrim])
+            || channelParam->get() >= 0.5f;
+    }
     const char* getName() const override { return "Dumble ODS"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2b2b2b); } // black tolex
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

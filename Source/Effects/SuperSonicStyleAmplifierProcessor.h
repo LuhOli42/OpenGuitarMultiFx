@@ -41,6 +41,16 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Each channel's own knobs show only while that channel is selected. */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        const bool burn = channelParam->get() >= 0.5f;
+        if (&p == vVolumeParam || &p == vTrebleParam || &p == vBassParam)
+            return ! burn;
+        if (&p == gain1Param || &p == gain2Param || &p == bTrebleParam || &p == bBassParam || &p == bMiddleParam || &p == bVolumeParam)
+            return burn;
+        return true;
+    }
     const char* getName() const override { return "Super-Sonic 22"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff3d6fb4); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

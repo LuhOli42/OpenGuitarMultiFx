@@ -46,6 +46,16 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Each channel's own controls hide while only the other channel is in use ("Both" shows everything). */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        const int input = juce::roundToInt (inputParam->get()); // 0 Channel 1, 1 Channel 2, 2 Both
+        if (&p == ch1VolumeParam || &p == clickParam)
+            return input != 1;
+        if (&p == ch2VolumeParam || &p == boostParam || &p == trebleParam || &p == bassParam)
+            return input != 0;
+        return true;
+    }
     const char* getName() const override { return "Divided by 13 FTR 37"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb03030); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

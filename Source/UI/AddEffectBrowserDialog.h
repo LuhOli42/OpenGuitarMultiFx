@@ -109,10 +109,18 @@ private:
     void rebuildChips();
     void rebuildRows();
 
+    /** The rail tab an effect row belongs to (the cab variant picks 'Amps + Cab'). */
+    int tabForRow (const EffectRow& row) const;
+
     EffectRegistry& registry;
     std::vector<RailTab> railTabs;
     int selectedTab = 0;
     juce::String selectedSubcategory; // empty = All
+
+    // Where the last effect was added from: the next browser opens there (user request 2026-11-01 -- add a TS9, and
+    // the next Add Effect opens on the overdrives). For the app's lifetime; message thread only.
+    static inline int lastTab = 0;
+    static inline juce::String lastSubcategory;
     std::map<juce::String, std::unique_ptr<EffectProcessor>> probes;
     std::map<EffectRegistry::Category, int> counts;
 

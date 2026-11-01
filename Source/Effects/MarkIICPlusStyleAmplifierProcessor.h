@@ -37,6 +37,11 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Lead Drive and Lead Master only act on the Lead channel (Master is shared). */
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override
+    {
+        return (&p != gainParam && &p != leadMasterParam) || channelParam->get() >= 0.5f;
+    }
     const char* getName() const override { return "Mark IIC+"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2f4f4f); } // dark slate grey
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

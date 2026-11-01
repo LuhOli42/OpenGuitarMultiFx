@@ -199,12 +199,10 @@ public:
 
         beginTest ("reverb: a tail after the note stops; Off keeps only what is already in the tank");
         {
-            const auto tail = [&] (bool on, float send, float ret)
+            const auto tail = [&] (bool on)
             {
                 DumbleSteelStringStyleAmplifierProcessor amp;
                 setParam (amp, "sss_reverb", on ? 1.0f : 0.0f);
-                setParam (amp, "sss_reverb_send", send);
-                setParam (amp, "sss_reverb_return", ret);
                 amp.prepare (sr, 128, 2);
                 juce::AudioBuffer<float> buf (2, 128);
                 double e = 0.0;
@@ -225,53 +223,23 @@ public:
                 expectLessThan (amp.getSolveFailureRate(), 1.0e-6);
                 return e;
             };
-            const double off = tail (false, 1.0f, 1.0f), half = tail (true, 0.7f, 0.7f), full = tail (true, 1.0f, 1.0f);
-            logMessage ("tail energy: off " + juce::String (off, 10) + ", send/return 0.7 " + juce::String (half, 10)
-                        + ", full " + juce::String (full, 10));
-            expectGreaterThan (half, off * 2.0 + 1.0e-12);
-            expectGreaterThan (full, half * 1.5);
+            const double off = tail (false), on = tail (true);
+            logMessage ("tail energy: off " + juce::String (off, 10) + ", on " + juce::String (on, 10));
+            expectGreaterThan (on, off * 2.0 + 1.0e-12);
         }
 
-        beginTest ("reverb: at full Send and Return the wet level is about the dry level");
+        beginTest ("the Filter rotaries draw as stepped knobs; no Send / Return on the panel");
         {
-            // Two amps in lockstep, reverb Off and On: below clipping the dry paths are identical, so the difference
-            // is the wet signal.
-            DumbleSteelStringStyleAmplifierProcessor dryAmp, wetAmp;
-            for (auto* amp : { &dryAmp, &wetAmp })
-            {
-                setParam (*amp, "sss_reverb_send", 1.0f);
-                setParam (*amp, "sss_reverb_return", 1.0f);
-                setParam (*amp, "sss_master", 0.3f);
-            }
-            setParam (wetAmp, "sss_reverb", 1.0f);
-            dryAmp.prepare (sr, 128, 2);
-            wetAmp.prepare (sr, 128, 2);
-            juce::AudioBuffer<float> dryBuf (2, 128), wetBuf (2, 128);
-            double drySum = 0.0, wetSum = 0.0;
-            long long n = 0;
-            for (int b = 0; b < (int) (3.0 * sr / 128); ++b)
-            {
-                for (int i = 0; i < 128; ++i, ++n)
+            DumbleSteelStringStyleAmplifierProcessor amp;
+            int stepped = 0;
+            for (auto* p : amp.getParameters()->getParameters (true))
+                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
                 {
-                    const float x = (float) (0.01 * std::sin (2.0 * juce::MathConstants<double>::pi * 1000.0 * (double) n / sr));
-                    for (auto* buf : { &dryBuf, &wetBuf })
-                    {
-                        buf->setSample (0, i, x);
-                        buf->setSample (1, i, x);
-                    }
+                    expect (! f->paramID.startsWith ("sss_reverb_"), f->paramID);
+                    if (amp.prefersSteppedKnob (*f))
+                        ++stepped;
                 }
-                dryAmp.process (dryBuf);
-                wetAmp.process (wetBuf);
-                if (n > (long long) (1.5 * sr))
-                    for (int i = 0; i < 128; ++i)
-                    {
-                        drySum += juce::square ((double) dryBuf.getSample (0, i));
-                        wetSum += juce::square ((double) wetBuf.getSample (0, i) - (double) dryBuf.getSample (0, i));
-                    }
-            }
-            const double ratio = std::sqrt (wetSum / juce::jmax (1.0e-30, drySum));
-            logMessage ("1 kHz sustained, full Send / Return: wet / dry " + juce::String (ratio, 3));
-            expectWithinAbsoluteError (ratio, 1.0, 0.25);
+            expectEquals (stepped, 2);
         }
 
         beginTest ("old presets: Voicing Jazz becomes Mic, PAB and Rock become Guitar");

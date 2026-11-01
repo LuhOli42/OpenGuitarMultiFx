@@ -330,8 +330,6 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (
             [] (float v, int) { return v > 0.5f ? juce::String ("Mic") : juce::String ("Guitar"); }));
     auto reverb = toggle ("sss_reverb", "Reverb");
-    auto send = make ("sss_reverb_send", "Send", 0.5f);
-    auto ret = make ("sss_reverb_return", "Return", 0.5f);
 
     volumeParam = volume.get();
     trebleParam = treble.get();
@@ -351,8 +349,6 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
     accentParam = accent.get();
     guitarMicParam = guitarMic.get();
     reverbParam = reverb.get();
-    sendParam = send.get();
-    returnParam = ret.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "dumble_sss", "Dumble Steel String", "|", std::move (volume));
@@ -366,8 +362,6 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
     group->addChild (std::move (filterHi));
     group->addChild (std::move (filterLo));
     group->addChild (std::move (reverb));
-    group->addChild (std::move (send));
-    group->addChild (std::move (ret));
     group->addChild (std::move (accent));
     group->addChild (std::move (master));
     auto cab = tubeamp::makeCabParam ("sss_cab", "1x12 EV", cabAlts);
@@ -631,8 +625,6 @@ DumbleSteelStringStyleAmplifierProcessor::Knobs DumbleSteelStringStyleAmplifierP
     k.accent = accentParam->get() > 0.5f;
     k.mic = guitarMicParam->get() > 0.5f;
     k.reverbOn = reverbParam->get() > 0.5f;
-    k.send = sendParam->get();
-    k.returnLevel = returnParam->get();
     k.filterHi = juce::roundToInt (filterHiParam->get());
     k.filterLo = juce::roundToInt (filterLoParam->get());
     return k;
@@ -1011,11 +1003,12 @@ void DumbleSteelStringStyleAmplifierProcessor::process (juce::AudioBuffer<float>
     // transformer into the tank; reverb Off (U29) grounds the drive, so the tail already in the tank still returns.
     // Recovery U28 7025 -> C27 3000p into the 100K-lin Return pot -> U39 7025 -> U40 follower. R52 270K / C23 from
     // U40's cathode into U28's 100-ohm cathode tail closes a loop around the return: with the stage gains (~58 and
-    // ~62) its loop gain is ~1.23 x the Return setting, so the return goes as r / (1 + 1.23 r).
+    // ~62) its loop gain is ~1.23 x the Return setting, so the return goes as r / (1 + 1.23 r). Send and Return are
+    // not on the panel (user request 2026-11-01): both sit at 0.7, where the reverb is clearly there but not washed out.
     const double sendHpCoeff = 1.0 - std::exp (-1.0 / (250.0e3 * 1.0e-9 * sampleRate));
     const double returnHpCoeff = 1.0 - std::exp (-1.0 / (100.0e3 * 3.0e-9 * sampleRate));
-    const double sendGain = reverbParam->get() > 0.5f ? pots::audio ((double) sendParam->get()) : 0.0;
-    const double r = (double) returnParam->get();
+    constexpr double sendSetting = 0.7, r = 0.7;
+    const double sendGain = reverbParam->get() > 0.5f ? pots::audio (sendSetting) : 0.0;
     const double returnGain = reverbReturnGain * (r / (1.0 + 1.23 * r)) * (1.0 + 1.23);
     const int reverbSamples = juce::jmin (numSamples, maxBlock);
 

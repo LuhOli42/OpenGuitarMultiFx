@@ -246,6 +246,7 @@ private:
         std::unique_ptr<ValueFieldButton> valueBox;
         juce::AudioParameterFloat* param = nullptr;
         int page = 0;
+        bool active = true; // the processor's isParameterActive() at the last layout: false = hidden
 
         /** Only non-null for a param the processor registered via
             registerTempoSyncParam() -- an always-visible small inline "ms"/

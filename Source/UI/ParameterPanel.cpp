@@ -85,6 +85,14 @@ void ParameterPanel::refresh()
         statusLabel.setText (current->getStatusText(), juce::dontSendNotification);
         bypassToggle.setToggleState (current->isBypassed(), juce::dontSendNotification);
 
+        // A channel switch (from the panel, MIDI or a preset) can make controls appear or disappear: re-lay out the page.
+        for (const auto& row : sliders)
+            if (row.param != nullptr && current->isParameterActive (*row.param) != row.active)
+            {
+                showPage (currentPage);
+                break;
+            }
+
         // Parameters can change from outside the knob (MIDI CC, a multi-channel amp loading the selected channel's
         // stored knobs): keep what is drawn in step with the real value.
         for (auto& row : sliders)
@@ -229,7 +237,8 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 const auto range = floatParam->getNormalisableRange();
                 row.slider->setRange (range.start, range.end, range.interval > 0.0f ? range.interval : 0.01);
                 row.slider->setValue (floatParam->get(), juce::dontSendNotification);
-                const bool isSelector = range.interval >= 1.0f && (range.end - range.start) / range.interval <= 8.0f; // 4/8/16 ohm, Normal/Jumped/Bright...
+                const bool isSelector = range.interval >= 1.0f && (range.end - range.start) / range.interval <= 8.0f // 4/8/16 ohm, Normal/Jumped/Bright...
+                                     && ! current->prefersSteppedKnob (*floatParam);
                 if (! isSelector)
                     // Double-tap centres the knob at noon (0.5), not its factory
                     // default -- a player zeroing a knob expects dead centre.
@@ -554,7 +563,7 @@ std::vector<size_t> ParameterPanel::visibleSliders() const
 {
     std::vector<size_t> shown;
     for (size_t i = 0; i < sliders.size(); ++i)
-        if (sliders[i].page == currentPage)
+        if (sliders[i].page == currentPage && sliders[i].active)
             shown.push_back (i);
     return shown;
 }
@@ -564,7 +573,8 @@ void ParameterPanel::showPage (int page)
     currentPage = juce::jlimit (0, juce::jmax (0, pageCount - 1), page);
     for (auto& row : sliders)
     {
-        const bool shown = row.page == currentPage;
+        row.active = current == nullptr || row.param == nullptr || current->isParameterActive (*row.param);
+        const bool shown = row.page == currentPage && row.active;
         row.widget()->setVisible (shown);
         row.label->setVisible (shown);
         if (row.valueBox != nullptr)
