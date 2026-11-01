@@ -1,6 +1,7 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <vector>
 
 // Each test file registers its juce::UnitTest classes through a static
@@ -25,6 +26,13 @@
 //                                --parallel or parallel qemu invocations).
 int main (int argc, char* argv[])
 {
+    // The registry reads the user's saved defaults from the app-data folder (cab_voicing.txt, render_quality.txt) the
+    // first time any suite builds it. A developer who saved "Cab off" got every later amp built with its Cab off, so the
+    // suites' results depended on test order and on the machine (CI has no such files). Pin the shipped defaults unless
+    // the caller sets these on purpose.
+    setenv ("OGMFX_CAB", "on", 0);
+    setenv ("OGMFX_QUALITY", "eco", 0);
+
     juce::UnitTestRunner runner;
     runner.setPassesAreLogged (false);
 

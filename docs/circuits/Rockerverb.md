@@ -170,5 +170,5 @@ rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constan
 | After | 0.04 | 1.90 |
 | Bound | 1.5 | 2.5 |
 
-Changed: `bmLevelTrim` 0.55 → 0.122 (it sat a flat 13 dB high with the right tone). The unity trim moved −6.21 → +7.46 dB to keep the amp at unity.
+Changed: `bmLevelTrim` 0.55 → 0.122 (it sat a flat 13 dB high with the right tone). The unity trim moved −6.21 → +6.86 dB to keep the amp at unity.
 

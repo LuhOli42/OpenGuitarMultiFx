@@ -437,5 +437,5 @@ rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constan
 | After | 1.17 | 3.89 |
 | Bound | 2 | 4.5 |
 
-Changed: `bmGain0` 3.5, `bmYmax` 0.05, `bmAsym` 0.1, `bmGridClampV` 4 (the soft clamp on the drive), `bmShelfHz` 25, `bmShelfHfGain` 1.2, new output trim `bmLevelTrim` 1.987. The unity trim moved −24.29 → −24.52 dB to keep the amp at unity.
+Changed: `bmGain0` 3.5, `bmYmax` 0.05, `bmAsym` 0.1, `bmGridClampV` 4 (the soft clamp on the drive), `bmShelfHz` 25, `bmShelfHfGain` 1.2, new output trim `bmLevelTrim` 1.987. The unity trim moved −24.29 → −24.18 dB to keep the amp at unity.
 

@@ -180,5 +180,5 @@ rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constan
 | After | 0.85 | 2.39 |
 | Bound | 1.5 | 3 |
 
-Changed: `bmYmax` 0.1584, `bmKneeN` 1.5, `bmLevelTrim` 1.207. The unity trim moved −18.65 → −19.04 dB to keep the amp at unity.
+Changed: `bmYmax` 0.1584, `bmKneeN` 1.5, `bmLevelTrim` 1.207. The unity trim moved −18.65 → −19.31 dB to keep the amp at unity.
 

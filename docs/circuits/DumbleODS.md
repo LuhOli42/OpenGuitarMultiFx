@@ -98,7 +98,7 @@ Page 2: OD Trim (the internal input trim), Power Drive, Bias, Tube Feel, Speaker
 - **Stability:** no recoveries on a hot pluck in every channel / voicing combination.
 - **Reduced vs full:** level 0.46 dB, worst band 3.92 dB (bound 1.5 / 5). The reduced stage is `bmGain0` 9.5,
   `bmYmax` 0.09, `bmKneeN` 4, trim 1.06.
-- **Unity trim:** +6.89 dB (PedalUnityLevel 0.00, Normal channel).
+- **Unity trim:** +7.12 dB (PedalUnityLevel 0.00, Normal channel).
 - **CPU:** 10.4 % playing, 7.9 % silent, worst block 12–14 % (EffectCostBench).
 
 The tests are in `Tests/DumbleODSStyleAmplifierProcessorTests.cpp`:
