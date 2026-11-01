@@ -53,3 +53,18 @@ The focused processor suite converged and passed its silence, plucked-note, cont
 | Shared EL84 cathode | 14.9 V |
 
 The measured default guitar-DI RMS was 0.414010 before registry trim, versus 0.061023 for AC30; the registry applies -16.63 dB to align defaults. Only the high-level product facts in the first section are manufacturer-documented; detailed circuit values and NFB implementation are estimates.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced stage (tanh, gain 18) saturated at any Preamp setting: 37-41 % THD where the netlist makes 16-26 %.
+Refitted on level and distortion at Preamp 0.2, 0.5 and 0.8: gain 18 -> 1.5, level 21.4 -> 28.3. It now follows the
+netlist at low Preamp (11 % vs 16 % at 0.05 V); fully driven, it still squares off ~6 dB sooner than the netlist, which
+a static curve cannot follow.
+
+| Preamp 0.2, input | 0.05 V | 0.2 V | 0.6 V |
+|---|---|---|---|
+| Netlist THD | 16 % | 26 % | 19 % |
+| Reduced, before | 38 % | 41 % | 39 % |
+| Reduced, after | 11 % | 32 % | 36 % |
+
+The unity trim moved -12.31 → -9.39 dB to keep the amp at unity. AmpFullVsReducedConsistency bound 2 / 3 (was 4 / 7).

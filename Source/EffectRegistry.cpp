@@ -531,15 +531,15 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/BadCatHotCat30.md.
     HotCat30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("HotCat30StyleAmplifier");
-    registry.registerType ("HotCat30StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<HotCat30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 14.75f); }, "Crunch");
+    registry.registerType ("HotCat30StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<HotCat30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 13.19f); }, "Crunch");
     // docs/circuits/DrZCarmenGhia.md.
     CarmenGhiaStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("CarmenGhiaStyleAmplifier");
-    registry.registerType ("CarmenGhiaStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.62f); }, "Crunch");
+    registry.registerType ("CarmenGhiaStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<CarmenGhiaStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -6.33f); }, "Crunch");
     // docs/circuits/SoldanoAstroverb16.md.
     Astroverb16StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Astroverb16StyleAmplifier");
-    registry.registerType ("Astroverb16StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Astroverb16StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -12.31f); }, "Crunch");
+    registry.registerType ("Astroverb16StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Astroverb16StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.39f); }, "Crunch");
     // docs/circuits/SLO100.md. Soldano SLO-100 OD channel. Five cascaded 12AX7 gain stages, TMB tone stack,
     // LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated placeholder (Twin Reverb's 6L6GC constants).
     SLO100StyleAmplifierProcessor::reducedOrder = true;

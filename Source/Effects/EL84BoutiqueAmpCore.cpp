@@ -945,7 +945,10 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     // matchless re-fit 2026-10-11 (was 14.0): a softer knee keeps the same small-signal gain
     // (level*gain) as the low-drive calibration while raising the saturated plateau the real
     // stage reaches at hot drive -- the old steep knee compressed too early and undershot there.
-    const double gain = model == Model::carmenGhia ? 10.0 : model == Model::astroverb16 ? 18.0 : model == Model::hotCat30 ? 0.9 :
+    // carmenGhia 10 -> 0.35 and astroverb16 18 -> 1.5 (2026-11-01): fitted on level AND distortion against the
+    // netlist at Volume 0.2 / 0.5 / 0.8. The old values saturated the stage at any volume (38 % THD at Volume 0.2,
+    // where the netlist makes 2-14 %): the "too much gain" the user heard.
+    const double gain = model == Model::carmenGhia ? 0.35 : model == Model::astroverb16 ? 1.5 : model == Model::hotCat30 ? 0.9 :
                         model == Model::matchlessHC30 ? 2.0 : 14.0;
     // level re-fit 2026-10-11: matchless/hotCat defaults now restore the pre-audio-taper wiper
     // fractions, which moved the stage's calibration point; scaled so the reduced path re-tracks
@@ -953,11 +956,17 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     // matchless 2.02 -> 5.2 (2026-10-24), 6.2 after the DC-30 trace rebuild (2026-10-25): 2.02 had been fitted against a test that ran the reference at Volume 2 = 0.6
     // and the reduced path at its default; at equal knobs it sat 7-10 dB under the netlist.
     const double level = model == Model::matchlessHC30 ? 6.2 :
-                         model == Model::hotCat30 ? 34.0 :
-                         model == Model::carmenGhia ? 26.4 : 21.4;
+                         model == Model::hotCat30 ? 40.0 :
+                         model == Model::carmenGhia ? 33.0 : 28.3;
+    // The Carmen Ghia's netlist compresses gradually (its NFB): a soft knee x / (1 + |x|^1.4)^(1/1.4), not tanh.
+    const double kneeN = model == Model::carmenGhia ? 1.4 : 0.0;
     const double asym = reducedOrder ? 0.35 * (ch.bmBias - 0.5) : 0.0;
     const double sag = reducedOrder ? 0.03 * ch.bmFeel : 0.025;
-    return level * (std::tanh (drive * gain + asym) - std::tanh (asym)) * (model == Model::carmenGhia ? 0.65 : 0.8)
+    const auto curve = [kneeN] (double x)
+    {
+        return kneeN > 0.0 ? x / std::pow (1.0 + std::pow (std::abs (x), kneeN), 1.0 / kneeN) : std::tanh (x);
+    };
+    return level * (curve (drive * gain + asym) - curve (asym)) * (model == Model::carmenGhia ? 0.65 : 0.8)
         * (1.0 - sag * juce::jlimit (0.0, 1.0, ch.envelope));
 }
 

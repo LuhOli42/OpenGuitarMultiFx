@@ -76,3 +76,11 @@ Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker, Output.
 - The reduced path tracks the netlist within 0.43 dB in the unit test, and within 1.43 dB level / 1.95 dB band shape
   in AmpFullVsReducedConsistency.
 - The registry trim (+14.75 dB) puts it at unity in PedalUnityLevel.
+
+## Reduced path refit (2026-11-01)
+
+Level-only correction (2026-11-01): the reduced stage sat ~3 dB under the netlist; level 34 -> 40. Its curve (tanh,
+gain 0.9) was searched on level and distortion at Gain 0.2 / 0.5 / 0.8 and kept: nothing in the search was closer.
+Fully driven it squares off ~4 dB sooner than the netlist.
+
+The unity trim moved 14.75 → 13.19 dB to keep the amp at unity. AmpFullVsReducedConsistency bound 1 / 3 (was 3 / 11).
