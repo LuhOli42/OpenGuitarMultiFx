@@ -3,6 +3,7 @@
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
+#include "SpringReverbProcessor.h"
 #include "TubeAmpCommon.h"
 
 #include <array>
@@ -17,17 +18,16 @@ namespace openguitarmultifx
     an unusually high-voltage supply, and his signature direct-coupled cathode-follower drivers feeding the
     output grids. It is famous for clean headroom that does not run out -- Stevie Ray Vaughan's amp.
 
-    Modelled: three 12AX7 gain stages plus a cathode follower into the #002-style distributed tone
-    stack (treble pot straddling the bass wiper, mid rheostat leg), the Hi/Lo 7-position filter bank and
-    the LNFB loop between V1B and V2A, the front-panel switches (Bright, Deep, Accent, Mid Boost,
-    Jazz/PAB/Rock), the 12AX7 long-tailed-pair phase inverter with global negative feedback, four 6L6GC
-    as two push-pull pairs in fixed bias, and the output transformer into a resonant speaker load.
-    The FET input, the direct-coupled driver stage (simplified to capacitive coupling), and the reverb
-    send/return are not modelled.
+    Modelled, after the #002 netlist: V1A into the distributed tone stack, Volume, V1B, the Hi/Lo 7-position filter
+    bank, V2A and the cathode follower with the LNFB loop; the front-panel switches (Bright, Deep, Guitar / Mic,
+    Accent); the reverb (send taken off V1B's grid, the spring tank, the return stages and the 220K / 220K mixer at
+    the Level pot's input); the 12AX7 long-tailed-pair phase inverter with global negative feedback, four 6L6GC as
+    two push-pull pairs in fixed bias, and the output transformer into a resonant speaker load. The FET input and
+    the direct-coupled driver stage (simplified to capacitive coupling) are not modelled.
 
-    Controls, page 1 (the front panel): Volume, Treble, Middle, Bass, Presence, Master, and the switches and rotaries --
-    Filter (Hi), Filter (Lo), Bright, Mid Boost, Deep, Accent, Voicing (Jazz / PAB / Rock).
-    Page 2 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
+    Controls, page 1 (the front panel): Volume, Bright, Deep, Guitar / Mic, Treble, Middle, Bass, Filter (Hi),
+    Filter (Lo), Reverb (On / Off), Send, Return, Accent, Level. Page 2: Presence Trim (an internal trim on #002), Power
+    Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output, Cab.
 */
 class DumbleSteelStringStyleAmplifierProcessor : public EffectProcessor
 {
@@ -40,7 +40,10 @@ public:
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     std::unique_ptr<juce::XmlElement> getState() const override { return EffectProcessor::getState(); }
-    void setState (const juce::XmlElement& state) override { EffectProcessor::setState (state); }
+    /** Presets from before 2026-10-31 carry `sss_voicing` (Jazz / PAB / Rock) and `sss_mid_boost`: Jazz becomes Mic,
+        PAB and Rock become Guitar, Mid Boost is dropped. */
+    void setState (const juce::XmlElement& state) override;
+    void migrateLegacySnapshotParams (std::vector<std::pair<juce::String, float>>& params) const override;
     const char* getName() const override { return "Dumble Steel String"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff3b2f1e); } // tweed brown
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
@@ -56,6 +59,7 @@ public:
     static constexpr double bmKneeN = 6.0;
     static constexpr double bmShelfHz = 90.0;
     static constexpr double bmShelfHfGain = 0.55;
+    static constexpr double bmLevelTrim = 0.65;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -102,9 +106,9 @@ private:
         NodalCircuit::Node pPlateV1a = 0, pPlateV1b = 0, pPlateV2a = 0, pFollower = 0;
         double followerDc = 0.0;
 
-        // front-panel switch elements (pre circuit): Bright cap across the Volume pot,
-        // Jazz/Rock coupling cap, Hi/Lo 7-position filter links
-        int capBright = 0, capVoice = 0;
+        // front-panel switch elements (pre circuit): Bright cap across the Volume pot, Hi/Lo 7-position filter links
+        int capBright = 0;
+        NodalCircuit::Node pVolWiper = 0; // V1B's grid side of the Volume pot: the reverb send's tap
         int rHiLink[7] = { 0, 0, 0, 0, 0, 0, 0 };
         int rLoLink[7] = { 0, 0, 0, 0, 0, 0, 0 };
 
@@ -113,9 +117,10 @@ private:
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBassTop = 0, rBassBottom = 0, rMidVar = 0,
             rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMasterTop = 0, rMasterBottom = 0;
-        // PAB lifts the bass/mid legs (rLegLink feed, rMergeLink output); Jazz ties the treble-bottom
-        // network to the bass wiper (rPadLink); Deep swaps the direct link for the shelf network
-        int rLegLink = 0, rMergeLink = 0, rPadLink = 0, rDeepLink = 0, capAccent = 0, capMidBoost = 0;
+        // Guitar / Mic: Mic moves the treble pot's bottom from C35 (rC35Link) onto the bass wiper (rPadLink) and lifts
+        // the R63 merge (rMergeLink). Deep swaps the direct link for the shelf network.
+        int rMergeLink = 0, rPadLink = 0, rC35Link = 0, rDeepLink = 0, capAccent = 0;
+        int wSrcRet = 0; // U40's cathode: the reverb return into the R85 220K mixer leg
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wOut = 0, wPlateA = 0, wPlateB = 0, wGridA = 0, wTail = 0,
                            wTone = 0, wPP1 = 0, wPP2 = 0, wPowerGridA = 0, wBias = 0, wFeedback = 0;
@@ -127,6 +132,9 @@ private:
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
         tubeamp::CouplingCapHighpass piCoupling; // the PI's input cap, which reducedOrder otherwise skips
+
+        // reverb: C20 into the Send pot, C27 into the Return pot (one-pole high-passes)
+        double sendHpState = 0.0, returnHpState = 0.0;
 
         // supply
         int iA = 0, iB = 0, iC = 0, iD = 0, iE = 0, srcVoc = 0;
@@ -142,8 +150,8 @@ private:
     {
         double volume, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
         int speaker;
-        bool bright = false, midBoost = false, deep = false, accent = false;
-        int voicing = 2;    // 0 Jazz, 1 PAB, 2 Rock
+        bool bright = false, deep = false, accent = false, mic = false, reverbOn = false;
+        double send = 0.5, returnLevel = 0.5;
         int filterHi = 0, filterLo = 0; // 0..6, matching the real 7-position filter rotaries
     };
     void updatePots (const Knobs& k);
@@ -186,10 +194,18 @@ private:
     juce::AudioParameterFloat* filterHiParam = nullptr;
     juce::AudioParameterFloat* filterLoParam = nullptr;
     juce::AudioParameterFloat* brightParam = nullptr;
-    juce::AudioParameterFloat* midBoostParam = nullptr;
     juce::AudioParameterFloat* deepParam = nullptr;
     juce::AudioParameterFloat* accentParam = nullptr;
-    juce::AudioParameterFloat* voicingParam = nullptr;
+    juce::AudioParameterFloat* guitarMicParam = nullptr;
+    juce::AudioParameterFloat* reverbParam = nullptr;
+    juce::AudioParameterFloat* sendParam = nullptr;
+    juce::AudioParameterFloat* returnParam = nullptr;
+
+    // The spring tank, shared by both channels, fed this block's sends and read one block later.
+    SpringReverbProcessor spring;
+    juce::AudioBuffer<float> reverbSend, reverbReturn;
+    int reverbReturnLength = 0;
+    int maxBlock = 0;
 
     juce::SmoothedValue<float> smoothedVolume, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
