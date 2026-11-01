@@ -425,3 +425,17 @@ cathode still passed the current of a plate at 1.39 V whenever the grid was posi
 phase inverter, and `NodalCircuit` now also refuses to accept a "converged" point whose port equations are more than 30 V out. Measured on this amp's own hot-pedal test (10 s, 3 V square-ish notes):
 **sanity rejects 22 -> 0, worst speaker volts 136 -> 54, restores 0**. Everything above about "still open" is superseded for this cause; only listening on the host can say whether the audible
 glitch is gone.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 2.65 | 13.59 |
+| After | 1.17 | 3.89 |
+| Bound | 2 | 4.5 |
+
+Changed: `bmGain0` 3.5, `bmYmax` 0.05, `bmAsym` 0.1, `bmGridClampV` 4 (the soft clamp on the drive), `bmShelfHz` 25, `bmShelfHfGain` 1.2, new output trim `bmLevelTrim` 1.987. The unity trim moved −24.29 → −24.52 dB to keep the amp at unity.
+

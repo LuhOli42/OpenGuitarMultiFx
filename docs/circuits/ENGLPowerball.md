@@ -154,3 +154,17 @@ default (shipped via `reducedOrder = true` in registry).
 | reducedOrder pluck | 1.4 peak, 1.3 rms |
 | reducedOrder CPU | ~15% |
 | Unity trim | -22.5 dB |
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 3.22 | 2.50 |
+| After | 0.49 | 2.03 |
+| Bound | 1 | 2.5 |
+
+Changed: `bmYmax` 0.1, `bmLevelTrim` 0.6301. The unity trim moved −18.37 → −13.68 dB to keep the amp at unity.
+

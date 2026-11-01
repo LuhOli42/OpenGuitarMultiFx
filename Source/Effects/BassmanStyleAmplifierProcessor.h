@@ -63,16 +63,17 @@ public:
     // full netlist's PI grid leak puts on wTone). Every fold is centred on the shipped defaults, so at default knobs
     // the stage is bit-identical to the calibrated fit it replaces.
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 4.5;   // closed-loop small-signal gain, toneStackOut -> speaker, at the nominal rail
-    static constexpr double bmYmax = 0.092;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
-    static constexpr double bmAsym = 0.09;   // push-pull clip lopsidedness (earlier saturation toward grid conduction)
-    static constexpr double bmGridClampV = 24.0; // LTP grid-conduction clamp on the delivered drive (see .cpp)
+    static constexpr double bmGain0 = 3.5;   // closed-loop small-signal gain, toneStackOut -> speaker, at the nominal rail
+    static constexpr double bmLevelTrim = 1.987; // output level against the full netlist (refit 2026-11-01)
+    static constexpr double bmYmax = 0.05;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
+    static constexpr double bmAsym = 0.1;   // push-pull clip lopsidedness (earlier saturation toward grid conduction)
+    static constexpr double bmGridClampV = 4.0; // LTP grid-conduction clamp on the delivered drive (see .cpp)
     static constexpr double bmDcHz = 8.0;    // OT DC-block on the asymmetric stage output (real transformer cannot pass DC)
     // Same reasoning as SuperLeadStyleAmplifierProcessor's own note: the removed PI/power tubes/OT/feedback loop have a
     // real frequency response beyond the tone stack that a flat memoryless curve lacks -- restored approximately with a
     // high-shelf cut, fitted against the full reference model's own measured gain at several frequencies (see the .cpp).
-    static constexpr double bmShelfHz = 70.0;
-    static constexpr double bmShelfHfGain = 1.15; // ~-5.5 dB above the shelf   // knee sharpness of the saturating curve (fitted, see the .cpp)
+    static constexpr double bmShelfHz = 25.0;
+    static constexpr double bmShelfHfGain = 1.2; // ~-5.5 dB above the shelf   // knee sharpness of the saturating curve (fitted, see the .cpp)
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }

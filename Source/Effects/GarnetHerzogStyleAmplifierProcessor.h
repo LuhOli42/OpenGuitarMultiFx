@@ -57,13 +57,13 @@ public:
     // drive -> output-tap small-signal gain at the nominal rail, output knee height as a fraction of the sagged
     // rail, knee sharpness, and the fitted first-order shelf standing in for the transformer + load response
     // (HZG_POWERCAL in the test file).
-    static constexpr double bmGain0 = 1.0162;
-    static constexpr double bmYmax = 0.02346;
-    static constexpr double bmKneeN = 5.0;
+    static constexpr double bmGain0 = 0.60972;
+    static constexpr double bmYmax = 0.037536;
+    static constexpr double bmKneeN = 3.0;
     static constexpr double bmShelfHz = 110.0;
     static constexpr double bmShelfHfGain = 1.0;
     // +0.4 dB: the OT tail's core compression puts the noon level back at unity.
-    static constexpr double bmLevelTrim = 1.047;
+    static constexpr double bmLevelTrim = 0.6258;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }

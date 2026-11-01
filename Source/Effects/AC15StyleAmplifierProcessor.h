@@ -54,11 +54,12 @@ public:
     static inline bool reducedOrder = false;
     // Fitted (2026-10-05) to the full reference after its plate resistors were rewired in series with the OT (they
     // were a shunt across each half-primary that killed ~35 dB of output; the old constants were fitted to that).
-    static constexpr double bmGain0 = 9.24;
-    static constexpr double bmYmax = 0.055;
-    static constexpr double bmKneeN = 1.5;
+    static constexpr double bmGain0 = 11.0;
+    static constexpr double bmLevelTrim = 0.78; // output level against the full netlist (refit 2026-11-01)
+    static constexpr double bmYmax = 0.04;
+    static constexpr double bmKneeN = 2.0;
     static constexpr double bmShelfHz = 120.0;
-    static constexpr double bmShelfHfGain = 0.7;
+    static constexpr double bmShelfHfGain = 0.8;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }

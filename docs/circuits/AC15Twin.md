@@ -115,3 +115,18 @@ investigation was needed here (see the section above for what almost went unnoti
 Shipped default (`reducedOrder`): ~2.58% avg, ~9.5% worst block under a hot-pedal stress, zero failures -- the
 cheapest amp on this roadmap so far (the smallest circuit: no PI/pentode/OT Newton solve at all in this mode).
 Orders {0, 0, 1}, same tier convention as the other amps. Unity trim +37.37 dB.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist on two tests at once: the AmpFullVsReducedConsistency
+chords (rms 0.03 and 0.40, three bands) and this amp's own 100 Hz sine sweep (5 mV to 0.6 V). The chord-only fit
+(`bmYmax` 0.035) compressed too much on the sweep (−3.2 dB at 0.6 V), so the shipped constants are the compromise.
+
+| | Chord level (dB) | Chord worst band (dB) | Sine sweep, worst (dB) |
+|---|---|---|---|
+| Before | 3.56 | 4.97 | within 2 |
+| After | 1.98 | 1.62 | 1.35 |
+| Bound | 2.5 | 2 | 2 |
+
+Changed: `bmGain0` 11, `bmYmax` 0.04, `bmKneeN` 2, `bmShelfHfGain` 0.8, new output trim `bmLevelTrim` 0.78. The unity
+trim moved +4.09 → +4.44 dB to keep the amp at unity.

@@ -94,3 +94,17 @@ Output.
 One shared Treble / Middle / Bass / Master left Crunch and Lead ~19 dB above Clean, into the output limiter. With the
 per-channel sets, the CH2 / CH3 Master starts at 0.18: Clean / Crunch / Lead read 0.41 / 0.40 / 0.47 at 0.2 V in
 (AmpDynamicsBench). Unity trim 13.57 dB.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 1.95 | 5.19 |
+| After | 1.36 | 1.51 |
+| Bound | 2.5 | 2 |
+
+Changed: `bmYmax` 0.08, `bmKneeN` 8, `bmShelfHz` 180, `bmShelfHfGain` 1.2, new output trim `bmLevelTrim` 0.863. The unity trim moved +13.57 → +13.88 dB to keep the amp at unity.
+

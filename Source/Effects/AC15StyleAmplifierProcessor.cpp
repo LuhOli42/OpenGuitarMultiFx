@@ -467,7 +467,7 @@ double AC15StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double to
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState));
+    ch.bmOutput = bmLevelTrim * ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (raw - ch.bmToneState));
     return ch.bmOutput;
 }
 
