@@ -125,3 +125,24 @@ Not yet separately profiled against the ~5%/core-per-effect budget this project 
 proportionally larger than any single tube amp stage (two full op-amp/tone-stack preamp channels, a boost/clipper,
 one saturating-op-amp power stage, plus the BBD chorus DSP layer) but shares no expensive Newton solve in the output
 stage now that it's a saturating op-amp rather than discrete transistors.
+
+## The real panel (2026-10-31)
+User report: the Distortion control was missing, along with the channel layout (CH-1 clean; CH-2 with Distortion,
+Reverb, chorus/vibrato; High/Low inputs and Bright on both). The panel now follows the owner's manual and the 1979
+drawing:
+
+- **Channel** (CH-1 / CH-2). The guitar goes into the selected channel's jack only. Each channel keeps its own
+  **Bright, Volume, Treble, Middle, Bass** (`ChannelKnobMemory`), and switching Channel swaps the visible set. Bright
+  used to exist on channel 1 only; both channels now have their 100 pF bright leg.
+- **Input** (High / Low). Low is the jack's 82K / 47K divider (R1 / R2, R101 / R102 on the drawing), −8.8 dB.
+- **CH-2 only:** Distortion, Reverb, Effect (Off / Vibrato / Chorus), Speed, Depth. On the real amp the chorus is CH-2's
+  only.
+- **Distortion** is a knob, as on current JC-120s; the 1979 drawing has a Normal / Distortion switch. 0 is off.
+  Otherwise the knob sets the drive into the clipper's boost transistor through the series resistance into its 10k
+  base leg, linear from 5 % to the old fixed 82 %. THD at 0.2 V in: 1.6 % at 0, 20 % at 0.4, 31 % at 1.0.
+- **Reverb** is the project's spring engine as the tank, fully wet and one block behind. The send is the channel's
+  mixed signal; the return joins ahead of the master stage, scaled by the Reverb knob (audio taper). The tank always
+  runs, so a tail rings out after the knob comes down. The spring tank itself was the one part listed as not modelled
+  above.
+- Old presets: `jc_input` (Channel 1 / Channel 2 / Both) maps to Channel, and a Distortion switch that was on becomes
+  0.6 on the knob.

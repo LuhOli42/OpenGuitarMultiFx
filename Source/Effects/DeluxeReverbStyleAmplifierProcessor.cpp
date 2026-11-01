@@ -142,10 +142,10 @@ const tubeamp::CabOption* const cabAlts[] = { &tubeamp::cabs::greenback412, &tub
 DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
 {
     auto input = std::make_unique<juce::AudioParameterFloat> (
-        "dr_input", "Input", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 1.0f,
+        "dr_input", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
         {
-            switch (juce::roundToInt (v)) { case 0: return juce::String ("Normal"); case 2: return juce::String ("Both"); default: return juce::String ("Vibrato"); }
+            return v < 0.5f ? juce::String ("Normal") : juce::String ("Vibrato");
         }));
     auto make = [] (const char* id, const char* name, float def)
     {
@@ -153,12 +153,9 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
     };
     // Two full knob sets, as on the real AB763 panel (no Middle on either). The Vibrato channel keeps the original
     // parameter ids (it is the default input), so presets saved before the Normal channel got its own knobs are unchanged.
-    auto nVolume = make ("dr_n_volume", "Normal Volume", 0.4f);
-    auto nTreble = make ("dr_n_treble", "Normal Treble", 0.5f);
-    auto nBass = make ("dr_n_bass", "Normal Bass", 0.5f);
-    auto volume = make ("dr_volume", "Vibrato Volume", 0.4f);
-    auto treble = make ("dr_treble", "Vibrato Treble", 0.5f);
-    auto bass = make ("dr_bass", "Vibrato Bass", 0.5f);
+    auto volume = make ("dr_volume", "Volume", 0.4f);
+    auto treble = make ("dr_treble", "Treble", 0.5f);
+    auto bass = make ("dr_bass", "Bass", 0.5f);
     auto speed = make ("dr_speed", "Speed", 0.5f);
     auto intensity = make ("dr_intensity", "Intensity", 0.0f);
     auto output = make ("dr_output", "Output", 0.5f);
@@ -171,12 +168,9 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
         { return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm"; }));
 
     inputParam = input.get();
-    volumeParam[0] = nVolume.get();
-    trebleParam[0] = nTreble.get();
-    bassParam[0] = nBass.get();
-    volumeParam[1] = volume.get();
-    trebleParam[1] = treble.get();
-    bassParam[1] = bass.get();
+    volumeParam[0] = volumeParam[1] = volume.get();
+    trebleParam[0] = trebleParam[1] = treble.get();
+    bassParam[0] = bassParam[1] = bass.get();
     speedParam = speed.get();
     intensityParam = intensity.get();
     outputParam = output.get();
@@ -187,9 +181,6 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "deluxereverb", "Deluxe Reverb", "|", std::move (input));
-    group->addChild (std::move (nVolume));
-    group->addChild (std::move (nTreble));
-    group->addChild (std::move (nBass));
     group->addChild (std::move (volume));
     group->addChild (std::move (treble));
     group->addChild (std::move (bass));
@@ -205,6 +196,38 @@ DeluxeReverbStyleAmplifierProcessor::DeluxeReverbStyleAmplifierProcessor()
     page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
+
+    // One knob set on screen, swapped with the Channel selector: the two channels are almost never used together on an
+    // AB763 reverb amp -- the Vibrato channel's extra (reverb-recovery) stage puts it out of phase with Normal, so a
+    // jumper cable thins the sound out (user request 2026-10-31; TDPRI / Hoffman / Rob Robinette).
+    knobMemory = std::make_unique<ChannelKnobMemory> (*inputParam, std::vector<juce::AudioParameterFloat*> { volumeParam[1], trebleParam[1], bassParam[1] });
+}
+
+std::unique_ptr<juce::XmlElement> DeluxeReverbStyleAmplifierProcessor::getState() const
+{
+    auto xml = EffectProcessor::getState();
+    knobMemory->writeState (*xml);
+    return xml;
+}
+
+void DeluxeReverbStyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    // Presets from before the single knob set kept the Normal channel's knobs as dr_n_*, the Vibrato's as dr_*, and an
+    // Input "Both" (2, now clamped to Vibrato). Hand them to the per-channel memory.
+    juce::XmlElement migrated (state);
+    for (auto* key : { "volume", "treble", "bass" })
+    {
+        const juce::String id = juce::String ("dr_") + key;
+        if (! migrated.hasAttribute (id + "_ch0") && migrated.hasAttribute (juce::String ("dr_n_") + key))
+            migrated.setAttribute (id + "_ch0", migrated.getDoubleAttribute (juce::String ("dr_n_") + key));
+        if (! migrated.hasAttribute (id + "_ch1") && migrated.hasAttribute (id))
+            migrated.setAttribute (id + "_ch1", migrated.getDoubleAttribute (id));
+    }
+    {
+        const ChannelKnobMemory::ScopedSuspend suspend (*knobMemory);
+        EffectProcessor::setState (migrated);
+    }
+    knobMemory->readState (migrated);
 }
 
 void DeluxeReverbStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -724,7 +747,7 @@ void DeluxeReverbStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buf
     smoothedBias.setTargetValue (biasParam->get());
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
-    const int inputChoice = juce::roundToInt (inputParam->get()); // 0 Normal, 1 Vibrato, 2 Both
+    const int inputChoice = juce::roundToInt (inputParam->get()); // the Channel: 0 Normal, 1 Vibrato
     const bool inputConnectsNormal = inputChoice != 1;
     const bool inputConnectsVibrato = inputChoice != 0;
 
