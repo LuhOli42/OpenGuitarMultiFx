@@ -58,9 +58,10 @@ public:
     // replaced by behavioralPowerStage(). Default false (every internal-probe test assumes the full topology); the shipped
     // app turns this on in EffectRegistry.cpp, same as the Super Lead/Bassman/Twin Reverb. See docs/circuits/DeluxeReverbAB763.md.
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 50.0;   // fitted from this amp's own DR_POWERCAL sweep, see the .cpp
-    static constexpr double bmYmax = 0.0298;
-    static constexpr double bmKneeN = 6.0;
+    static constexpr double bmGain0 = 42.0;   // fitted from this amp's own DR_POWERCAL sweep, see the .cpp
+    static constexpr double bmLevelTrim = 0.933; // output level against the full netlist (refit 2026-11-01)
+    static constexpr double bmYmax = 0.022;
+    static constexpr double bmKneeN = 2.5;
     static constexpr double bmShelfHz = 90.0;
     static constexpr double bmShelfHfGain = 0.8;
     // Real push-pull output stages never clip exactly symmetrically at centre bias (uneven

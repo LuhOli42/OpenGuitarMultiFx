@@ -168,3 +168,17 @@ full topology; **turned on for the real app in `EffectRegistry.cpp`'s factory**,
 ## Cost
 Preamp ~1.3 Newton iterations per sample, power block ~2.3 in the (still available, reference) full netlist -- **~20-29% of a core** there, worst block up to ~280% (see above). **The shipped
 default (reducedOrder) is ~7.7-8.2% average, ~13.7-15.8% worst block, zero failures.** Orders {0, 0, 1} (2x only at High), as the Bassman. Unity trim -15.83 dB.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 1.50 | 4.81 |
+| After | 0.85 | 2.39 |
+| Bound | 1.5 | 3 |
+
+Changed: `bmYmax` 0.1584, `bmKneeN` 1.5, `bmLevelTrim` 1.207. The unity trim moved −18.65 → −19.04 dB to keep the amp at unity.
+

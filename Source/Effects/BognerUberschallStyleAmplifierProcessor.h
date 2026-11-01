@@ -49,11 +49,12 @@ public:
     // ---- reduced-order power stage ----
     static inline bool reducedOrder = false;
     // Twin Reverb's fitted 6L6GC constants (same tube type and push-pull topology).
-    static constexpr double bmGain0 = 9.5;
-    static constexpr double bmYmax = 0.198;
+    static constexpr double bmGain0 = 17.0;
+    static constexpr double bmLevelTrim = 0.484; // output level against the full netlist (refit 2026-11-01)
+    static constexpr double bmYmax = 0.19;
     static constexpr double bmKneeN = 6.0;
-    static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.55;
+    static constexpr double bmShelfHz = 200.0;
+    static constexpr double bmShelfHfGain = 2.2;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }

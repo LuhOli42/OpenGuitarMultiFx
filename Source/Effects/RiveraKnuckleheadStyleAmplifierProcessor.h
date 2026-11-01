@@ -61,10 +61,11 @@ public:
     // rail, knee sharpness, and the fitted first-order shelf standing in for the transformer + speaker response
     // (KNK_POWERCAL in the test file).
     static constexpr double bmGain0 = 3.4569;
-    static constexpr double bmYmax = 0.115;
-    static constexpr double bmKneeN = 5.0;
-    static constexpr double bmShelfHz = 80.0;
-    static constexpr double bmShelfHfGain = 1.0;
+    static constexpr double bmLevelTrim = 0.863; // output level against the full netlist (refit 2026-11-01)
+    static constexpr double bmYmax = 0.08;
+    static constexpr double bmKneeN = 8.0;
+    static constexpr double bmShelfHz = 180.0;
+    static constexpr double bmShelfHfGain = 1.2;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }

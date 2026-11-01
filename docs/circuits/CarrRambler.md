@@ -85,3 +85,17 @@ are gain0 6 and a +7 dB top shelf at 2.5 kHz (no NFB: the voice coil's inductanc
 | Reduced vs full | level 0.9 dB, band 4.7 dB (bound 1.5 / 5) |
 | Volume 0.2 | linear to ~0.2 V in |
 | Unity | −0.55 dB on the old trim |
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 0.90 | 4.66 |
+| After | 1.37 | 3.96 |
+| Bound | 2 | 5.5 |
+
+Changed: `bmGain0` 3.6, `bmYmax` 0.24, `bmKneeN` 7.2, `bmShelfHz` 112.5, `bmLevelTrim` 0.3257. The unity trim moved −8.88 → −8.24 dB to keep the amp at unity.
+

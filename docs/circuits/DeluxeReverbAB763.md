@@ -126,3 +126,17 @@ Normal, so summing them thins the sound (TDPRI, Hoffman forum, Rob Robinette). T
 like its own pots. Old presets map onto it: `*_n_*` becomes the Normal channel's values and "Both" becomes Vibrato. The
 circuit is unchanged; the input simply feeds the selected channel only. Jumper-friendly amps (Super Lead, Bassman,
 JTM45) keep both sets.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 5.69 | 3.28 |
+| After | 2.36 | 3.14 |
+| Bound | 3.5 | 4 |
+
+Changed: `bmGain0` 42, `bmYmax` 0.022, `bmKneeN` 2.5, new output trim `bmLevelTrim` 0.933. The unity trim moved −0.06 → +2.04 dB to keep the amp at unity.
+

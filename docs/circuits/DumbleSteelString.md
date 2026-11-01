@@ -106,10 +106,8 @@ Boost is dropped.
 - **DC:** plates ~470 V, screens ~464 V.
 - **Reverb:** wet / dry at full Send and Return is 1.005 (sustained 1 kHz). A note's tail energy at Send and Return
   0.7 is ~150 times that with the reverb off.
-- **Reduced vs full:** level 0.40 dB, worst band 6.66 dB (bound 1.5 / 7.5). The reduced stage now has
-  `bmLevelTrim` 0.65. The band error is the reduced path's treble (−3.4 dB at rms 0.03, −6.8 dB at 0.40), which is
-  left for the reduced-path refit.
-- **Unity trim:** +24.07 dB (PedalUnityLevel 0.00). The 220K / 220K mixer halves the dry signal, as on the amp.
+- **Reduced vs full:** level 2.35 dB, worst band 3.93 dB (bound 3 / 4.5), after the refit below.
+- **Unity trim:** +20.10 dB (PedalUnityLevel 0.00). The 220K / 220K mixer halves the dry signal, as on the amp.
 - **CPU:** 9.1 % playing, 7.1 % silent, worst block 12.5 % (EffectCostBench).
 
 The tests are in `Tests/DumbleSteelStringStyleAmplifierProcessorTests.cpp`:
@@ -119,3 +117,17 @@ The tests are in `Tests/DumbleSteelStringStyleAmplifierProcessorTests.cpp`:
 - the reverb tail and its wet level;
 - preset migration;
 - the reduced path.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 0.40 | 6.66 |
+| After | 2.35 | 3.93 |
+| Bound | 3 | 4.5 |
+
+Changed: `bmGain0` 11.875, `bmYmax` 0.1188, `bmKneeN` 7.5, `bmShelfHz` 72, `bmLevelTrim` 0.8648. The unity trim moved +24.07 → +20.10 dB to keep the amp at unity.
+

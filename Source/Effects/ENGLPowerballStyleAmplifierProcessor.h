@@ -31,7 +31,7 @@ public:
 
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 17.0;
-    static constexpr double bmYmax = 0.195;
+    static constexpr double bmYmax = 0.1;
     // Softer than the shared fitted 6.0: at hot gain the knee's high-order harmonics flooded the
     // 8-20 kHz band past this amp's own full-netlist level (Oct-11 audit fizz regression).
     static constexpr double bmKneeN = 4.0;
@@ -47,7 +47,7 @@ public:
     static constexpr double bmTopZHz = 5000.0, bmTopPHz = 5000.0, bmTopQp = 1.4;
     // physical ceiling: the stages this replaces clip at the rail; caps resonant overshoot inside the sanity bound.
     static constexpr double bmOutMax = 64.0;
-    static constexpr double bmLevelTrim = 0.60;
+    static constexpr double bmLevelTrim = 0.6301;
     // Ch I (Clean/Crunch) taps the 2-stage preamp: modest gain keeps the knob in the
 // knee region. Ch II (Lead/HiLead) taps after U6A and is meant to saturate.
 static constexpr double bmTapGain[4] = { 400.0, 400.0, 36000.0, 36000.0 };

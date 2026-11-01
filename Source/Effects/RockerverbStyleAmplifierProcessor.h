@@ -57,7 +57,7 @@ public:
     // Level re-trim: the refit is ~5 dB hotter at noon than the shelf it replaced, and PedalUnityLevel needs
     // noon at unity while the registry's -5.74 dB trim stays put.
     static constexpr double bmOutMax = 30.0;
-    static constexpr double bmLevelTrim = 0.55;
+    static constexpr double bmLevelTrim = 0.122;
     // reducedOrder also swaps the post block's two 12AT7s for linear stand-ins; the ~x25 the V7B gain stage
     // used to contribute is applied as this drive scale on the behavioural stage's input instead.
     static constexpr double bmPostGain = 470.0;

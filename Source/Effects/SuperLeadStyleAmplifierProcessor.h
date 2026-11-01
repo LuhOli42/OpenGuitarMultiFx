@@ -66,8 +66,8 @@ public:
     // TS808+Super Lead preset with this on and approved it as the real default.
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 9.5;   // closed-loop small-signal gain, toneStackOut -> speaker, at the nominal rail
-    static constexpr double bmYmax = 0.198;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
-    static constexpr double bmKneeN = 6.0;   // knee sharpness of the saturating curve (fitted, see the .cpp)
+    static constexpr double bmYmax = 0.1584;  // peak output as a fraction of the (possibly sagged) rail, at full saturation
+    static constexpr double bmKneeN = 1.5;   // knee sharpness of the saturating curve (fitted, see the .cpp)
     // The removed phase inverter / power tubes / output transformer / feedback loop have their OWN frequency response
     // beyond the tone stack (Miller capacitances, OT bandwidth, the loop's own frequency-dependent gain). The earlier
     // one-pole shelf fit (bmShelfHz/bmShelfHfGain) was calibrated only up to 1.65 kHz and wrongly kept falling: the
@@ -88,7 +88,7 @@ public:
     // Level re-trim (2026-10-09): the refit section is ~2.5 dB hotter at noon than the shelf it replaced, and
     // PedalUnityLevel needs noon at unity while the registry's -18.99 dB trim stays put. This folds the re-derived
     // -2.56 dB (measured by that same test) into the stage; bump the registry trim to -21.55 dB if it is ever moved.
-    static constexpr double bmLevelTrim = 0.745;
+    static constexpr double bmLevelTrim = 1.2069;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }

@@ -158,3 +158,17 @@ completely non-conductive at the -40V bias.
 | reducedOrder pluck rms | 0.760 |
 | reducedOrder CPU | 10.4% |
 | Unity trim | -14.3 dB |
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 13.09 | 1.87 |
+| After | 0.04 | 1.90 |
+| Bound | 1.5 | 2.5 |
+
+Changed: `bmLevelTrim` 0.55 → 0.122 (it sat a flat 13 dB high with the right tone). The unity trim moved −6.21 → +7.46 dB to keep the amp at unity.
+

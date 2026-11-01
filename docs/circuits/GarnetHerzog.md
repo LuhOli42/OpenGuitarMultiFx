@@ -73,3 +73,17 @@ Page 2 (synthetic, matching the amp family conventions): Power Drive (master ahe
 - Output is instrument-level (a few volts), NOT speaker-level — `outputScale = 1/6` maps the load-tap volts to full
   scale; the registry `trimmed()` restores unity at noon.
 - Deep adds low end (measured at 80 Hz); Level scales the tap almost linearly.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 2.75 | 2.83 |
+| After | 1.66 | 1.93 |
+| Bound | 2.5 | 2.5 |
+
+Changed: `bmGain0` 0.61, `bmYmax` 0.0375, `bmKneeN` 3, `bmLevelTrim` 0.6258. The unity trim moved −2.71 → −1.85 dB to keep the amp at unity.
+

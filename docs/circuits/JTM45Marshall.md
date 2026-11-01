@@ -115,3 +115,17 @@ other amps on this pattern; see the Super Lead's own doc for the full methodolog
 ## Cost
 Shipped default (reducedOrder): ~5.72% average, ~8.4% worst block, zero failures. Orders {0, 0, 1}, same tier
 convention as the other amps. Unity trim +21.60 dB (unusually large -- see "A power-stage instability" above for why).
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 6.04 | 23.17 |
+| After | 0.91 | 4.81 |
+| Bound | 1.5 | 5.5 |
+
+Changed: `bmGain0` 0.065, `bmYmax` 0.0006, `bmAsym` 0.1, `bmGridClampV` 4 (the soft clamp on the drive), `bmShelfHz` 55, new output trim `bmLevelTrim` 1.398. The unity trim moved +12.01 → +14.38 dB to keep the amp at unity.
+

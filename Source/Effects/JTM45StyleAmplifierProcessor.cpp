@@ -622,7 +622,7 @@ double JTM45StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double t
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (rawAc - ch.bmToneState);
     const double presScale = 0.9 + 0.34 * juce::jlimit (0.0, 1.0, lastKnobs.presence);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * presScale * (rawAc - ch.bmToneState));
+    ch.bmOutput = bmLevelTrim * ch.bmTail.process (ch.bmToneState + bmShelfHfGain * presScale * (rawAc - ch.bmToneState));
     return ch.bmOutput;
 }
 

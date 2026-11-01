@@ -46,3 +46,17 @@ Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
 - kg1×40 on PI triodes and EL34 pairs -- REMOVED (see CircuitFamilies.md's dead-reference repair
   section); DC plates ~460V; unity trim for PedalUnityLevel.
 - `Tests/BognerUberschallStyleAmplifierProcessorTests.cpp`: DC, silence settle, pluck.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced path was refitted against the full netlist with the AmpFullVsReducedConsistency settings: chords at
+rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constants.
+
+| | Level (dB) | Worst band (dB) |
+|---|---|---|
+| Before | 0.58 | 11.80 |
+| After | 1.18 | 5.15 |
+| Bound | 2 | 6 |
+
+Changed: `bmGain0` 17, `bmYmax` 0.19, `bmKneeN` 6, `bmShelfHz` 200, `bmShelfHfGain` 2.2, new output trim `bmLevelTrim` 0.484. The unity trim moved −0.14 → −6.93 dB to keep the amp at unity.
+
