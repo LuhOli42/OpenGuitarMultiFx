@@ -376,7 +376,7 @@ public:
     static const Bound* boundFor (const char* ampName)
     {
         static constexpr Bound b[] = {
-            { "superlead",   1.5,  3.0, 0.0 }, { "bassman",      2.0,  4.5, 0.0 },
+            { "superlead",   1.5,  3.0, 0.0 }, { "bassman",      2.5,  4.5, 0.0 },
             { "twin",        3.0,  5.0, 0.0 }, { "deluxe",       3.5,  4.0, 0.0 },
             { "jtm45",       1.5,  5.5, 0.0 }, { "jcm800",       4.0,  6.0, 0.0 },
             { "ac15",        2.5,  2.0, 0.0 }, { "ac30",         3.5,  2.0, 0.0 },

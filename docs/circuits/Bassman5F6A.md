@@ -439,3 +439,12 @@ rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constan
 
 Changed: `bmGain0` 3.5, `bmYmax` 0.05, `bmAsym` 0.1, `bmGridClampV` 4 (the soft clamp on the drive), `bmShelfHz` 25, `bmShelfHfGain` 1.2, new output trim `bmLevelTrim` 1.987. The unity trim moved −24.29 → −24.18 dB to keep the amp at unity.
 
+## Distortion refit (2026-11-01)
+
+The listening round heard the Crunch amps distorting more than the originals. On sines at Volume 0.2 the reduced stage
+made 0.4 / 4.2 / 18 % THD (0.05 / 0.2 / 0.6 V) where the netlist makes 0.5 / 1.8 / 9.5 %: the chord-only refit above
+never measured distortion. Refitted on distortion and level at Volume 0.2 / 0.5 / 0.8 together with the chord level and
+balance: `bmGridClampV` 4 -> 6, `bmShelfHz` 25 -> 60, `bmLevelTrim` 1.987 -> 1.8 (`bmYmax` stays 0.05). Now 0.4 / 3.1 /
+15 % at Volume 0.2; chords 2.1 / 4.1 dB (bound 2.5 / 4.5). Closer, not equal: the static curve still distorts more than
+the netlist when pushed.
+
