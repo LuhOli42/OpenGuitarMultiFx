@@ -64,3 +64,24 @@ chord to the loud one. A static saturator cannot do that. The reduced stage was 
 
 The result is 1.35 dB of level and 5.06 dB of band shape. The shape bound moved from 5.0 to 5.5 for that reason. The
 registry trim is −8.88 dB, giving unity.
+
+## Power section: the 5E5 cathodyne (2026-10-31)
+User report: the Rambler played as a high-gain amp although it sits under Clean. Owners describe the real amp as clean
+to 2-3 o'clock on the Volume with single coils, with headroom at least equal to a Deluxe Reverb's (TDPRI, The Gear Page).
+
+The power stage had been an estimate. An el34world member who drew a Rambler on loan reports: "the PA section is
+exactly like the 5E5, not the 5E5a since it has no NFB and is cathode bias". He gives the OT as 6K6 / 8 Ω, the plates
+at 366 V and the screens at 363 V. The Fender 5E5 Pro (el34world schematic) drives its 6L6s from a **cathodyne**
+(56k plate, 1k5 + 56k cathode, 1M grid return to the junction). It has unity gain per phase, where the model's
+long-tailed pair had ~20× and drove the 6L6s into saturation at half Volume.
+
+The model now uses that cathodyne, the 5E5's .1 µF couplings and 250 Ω + 25 µF cathode bias, a 370 V plate rail and a
+PI rail at 0.82 of the screens (+300 on +370 in the 5E5). The reduced path was refitted to it at Volume 0.2, 0.5 and
+0.8. It had been fitted at 0.8 only, where everything saturates, and ran 9-11 dB hot at low Volume. The new constants
+are gain0 6 and a +7 dB top shelf at 2.5 kHz (no NFB: the voice coil's inductance lifts the top).
+
+| Check | Result |
+|---|---|
+| Reduced vs full | level 0.9 dB, band 4.7 dB (bound 1.5 / 5) |
+| Volume 0.2 | linear to ~0.2 V in |
+| Unity | −0.55 dB on the old trim |

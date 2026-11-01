@@ -17,13 +17,13 @@ namespace
     // ---- supply (docs/circuits/CarrRambler.md). No factory schematic is published; the rails are ESTIMATED for a
     // cathode-biased 2x5881/6L6GC class-A-ish stage (Steve Carr describes the power section as "early 50s"), so the idle
     // currents below are chosen to land plate/screen rails in the usual 6L6GC cathode-bias range. ----
-    constexpr double railPlatesNominal = 405.0;   // OT centre tap (estimated)
+    constexpr double railPlatesNominal = 370.0;   // OT centre tap: 366 V measured at the plates (el34world, Ed Chambley)
     constexpr double rectifierResistance = 120.0; // GZ34/5AR4 + PT (estimated -- the power section is voiced vintage)
     constexpr double screenResistor = 1.0e3;      // plate node -> screen node dropper
     constexpr double idlePlateCurrent = 0.042;    // per output tube, a 6L6GC cathode-biased near class A
     constexpr double idleScreenCurrent = 0.005;
     constexpr double piAndPreampCurrent = 0.006;  // 5751 PI + two 12AX7 halves, drawn from the screen node (estimated)
-    constexpr double piFraction = 0.72;           // PI rail / screen node
+    constexpr double piFraction = 0.82;           // PI rail / screen node (the 5E5: +300 at the cathodyne on +370)
     constexpr double preFraction = 0.66;          // preamp rail / screen node
     double idleSupplyCurrent = 0.0;
 
@@ -267,28 +267,27 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wSrcPi = c.addSource (piRail, railPlatesNominal * piFraction * 0.9);
         ch.wSrcIn = c.addSource (in, 0.0);
 
-        // Long-tailed pair (5751): 82k/100k plates, 470 + 22k tail, 1M grid leaks to the tail tap -- the same
-        // elevated-cathode LTP the Trainwreck model uses, which converges cleanly.
+        // Cathodyne (split-load) phase inverter, as the Fender 5E5 Pro the Rambler's power section copies (el34world,
+        // Ed Chambley, who drew a Rambler: "the PA section is exactly like the 5E5 ... no NFB and cathode bias", OT
+        // 6K6 / 8 ohm, plates 366 V, screens 363 V): 56k plate, 1k5 + 56k cathode, the 1M grid return to the junction.
+        // Gain ~0.9 per phase -- the long-tailed pair this replaced had ~20x and drove the 6L6s into saturation at half
+        // Volume, where the real amp is still clean (user report 2026-10-31).
         ch.wPiK = c.addNode();
-        const auto tap = c.addNode(), gB = c.addNode();
+        const auto tap = c.addNode();
         ch.wPiGrid = c.addNode();
         ch.wPiPlateA = c.addNode();
-        ch.wPiPlateB = c.addNode();
-        c.addCapacitor (in, ch.wPiGrid, 0.047e-6);
+        ch.wPiPlateB = ch.wPiK; // the cathode is the second phase
+        c.addCapacitor (in, ch.wPiGrid, 0.02e-6);
         c.addResistor (ch.wPiGrid, tap, 1.0e6);
-        c.addResistor (gB, tap, 1.0e6);
-        c.addResistor (ch.wPiK, tap, 470.0);
-        c.addResistor (tap, gnd, 22.0e3);
-        c.addTriode (ch.wPiPlateA, ch.wPiGrid, ch.wPiK, triode5751());
-        c.addTriode (ch.wPiPlateB, gB, ch.wPiK, triode5751());
-        c.addResistor (piRail, ch.wPiPlateA, 82.0e3);
-        c.addResistor (piRail, ch.wPiPlateB, 100.0e3);
-        c.setInitialGuess (ch.wPiPlateA, 200.0);
-        c.setInitialGuess (ch.wPiPlateB, 205.0);
-        c.setInitialGuess (ch.wPiK, 35.0);
-        c.setInitialGuess (tap, 34.0);
-        c.setInitialGuess (ch.wPiGrid, 34.0);
-        c.setInitialGuess (gB, 34.0);
+        c.addResistor (ch.wPiK, tap, 1.5e3);
+        c.addResistor (tap, gnd, 56.0e3);
+        c.addTriode (ch.wPiPlateA, ch.wPiGrid, ch.wPiK, triode12AX7());
+        c.addCapacitor (ch.wPiGrid, ch.wPiPlateA, cgp);
+        c.addResistor (piRail, ch.wPiPlateA, 56.0e3);
+        c.setInitialGuess (ch.wPiPlateA, 250.0);
+        c.setInitialGuess (ch.wPiK, 50.0);
+        c.setInitialGuess (tap, 48.5);
+        c.setInitialGuess (ch.wPiGrid, 48.5);
 
         // .047 uF couplings -> 220k grid leaks into wTrem: the bias-vary tremolo injection node. At Depth 0 the
         // source holds it at 0 V and the leaks are simply grounded; at Depth > 0 a slow LFO swings the grids' DC
@@ -301,8 +300,8 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wPP1 = c.addNode();
         ch.wPP2 = c.addNode();
         ch.wCathodeBias = c.addNode();
-        c.addCapacitor (ch.wPiPlateA, ch.wGridA, 0.047e-6);
-        c.addCapacitor (ch.wPiPlateB, ch.wGridB, 0.047e-6);
+        c.addCapacitor (ch.wPiPlateA, ch.wGridA, 0.1e-6);
+        c.addCapacitor (ch.wPiPlateB, ch.wGridB, 0.1e-6);
         c.addResistor (ch.wGridA, ch.wTrem, 220.0e3);
         c.addResistor (ch.wGridB, ch.wTrem, 220.0e3);
         c.addResistor (ch.wGridA, g3s, 1.5e3);
@@ -310,9 +309,9 @@ void CarrRamblerStyleAmplifierProcessor::buildChannel (Channel& ch)
         const double screenIdle = railPlatesNominal - screenResistor * (2.0 * idleScreenCurrent + piAndPreampCurrent);
         ch.penA = c.addPentode (ch.wPP1, g3s, ch.wCathodeBias, pentode6L6(), screenIdle);
         ch.penB = c.addPentode (ch.wPP2, g4s, ch.wCathodeBias, pentode6L6(), screenIdle);
-        // Shared cathode-bias pair: ~300 ohm + 100 uF to ground -- the self-bias "class A" operating point.
-        ch.rCathodeBias = c.addResistor (ch.wCathodeBias, gnd, 300.0);
-        c.addCapacitor (ch.wCathodeBias, gnd, 100.0e-6);
+        // Shared cathode bias, the 5E5's 250 ohm + 25 uF.
+        ch.rCathodeBias = c.addResistor (ch.wCathodeBias, gnd, 250.0);
+        c.addCapacitor (ch.wCathodeBias, gnd, 25.0e-6);
         c.setInitialGuess (ch.wPP1, 400.0);
         c.setInitialGuess (ch.wPP2, 400.0);
         c.setInitialGuess (ch.wCathodeBias, 27.0);
@@ -369,7 +368,7 @@ void CarrRamblerStyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
     // Shared cathode-bias resistor: 300 ohm at noon, a plausible service-tweak range.
-    const double cathodeR = 300.0 * (0.7 + 0.6 * k.bias);
+    const double cathodeR = 250.0 * (0.7 + 0.6 * k.bias);   // the 5E5's 250 ohm at noon
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
 
     for (auto& ch : channels)
@@ -500,7 +499,14 @@ double CarrRamblerStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (blocked - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process ((ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState)) * bmLevelTrim);
+    double y = ch.bmToneState + bmShelfHfGain * (blocked - ch.bmToneState);
+    {   // No NFB: the speaker's rising impedance (its voice-coil inductance) lifts the voltage at the terminals in the top
+        // octaves -- the full netlist's clean tone is ~10 dB brighter there than the knee + shelf alone.
+        const double c = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmTopShelfHz / sampleRate);
+        ch.hsState += c * (y - ch.hsState);
+        y += (std::pow (10.0, bmTopShelfDb / 20.0) - 1.0) * (y - ch.hsState);
+    }
+    ch.bmOutput = ch.bmTail.process (y * bmLevelTrim);
     return ch.bmOutput;
 }
 
@@ -661,6 +667,7 @@ void CarrRamblerStyleAmplifierProcessor::prepare (double newSampleRate, int maxB
         ch.bmOutput = 0.0;
         ch.bmToneState = 0.0;
         ch.bmDcState = 0.0;
+        ch.hsState = 0.0;
     }
 
     controlCounter = 0;
