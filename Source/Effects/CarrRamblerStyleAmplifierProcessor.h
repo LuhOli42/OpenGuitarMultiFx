@@ -57,12 +57,16 @@ public:
     // 6L6GCs, the tremolo injection, the OT and the physical speaker are replaced by behavioralPowerStage(). Default
     // false (the internal-probe tests assume the full topology); the shipped app turns it on in EffectRegistry.cpp.
     static inline bool reducedOrder = false;
-    static constexpr double bmGain0 = 60.0;   // closed-loop small-signal gain, pOut -> speaker, at the nominal rail (CR_POWERCAL)
+    // Refitted 2026-10-31 at Volume 0.2 / 0.5 / 0.8 against the netlist with the 5E5 cathodyne PI (it had been fitted
+    // at 0.8 only, where everything saturates, to the long-tailed-pair version): the old gain of 60 made the shipped
+    // path 9-11 dB hotter than the netlist at low Volume -- fully distorted where the real Rambler is clean.
+    static constexpr double bmGain0 = 6.0;   // closed-loop small-signal gain, pOut -> speaker, at the nominal rail (CR_POWERCAL)
     static constexpr double bmYmax = 0.30;    // peak output as a fraction of the (sagged) rail at full saturation -- fitted
-    static constexpr double bmLevelTrim = 0.30;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
+    static constexpr double bmLevelTrim = 0.25;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
     static constexpr double bmKneeN = 12.0;
     static constexpr double bmShelfHz = 90.0;
-    static constexpr double bmShelfHfGain = 0.6;
+    static constexpr double bmShelfHfGain = 0.8;
+    static constexpr double bmTopShelfHz = 2500.0, bmTopShelfDb = 7.0;
     // See TwinReverbStyleAmplifierProcessor's bmAsym/bmDcHz: real output stages clip
     // asymmetrically at centre bias (the odd saturator alone produces zero even harmonics);
     // bmAsym is fitted against this amp's full-order netlist (Tests/PowerStageAsymBench.cpp),
@@ -118,6 +122,7 @@ private:
 
         // reducedOrder behavioural state
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
+        double hsState = 0.0; // top-octave shelf state (reducedOrder)
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
 
         // supply: rectifier -> plate rail (sA) -> screen node (sB); PI / preamp taps are RC-filtered from sB
