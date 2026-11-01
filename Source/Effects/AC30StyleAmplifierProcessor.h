@@ -55,11 +55,16 @@ public:
     // Refit 2026-10-24 against the full netlist as it stands after the #99 audit (rail / PI rework): the old
     // 7 / 0.128 / 2.0 curve compressed too late and too hard (+2.8 dB at 0.05 input); this one tracks the
     // reference within 0.65 dB from 0.005 to 0.6 (AC30 test "reducedOrder power stage tracks the reference").
-    static constexpr double bmGain0 = 13.0;
-    static constexpr double bmYmax = 0.13;
-    static constexpr double bmKneeN = 0.75;
+    static constexpr double bmGain0 = 20.0;
+    static constexpr double bmYmax = 0.29;
+    // Refitted 2026-10-31 against the full netlist (sine sweep 5 mV-0.6 V and chords at Volume 0.4 / 0.8): the old fit
+    // (knee 0.75, ceiling 0.13) saturated at ~2/3 of the real output and ran 4-5 dB hot with +7 dB mids -- the user's
+    // "too much gain / strange at full volume". The real stage compresses gradually, hence the soft but physical knee.
+    static constexpr double bmKneeN = 1.5;
     static constexpr double bmShelfHz = 120.0;
     static constexpr double bmShelfHfGain = 0.7;
+    static constexpr double bmLevelTrim = 0.40;
+    static constexpr double bmMidHz = 500.0, bmMidQ = 0.5, bmMidDb = -6.0;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -105,6 +110,8 @@ private:
                            wGridA = 0, wGridB = 0, wPP1 = 0, wPP2 = 0, wCathodeBias = 0;
 
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0;
+
+        double mx1 = 0.0, mx2 = 0.0, my1 = 0.0, my2 = 0.0; // mid-cut biquad state (reducedOrder)
         // reducedOrder's Cut LPF approximation: per-channel state -- a single processor member leaked
         // the left channel's filter history into the right (Devin Review, PR #99).
         double cutFilterState = 0.0;
@@ -173,6 +180,7 @@ private:
     }
 
     double sampleRate = 0.0;
+    double midB0 = 1.0, midB1 = 0.0, midB2 = 0.0, midA1 = 0.0, midA2 = 0.0;
     int controlCounter = 0;
     long long sampleCount = 0, failureCount = 0, failuresPre = 0, failuresPower = 0;
     bool dcOk = false;
