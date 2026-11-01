@@ -539,7 +539,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // docs/circuits/SoldanoAstroverb16.md.
     Astroverb16StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("Astroverb16StyleAmplifier");
-    registry.registerType ("Astroverb16StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Astroverb16StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.39f); }, "Crunch");
+    registry.registerType ("Astroverb16StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<Astroverb16StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -9.39f); }, "High-Gain");
     // docs/circuits/SLO100.md. Soldano SLO-100 OD channel. Five cascaded 12AX7 gain stages, TMB tone stack,
     // LTP PI, 4x6L6GC fixed-bias push-pull. reducedOrder calibrated placeholder (Twin Reverb's 6L6GC constants).
     SLO100StyleAmplifierProcessor::reducedOrder = true;

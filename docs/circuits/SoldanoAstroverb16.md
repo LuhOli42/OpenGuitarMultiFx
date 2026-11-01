@@ -68,3 +68,11 @@ a static curve cannot follow.
 | Reduced, after | 11 % | 32 % | 36 % |
 
 The unity trim moved -12.31 → -9.39 dB to keep the amp at unity. AmpFullVsReducedConsistency bound 2 / 3 (was 4 / 7).
+
+## Category and default Preamp (2026-11-01)
+
+Five 12AX7 gain stages ahead of the stack make roughly 75-80 dB of preamp gain at full Preamp -- the drawn circuit, and
+Soldano's own "clean to lead" description. The amp now sits under **High-Gain** (it was under Crunch), and the Preamp
+knob defaults to 0.3 instead of the wiper at half the pot (~8 on the dial). At that old default it amplified an audio
+interface's -90 dBFS noise floor by 42 dB (as much as the 5150): the hiss heard in the listening round.
+
