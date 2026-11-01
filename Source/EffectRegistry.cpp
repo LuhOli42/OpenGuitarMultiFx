@@ -624,7 +624,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // spring return. reducedOrder placeholder trim pending its own POWERCAL measurement.
     JimKelleyStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("JimKelleyStyleAmplifier");
-    registry.registerType ("JimKelleyStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<JimKelleyStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.20f); }, "Clean");
+    registry.registerType ("JimKelleyStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<JimKelleyStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -8.20f); }, "Crunch");
     // Divided by 13 FTR 37 (docs/circuits/DividedBy13FTR37.md): 5879 pentode "click" channel + blackface-like clean
     // channel mixed into an LTP PI and a fixed-bias 4x6V6 push-pull (Full/Half power). reducedOrder power stage.
     DividedBy13FTR37StyleAmplifierProcessor::reducedOrder = true;

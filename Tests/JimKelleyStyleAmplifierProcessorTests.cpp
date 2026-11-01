@@ -271,6 +271,43 @@ public:
             JimKelleyStyleAmplifierProcessor::reducedOrder = false;
         }
 
+        {
+            // User report 2026-10-31: crackles at full Gain. The two series 1N914s on V1b's grid had a floating node
+            // between them; Newton failed there on hot plucks and the channel recovered ~8 times a second.
+            beginTest ("Gain at max, hard plucks and chords: zero solver failures and recoveries (both paths)");
+            for (bool reduced : { true, false })
+            {
+                JimKelleyStyleAmplifierProcessor::reducedOrder = reduced;
+                JimKelleyStyleAmplifierProcessor amp;
+                for (auto* p : amp.getParameters()->getParameters (true))
+                    if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+                        if (f->paramID == "jk_gain")
+                            *f = 1.0f;
+                amp.prepare (sr, 128, 2);
+                juce::AudioBuffer<float> buf (2, 128);
+                const double twoPi = 2.0 * juce::MathConstants<double>::pi;
+                long long n = 0;
+                for (int b = 0; b < (int) (6.0 * sr / 128); ++b)
+                {
+                    for (int i = 0; i < 128; ++i, ++n)
+                    {
+                        const double t = (double) n / sr, lt = std::fmod (t, 0.25);
+                        double x = 0.0;
+                        for (int k = 1; k <= 8; ++k)
+                            x += std::sin (twoPi * 98.0 * k * lt) / k;
+                        buf.setSample (0, i, (float) (0.6 * std::exp (-lt / 0.12) * x));
+                    }
+                    buf.copyFrom (1, 0, buf, 0, 0, 128);
+                    amp.process (buf);
+                }
+                logMessage (juce::String (reduced ? "reduced" : "full") + ": failures " + juce::String (amp.getSolveFailureRate(), 6)
+                            + ", recoveries " + juce::String (amp.debugRecoveries()));
+                expect (amp.getSolveFailureRate() == 0.0);
+                expectEquals (amp.debugRecoveries(), 0);
+            }
+            JimKelleyStyleAmplifierProcessor::reducedOrder = false;
+        }
+
         if (juce::SystemStats::getEnvironmentVariable ("JK_POWERCAL", {}).isNotEmpty())
         {
             beginTest ("power-stage calibration sweep (dev only)");
