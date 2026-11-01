@@ -169,15 +169,14 @@ public:
 
             const struct { const char* id; float v; const char* label; } switches[] = {
                 { "sss_bright", 1.0f, "bright" },
-                { "sss_mid_boost", 1.0f, "mid boost" },
                 { "sss_deep", 1.0f, "deep" },
                 { "sss_accent", 1.0f, "accent" },
-                { "sss_voicing", 0.0f, "jazz" },
-                { "sss_voicing", 1.0f, "pab" },
+                { "sss_guitar_mic", 1.0f, "mic" },
+                { "sss_reverb", 1.0f, "reverb" },
                 { "sss_filter_hi", 3.0f, "filter hi pos4" },
                 { "sss_filter_lo", 3.0f, "filter lo pos4" },
             };
-            double pabRms = -1.0;
+            double micRms = -1.0;
             for (const auto& sw : switches)
             {
                 DumbleSteelStringStyleAmplifierProcessor amp;
@@ -192,10 +191,106 @@ public:
                 expectLessThan (swPeak, 5.0);
                 expect (rms > 1.0e-4);
                 expectLessThan (amp.getSolveFailureRate(), 1.0e-6);
-                if (juce::String (sw.id) == "sss_voicing" && sw.v == 1.0f)
-                    pabRms = rms;
+                if (juce::String (sw.id) == "sss_guitar_mic")
+                    micRms = rms;
             }
-            expect (pabRms > baseRms * 1.3); // PAB lifts the stack legs: a big, unambiguous boost
+            expect (std::abs (micRms / baseRms - 1.0) > 0.05); // Mic rewires the stack: the level must move
+        }
+
+        beginTest ("reverb: a tail after the note stops; Off keeps only what is already in the tank");
+        {
+            const auto tail = [&] (bool on, float send, float ret)
+            {
+                DumbleSteelStringStyleAmplifierProcessor amp;
+                setParam (amp, "sss_reverb", on ? 1.0f : 0.0f);
+                setParam (amp, "sss_reverb_send", send);
+                setParam (amp, "sss_reverb_return", ret);
+                amp.prepare (sr, 128, 2);
+                juce::AudioBuffer<float> buf (2, 128);
+                double e = 0.0;
+                long long n = 0;
+                for (int b = 0; b < (int) (1.5 * sr / 128); ++b)
+                {
+                    for (int i = 0; i < 128; ++i, ++n)
+                    {
+                        const float x = n < (long long) (0.3 * sr) ? (float) (0.05 * std::sin (2.0 * juce::MathConstants<double>::pi * 330.0 * (double) n / sr)) : 0.0f;
+                        buf.setSample (0, i, x);
+                        buf.setSample (1, i, x);
+                    }
+                    amp.process (buf);
+                    if (n > (long long) (0.45 * sr))
+                        for (int i = 0; i < 128; ++i)
+                            e += juce::square ((double) buf.getSample (0, i));
+                }
+                expectLessThan (amp.getSolveFailureRate(), 1.0e-6);
+                return e;
+            };
+            const double off = tail (false, 1.0f, 1.0f), half = tail (true, 0.7f, 0.7f), full = tail (true, 1.0f, 1.0f);
+            logMessage ("tail energy: off " + juce::String (off, 10) + ", send/return 0.7 " + juce::String (half, 10)
+                        + ", full " + juce::String (full, 10));
+            expectGreaterThan (half, off * 2.0 + 1.0e-12);
+            expectGreaterThan (full, half * 1.5);
+        }
+
+        beginTest ("reverb: at full Send and Return the wet level is about the dry level");
+        {
+            // Two amps in lockstep, reverb Off and On: below clipping the dry paths are identical, so the difference
+            // is the wet signal.
+            DumbleSteelStringStyleAmplifierProcessor dryAmp, wetAmp;
+            for (auto* amp : { &dryAmp, &wetAmp })
+            {
+                setParam (*amp, "sss_reverb_send", 1.0f);
+                setParam (*amp, "sss_reverb_return", 1.0f);
+                setParam (*amp, "sss_master", 0.3f);
+            }
+            setParam (wetAmp, "sss_reverb", 1.0f);
+            dryAmp.prepare (sr, 128, 2);
+            wetAmp.prepare (sr, 128, 2);
+            juce::AudioBuffer<float> dryBuf (2, 128), wetBuf (2, 128);
+            double drySum = 0.0, wetSum = 0.0;
+            long long n = 0;
+            for (int b = 0; b < (int) (3.0 * sr / 128); ++b)
+            {
+                for (int i = 0; i < 128; ++i, ++n)
+                {
+                    const float x = (float) (0.01 * std::sin (2.0 * juce::MathConstants<double>::pi * 1000.0 * (double) n / sr));
+                    for (auto* buf : { &dryBuf, &wetBuf })
+                    {
+                        buf->setSample (0, i, x);
+                        buf->setSample (1, i, x);
+                    }
+                }
+                dryAmp.process (dryBuf);
+                wetAmp.process (wetBuf);
+                if (n > (long long) (1.5 * sr))
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        drySum += juce::square ((double) dryBuf.getSample (0, i));
+                        wetSum += juce::square ((double) wetBuf.getSample (0, i) - (double) dryBuf.getSample (0, i));
+                    }
+            }
+            const double ratio = std::sqrt (wetSum / juce::jmax (1.0e-30, drySum));
+            logMessage ("1 kHz sustained, full Send / Return: wet / dry " + juce::String (ratio, 3));
+            expectWithinAbsoluteError (ratio, 1.0, 0.25);
+        }
+
+        beginTest ("old presets: Voicing Jazz becomes Mic, PAB and Rock become Guitar");
+        {
+            for (int v = 0; v < 3; ++v)
+            {
+                DumbleSteelStringStyleAmplifierProcessor amp;
+                juce::XmlElement state ("EffectState");
+                state.setAttribute ("sss_voicing", v);
+                state.setAttribute ("sss_mid_boost", 1.0);
+                amp.setState (state);
+                const auto saved = amp.getState();
+                expectEquals (saved->getDoubleAttribute ("sss_guitar_mic"), v == 0 ? 1.0 : 0.0);
+
+                std::vector<std::pair<juce::String, float>> snap { { "sss_voicing", (float) v } };
+                amp.migrateLegacySnapshotParams (snap);
+                expect (snap[0].first == "sss_guitar_mic");
+                expectEquals (snap[0].second, v == 0 ? 1.0f : 0.0f);
+            }
         }
 
         // ---- reducedOrder tests ----

@@ -25,6 +25,11 @@ namespace
     constexpr double bleeder = 150.0e3;
     constexpr double screenResistor = 500.0;  // 1K per tube / 2 per pair
 
+    // The 5751 pair, its transformer and the tank set the return's absolute level, and #002's netlist models the tank
+    // only as a delay. Estimate: at full Send and Return a sustained note's wet level at U40's cathode matches the
+    // dry level at the follower.
+    constexpr double reverbReturnGain = 330.0;
+
     // ---- reduced-order power stage sag table (Twin Reverb's 6L6GC data scaled 497V -> 470V) ----
     constexpr int bmSagPoints = 20;
     constexpr double bmSagDrive[bmSagPoints] = { 0.010814, 0.026337, 0.052278, 0.104273, 0.208386, 0.364564, 0.520879, 0.781423,
@@ -101,12 +106,12 @@ namespace
         NodalCircuit& c;
         int srcV3 = 0, srcV2 = 0, srcE = 0, srcIn = 0;
         int rVolTop = 0, rVolBot = 0;
-        int capBright = 0, capVoice = 0, capMidBoost = 0;
+        int capBright = 0;
         int rTrebleTop = 0, rTrebleBottom = 0, rBassTop = 0, rBassBottom = 0, rMidVar = 0;
-        int rLegLink = 0, rMergeLink = 0, rPadLink = 0, rDeepLink = 0;
+        int rMergeLink = 0, rPadLink = 0, rC35Link = 0, rDeepLink = 0;
         int rHiLink[7] = { 0, 0, 0, 0, 0, 0, 0 };
         int rLoLink[7] = { 0, 0, 0, 0, 0, 0, 0 };
-        NodalCircuit::Node plateV1a = 0, plateV1b = 0, plateV2a = 0, follower = 0;
+        NodalCircuit::Node plateV1a = 0, plateV1b = 0, plateV2a = 0, follower = 0, volWiper = 0;
         NodalCircuit::Node nodeV3 = 0, nodeV2 = 0, nodeE = 0;
     };
 
@@ -115,10 +120,9 @@ namespace
         V1A (100K plate, 1.5K + 5uF cathode on the 100-ohm LNFB tail) -> Volume 1MA (with the
         real 250pF BRIGHT cap across the pot) -> V1B (100K plate, 1.5K + 5uF on its own 100-ohm
         tail) -> .01uF + 300mH choke into the Hi/Lo 7-position filter bank -> V2A (100K plate,
-        1K + 1uF cathode) -> V2B cathode follower -> tone stack. The LNFB loop returns follower
-        output through .22uF + 470K into V1A's tail node, as on the real amp. The stage ORDER
-        still differs from #002, which puts its tone stack between V1A and the Volume pot; ours
-        keeps the documented stack-after-follower arrangement (docs/circuits/DumbleSteelString.md). */
+        1K + 1uF cathode) -> V2B cathode follower. The tone stack sits between V1A and the Volume
+        pot, as on #002. The LNFB loop returns follower output through .22uF + 470K into V1A's tail
+        node, as on the real amp. */
     PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double eGuess, double dGuess, double cGuess)
     {
         const auto gnd = NodalCircuit::ground;
@@ -149,34 +153,36 @@ namespace
         c.setInitialGuess (k1, 1.5);
 
         // ---- #002 distributed tone stack, fed straight off V1A's plate (its real position) ----
-        // Treble leg: 360p into a 250K-A pot whose wiper is the merged output (bottom on the
-        // 4.7nF C35 AC ground). Bass/mid feed: R3 100K -> C3 .1u -> 250K-A bass pot (bottom on a
-        // 1.8K tail, wiper merged through R63 100K) and C34 .047u -> 100K mid rheostat.
-        const auto nTt = c.addNode(), nB19 = c.addNode(), nLegs = c.addNode(), nBt = c.addNode(),
+        // Treble leg: 360p into a 250K-A pot whose wiper is the merged output. Bass/mid feed: R3 100K -> C3 .1u ->
+        // 250K-A bass pot (bottom on a 1.8K tail) and C34 .047u -> 100K mid rheostat. GUITAR/MIC (U34, a DPDT):
+        // Guitar puts the treble pot's bottom on C35 4.7nF to ground and merges the bass wiper through R63 100K;
+        // Mic ties the treble pot's bottom straight to the bass wiper and lifts R63.
+        const auto nTt = c.addNode(), nB19 = c.addNode(), nBt = c.addNode(),
                    nMidW = c.addNode(), nSum = c.addNode(), nTb = c.addNode(), nBw = c.addNode(),
                    nBwM = c.addNode(), nBb = c.addNode(), nDm = c.addNode(), nDl = c.addNode();
         c.addCapacitor (b.plateV1a, nTt, 360.0e-12);            // C1 treble feed
         c.addResistor (b.plateV1a, nB19, 100.0e3);              // R3 bass/mid feed
-        b.rLegLink = c.addResistor (nB19, nLegs, 100.0);        // PAB lifts bass+mid legs here
-        c.addCapacitor (nLegs, nBt, 0.1e-6);                    // C3 bass cap
-        c.addCapacitor (nLegs, nMidW, 0.047e-6);                // C34 mid cap
+        c.addCapacitor (nB19, nBt, 0.1e-6);                     // C3 bass cap
+        c.addCapacitor (nB19, nMidW, 0.047e-6);                 // C34 mid cap
         b.rMidVar = c.addResistor (nMidW, gnd, 50.0e3);         // MID 100K rheostat
-        b.capMidBoost = c.addCapacitor (nTt, nMidW, 1.0e-15);   // MID BOOST: treble feed into mid leg
 
         b.rTrebleTop = c.addResistor (nTt, nSum, 125.0e3);      // TREBLE 250K-A pot
         b.rTrebleBottom = c.addResistor (nSum, nTb, 125.0e3);
-        c.addCapacitor (nTb, gnd, 4.7e-9);                      // C35
+        const auto nC35 = c.addNode();
+        b.rC35Link = c.addResistor (nTb, nC35, 1.0);
+        c.addCapacitor (nC35, gnd, 4.7e-9);                     // C35
         b.rBassTop = c.addResistor (nBt, nBw, 125.0e3);         // BASS 250K-A pot
         b.rBassBottom = c.addResistor (nBw, nBb, 125.0e3);
         c.addResistor (nBb, gnd, 1.8e3);                        // R7
         c.addResistor (nBw, nBwM, 100.0e3);                     // R63 merge leg
-        b.rMergeLink = c.addResistor (nBwM, nSum, 100.0);       // PAB lifts the merge too
-        b.rPadLink = c.addResistor (nTb, nBw, 1.0e9);           // JAZZ (MIC pad): legs merge
+        b.rMergeLink = c.addResistor (nBwM, nSum, 1.0);         // Mic lifts the merge
+        b.rPadLink = c.addResistor (nTb, nBw, 1.0e9);           // Mic: treble bottom onto the bass wiper
 
         // VOLUME 1M-A on the merged stack output (XU5); BRIGHT = 250pF across the pot (C4).
         // DEEP: bass wiper -> R64/R65 shelf on the R66||C36+R67 network straight into the wiper
         // node -- it bypasses the Volume pot on the real amp, which is the whole point of it.
         const auto nVol = c.addNode();
+        b.volWiper = nVol;
         b.rVolTop = c.addResistor (nSum, nVol, 500.0e3);
         b.rVolBot = c.addResistor (nVol, gnd, 500.0e3);
         b.capBright = c.addCapacitor (nSum, nVol, 1.0e-15);
@@ -201,10 +207,9 @@ namespace
         c.setInitialGuess (b.plateV1b, 280.0);
         c.setInitialGuess (k2, 1.5);
 
-        // V1B plate -> coupling (0.01uF Rock/PAB, 4.7nF Jazz) + 300mH choke into the filter bank
-        // (C6/L2 on #002).
+        // V1B plate -> .01uF + 300mH choke into the filter bank (C6/L2 on #002).
         const auto nF1 = c.addNode(), nF2 = c.addNode();
-        b.capVoice = c.addCapacitor (b.plateV1b, nF1, 0.01e-6);
+        c.addCapacitor (b.plateV1b, nF1, 0.01e-6);
         c.addCoupledInductors ({ { nF1, nF2 } }, { 0.3 });
 
         // LO filter: tapped string 39K-68K-100K-180K-270K-390K from the choke node into a 12K
@@ -288,8 +293,9 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
     auto treble = make ("sss_treble", "Treble", 0.5f);
     auto mid = make ("sss_mid", "Middle", 0.5f);
     auto bass = make ("sss_bass", "Bass", 0.5f);
-    auto presence = make ("sss_presence", "Presence", 0.3f);
-    auto master = make ("sss_master", "Master", 0.5f);
+    // #002 has no Presence knob: a 25K trim set to 0.65 of its travel (U11), kept as a page-2 control.
+    auto presence = make ("sss_presence", "Presence Trim", 0.35f);
+    auto master = make ("sss_master", "Level", 0.5f);
     auto output = make ("sss_output", "Output", 0.5f);
     auto power = make ("sss_power", "Power Drive", 0.5f);
     auto bias = make ("sss_bias", "Bias", 0.5f);
@@ -317,15 +323,15 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (
             [] (float v, int) { return juce::String (juce::roundToInt (v) + 1); }));
     auto bright = toggle ("sss_bright", "Bright");
-    auto midBoost = toggle ("sss_mid_boost", "Mid Boost");
     auto deep = toggle ("sss_deep", "Deep");
     auto accent = toggle ("sss_accent", "Accent");
-    auto voicing = std::make_unique<juce::AudioParameterFloat> (
-        "sss_voicing", "Voicing", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 2.0f,
-        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-        {
-            switch (juce::roundToInt (v)) { case 0: return juce::String ("Jazz"); case 1: return juce::String ("PAB"); default: return juce::String ("Rock"); }
-        }));
+    auto guitarMic = std::make_unique<juce::AudioParameterFloat> (
+        "sss_guitar_mic", "Guitar / Mic", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return v > 0.5f ? juce::String ("Mic") : juce::String ("Guitar"); }));
+    auto reverb = toggle ("sss_reverb", "Reverb");
+    auto send = make ("sss_reverb_send", "Send", 0.5f);
+    auto ret = make ("sss_reverb_return", "Return", 0.5f);
 
     volumeParam = volume.get();
     trebleParam = treble.get();
@@ -341,29 +347,33 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
     filterHiParam = filterHi.get();
     filterLoParam = filterLo.get();
     brightParam = bright.get();
-    midBoostParam = midBoost.get();
     deepParam = deep.get();
     accentParam = accent.get();
-    voicingParam = voicing.get();
+    guitarMicParam = guitarMic.get();
+    reverbParam = reverb.get();
+    sendParam = send.get();
+    returnParam = ret.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "dumble_sss", "Dumble Steel String", "|", std::move (volume));
+    // Page 1 in the #002 faceplate's order.
+    group->addChild (std::move (bright));
+    group->addChild (std::move (deep));
+    group->addChild (std::move (guitarMic));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
-    group->addChild (std::move (presence));
-    group->addChild (std::move (master));
-    // The front panel's switches and rotaries are real controls: page 1, with the knobs.
     group->addChild (std::move (filterHi));
     group->addChild (std::move (filterLo));
-    group->addChild (std::move (bright));
-    group->addChild (std::move (midBoost));
-    group->addChild (std::move (deep));
+    group->addChild (std::move (reverb));
+    group->addChild (std::move (send));
+    group->addChild (std::move (ret));
     group->addChild (std::move (accent));
-    group->addChild (std::move (voicing));
+    group->addChild (std::move (master));
     auto cab = tubeamp::makeCabParam ("sss_cab", "1x12 EV", cabAlts);
     cabParam = cab.get();
-    auto page3 = std::make_unique<juce::AudioProcessorParameterGroup> ("sss_page3", "Page 2", "|", std::move (power));
+    auto page3 = std::make_unique<juce::AudioProcessorParameterGroup> ("sss_page3", "Page 2", "|", std::move (presence));
+    page3->addChild (std::move (power));
     page3->addChild (std::move (bias));
     page3->addChild (std::move (feel));
     page3->addChild (std::move (speaker));
@@ -371,6 +381,36 @@ DumbleSteelStringStyleAmplifierProcessor::DumbleSteelStringStyleAmplifierProcess
     page3->addChild (std::move (cab));
     group->addChild (std::move (page3));
     parameters = std::move (group);
+
+    // The tank: the spring engine at full wet, no dry (the amp's own mixer adds the dry).
+    for (auto* p : spring.getParameters()->getParameters (true))
+        if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+        {
+            if (f->paramID == "spring_wet" || f->paramID == "spring_kill_dry")
+                *f = 1.0f;
+            else if (f->paramID == "spring_decay")
+                *f = 0.6f;
+            else if (f->paramID == "spring_tone")
+                *f = 0.55f;
+        }
+}
+
+void DumbleSteelStringStyleAmplifierProcessor::migrateLegacySnapshotParams (std::vector<std::pair<juce::String, float>>& params) const
+{
+    EffectProcessor::migrateLegacySnapshotParams (params);
+    for (auto& [id, value] : params)
+        if (id == "sss_voicing")
+        {
+            id = "sss_guitar_mic";
+            value = juce::roundToInt (value) == 0 ? 1.0f : 0.0f;
+        }
+}
+
+void DumbleSteelStringStyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    EffectProcessor::setState (state);
+    if (state.hasAttribute ("sss_voicing") && ! state.hasAttribute ("sss_guitar_mic"))
+        *guitarMicParam = juce::roundToInt (state.getDoubleAttribute ("sss_voicing")) == 0 ? 1.0f : 0.0f;
 }
 
 void DumbleSteelStringStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -430,16 +470,15 @@ void DumbleSteelStringStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rVolTop = b.rVolTop;
         ch.rVolBot = b.rVolBot;
         ch.capBright = b.capBright;
-        ch.capVoice = b.capVoice;
-        ch.capMidBoost = b.capMidBoost;
+        ch.pVolWiper = b.volWiper;
         ch.rTrebleTop = b.rTrebleTop;
         ch.rTrebleBottom = b.rTrebleBottom;
         ch.rBassTop = b.rBassTop;
         ch.rBassBottom = b.rBassBottom;
         ch.rMidVar = b.rMidVar;
-        ch.rLegLink = b.rLegLink;
         ch.rMergeLink = b.rMergeLink;
         ch.rPadLink = b.rPadLink;
+        ch.rC35Link = b.rC35Link;
         ch.rDeepLink = b.rDeepLink;
         for (int i = 0; i < 7; ++i)
         {
@@ -452,19 +491,21 @@ void DumbleSteelStringStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pFollower = b.follower;
     }
 
-    // ================================================================ master (follower -> PI)
-    // #002: cathode follower -> C49 .01u -> Master 1M-A -> PI. ACCENT puts 1nF across the
-    // pot's top leg (C50). The tone stack itself now lives in the preamp block, where #002
-    // puts it (between V1A and the Volume pot).
+    // ================================================================ reverb mixer, Level (follower -> PI)
+    // #002: the cathode follower (R84 220K) and the reverb return's cathode follower U40 (R85 220K, R88 100K to
+    // ground on its side) meet at C49 .01u -> Level 1M-A -> PI. ACCENT puts 1nF across the pot's top leg (C50).
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
-        const auto cf = c.addNode(), nCfO = c.addNode(), nMst = c.addNode();
+        const auto cf = c.addNode(), nCfO = c.addNode(), nMix = c.addNode(), ret = c.addNode(), nMst = c.addNode();
         ch.wSrcCf = c.addSource (cf, 0.0);
+        ch.wSrcRet = c.addSource (ret, 0.0);
         ch.wToneIn = nMst;
         ch.wTone = c.addNode();
         c.addResistor (cf, nCfO, cathodeFollowerImpedance);
-        c.addCapacitor (nCfO, nMst, 0.01e-6);                // C49, series after the follower impedance
+        c.addResistor (nCfO, nMix, 220.0e3);                 // R84
+        c.addResistor (ret, nMix, 220.0e3);                  // R85, from U40's cathode
+        c.addCapacitor (nMix, nMst, 0.01e-6);                // C49
         c.addResistor (nMst, gnd, 470.0e3);
         ch.rMasterTop = c.addResistor (nMst, ch.wTone, 500.0e3);
         ch.rMasterBottom = c.addResistor (ch.wTone, gnd, 500.0e3);
@@ -586,10 +627,12 @@ DumbleSteelStringStyleAmplifierProcessor::Knobs DumbleSteelStringStyleAmplifierP
 {
     Knobs k { vo, tr, mi, ba, pr, ms, pw, bi, fe, speaker };
     k.bright = brightParam->get() > 0.5f;
-    k.midBoost = midBoostParam->get() > 0.5f;
     k.deep = deepParam->get() > 0.5f;
     k.accent = accentParam->get() > 0.5f;
-    k.voicing = juce::roundToInt (voicingParam->get());
+    k.mic = guitarMicParam->get() > 0.5f;
+    k.reverbOn = reverbParam->get() > 0.5f;
+    k.send = sendParam->get();
+    k.returnLevel = returnParam->get();
     k.filterHi = juce::roundToInt (filterHiParam->get());
     k.filterLo = juce::roundToInt (filterLoParam->get());
     return k;
@@ -610,16 +653,10 @@ void DumbleSteelStringStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double bassBottom = juce::jmax (1.0, 250.0e3 * pots::audio (k.bass));
     const double bassTop = juce::jmax (1.0, 250.0e3 - bassBottom);
     const double midR = juce::jmax (1.0, 100.0e3 * k.mid);
-    // front-panel switches: Jazz = voicing 0 (pad link on, 4.7nF coupling), PAB = 1 (legs lifted),
-    // Rock = 2. Deep swaps the direct link for the shelf; Bright/Accent/MidBoost switch caps.
-    const bool jazz = (k.voicing == 0), pab = (k.voicing == 1);
-    const double legR = pab ? 1.0e9 : 100.0;
-    const double padR = jazz ? 100.0 : 1.0e9;
+    const double guitarLinkR = k.mic ? 1.0e9 : 1.0, micLinkR = k.mic ? 1.0 : 1.0e9;
     const double deepR = k.deep ? 270.0e3 : 1.0e9;
     const double brightC = k.bright ? 250.0e-12 : 1.0e-15;
-    const double voiceC = jazz ? 4.7e-9 : 0.01e-6;
     const double accentC = k.accent ? 0.001e-6 : 1.0e-15;
-    const double midBoostC = k.midBoost ? 4.7e-9 : 1.0e-15;
     const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
     const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
     const double masterR = juce::jmax (1.0, 1.0e6 * pots::audio (k.master));
@@ -637,16 +674,14 @@ void DumbleSteelStringStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rBassTop, bassTop);
         ch.pre.setResistance (ch.rBassBottom, bassBottom);
         ch.pre.setResistance (ch.rMidVar, midR);
-        ch.pre.setResistance (ch.rLegLink, legR);
-        ch.pre.setResistance (ch.rMergeLink, legR);
-        ch.pre.setResistance (ch.rPadLink, padR);
+        ch.pre.setResistance (ch.rMergeLink, guitarLinkR);
+        ch.pre.setResistance (ch.rC35Link, guitarLinkR);
+        ch.pre.setResistance (ch.rPadLink, micLinkR);
         ch.pre.setResistance (ch.rDeepLink, deepR);
-        ch.pre.setCapacitance (ch.capMidBoost, midBoostC);
         ch.power.setResistance (ch.rMasterBottom, masterR);
         ch.power.setResistance (ch.rMasterTop, juce::jmax (1.0, 1.0e6 - masterR));
         ch.power.setCapacitance (ch.capAccent, accentC);
         ch.pre.setCapacitance (ch.capBright, brightC);
-        ch.pre.setCapacitance (ch.capVoice, voiceC);
         for (int i = 0; i < 7; ++i)
         {
             ch.pre.setResistance (ch.rHiLink[i], i == k.filterHi ? 100.0 : 1.0e9);
@@ -766,7 +801,7 @@ double DumbleSteelStringStyleAmplifierProcessor::behavioralPowerStage (Channel& 
 
     const double shelfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmShelfHz / juce::jmax (1.0, sampleRate));
     ch.bmToneState += shelfCoeff * (raw - ch.bmToneState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + bmShelfHfGain * (0.4 + 1.2 * presence) * (raw - ch.bmToneState));
+    ch.bmOutput = ch.bmTail.process (bmLevelTrim * (ch.bmToneState + bmShelfHfGain * (0.4 + 1.2 * presence) * (raw - ch.bmToneState)));
     return ch.bmOutput;
 }
 
@@ -830,11 +865,18 @@ double DumbleSteelStringStyleAmplifierProcessor::screenCurrentTotal() const noex
     return sa + sb;
 }
 
-void DumbleSteelStringStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
+void DumbleSteelStringStyleAmplifierProcessor::prepare (double newSampleRate, int maxBlockSize, int)
 {
-    if (juce::exactlyEqual (sampleRate, newSampleRate) && sampleRate > 0.0)
+    if (juce::exactlyEqual (sampleRate, newSampleRate) && sampleRate > 0.0 && maxBlockSize <= maxBlock)
         return;
     sampleRate = newSampleRate;
+    maxBlock = juce::jmax (maxBlock, maxBlockSize, 1);
+    spring.prepare (newSampleRate, maxBlock, 2);
+    reverbSend.setSize (2, maxBlock);
+    reverbReturn.setSize (2, maxBlock);
+    reverbSend.clear();
+    reverbReturn.clear();
+    reverbReturnLength = 0;
 
     for (auto& ch : channels)
     {
@@ -884,6 +926,7 @@ void DumbleSteelStringStyleAmplifierProcessor::prepare (double newSampleRate, in
             ch.followerDc = ch.pre.voltage (ch.pFollower);
 
             ch.power.setSource (ch.wSrcCf, ch.followerDc);
+            ch.power.setSource (ch.wSrcRet, ch.followerDc);
             ch.power.setInitialGuess (ch.wToneIn, ch.followerDc);
             ch.vScreen = ch.supply.voltage (ch.sB);
             ch.vCt = ch.supply.voltage (ch.sA);
@@ -964,6 +1007,18 @@ void DumbleSteelStringStyleAmplifierProcessor::process (juce::AudioBuffer<float>
     const int numSamples = buffer.getNumSamples();
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
 
+    // Reverb (#002): V1B's grid -> R35 68K -> U20 7025 -> C20 .001u into the 250K-A Send pot -> the 5751 pair and
+    // transformer into the tank; reverb Off (U29) grounds the drive, so the tail already in the tank still returns.
+    // Recovery U28 7025 -> C27 3000p into the 100K-lin Return pot -> U39 7025 -> U40 follower. R52 270K / C23 from
+    // U40's cathode into U28's 100-ohm cathode tail closes a loop around the return: with the stage gains (~58 and
+    // ~62) its loop gain is ~1.23 x the Return setting, so the return goes as r / (1 + 1.23 r).
+    const double sendHpCoeff = 1.0 - std::exp (-1.0 / (250.0e3 * 1.0e-9 * sampleRate));
+    const double returnHpCoeff = 1.0 - std::exp (-1.0 / (100.0e3 * 3.0e-9 * sampleRate));
+    const double sendGain = reverbParam->get() > 0.5f ? pots::audio ((double) sendParam->get()) : 0.0;
+    const double r = (double) returnParam->get();
+    const double returnGain = reverbReturnGain * (r / (1.0 + 1.23 * r)) * (1.0 + 1.23);
+    const int reverbSamples = juce::jmin (numSamples, maxBlock);
+
     smoothedVolume.setTargetValue (volumeParam->get());
     smoothedTreble.setTargetValue (trebleParam->get());
     smoothedMid.setTargetValue (midParam->get());
@@ -1010,7 +1065,21 @@ void DumbleSteelStringStyleAmplifierProcessor::process (juce::AudioBuffer<float>
             const bool okPre = ch.pre.solveSample();
             bool ok = okPre;
 
+            const double sendNode = ch.pre.voltage (ch.pVolWiper);
+            ch.sendHpState += sendHpCoeff * (sendNode - ch.sendHpState);
+            if (i < reverbSamples)
+            {
+                const float send = (float) (sendGain * (sendNode - ch.sendHpState));
+                reverbSend.setSample (chIdx, i, send);
+                if (solveChannels == 1)
+                    reverbSend.setSample (1, i, send);
+            }
+            const double tank = i < reverbReturnLength ? (double) reverbReturn.getSample (chIdx, i) : 0.0;
+            ch.returnHpState += returnHpCoeff * (tank - ch.returnHpState);
+            const double wet = returnGain * (tank - ch.returnHpState);
+
             ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * (ch.pre.voltage (ch.pFollower) - ch.followerDc));
+            ch.power.setSource (ch.wSrcRet, ch.followerDc + masterGain * wet);
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
@@ -1091,6 +1160,13 @@ void DumbleSteelStringStyleAmplifierProcessor::process (juce::AudioBuffer<float>
             }
         }
     }
+
+    // The tank, one block behind: this block's sends become the next block's return.
+    juce::AudioBuffer<float> sendView (reverbSend.getArrayOfWritePointers(), 2, reverbSamples);
+    spring.process (sendView);
+    for (int c = 0; c < 2; ++c)
+        reverbReturn.copyFrom (c, 0, sendView, c, 0, reverbSamples);
+    reverbReturnLength = reverbSamples;
 
     shortcut.end (buffer);
 }
