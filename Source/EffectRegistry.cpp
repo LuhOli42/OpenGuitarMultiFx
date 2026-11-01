@@ -636,7 +636,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // BognerUberschall}.md): LTP + NFB + push-pull pentode quads; each has a reducedOrder path.
     DumbleSteelStringStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DumbleSteelStringStyleAmplifier");
-    registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 10.72f); }, "Clean");
+    registry.registerType ("DumbleSteelStringStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DumbleSteelStringStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 24.07f); }, "Clean");
     // The Overdrive Special: the 70s trace with the #124 switches (docs/circuits/DumbleODS.md).
     DumbleODSStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DumbleODSStyleAmplifier");
