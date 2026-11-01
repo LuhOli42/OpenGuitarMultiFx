@@ -141,11 +141,17 @@ public:
             { "_volume", 0.8f }, { "_loud1", 0.7f }, { "_loud2", 0.7f },
             { "_vol_normal", 0.8f }, { "_vol_bright", 0.8f },
         };
+        // AMP_VOLUME=x: the volume-type knobs at x instead of the calibration 0.8 / 0.7 (break-up checks at low volume).
+        static const juce::String volumeOverride = std::getenv ("AMP_VOLUME") != nullptr ? std::getenv ("AMP_VOLUME") : "";
         for (const auto& page : pages)
             for (auto* f : page)
                 for (const auto& r : rules)
                     if (juce::String (f->paramID).endsWith (r.first))
-                        *f = juce::jlimit (f->range.start, f->range.end, r.second);
+                    {
+                        const bool volumeKnob = juce::String (r.first).contains ("vol") || juce::String (r.first).contains ("loud");
+                        const float v = volumeKnob && volumeOverride.isNotEmpty() ? volumeOverride.getFloatValue() : r.second;
+                        *f = juce::jlimit (f->range.start, f->range.end, v);
+                    }
         // AMP_PARAMS="id=v,id=v": extra knob settings applied to both paths (dev sweeps).
         static const juce::String over = std::getenv ("AMP_PARAMS") != nullptr ? std::getenv ("AMP_PARAMS") : "";
         for (const auto& kv : juce::StringArray::fromTokens (over, ",", {}))
@@ -374,8 +380,8 @@ public:
             { "twin",        3.0,  5.0, 0.0 }, { "deluxe",       3.5,  4.0, 0.0 },
             { "jtm45",       1.5,  5.5, 0.0 }, { "jcm800",       4.0,  6.0, 0.0 },
             { "ac15",        2.5,  2.0, 0.0 }, { "ac30",         3.5,  2.0, 0.0 },
-            { "matchless",   3.0,  5.0, 0.0 }, { "hotcat",       3.0, 11.0, 0.0 },
-            { "carmenghia",  4.0,  8.0, 0.0 }, { "astroverb",    4.0,  7.0, 0.0 },
+            { "matchless",   3.0,  5.0, 0.0 }, { "hotcat",       1.0,  3.0, 0.0 },
+            { "carmenghia",  2.5,  2.5, 0.0 }, { "astroverb",    2.0,  3.0, 0.0 },
             { "slo100",       1.0,  4.0, 0.0 }, { "markiic",      5.0,  6.0, 0.0 },
             { "dualrect",     4.0,  5.0, 0.0 }, { "evh5150",      2.0,  2.0, 0.0 },
             { "powerball",    1.0,  2.5, 0.0 }, { "rockerverb",   1.5,  2.5, 0.0 },
@@ -508,8 +514,11 @@ public:
                 return;
             }
         }
+        // AMP_SWEEP_SINES=1: only the THD sines below (fitting runs).
         for (double scale : { 1.0, 2.5, 6.3 })
         {
+            if (std::getenv ("AMP_SWEEP_SINES") != nullptr)
+                break;
             std::vector<float> in (di.size());
             for (size_t i = 0; i < di.size(); ++i)
                 in[i] = di[i] * (float) scale;

@@ -63,3 +63,18 @@ pass their unit, reduced-vs-full and unity tests.
 The level was refitted from 18.5 to 26.4. The reduced path now tracks the netlist within 0.08 dB of level. Its worst
 band shape is 7.0 dB of extra treble at the quiet level (bound 8): the netlist's NFB and C18 trim the top at low
 level. The registry trim is −12.46 dB, giving unity at noon.
+
+## Reduced path refit (2026-11-01)
+
+The shipped reduced stage saturated at any volume: 36-39 % THD on a sine at Volume 0.2, where the netlist makes 2-14 %.
+That was the "distorts a lot" the user heard in the listening round. Refitted on level AND distortion against the
+netlist at Volume 0.2, 0.5 and 0.8 (sines 0.05 / 0.2 / 0.6 V): gain 10 -> 0.35, a soft knee x / (1 + |x|^1.4)^(1/1.4)
+instead of tanh (the netlist compresses gradually), level 26.4 -> 33.
+
+| Volume 0.2, input | 0.05 V | 0.2 V | 0.6 V |
+|---|---|---|---|
+| Netlist THD | 2.2 % | 7.6 % | 14 % |
+| Reduced, before | 36 % | 39 % | 39 % |
+| Reduced, after | 3.0 % | 13 % | 25 % |
+
+The unity trim moved -12.62 → -6.33 dB to keep the amp at unity. AmpFullVsReducedConsistency bound 2.5 / 2.5 (was 4 / 8).
