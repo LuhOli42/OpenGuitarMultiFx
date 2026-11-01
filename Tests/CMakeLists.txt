@@ -129,6 +129,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PitchDetectorRangeTests.cpp
   AmpDynamicsBench.cpp
   AmpPanelPageTests.cpp
+  AmpSwitchLevelSurvey.cpp
   CrunchGainSurvey.cpp
   AmpVoicingBench.cpp
   RePrepareTransparencyTests.cpp

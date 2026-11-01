@@ -96,7 +96,9 @@ EL84BoutiqueAmpCore::EL84BoutiqueAmpCore (Model ampModel, TubeFits fits, bool& r
     }
     else
     {
-        preampParam = add ("astro16_preamp", "Preamp", (float) pots::audioInverse (0.5));
+        // Knob 0.3 (2026-11-01): the old default put the wiper at half the pot -- ~8 on the dial, deep in saturation
+        // and hissing (+42 dB on the interface's noise floor). Five gain stages: 0.3 is crunch, the top is lead.
+        preampParam = add ("astro16_preamp", "Preamp", 0.3f);
         bassParam = add ("astro16_bass", "Bass", 0.5f);
         midParam = add ("astro16_mid", "Middle", 0.5f);
         trebleParam = add ("astro16_treble", "Treble", 0.5f);
