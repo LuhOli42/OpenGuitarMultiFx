@@ -245,6 +245,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/JimKelleyStyleAmplifierProcessor.cpp
   Source/Effects/DividedBy13FTR37StyleAmplifierProcessor.cpp
   Source/Effects/DumbleSteelStringStyleAmplifierProcessor.cpp
+  Source/Effects/DumbleODSStyleAmplifierProcessor.cpp
   Source/Effects/SunnModelTStyleAmplifierProcessor.cpp
   Source/Effects/FryetteDeliveranceD120StyleAmplifierProcessor.cpp
   Source/Effects/BognerUberschallStyleAmplifierProcessor.cpp

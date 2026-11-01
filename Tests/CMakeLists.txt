@@ -74,6 +74,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   JimKelleyStyleAmplifierProcessorTests.cpp
   DividedBy13FTR37StyleAmplifierProcessorTests.cpp
   DumbleSteelStringStyleAmplifierProcessorTests.cpp
+  DumbleODSStyleAmplifierProcessorTests.cpp
   SunnModelTStyleAmplifierProcessorTests.cpp
   FryetteDeliveranceD120StyleAmplifierProcessorTests.cpp
   BognerUberschallStyleAmplifierProcessorTests.cpp
