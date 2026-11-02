@@ -154,15 +154,27 @@ private:
         const double floorAmp = std::max ((double) top * 0.01, 1e-6 * winLen);
         if (top > floorAmp)
         {
-            for (int k = 2; k < maxBin && numPeaks < kMaxPeaks; ++k)
+            // keep the kMaxPeaks strongest across the whole range (a dense low chord must not crowd out a high note)
+            int weakest = 0;
+            for (int k = 2; k < maxBin; ++k)
             {
                 const double m0 = work[(size_t) k - 1], m1 = work[(size_t) k], m2 = work[(size_t) k + 1];
                 if (m1 < floorAmp || m1 < m0 || m1 <= m2) continue;
                 const double l0 = std::log (m0 + 1e-12), l1 = std::log (m1), l2 = std::log (m2 + 1e-12);
                 const double den = l0 - 2.0 * l1 + l2;
                 const double d = den < 0.0 ? juce::jlimit (-0.5, 0.5, 0.5 * (l0 - l2) / den) : 0.0;
-                peaks[(size_t) numPeaks++] = { (k + d) * binHz, std::exp (l1 - 0.25 * (l0 - l2) * d) };
+                const Peak pk { (k + d) * binHz, std::exp (l1 - 0.25 * (l0 - l2) * d) };
+                if (numPeaks < kMaxPeaks)
+                    peaks[(size_t) numPeaks++] = pk;
+                else if (pk.amp > peaks[(size_t) weakest].amp)
+                    peaks[(size_t) weakest] = pk;
+                else
+                    continue;
+                if (numPeaks == kMaxPeaks)
+                    for (int p = 0; p < numPeaks; ++p)
+                        if (peaks[(size_t) p].amp < peaks[(size_t) weakest].amp) weakest = p;
             }
+            std::sort (peaks.begin(), peaks.begin() + numPeaks, [] (const Peak& a, const Peak& b) { return a.hz < b.hz; });
         }
 
         // candidates: each of the strongest peaks as harmonic 1..3 of a fundamental in range

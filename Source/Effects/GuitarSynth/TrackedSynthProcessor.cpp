@@ -88,9 +88,11 @@ void TrackedSynthProcessor::assignVoices (double octMul)
         owner->weight = strongest > 0.0 ? juce::jlimit (0.35, 1.0, std::sqrt (s.strength / strongest)) : 1.0;
     }
 
-    lowest = -1;
+    // with no active note the sub stays on the last lowest voice so it fades with that voice's release
+    int newLowest = -1;
     for (int i = 0; i < (int) voices.size(); ++i)
-        if (voices[(size_t) i].slot >= 0 && (lowest < 0 || voices[(size_t) i].targetHz < voices[(size_t) lowest].targetHz)) lowest = i;
+        if (voices[(size_t) i].slot >= 0 && (newLowest < 0 || voices[(size_t) i].targetHz < voices[(size_t) newLowest].targetHz)) newLowest = i;
+    if (newLowest >= 0) lowest = newLowest;
 }
 
 void TrackedSynthProcessor::process (juce::AudioBuffer<float>& buffer)
