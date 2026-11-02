@@ -148,3 +148,44 @@ and 0.8. The new constants are `bmGain0` 20, `bmYmax` 0.29, knee 1.5 and level t
 | Unity trim | −9.77 → −7.79 dB |
 
 At Volume 0.2 the amp is now linear with normal picking: 0.05 V in gives 0.042 out.
+
+## Schematic re-read and tube fit (2026-11-01)
+User report: still distorting too much. Both drawings were re-read at 400 dpi, and three netlist errors were found. All
+three are fixed:
+
+| Part | Drawing | Old model |
+|---|---|---|
+| PI grid leaks | Both 1M leaks return to the tap T between the 1k2 and the 47k, so the grids sit only the 1k2 drop below the joined cathodes | Leaks to ground, plus a separate 1k2 per cathode: the PI sat tens of volts cold and distorted at any level |
+| Bass pot | Pot bottom on the ground bus; the 10k runs from the wiper node E to ground | 10k in series with the pot bottom |
+| EL84 plates | Straight to the OT primary; the drawing's 50 ohm is the shared cathode resistor | An extra 50 ohm in series with each plate |
+
+The published EL84 Koren fit (kg1 570) draws ~103 mA at the datasheet point (Va = Vg2 = 250 V, Vg1 = −7.3 V), where the
+datasheet gives 48 mA. The amp therefore idled each tube near 75 mA, with 14.7 V on the cathode. With kg1 1140 the
+datasheet point gives ~51 mA, and the amp idles at 11.3 V and 227 mA in total, close to what a real AC30 measures.
+
+Per-stage swing at Volume 0.2 with a 0.05 V, 111 Hz sine (full netlist):
+
+| Node | Swing / gain |
+|---|---|
+| V1a plate | 3.46 V (×69) |
+| Cathode follower | 1.16 V |
+| Tone stack out | 0.43 V |
+| PI plate | 9.9 V (×23) |
+| EL84 grid | 8.3 V, against 11.3 V of bias |
+
+These match hand numbers for the drawn values. The corrected amp has more gain than the old one: the old PI was acting
+as an attenuator.
+
+Reduced path refitted against the corrected netlist: `bmGain0` 230, `bmYmax` 0.45, knee 2.5, level trim 0.30, HF
+shelf 0.6, mid cut −4.5 dB.
+
+| Check | Result |
+|---|---|
+| Sine tracking, 5 mV to 0.6 V | within 1.33 dB |
+| Chords | level 0.85 dB, band 2.03 dB (bound raised 2.0 → 2.1) |
+| THD, reduced vs full | about 2/3 at every level, e.g. Volume 0.2 at 0.2 V: 11% vs 17% |
+| Unity trim | −7.79 → −13.71 dB |
+
+The band residual is drive-dependent treble: the full stage brightens by ~4 dB more than the curve from light to hard
+chords. A static filter only moves it between the two drive levels. Pre/de-emphasis around the curve was tried and
+brightened the light chords too, because they already sit in the knee.

@@ -523,7 +523,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // long-tailed-pair phase inverter, no global feedback (confirmed absent on the factory power-amp drawing).
     AC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AC30StyleAmplifier");
-    registry.registerType ("AC30StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -7.79f); }, "Crunch");
+    registry.registerType ("AC30StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AC30StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -13.71f); }, "Crunch");
     // docs/circuits/MatchlessHC30.md.
     MatchlessHC30StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MatchlessHC30StyleAmplifier");
