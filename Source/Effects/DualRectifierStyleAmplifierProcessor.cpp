@@ -84,11 +84,39 @@ namespace
     constexpr double couplingSecondary = 0.995;
     constexpr double primaryHalfResistance = 45.0;
     constexpr double secondaryResistance = 0.15;
-    // NFB: from schematic R276=47K from OT, but since the model taps from 16 ohm secondary (not 4 ohm),
-    // scale: 47K * (16/4) + 10K = ~198K effective (R353=10K PI side).
-    constexpr double feedbackResistor = 198.0e3;
+    constexpr double feedbackResistor = 47.0e3; // R276, from the 16 ohm tap the model also drives
 
-    constexpr double biasSupplyVolts = -51.0;  // 6L6GC bias
+    // BIAS switch (power-supply sheet): F = -51 V with 6L6, -39 V with EL34.
+    constexpr double biasSupplyVolts = -51.0;
+    constexpr double biasSupplyVoltsEL34 = -39.0;
+
+    /** An EL34 pair: Koren's published EL34 set (Ex 1.35, kg1 650, kg2 4200, Kp 60, Kvb 24) with mu re-placed from 11 to
+        12.4 so a tube idles at ~40 mA on this amp's -37 V grid / 454 V screen (the Bias Switch's -39 V through the bias
+        divider) -- a real EL34 Recto's idle. Koren's mu 11 idles at ~84 mA there and the codebase's plexi-region fit
+        (Super Lead, placed for -55 V) at ~220 mA. Peak current at 0 V grid stays ~600 mA. */
+    KorenPentode::Parameters pentodeEL34Pair()
+    {
+        KorenPentode::Parameters p;
+        p.mu = 12.4;
+        p.ex = 1.35;
+        p.kg1 = 650.0 / 2.0;
+        p.kg2 = 4200.0 / 2.0;
+        p.kp = 60.0;
+        p.kvb = 24.0;
+        p.grid.Gg *= 2.0;
+        p.arcResistance /= 2.0;
+        return p;
+    }
+
+    // The switching LDRs: lit ~500 ohm, dark ~50M (VTL5C-class cells). A mode change fades each one between them in the
+    // log domain over ldrFadeSeconds, the way the cells' own response does, so a switch never steps the netlist.
+    constexpr double ldrOn = 500.0;
+    constexpr double ldrOff = 50.0e6;
+    constexpr double ldrFadeSeconds = 0.02;
+
+    // NFB (power-amp sheet): FB -> C51 .1 -> R276 47K, a second 47K joining through LDR20 ("more feedback"), all through
+    // LDR19 ("feedback"). Modern has none.
+    constexpr double nfbLeg = 47.0e3;
 
     constexpr double speakerEddyLoss = 150.0;
 
@@ -99,107 +127,116 @@ namespace
     // ---- preamp helper ----
     struct PreampBuild
     {
-        NodalCircuit& c;
         int srcV2 = 0, srcV3 = 0, srcE = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0, rV2aSeries = 0, rBypassV2a = 0, rV2bSeries = 0, rBypassV2b = 0;
-        NodalCircuit::Node plateV1a = 0, plateV2a = 0, plateV2b = 0, plateV3a = 0, follower = 0, gainWiper = 0;
-        NodalCircuit::Node nodeV2 = 0, nodeV3 = 0, nodeE = 0;
+        int rRdGainTop = 0, rRdGainBot = 0, rOrGainTop = 0, rOrGainBot = 0;
+        int ldr1 = 0, ldr2 = 0, ldr3a = 0, ldr3b = 0, ldr4 = 0, ldr5 = 0, ldr6 = 0, ldr10 = 0;
+        NodalCircuit::Node plateV1a = 0, plateV2a = 0, plateV2b = 0, plateV3a = 0, follower = 0;
     };
 
-    /** The Dual Rectifier RED channel preamp: FOUR cascaded 12AX7 gain stages (V1A -> V2A -> V2B -> V3A) plus
-        a V3D cathode follower driving the tone stack.
-
-        Key voicing elements:
-        - V1A: 220K plate (E rail), 1.8K/bypassed cathode — the input gain stage
-        - RED GAIN: 1M pot (audio taper) between V1A and V2A — the high-gain drive control
-        - V2A: plate from D rail, 1.8K/bypassed cathode — second gain stage
-        - V2B: 100K plate (D rail), unbypassed cathode (~27K estimated from Vp/Ip) — compression stage
-        - V3A: 220K plate (C rail), 1.8K/bypassed cathode — final gain stage
-
-        Supply taps: E (~402V) for V1A, D (~406V) for V2A/V2B, C (~422V) for V3A/V3D. */
+    /** The 2-channel preamp, factory drawing "PREAMP RF-1F" (6-93 GEO. M.; docs/circuits/DualRectifier.md). One
+        tube chain V1A -> V2A -> V2B -> V3A -> V3B follower serves all five modes; the LDRs (light-dependent resistors,
+        `ldrOn` / `ldrOff` here) re-voice it per the drawing's own truth table:
+        - V1A / V2A / V3A cathodes: 1.8K with 1uF in series with 47K -- LDR3b / LDR3a / LDR10 short the 47K (full 1uF
+          bypass); CLEAN leaves them open.
+        - V1A out: C21 .02 -> R322 2.2M || C10 82p (R321 2.2M to ground), and R110 680K || C9 .002 joining through LDR4
+          (the "V1a output pad"); CLEAN keeps only the 2.2M leg, a ~-10 dB bright pad.
+        - LDR1 / LDR2 pick the RED / ORANGE Gain pot (1MA each, .001 top-to-wiper), LDR5 / LDR6 their wipers ->
+          R241 470K -> V2A (C12 20p).
+        - V2A 100K plate; C22 .02 -> R242 470K -> V2B (R212 1M); V2B 100K || C6 .001 plate, 39K unbypassed cathode;
+          C27 .02 -> R106 330K / R225 220K -> V3A (220K plate) -> V3B follower.
+        Rails: E (402 V) V1A, D (406 V) V2A / V2B, C (422 V) V3A / V3B. */
     PreampBuild buildPreamp (NodalCircuit& c, double followerDrop, double eGuess, double dGuess, double cGuess)
     {
         const auto gnd = NodalCircuit::ground;
-        PreampBuild b { c };
+        PreampBuild b;
 
         const auto vccE = c.addNode(), vccD = c.addNode(), vccC = c.addNode(), in = c.addNode();
-        b.nodeE = vccE;
-        b.nodeV2 = vccD;
-        b.nodeV3 = vccC;
         b.srcE = c.addSource (vccE, eGuess);
         b.srcV2 = c.addSource (vccD, dGuess);
         b.srcV3 = c.addSource (vccC, cGuess);
         b.srcIn = c.addSource (in, 0.0);
 
-        // V1A: 220K plate (E rail), 68K grid stopper, 1M grid leak, 1.8K cathode bypassed with 22µF.
-        const auto g1 = c.addNode(), k1 = c.addNode();
+        // V1A: the input jack straight to the grid (R211 1M leak), R221 220K plate, R291 1.8K + C31 1uF / R271 47K.
+        const auto k1 = c.addNode(), kc1 = c.addNode();
         b.plateV1a = c.addNode();
-        c.addResistor (in, g1, 68.0e3);                  // grid stopper
-        c.addResistor (g1, gnd, 1.0e6);                  // grid leak
-        c.addTriode (b.plateV1a, g1, k1, triode12AX7());
-        c.addCapacitor (g1, b.plateV1a, cgp);
+        c.addResistor (in, gnd, 1.0e6);                  // R211
+        c.addTriode (b.plateV1a, in, k1, triode12AX7());
+        c.addCapacitor (in, b.plateV1a, cgp);
         c.addResistor (vccE, b.plateV1a, 220.0e3);       // R221
         c.addResistor (k1, gnd, 1.8e3);                  // R291
-        c.addCapacitor (k1, gnd, 22.0e-6);               // bypassed
+        c.addCapacitor (k1, kc1, 1.0e-6);                // C31
+        c.addResistor (kc1, gnd, 47.0e3);                // R271
+        b.ldr3b = c.addResistor (kc1, gnd, ldrOff);
         c.setInitialGuess (b.plateV1a, 200.0);
         c.setInitialGuess (k1, 1.6);
 
-        // RED GAIN: V1A plate → coupling cap (22nF) → 470K grid leak → Gain pot (1MA).
-        const auto gainIn = c.addNode(), gainWiper = c.addNode();
-        c.addCapacitor (b.plateV1a, gainIn, 22.0e-9);    // coupling cap to gain pot
-        c.addResistor (gainIn, gnd, 470.0e3);             // grid leak / bias reference
-        b.rGainTop = c.addResistor (gainIn, gainWiper, 1.0e6);
-        b.rGainBot = c.addResistor (gainWiper, gnd, 1.0e6);
+        // V1A output pad and the two Gain pots.
+        const auto x = c.addNode(), w = c.addNode(), y = c.addNode();
+        c.addCapacitor (b.plateV1a, x, 0.02e-6);         // C21
+        c.addResistor (x, gnd, 2.2e6);                   // R321
+        c.addResistor (x, w, 2.2e6);                     // R322
+        c.addCapacitor (x, w, 82.0e-12);                 // C10
+        c.addResistor (x, y, 680.0e3);                   // R110
+        c.addCapacitor (x, y, 0.002e-6);                 // C9
+        b.ldr4 = c.addResistor (y, w, ldrOff);
+        const auto rdTop = c.addNode(), rdWiper = c.addNode(), orTop = c.addNode(), orWiper = c.addNode();
+        b.ldr1 = c.addResistor (w, rdTop, ldrOff);
+        b.ldr2 = c.addResistor (w, orTop, ldrOff);
+        b.rRdGainTop = c.addResistor (rdTop, rdWiper, 0.5e6);    // RED GAIN 1MA
+        b.rRdGainBot = c.addResistor (rdWiper, gnd, 0.5e6);
+        c.addCapacitor (rdTop, rdWiper, 0.001e-6);
+        b.rOrGainTop = c.addResistor (orTop, orWiper, 0.5e6);    // OR GAIN 1MA
+        b.rOrGainBot = c.addResistor (orWiper, gnd, 0.5e6);
+        c.addCapacitor (orTop, orWiper, 0.001e-6);
 
-        // V2A: plate from D rail, 470K grid leak, 1.8K cathode bypassed with 22µF.
-        // The plate load is assumed ~220K (same as V1A; not fully legible on the factory schematic,
-        // but consistent with the D rail voltage drop to the ~280V plate reading).
-        const auto g2 = c.addNode(), k2 = c.addNode();
+        // V2A: R241 470K / C12 20p grid, R201 100K plate, R292 1.8K + C32 1uF / R272 47K.
+        const auto gsel = c.addNode(), g2 = c.addNode(), k2 = c.addNode(), kc2 = c.addNode();
         b.plateV2a = c.addNode();
-        b.rV2aSeries = c.addResistor (gainWiper, g2, 39.0e3); // switchable: 100M for Clean
-        b.gainWiper = gainWiper;
-        c.addResistor (g2, gnd, 470.0e3);                // grid leak
+        b.ldr5 = c.addResistor (rdWiper, gsel, ldrOff);
+        b.ldr6 = c.addResistor (orWiper, gsel, ldrOff);
+        c.addResistor (gsel, g2, 470.0e3);               // R241
+        c.addCapacitor (g2, gnd, 20.0e-12);              // C12
         c.addTriode (b.plateV2a, g2, k2, triode12AX7());
         c.addCapacitor (g2, b.plateV2a, cgp);
-        c.addResistor (vccD, b.plateV2a, 220.0e3);       // plate load
+        c.addResistor (vccD, b.plateV2a, 100.0e3);       // R201
         c.addResistor (k2, gnd, 1.8e3);                  // R292
-        c.addCapacitor (k2, gnd, 22.0e-6);               // bypassed
+        c.addCapacitor (k2, kc2, 1.0e-6);                // C32
+        c.addResistor (kc2, gnd, 47.0e3);                // R272
+        b.ldr3a = c.addResistor (kc2, gnd, ldrOff);
         c.setInitialGuess (b.plateV2a, 280.0);
-        c.setInitialGuess (k2, 1.6);
+        c.setInitialGuess (k2, 2.0);
 
-        // V2B: 100K plate (D rail), 220K grid leak. Unbypassed cathode (~27K estimated from 384V plate and
-        // ~6V cathode → Ip ≈ 22µA → Rk = 6/0.000022 ≈ 27K). This is the compression/clipping shaping stage.
-        // Orange channel bypasses this stage entirely (relay/LDR switching).
-        const auto g3 = c.addNode(), k3 = c.addNode(), coup3 = c.addNode();
+        // V2B: C22 .02 -> R242 470K, R212 1M leak; R202 100K || C6 .001 plate, R103 39K unbypassed (384 V / 6 V).
+        const auto c3 = c.addNode(), g3 = c.addNode(), k3 = c.addNode();
         b.plateV2b = c.addNode();
-        c.addCapacitor (b.plateV2a, coup3, 22.0e-9);     // coupling from V2A
-        b.rBypassV2a = c.addResistor (gainWiper, coup3, 100.0e6); // Clean bypass: 1 ohm to skip V2A
-        b.rV2bSeries = c.addResistor (coup3, g3, 470.0e3); // series into V2B grid (switchable: 100M for Orange)
-        c.addResistor (g3, gnd, 220.0e3);                // R225, grid leak
+        c.addCapacitor (b.plateV2a, c3, 0.02e-6);        // C22
+        c.addResistor (c3, g3, 470.0e3);                 // R242
+        c.addResistor (g3, gnd, 1.0e6);                  // R212
         c.addTriode (b.plateV2b, g3, k3, triode12AX7());
         c.addCapacitor (g3, b.plateV2b, cgp);
-        c.addResistor (vccD, b.plateV2b, 100.0e3);       // R302
-        c.addResistor (k3, gnd, 27.0e3);                 // unbypassed — compression stage
+        c.addResistor (vccD, b.plateV2b, 100.0e3);       // R202
+        c.addCapacitor (vccD, b.plateV2b, 0.001e-6);     // C6
+        c.addResistor (k3, gnd, 39.0e3);                 // R103
         c.setInitialGuess (b.plateV2b, 384.0);
         c.setInitialGuess (k3, 6.0);
 
-        // V3A: 220K plate (C rail), 220K grid leak, 1.8K cathode bypassed with 22µF.
-        // Coupling from V2B through 22nF → 39K series (R103 grid stopper).
-        const auto g4 = c.addNode(), k4 = c.addNode(), coup4 = c.addNode();
+        // V3A: C27 .02 -> R106 330K to ground / R225 220K to the grid; R224 220K plate, R293 1.8K + C33 1uF / R277 47K.
+        const auto c4 = c.addNode(), g4 = c.addNode(), k4 = c.addNode(), kc4 = c.addNode();
         b.plateV3a = c.addNode();
-        c.addCapacitor (b.plateV2b, coup4, 22.0e-9);     // coupling from V2B
-        b.rBypassV2b = c.addResistor (coup3, coup4, 100.0e6); // Orange bypass: 1 ohm to skip V2B
-        c.addResistor (coup4, g4, 39.0e3);               // R103 grid stopper
-        c.addResistor (g4, gnd, 220.0e3);                // R225 grid leak
+        c.addCapacitor (b.plateV2b, c4, 0.02e-6);        // C27
+        c.addResistor (c4, gnd, 330.0e3);                // R106
+        c.addResistor (c4, g4, 220.0e3);                 // R225
         c.addTriode (b.plateV3a, g4, k4, triode12AX7());
         c.addCapacitor (g4, b.plateV3a, cgp);
         c.addResistor (vccC, b.plateV3a, 220.0e3);       // R224
         c.addResistor (k4, gnd, 1.8e3);                  // R293
-        c.addCapacitor (k4, gnd, 22.0e-6);               // bypassed
+        c.addCapacitor (k4, kc4, 1.0e-6);                // C33
+        c.addResistor (kc4, gnd, 47.0e3);                // R277
+        b.ldr10 = c.addResistor (kc4, gnd, ldrOff);
         c.setInitialGuess (b.plateV3a, 213.0);
         c.setInitialGuess (k4, 1.6);
 
-        // V3D: cathode follower — drives the tone stack through a low-impedance output.
+        // V3B: cathode follower (R203 100K) driving both tone stacks.
         b.follower = c.addNode();
         c.addFollower (b.plateV3a, b.follower, followerDrop);
         return b;
@@ -219,29 +256,34 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
-    auto channel = std::make_unique<juce::AudioParameterFloat> (
-        "drec_channel", "Channel", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), 2.0f,
-        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-        {
-            constexpr const char* names[] = { "Clean", "Orange", "Red" };
-            return juce::String (names[juce::jlimit (0, 2, juce::roundToInt (v))]);
-        }));
+    auto makeSwitch = [] (const char* id, const char* name, std::vector<juce::String> names, float def)
+    {
+        const float top = (float) names.size() - 1.0f;
+        return std::make_unique<juce::AudioParameterFloat> (
+            id, name, juce::NormalisableRange<float> (0.0f, top, 1.0f), def,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction ([names] (float v, int)
+            { return names[(size_t) juce::jlimit (0, (int) names.size() - 1, juce::roundToInt (v))]; }));
+    };
+    // Front panel: the channel and its own row of pots. Rear panel (manual 2chRecto.pdf): ORANGE CHANNEL GAIN (Clean /
+    // Variable Hi Gain "Normal"), CHANNEL STYLE SELECT (Normal = Orange Vintage + Red Modern, or clone Orange to
+    // Modern / Red to Vintage), RECTIFIER SELECT (5U4 tubes / silicon diodes), POWER (Spongy / Bold) and the BIAS
+    // switch matching the power tubes (6L6 / EL34).
+    auto channel = makeSwitch ("drec_channel", "Channel", { "Orange", "Red" }, 1.0f);
     auto gain = make ("drec_gain", "Gain", 0.5f);
     auto treble = make ("drec_treble", "Treble", 0.5f);
     auto mid = make ("drec_mid", "Mid", 0.5f);
     auto bass = make ("drec_bass", "Bass", 0.5f);
     auto presence = make ("drec_presence", "Presence", 0.3f);
     auto master = make ("drec_master", "Master", 0.5f);
+    auto orangeGain = makeSwitch ("drec_orange_gain", "Orange Gain", { "Clean", "Hi Gain" }, 1.0f);
+    auto style = makeSwitch ("drec_style", "Channel Style", { "Normal", "Orange to Modern", "Red to Vintage" }, 0.0f);
+    auto rectifier = makeSwitch ("drec_rectifier", "Rectifier", { "Tubes", "Diodes" }, 1.0f);
+    auto spongy = makeSwitch ("drec_spongy", "Power", { "Bold", "Spongy" }, 0.0f);
+    auto tubes = makeSwitch ("drec_bias_switch", "Bias Switch", { "6L6", "EL34" }, 0.0f);
     auto output = make ("drec_output", "Output", 0.5f);
     auto power = make ("drec_power", "Power Drive", 0.5f);
     auto bias = make ("drec_bias", "Bias", 0.5f);
     auto feel = make ("drec_tube_feel", "Tube Feel", 1.0f);
-    // Rear-panel rectifier mode switch (Bold = diode bridge, Spongy = 5U4 tube rectifier):
-    // sag resistance, B+ droop and supply compression all change.
-    auto spongy = std::make_unique<juce::AudioParameterFloat> (
-        "drec_spongy", "Rectifier", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 0.0f,
-        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
-        { return juce::String (v >= 0.5f ? "Spongy" : "Bold"); }));
     auto speaker = std::make_unique<juce::AudioParameterFloat> (
         "drec_speaker", "Speaker", juce::NormalisableRange<float> (0.0f, 2.0f, 1.0f), (float) matchedSpeaker,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
@@ -256,12 +298,16 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     bassParam = bass.get();
     presenceParam = presence.get();
     masterParam = master.get();
+    orangeGainParam = orangeGain.get();
+    styleParam = style.get();
+    rectifierParam = rectifier.get();
+    spongyParam = spongy.get();
+    tubesParam = tubes.get();
     outputParam = output.get();
     powerParam = power.get();
     biasParam = bias.get();
     tubeFeelParam = feel.get();
     speakerParam = speaker.get();
-    spongyParam = spongy.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
         "dualrec", "Dual Rectifier", "|", std::move (channel));
@@ -271,7 +317,11 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     group->addChild (std::move (bass));
     group->addChild (std::move (presence));
     group->addChild (std::move (master));
-    group->addChild (std::move (spongy));   // the real rear-panel Rectifier switch
+    group->addChild (std::move (orangeGain));
+    group->addChild (std::move (style));
+    group->addChild (std::move (rectifier));
+    group->addChild (std::move (spongy));
+    group->addChild (std::move (tubes));
     auto page2 = std::make_unique<juce::AudioProcessorParameterGroup> ("drec_page2", "Page 2", "|", std::move (power));
     page2->addChild (std::move (bias));
     page2->addChild (std::move (feel));
@@ -283,9 +333,10 @@ DualRectifierStyleAmplifierProcessor::DualRectifierStyleAmplifierProcessor()
     group->addChild (std::move (page2));
     parameters = std::move (group);
 
-    // The real amp has a full Gain/Treble/Mid/Bass/Presence/Master set per channel.
+    // The real amp has a full Gain/Treble/Mid/Bass/Presence/Master row per channel.
     channelMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
         std::vector<juce::AudioParameterFloat*> { gainParam, trebleParam, midParam, bassParam, presenceParam, masterParam });
+    orangePresence = presenceParam->get();
 }
 
 std::unique_ptr<juce::XmlElement> DualRectifierStyleAmplifierProcessor::getState() const
@@ -297,11 +348,33 @@ std::unique_ptr<juce::XmlElement> DualRectifierStyleAmplifierProcessor::getState
 
 void DualRectifierStyleAmplifierProcessor::setState (const juce::XmlElement& state)
 {
+    // Presets from before the 2-channel rebuild (no drec_style) had Channel = Clean / Orange / Red and a knob slot per
+    // channel: Clean becomes Orange in its Clean mode, Orange stays Orange (Hi Gain), Red stays Red.
+    juce::XmlElement migrated (state);
+    if (! state.hasAttribute ("drec_style") && state.hasAttribute ("drec_channel"))
+    {
+        const int old = juce::jlimit (0, 2, juce::roundToInt (state.getDoubleAttribute ("drec_channel")));
+        migrated.setAttribute ("drec_channel", old == 2 ? 1.0 : 0.0);
+        migrated.setAttribute ("drec_orange_gain", old == 0 ? 0.0 : 1.0);
+        migrated.setAttribute ("drec_style", 0.0);
+        const int orangeSlot = old == 0 ? 0 : 1;
+        for (auto* k : { gainParam, trebleParam, midParam, bassParam, presenceParam, masterParam })
+        {
+            const auto id = k->paramID;
+            const auto from = [&] (int slot) { return id + "_ch" + juce::String (slot); };
+            if (state.hasAttribute (from (orangeSlot)))
+                migrated.setAttribute (from (0), state.getDoubleAttribute (from (orangeSlot)));
+            if (state.hasAttribute (from (2)))
+                migrated.setAttribute (from (1), state.getDoubleAttribute (from (2)));
+            migrated.removeAttribute (from (2));
+        }
+    }
     {
         const ChannelKnobMemory::ScopedSuspend suspend (*channelMemory);
-        EffectProcessor::setState (state);
+        EffectProcessor::setState (migrated);
     }
-    channelMemory->readState (state);
+    channelMemory->readState (migrated);
+    orangePresence = channelMemory->slotValue (0, 4);
 }
 
 void DualRectifierStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -360,12 +433,18 @@ void DualRectifierStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pSrcV2 = b.srcV2;
         ch.pSrcV3 = b.srcV3;
         ch.pSrcIn = b.srcIn;
-        ch.rGainTop = b.rGainTop;
-        ch.rGainBot = b.rGainBot;
-        ch.rV2aSeries = b.rV2aSeries;
-        ch.rBypassV2a = b.rBypassV2a;
-        ch.rV2bSeries = b.rV2bSeries;
-        ch.rBypassV2b = b.rBypassV2b;
+        ch.rRdGainTop = b.rRdGainTop;
+        ch.rRdGainBot = b.rRdGainBot;
+        ch.rOrGainTop = b.rOrGainTop;
+        ch.rOrGainBot = b.rOrGainBot;
+        ch.ldr[ldr1] = b.ldr1;
+        ch.ldr[ldr2] = b.ldr2;
+        ch.ldr[ldr3a] = b.ldr3a;
+        ch.ldr[ldr3b] = b.ldr3b;
+        ch.ldr[ldr4] = b.ldr4;
+        ch.ldr[ldr5] = b.ldr5;
+        ch.ldr[ldr6] = b.ldr6;
+        ch.ldr[ldr10] = b.ldr10;
         ch.pPlateV1a = b.plateV1a;
         ch.pPlateV2a = b.plateV2a;
         ch.pPlateV2b = b.plateV2b;
@@ -373,32 +452,76 @@ void DualRectifierStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pFollower = b.follower;
     }
 
-    // ================================================================ tone stack (Fender TMB, always built and solved)
-    // Dual Rectifier RED tone stack: 47K slope, 680pF treble, 250K treble pot, 22K series (R254),
-    // 1M bass, .02µF bass/mid caps, 25K mid. Master (1M) after tone stack.
+    // ================================================================ the two tone stacks + masters (always built and solved)
+    // V3B -> LDR8 -> RED stack / LDR9 -> ORANGE stack, R215 1M between their inputs. Each a TMB with its own Treble 250K,
+    // Bass 1M, Mid 25K (wiper on the second .02) and 47K slope; RED: C4 680p treble cap, its Presence (R254 22K + C8
+    // .003 + 25K rheostat) shunting the treble wiper; ORANGE: C5 500p, R263 82K || C10 82p from the treble wiper to
+    // LDR16 (the Master bypass) and the R2E3 22K + C7 .003 + R354 10K treble rolloff (LDR7 shorts the 10K). Each 1M
+    // Master's wiper reaches the PI bus through LDR14 / LDR15.
     {
         auto& c = ch.power;
         c.setIntegrationTheta (powerTheta);
-        const auto cf = c.addNode();
+        const auto cf = c.addNode(), f = c.addNode();
         ch.wSrcCf = c.addSource (cf, 0.0);
-
-        const auto ti = c.addNode(), top = c.addNode(), nB = c.addNode(), nT = c.addNode(), nM = c.addNode(), nMw = c.addNode();
-        ch.wToneIn = ti;
-        const auto masterNode = c.addNode();
+        c.addResistor (cf, f, cathodeFollowerImpedance);
+        ch.wToneIn = f;
         ch.wTone = c.addNode();
-        c.addResistor (cf, ti, cathodeFollowerImpedance);
-        c.addCapacitor (ti, top, 680.0e-12);               // C4: 680pF treble coupling cap
-        c.addResistor (ti, nB, 47.0e3);                    // R273: 47K slope
-        ch.rTrebleTop = c.addResistor (top, masterNode, 125.0e3);    // TRBL 250K, split
-        ch.rTrebleBottom = c.addResistor (masterNode, nT, 125.0e3);
-        c.addResistor (nT, nB, 22.0e3);                    // R254
-        c.addCapacitor (nB, nT, 0.02e-6);                  // C23: .02µF bass cap
-        ch.rBass = c.addResistor (nT, nM, 500.0e3);        // BASS 1M, rheostat
-        ch.rMidTop = c.addResistor (nM, nMw, 12.5e3);      // MID 25K, split
-        ch.rMidBottom = c.addResistor (nMw, gnd, 12.5e3);
-        c.addCapacitor (nB, nMw, 0.02e-6);                 // C26: .02µF mid cap
-        // Master (MSTR 1M) as a rheostat after the tone stack wiper
-        ch.rMaster = c.addResistor (masterNode, ch.wTone, 500.0e3);
+        const auto bus = ch.wTone;
+
+        const auto ri = c.addNode(), oi = c.addNode();
+        ch.ldr[ldr8] = c.addResistor (f, ri, ldrOff);
+        ch.ldr[ldr9] = c.addResistor (f, oi, ldrOff);
+        c.addResistor (ri, oi, 1.0e6);                     // R215
+
+        struct Stack { int trebleTop, trebleBottom, bass, midTop, midBottom, masterTop, masterBottom; NodalCircuit::Node wiper, master; };
+        const auto stack = [&] (NodalCircuit::Node in, double trebleCap)
+        {
+            Stack st {};
+            const auto top = c.addNode(), slope = c.addNode(), bassTop = c.addNode(), midTop = c.addNode(), midWiper = c.addNode();
+            st.wiper = c.addNode();
+            st.master = c.addNode();
+            c.addCapacitor (in, top, trebleCap);
+            c.addResistor (in, slope, 47.0e3);                     // R273 / R274
+            st.trebleTop = c.addResistor (top, st.wiper, 125.0e3);  // TRBL 250K
+            st.trebleBottom = c.addResistor (st.wiper, bassTop, 125.0e3);
+            c.addCapacitor (slope, bassTop, 0.02e-6);              // C23 / C25
+            st.bass = c.addResistor (bassTop, midTop, 500.0e3);    // BASS 1M rheostat
+            st.midTop = c.addResistor (midTop, midWiper, 12.5e3);  // MID 25K
+            st.midBottom = c.addResistor (midWiper, gnd, 12.5e3);
+            c.addCapacitor (slope, midWiper, 0.02e-6);             // C24 / C26
+            st.masterTop = c.addResistor (st.wiper, st.master, 0.5e6); // MSTR 1M
+            st.masterBottom = c.addResistor (st.master, gnd, 0.5e6);
+            return st;
+        };
+        const auto red = stack (ri, 680.0e-12);
+        const auto orange = stack (oi, 500.0e-12);
+        ch.rRdTrebleTop = red.trebleTop;       ch.rOrTrebleTop = orange.trebleTop;
+        ch.rRdTrebleBottom = red.trebleBottom; ch.rOrTrebleBottom = orange.trebleBottom;
+        ch.rRdBass = red.bass;                 ch.rOrBass = orange.bass;
+        ch.rRdMidTop = red.midTop;             ch.rOrMidTop = orange.midTop;
+        ch.rRdMidBottom = red.midBottom;       ch.rOrMidBottom = orange.midBottom;
+        ch.rRdMasterTop = red.masterTop;       ch.rOrMasterTop = orange.masterTop;
+        ch.rRdMasterBottom = red.masterBottom; ch.rOrMasterBottom = orange.masterBottom;
+
+        {
+            const auto p1 = c.addNode(), p2 = c.addNode();
+            c.addResistor (red.wiper, p1, 22.0e3);                 // R254
+            c.addCapacitor (p1, p2, 0.003e-6);                     // C8
+            ch.rRdPresence = c.addResistor (p2, gnd, 7.5e3);       // RED PRSNC 25K rheostat
+        }
+        {
+            const auto n = c.addNode(), q1 = c.addNode(), q2 = c.addNode();
+            c.addResistor (orange.wiper, n, 82.0e3);               // R263
+            c.addCapacitor (orange.wiper, n, 82.0e-12);            // C10
+            ch.ldr[ldr16] = c.addResistor (n, orange.master, ldrOff);
+            c.addResistor (orange.wiper, q1, 22.0e3);              // R2E3
+            c.addCapacitor (q1, q2, 0.003e-6);                     // C7
+            c.addResistor (q2, gnd, 10.0e3);                       // R354
+            ch.ldr[ldr7] = c.addResistor (q2, gnd, ldrOff);
+        }
+        ch.ldr[ldr14] = c.addResistor (red.master, bus, ldrOff);
+        ch.ldr[ldr15] = c.addResistor (orange.master, bus, ldrOff);
+        c.addResistor (bus, gnd, 10.0e6); // numerical DC reference only: the bus otherwise sees the dark LDRs and the PI cap
     }
 
     // ================================================================ phase inverter, power amp (full reference only)
@@ -410,35 +533,39 @@ void DualRectifierStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcBias = c.addSource (vc18, biasSupplyVolts);
 
-        // Phase inverter: 12AX7 long-tailed pair.
-        // V5B: 82K plate (C rail), V5A: 90K plate (C rail), 1K tail on each.
-        // 75pF compensation cap between plates. .047µF coupling to power tubes.
-        // 220K grid leaks (R223, R222) to power tubes.
-        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
+        // Phase inverter (power-amp sheet): 12AX7 long-tailed pair. C28 .02 from the bus to V5B; both grids biased from
+        // the tail node T through 1M (R214 / R213); cathodes -> R341 470 -> T -> R353 10K -> J -> R372 4.7K -> ground.
+        // V5A's grid is AC-grounded to J by C40 .1, and J is where the NFB lands -- the loop drives the pair through the
+        // bottom of its tail. V5B 82K || C1 120p, V5A 90K || C2 120p plates (C rail), C3 75p plate to plate.
+        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nt = c.addNode(), fp = c.addNode();
         ch.wGridA = g1;
         ch.wPlateA = pa;
         ch.wPlateB = pb;
-        ch.wTail = nm;
+        ch.wTail = nt;
         ch.wFeedback = fp;
-        c.addCapacitor (ch.wTone, g1, 0.022e-6);
-        c.addResistor (g1, nm, 1.0e6);
-        c.addResistor (g2, fp, 1.0e6);
+        c.addCapacitor (ch.wTone, g1, 0.02e-6);             // C28
+        c.addResistor (g1, nt, 1.0e6);                      // R214
+        c.addResistor (g2, nt, 1.0e6);                      // R213
+        c.addCapacitor (g2, fp, 0.1e-6);                    // C40
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
         c.addCapacitor (g2, pb, cgp);
         c.addResistor (vpi, pa, 82.0e3);                    // R281
+        c.addCapacitor (vpi, pa, 120.0e-12);                // C1
         c.addResistor (vpi, pb, 90.0e3);                    // R104
-        c.addCapacitor (pa, pb, 75.0e-12);                   // C3
-        c.addResistor (k, nm, 1.0e3);                        // tail R (R214/R213 combined)
-        c.addResistor (nm, gnd, 10.0e3);
-        c.setInitialGuess (pa, 250.0);
-        c.setInitialGuess (pb, 245.0);
-        c.setInitialGuess (k, 30.0);
-        c.setInitialGuess (nm, 27.0);
-        c.setInitialGuess (g1, 27.0);
-        c.setInitialGuess (g2, 27.0);
-        c.setInitialGuess (fp, 2.0);
+        c.addCapacitor (vpi, pb, 120.0e-12);                // C2
+        c.addCapacitor (pa, pb, 75.0e-12);                  // C3
+        c.addResistor (k, nt, 470.0);                       // R341
+        c.addResistor (nt, fp, 10.0e3);                     // R353
+        c.addResistor (fp, gnd, 4.7e3);                     // R372
+        c.setInitialGuess (pa, 280.0);
+        c.setInitialGuess (pb, 280.0);
+        c.setInitialGuess (k, 48.0);
+        c.setInitialGuess (nt, 47.0);
+        c.setInitialGuess (g1, 30.0);
+        c.setInitialGuess (g2, 30.0);
+        c.setInitialGuess (fp, 14.0);
 
         // Power amplifier: 4 × 6L6GC as two push-pull pairs. .047µF couplings, 1.5K grid stoppers (3K/pair),
         // 220K grid leaks to the fixed bias rail.
@@ -494,13 +621,16 @@ void DualRectifierStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: from speaker terminal through feedbackResistor to PI grid 2, with Presence 25K shunt and stray cap.
-        const auto wp = c.addNode();
-        ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        ch.rPresTop = c.addResistor (fp, wp, 12.5e3);
-        ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
-        c.addCapacitor (fp, wp, 0.1e-6);                    // C52
-        c.addCapacitor (fp, gnd, 1.5e-9);                   // stray for HF stability
+        // NFB (sheet): the 8-16 ohm jack -> C51 .1 -> the LDR19 / LDR20 legs (rFeedback, set in updateLdrs) -> J. The
+        // ORANGE Presence (C52 .1 + 25K rheostat) shunts J -- the drawing puts the Orange Presence here and the Red one in
+        // its preamp stack, so a Vintage mode borrowed by the Red channel has both (manual).
+        {
+            const auto fc = c.addNode(), wp = c.addNode();
+            c.addCapacitor (ch.wOut, fc, 0.1e-6);           // C51
+            ch.rFeedback = c.addResistor (fc, fp, feedbackResistor);
+            c.addCapacitor (fp, wp, 0.1e-6);                // C52
+            ch.rPresence = c.addResistor (wp, gnd, 25.0e3); // ORANGE PRSNC 25K rheostat
+        }
 
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
@@ -520,42 +650,137 @@ void DualRectifierStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double bassR = juce::jmax (1.0, 1.0e6 * pots::audio (k.bass));
     const double midBottom = juce::jmax (1.0, 25.0e3 * k.mid);
     const double midTop = juce::jmax (1.0, 25.0e3 - midBottom);
-    const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
-    const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
-    const double masterR = juce::jmax (1.0, 1.0e6 * pots::audio (k.master));
+    const double masterBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.master));
+    const double masterTop = juce::jmax (1.0, 1.0e6 - masterBottom);
+    const double gainBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.gain));
+    const double gainTop = juce::jmax (1.0, 1.0e6 - gainBottom);
+    if (k.channel == 0)
+        orangePresence = k.presence;
+    // The Orange Presence lives in the NFB loop: it moves with the Orange knob even while Red plays (Red to Vintage).
+    // More Presence = less of the rheostat in series with C52 = more treble shunted out of the loop = brighter.
+    const double presR = juce::jmax (1.0, 25.0e3 * (1.0 - orangePresence));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
-    const double spongyOn = spongyParam != nullptr && spongyParam->get() >= 0.5f ? 1.0 : 0.0;
-    spongyScale = 1.0 + 4.0 * spongyOn;          // tube rectifier drops far more than the diode bridge
-    spongySag = 1.0 + 0.7 * spongyOn;            // deeper sag in the reduced model
-    railNow = railPlatesNominal * (1.0 - 0.06 * spongyOn); // lower B+ under tube rectification
-    const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel) * spongyScale;
-    const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
+
+    // RECTIFIER SELECT: the 5U4 pair drops far more and sags deeper than the diodes. POWER Spongy: the lower primary tap,
+    // every rail down ~10% (ESTIMATED -- the drawing names the taps, not their voltages).
+    const bool tubeRectifier = rectifierParam != nullptr && rectifierParam->get() < 0.5f;
+    const bool spongy = spongyParam != nullptr && spongyParam->get() >= 0.5f;
+    rectifierScale = tubeRectifier ? 5.0 : 1.0;
+    rectifierSag = tubeRectifier ? 1.7 : 1.0;
+    railNow = railPlatesNominal * (tubeRectifier ? 0.94 : 1.0) * (spongy ? spongyRailScale : 1.0);
+    const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel) * rectifierScale;
+    const bool el34 = tubesParam != nullptr && tubesParam->get() >= 0.5f;
 
     for (auto& ch : channels)
     {
-        const double gainBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.gain));
-        ch.pre.setResistance (ch.rGainBot, gainBottom);
-        ch.pre.setResistance (ch.rGainTop, juce::jmax (1.0, 1.0e6 - gainBottom));
-        ch.power.setResistance (ch.rTrebleTop, trebleTop);
-        ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
-        ch.power.setResistance (ch.rBass, bassR);
-        ch.power.setResistance (ch.rMidTop, midTop);
-        ch.power.setResistance (ch.rMidBottom, midBottom);
-        ch.power.setResistance (ch.rMaster, masterR);
+        if (k.channel == 0)
+        {
+            ch.pre.setResistance (ch.rOrGainBot, gainBottom);
+            ch.pre.setResistance (ch.rOrGainTop, gainTop);
+            ch.power.setResistance (ch.rOrTrebleTop, trebleTop);
+            ch.power.setResistance (ch.rOrTrebleBottom, trebleBottom);
+            ch.power.setResistance (ch.rOrBass, bassR);
+            ch.power.setResistance (ch.rOrMidTop, midTop);
+            ch.power.setResistance (ch.rOrMidBottom, midBottom);
+            ch.power.setResistance (ch.rOrMasterTop, masterTop);
+            ch.power.setResistance (ch.rOrMasterBottom, masterBottom);
+        }
+        else
+        {
+            ch.pre.setResistance (ch.rRdGainBot, gainBottom);
+            ch.pre.setResistance (ch.rRdGainTop, gainTop);
+            ch.power.setResistance (ch.rRdTrebleTop, trebleTop);
+            ch.power.setResistance (ch.rRdTrebleBottom, trebleBottom);
+            ch.power.setResistance (ch.rRdBass, bassR);
+            ch.power.setResistance (ch.rRdMidTop, midTop);
+            ch.power.setResistance (ch.rRdMidBottom, midBottom);
+            ch.power.setResistance (ch.rRdMasterTop, masterTop);
+            ch.power.setResistance (ch.rRdMasterBottom, masterBottom);
+            ch.power.setResistance (ch.rRdPresence, juce::jmax (1.0, 25.0e3 * k.presence)); // more = less treble shunted
+        }
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rPresTop, presTop);
-            ch.power.setResistance (ch.rPresBottom, presBottom);
-            ch.power.setResistance (ch.rFeedback, feedbackR);
+            ch.power.setResistance (ch.rPresence, presR);
             ch.power.setResistance (ch.rBiasTrim, trim);
+            if (el34 != appliedEL34)
+            {
+                ch.power.setPentodeModel (ch.penA, el34 ? modelEL34 : model6L6);
+                ch.power.setPentodeModel (ch.penB, el34 ? modelEL34 : model6L6);
+                ch.power.setSource (ch.wSrcBias, el34 ? biasSupplyVoltsEL34 : biasSupplyVolts);
+            }
         }
         if (! resistiveLoadForced && k.speaker != appliedSpeaker)
             applySpeaker (ch, k.speaker);
         ch.supply.setResistance (ch.rRect, rectifier);
         ch.supply.setSource (ch.srcVoc, railNow + rectifier * idleSupplyCurrent);
     }
+    appliedEL34 = el34;
+    appliedEL34Reduced = el34;
     appliedSpeaker = k.speaker;
     speakerGain = reducedOrder ? 1.0 : std::pow (speakerNominal[juce::jlimit (0, 2, k.speaker)] / speakerNominal[matchedSpeaker], -0.8);
+}
+
+/** The factory LDR truth table (switching-matrix sheet, docs/circuits/DualRectifier.md), built from the buses the
+    sheet draws: the ORANGE bus lights 2, 6, 9, 15 and -- unless the rear Orange Gain switch is on Clean (relay RY1
+    lifts them) -- 3, 4, 10; Clean adds 16 and 20. The RED bus lights 1, 3, 4, 5, 8, 10, 14. The Vintage voicing (7
+    treble rolloff, 19 feedback) rides on Orange unless cloned "Orange to Modern", and joins Red when cloned "Red to
+    Vintage". Each cell then fades toward its target in the log domain. */
+void DualRectifierStyleAmplifierProcessor::updateLdrs (bool snap)
+{
+    const int channel = juce::roundToInt (channelParam->get());
+    const bool clean = orangeGainParam->get() < 0.5f;
+    const int style = juce::roundToInt (styleParam->get());
+    std::array<bool, numLdrs> lit {};
+    if (channel == 0)
+    {
+        for (auto l : { ldr2, ldr6, ldr9, ldr15 })
+            lit[l] = true;
+        for (auto l : { ldr3a, ldr3b, ldr4, ldr10 })
+            lit[l] = ! clean;
+        lit[ldr16] = lit[ldr20] = clean;
+        lit[ldr7] = lit[ldr19] = style != 1;
+    }
+    else
+    {
+        for (auto l : { ldr1, ldr3a, ldr3b, ldr4, ldr5, ldr8, ldr10, ldr14 })
+            lit[l] = true;
+        lit[ldr7] = lit[ldr19] = style == 2;
+    }
+
+    const double logOn = std::log (ldrOn), logOff = std::log (ldrOff);
+    const double step = (logOff - logOn) * (double) controlInterval / (ldrFadeSeconds * sampleRate);
+    bool nfbMoved = false;
+    for (int l = 0; l < numLdrs; ++l)
+    {
+        const double target = lit[(size_t) l] ? logOn : logOff;
+        double& now = ldrLog[(size_t) l];
+        if (! snap && juce::exactlyEqual (now, target))
+            continue;
+        now = snap ? target : (target > now ? juce::jmin (target, now + step) : juce::jmax (target, now - step));
+        const double r = std::exp (now);
+        if (l == ldr19 || l == ldr20)
+        {
+            nfbMoved = true;
+            continue;
+        }
+        for (auto& ch : channels)
+        {
+            const bool inPre = l == ldr1 || l == ldr2 || l == ldr3a || l == ldr3b || l == ldr4 || l == ldr5 || l == ldr6 || l == ldr10;
+            (inPre ? ch.pre : ch.power).setResistance (ch.ldr[(size_t) l], r);
+        }
+    }
+    if (nfbMoved || snap)
+    {
+        // R19 in series with R276 || (R276 + R20).
+        const double r19 = std::exp (ldrLog[ldr19]), r20 = std::exp (ldrLog[ldr20]);
+        const double leg = r19 + nfbLeg * (nfbLeg + r20) / (2.0 * nfbLeg + r20);
+        // reducedOrder: 0 = no loop (Modern), 1 = the Vintage loop, 2 = Clean's doubled one, smooth in between.
+        nfbAmount = nfbLeg / leg;
+        const double feel = 1.0 + 1.5 * (1.0 - lastKnobs.tubeFeel); // Tube Feel's old NFB lean, kept
+        if (! reducedOrder)
+            for (auto& ch : channels)
+                ch.power.setResistance (ch.rFeedback, feedbackOverride > 0.0 ? feedbackOverride : leg / feel);
+    }
 }
 
 void DualRectifierStyleAmplifierProcessor::applySpeaker (Channel& ch, int index) const
@@ -642,14 +867,20 @@ double DualRectifierStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     // Spongy drops the idle rail to railNow (tube rectifier's lower B+); the sag depth scales
     // with it so Bold keeps byte-identical behavior when railNow == bmSagRail[0].
     const double railScale = railNow / bmSagRail[0];
-    ch.bmRail = railNow - feel * spongySag * railScale * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
+    ch.bmRail = railNow - feel * rectifierSag * railScale * (bmSagRail[0] - sagRailLookup (ch.bmEnvelope));
 
-    const double k = ch.bmRail * bmYmax / bmGain0;
+    // Loop / tube state: dB into and out of the stage, linear in nfbAmount between Modern (0), Vintage (1), Clean (2).
+    const double n = juce::jlimit (0.0, 2.0, nfbAmount);
+    const bool el34 = appliedEL34Reduced;
+    const double inDb = (n <= 1.0 ? n * fit.vinDb : fit.vinDb + (n - 1.0) * (fit.cinDb - fit.vinDb)) + (el34 ? fit.elInDb : 0.0);
+    const double outDb = (n <= 1.0 ? n * fit.voutDb : fit.voutDb + (n - 1.0) * (fit.coutDb - fit.voutDb)) + (el34 ? fit.elOutDb : 0.0);
+    toneVoltage *= std::pow (10.0, inDb / 20.0);
+    const double k = ch.bmRail * fit.ymax / fit.g0;
     const double shift = 0.6 * (bias - 0.5) * k;
-    const auto sat = [k, rail = ch.bmRail] (double xx)
+    const auto sat = [k, rail = ch.bmRail, ymax = fit.ymax, knee = fit.knee] (double xx)
     {
         const double ux = std::abs (xx) / juce::jmax (1.0e-9, k);
-        const double yx = bmYmax * ux / std::pow (1.0 + std::pow (ux, bmKneeN), 1.0 / bmKneeN);
+        const double yx = ymax * ux / std::pow (1.0 + std::pow (ux, knee), 1.0 / knee);
         return std::copysign (yx * rail, xx);
     };
     const double raw = sat (toneVoltage + shift) - sat (shift);
@@ -669,10 +900,13 @@ double DualRectifierStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, 
     // default; resonance/depth leans the output toward the pre-top-section LF bump.
     const double presAlpha = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 4500.0 / juce::jmax (1.0, sampleRate));
     ch.bmPresState += presAlpha * (top - ch.bmPresState);
-    const double presShelf = ch.bmPresState + (0.64 + 1.2 * juce::jlimit (0.0, 1.0, (double) lastKnobs.presence)) * (top - ch.bmPresState);
-    const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmCutHz / juce::jmax (1.0, sampleRate));
+    // The Orange Presence is an NFB-loop control: it fades out with the loop (Modern has none). The Red one is in the
+    // preamp netlist, which both paths solve.
+    const double presGain = 0.64 + 1.2 * juce::jlimit (0.0, 1.0, orangePresence);
+    const double presShelf = ch.bmPresState + (1.0 + juce::jlimit (0.0, 1.0, nfbAmount) * (presGain - 1.0)) * (top - ch.bmPresState);
+    const double cut = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * fit.cutHz / juce::jmax (1.0, sampleRate));
     ch.bmCutState += cut * (presShelf - ch.bmCutState);
-    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, ch.bmTail.process ((presShelf - ch.bmCutState) * bmLevelTrim));
+    ch.bmOutput = juce::jlimit (-bmOutMax, bmOutMax, ch.bmTail.process ((presShelf - ch.bmCutState) * fit.trim * std::pow (10.0, outDb / 20.0)));
     return ch.bmOutput;
 }
 
@@ -690,14 +924,14 @@ void DualRectifierStyleAmplifierProcessor::designPowerFilters()
         b1 = 2.0 * (n0 - n2 * c * c) / A0;
         b2 = (n2 * c * c - n1 * c + n0) / A0;
     };
-    const double wb = 2.0 * juce::MathConstants<double>::pi * bmBumpHz;
+    const double wb = 2.0 * juce::MathConstants<double>::pi * fit.bumpHz;
     // resonant high-pass: peaks +20log10(Qp) dB at bmBumpHz, -12 dB/oct below, unity above
     bilinear (1.0 / (wb * wb), 0.0, 0.0,
-              1.0 / (wb * wb), 1.0 / (bmBumpQp * wb), 1.0,
+              1.0 / (wb * wb), 1.0 / (fit.bumpQp * wb), 1.0,
               sampleRate, bmAB0, bmAB1, bmAB2, bmAA1, bmAA2);
-    const double wz = 2.0 * juce::MathConstants<double>::pi * bmTopZHz, wp = 2.0 * juce::MathConstants<double>::pi * bmTopPHz;
+    const double wz = 2.0 * juce::MathConstants<double>::pi * fit.topZ, wp = 2.0 * juce::MathConstants<double>::pi * fit.topP;
     bilinear (0.0, 1.0 / wz, 1.0,
-              1.0 / (wp * wp), 1.0 / (bmTopQp * wp), 1.0,
+              1.0 / (wp * wp), 1.0 / (fit.topQp * wp), 1.0,
               sampleRate, bmBB0, bmBB1, bmBB2, bmBA1, bmBA2);
 }
 
@@ -794,9 +1028,20 @@ void DualRectifierStyleAmplifierProcessor::prepare (double newSampleRate, int, i
 
     idleSupplyCurrent = 0.18;
     appliedSpeaker = matchedSpeaker;
-    updatePots ({ gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
-                  presenceParam->get(), masterParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
-                  juce::roundToInt (speakerParam->get()) });
+    appliedEL34 = false; // buildChannel() wires 6L6s
+    model6L6.setParameters (pentode6L6PairPower());
+    modelEL34.setParameters (pentodeEL34Pair());
+    // Both channels' pots from their stored rows, then the visible channel's live knobs on top.
+    const int visible = juce::roundToInt (channelParam->get());
+    for (int slot : { 1 - visible, visible })
+    {
+        const auto v = [&] (size_t knob) { return (double) channelMemory->slotValue (slot, knob); };
+        updatePots ({ v (0), v (1), v (2), v (3), v (4), v (5), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
+                      juce::roundToInt (speakerParam->get()), slot });
+    }
+    orangePresence = channelMemory->slotValue (0, 4);
+    updatePots (lastKnobs);
+    updateLdrs (true);
 
     dcOk = true;
     for (auto& ch : channels)
@@ -839,7 +1084,7 @@ void DualRectifierStyleAmplifierProcessor::prepare (double newSampleRate, int, i
             const double vV3 = ch.supply.voltage (ch.sC);
             const double iV3 = (vV3 - ch.pre.voltage (ch.pPlateV3a)) / 220.0e3 + ch.followerDc / 100.0e3;
             const double vV2 = ch.supply.voltage (ch.sD);
-            const double iV2 = (vV2 - ch.pre.voltage (ch.pPlateV2a)) / 220.0e3
+            const double iV2 = (vV2 - ch.pre.voltage (ch.pPlateV2a)) / 100.0e3
                              + (vV2 - ch.pre.voltage (ch.pPlateV2b)) / 100.0e3;
             const double vV1 = ch.supply.voltage (ch.sE);
             const double iV1 = (vV1 - ch.pre.voltage (ch.pPlateV1a)) / 220.0e3;
@@ -855,7 +1100,7 @@ void DualRectifierStyleAmplifierProcessor::prepare (double newSampleRate, int, i
             ch.supply.setCurrentSource (ch.iD, -(iV3Run + iV2Run));
             ch.supply.setCurrentSource (ch.iE, -iV1Run);
             idleSupplyCurrent = ipRun + isRun + iPiRun + iV3Run + iV2Run + iV1Run + (ch.vScreen / bleeder);
-            ch.supply.setSource (ch.srcVoc, railNow + rectifierResistance * feel * spongyScale * idleSupplyCurrent);
+            ch.supply.setSource (ch.srcVoc, railNow + rectifierResistance * feel * rectifierScale * idleSupplyCurrent);
             ch.screenDropA = screenResistor * isA;
             ch.screenDropB = screenResistor * isB;
         }
@@ -881,7 +1126,7 @@ void DualRectifierStyleAmplifierProcessor::prepare (double newSampleRate, int, i
         ch.bmBX1 = ch.bmBX2 = ch.bmBY1 = ch.bmBY2 = 0.0;
         ch.bmCutState = 0.0;
         ch.bmPresState = 0.0;
-        ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6, ch.power.voltage (ch.wTone));
+        ch.piCoupling.prepare (newSampleRate, 0.02e-6, 1.0e6, ch.power.voltage (ch.wTone)); // C28 into R214
     }
     designPowerFilters();
     updatePots (lastKnobs);
@@ -928,24 +1173,16 @@ void DualRectifierStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice });
-
-            const int chSel = juce::jlimit (0, 2, juce::roundToInt (channelParam->get()));
-            for (auto& ch : channels)
-            {
-                ch.pre.setResistance (ch.rV2aSeries, chSel == 0 ? 100.0e6 : 39.0e3);
-                ch.pre.setResistance (ch.rBypassV2a, chSel == 0 ? 1.0 : 100.0e6);
-                ch.pre.setResistance (ch.rV2bSeries, chSel <= 1 ? 100.0e6 : 470.0e3);
-                ch.pre.setResistance (ch.rBypassV2b, chSel <= 1 ? 1.0 : 100.0e6);
-            }
+            updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice, juce::roundToInt (channelParam->get()) });
+            updateLdrs (false);
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
-        // Clean channel level match (user request 2026-11-02), eased over ~10 ms.
-        const double chanTrimTarget = juce::jlimit (0, 2, juce::roundToInt (channelParam->get())) == 0 ? std::pow (10.0, cleanLevelMatchDb / 20.0) : 1.0;
+        // Per-mode level match (user request 2026-11-02: a mode change must not jump in level), eased over ~10 ms.
+        const double chanTrimTarget = std::pow (10.0, modeLevelMatchDb[(size_t) currentMode()] / 20.0);
         const double chanTrimAlpha = 1.0 - std::exp (-1.0 / (0.01 * sampleRate));
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)

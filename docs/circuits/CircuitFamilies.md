@@ -202,6 +202,28 @@ The sweep also exposed three real wiring bugs in the same amps, now fixed:
   loss as wired; omitted -- neither polarity measures correct.
 - **AmpegV4B pair merge** applied `kg2 *= 0.5` twice and never halved `kg1`; corrected.
 
+**2026-11-02: the PI grid-B bug was still in seven more amps.** The fix above only reached evh5150, rockerverb and
+sunn. A generic check now guards every amp that exposes `phaseInverterPlateA/B`: `AmpReferenceHealthTests`, "every
+long-tailed-pair phase inverter has both halves conducting at idle" (run alone with `AMP_ONLY=pi`). Healthy pairs
+idle within ~20 V of each other; a cut-off half sits at the rail, 140-240 V above its partner.
+
+| Amp | Plates at idle (V) |
+|---|---|
+| uberschall | 287 / 433 |
+| powerball | 57 / 229 |
+| deliverance | 363 / 121 |
+| slo100 | 249 / 441 |
+| dumble (Steel String) | 270 / 447 |
+| markiic | 221 / 388 |
+| dualrect | cut off as well; fixed in its 2-channel rebuild |
+
+For dualrect the fix was to rewire the PI from the factory drawing. With both halves live, its feedback loop
+finally works: Modern / Vintage differ by 10-16 dB in small-signal gain. Its reduced path was then refitted to that
+healthy reference.
+
+The other six stay on the test's `knownCutOff` list (logged, not failed) until each gets the same treatment. Their
+reduced paths were fitted to single-ended references, so they carry that voicing.
+
 Residual documented gaps vs the fitted reduced stages (healthy references, not collapses): v4b sits
 ~14 dB below its reduced path because its 15.8:1 half-to-secondary OT ratio onto the 4-ohm tap caps
 speaker volts by design; rockerverb and sunn sit ~9-12 dB below, driven by a weak but faithful

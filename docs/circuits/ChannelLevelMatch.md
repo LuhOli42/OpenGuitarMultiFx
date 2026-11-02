@@ -19,7 +19,7 @@ is off by more than ~6 dB.
 |---|---|---|
 | Mark IIC+ | Rhythm | +27.3 dB |
 | Fryette Deliverance | Less | +25.7 dB |
-| Dual Rectifier | Clean | +28.0 dB (until the channel rebuild) |
+| Dual Rectifier | Orange Normal / Orange Clean / Orange to Modern / Red to Vintage, vs Red Modern | +13.6 / +11.3 / +0.2 / +13.3 dB (the Vintage loop takes ~13 dB off the power amp) |
 | Dumble ODS | Overdrive | −14.2 dB |
 | Rivera Knucklehead | Crunch / Lead | −6.8 / −13.4 dB |
 | Rivera Knucklehead | Boost | −12.4 dB (it keeps ~3 dB of lift) |

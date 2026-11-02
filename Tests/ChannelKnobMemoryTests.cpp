@@ -22,7 +22,7 @@ public:
 
     void runTest() override
     {
-        beginTest ("each channel keeps its own knobs when switching (Dual Rectifier, 3 channels)");
+        beginTest ("each channel keeps its own knobs when switching (Dual Rectifier, Orange / Red)");
         {
             DualRectifierStyleAmplifierProcessor amp;
             auto* channel = find (amp, "drec_channel");
@@ -32,17 +32,15 @@ public:
             auto* output = find (amp, "drec_output");
             expect (channel != nullptr && gain != nullptr && treble != nullptr && presence != nullptr && output != nullptr);
 
-            *channel = 2.0f;                 // Red
+            *channel = 1.0f;                 // Red
             *gain = 0.9f;
             *treble = 0.7f;
-            *channel = 0.0f;                 // Clean: starts from its own defaults
+            *channel = 0.0f;                 // Orange: starts from its own defaults
             expectWithinAbsoluteError (gain->get(), 0.5f, 1.0e-6f);
             *gain = 0.2f;
             *presence = 0.8f;
             *output = 0.33f;                 // global, not per channel
-            *channel = 1.0f;                 // Orange
-            *gain = 0.6f;
-            *channel = 2.0f;                 // back to Red
+            *channel = 1.0f;                 // back to Red
             expectWithinAbsoluteError (gain->get(), 0.9f, 1.0e-6f);
             expectWithinAbsoluteError (treble->get(), 0.7f, 1.0e-6f);
             expectWithinAbsoluteError (presence->get(), 0.3f, 1.0e-6f);
@@ -57,17 +55,43 @@ public:
             DualRectifierStyleAmplifierProcessor a, b;
             *find (a, "drec_channel") = 0.0f;
             *find (a, "drec_gain") = 0.15f;
-            *find (a, "drec_channel") = 2.0f;
+            *find (a, "drec_channel") = 1.0f;
             *find (a, "drec_gain") = 0.85f;
             *find (a, "drec_mid") = 0.25f;
             const auto xml = a.getState();
 
             b.setState (*xml);
-            expectWithinAbsoluteError (find (b, "drec_channel")->get(), 2.0f, 1.0e-6f);
+            expectWithinAbsoluteError (find (b, "drec_channel")->get(), 1.0f, 1.0e-6f);
             expectWithinAbsoluteError (find (b, "drec_gain")->get(), 0.85f, 1.0e-6f);
             expectWithinAbsoluteError (find (b, "drec_mid")->get(), 0.25f, 1.0e-6f);
             *find (b, "drec_channel") = 0.0f;
             expectWithinAbsoluteError (find (b, "drec_gain")->get(), 0.15f, 1.0e-6f);
+        }
+
+        beginTest ("a 3-channel Dual Rectifier preset (Clean / Orange / Red) migrates to Orange+Clean / Orange / Red");
+        {
+            juce::XmlElement old ("EffectState");
+            old.setAttribute ("drec_channel", 0.0);           // old Clean
+            old.setAttribute ("drec_gain", 0.11);
+            old.setAttribute ("drec_gain_ch0", 0.11);
+            old.setAttribute ("drec_gain_ch1", 0.44);
+            old.setAttribute ("drec_gain_ch2", 0.77);
+            DualRectifierStyleAmplifierProcessor amp;
+            amp.setState (old);
+            expectWithinAbsoluteError (find (amp, "drec_channel")->get(), 0.0f, 1.0e-6f);
+            expectWithinAbsoluteError (find (amp, "drec_orange_gain")->get(), 0.0f, 1.0e-6f);
+            expectWithinAbsoluteError (find (amp, "drec_gain")->get(), 0.11f, 1.0e-6f);
+            *find (amp, "drec_channel") = 1.0f;
+            expectWithinAbsoluteError (find (amp, "drec_gain")->get(), 0.77f, 1.0e-6f);
+
+            old.setAttribute ("drec_channel", 2.0);           // old Red
+            DualRectifierStyleAmplifierProcessor red;
+            red.setState (old);
+            expectWithinAbsoluteError (find (red, "drec_channel")->get(), 1.0f, 1.0e-6f);
+            expectWithinAbsoluteError (find (red, "drec_gain")->get(), 0.77f, 1.0e-6f);
+            *find (red, "drec_channel") = 0.0f;
+            expectWithinAbsoluteError (find (red, "drec_gain")->get(), 0.44f, 1.0e-6f); // old Orange row
+            expectWithinAbsoluteError (find (red, "drec_orange_gain")->get(), 1.0f, 1.0e-6f);
         }
 
         beginTest ("Powerball: Gain/Volume per channel, EQ shared by Clean+Crunch and by the two Leads");
@@ -95,7 +119,8 @@ public:
         {
             DualRectifierStyleAmplifierProcessor amp;
             juce::XmlElement old ("EffectState");
-            old.setAttribute ("drec_channel", 2.0);
+            old.setAttribute ("drec_channel", 1.0);
+            old.setAttribute ("drec_style", 0.0);
             old.setAttribute ("drec_gain", 0.72);
             amp.setState (old);
             expectWithinAbsoluteError (find (amp, "drec_gain")->get(), 0.72f, 1.0e-6f);

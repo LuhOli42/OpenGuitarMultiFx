@@ -555,7 +555,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // unbypassed compression stage, TMB tone stack with Master, LTP PI, 4x6L6GC fixed-bias push-pull.
     DualRectifierStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DualRectifierStyleAmplifier");
-    registry.registerType ("DualRectifierStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DualRectifierStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -18.23f); }, "High-Gain");
+    registry.registerType ("DualRectifierStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DualRectifierStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -16.13f); }, "High-Gain");
     // docs/circuits/EVH5150.md. Peavey/EVH 5150 Ultra channel. Five cascaded 12AX7 gain stages plus
     // post-tonestack gain recovery, TMB tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     EVH5150StyleAmplifierProcessor::reducedOrder = true;

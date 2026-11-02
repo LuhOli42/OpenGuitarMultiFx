@@ -57,6 +57,22 @@ public:
         return 10.0 * std::log10 (sOut / (double) juce::jmax (1LL, n) + 1.0e-30);
     }
 
+    /** SWITCH_BASE="id=v,id=v": settings applied before each measurement, so the stepped controls are surveyed from
+        another starting point (e.g. a second channel's own mode switches). */
+    static void applyBase (EffectProcessor& fx)
+    {
+        const auto base = juce::SystemStats::getEnvironmentVariable ("SWITCH_BASE", {});
+        for (const auto& kv : juce::StringArray::fromTokens (base, ",", {}))
+        {
+            const auto id = kv.upToFirstOccurrenceOf ("=", false, false).trim();
+            const float v = (float) kv.fromFirstOccurrenceOf ("=", false, false).getDoubleValue();
+            for (const auto& page : fx.getParameterPages())
+                for (auto* f : page)
+                    if (f->paramID == id)
+                        *f = v;
+        }
+    }
+
     static double rmsDb (EffectProcessor& p, double f0)
     {
         if (f0 <= 0.0)
@@ -104,6 +120,7 @@ public:
             {
                 const double rate = f0 <= 0.0 ? 44100.0 : 48000.0;
                 auto ref = registry.create (key);
+                applyBase (*ref);
                 ref->prepare (rate, 256, 1);
                 const double base = rmsDb (*ref, f0);
                 juce::String line = key + (f0 <= 0.0 ? " [DI]" : f0 < 100.0 ? " [E1]" : " [E3]") + ": ";
@@ -119,6 +136,7 @@ public:
                     for (float v = range.start; v <= range.end + 0.01f; v += range.interval)
                     {
                         auto fx = registry.create (key);
+                        applyBase (*fx);
                         auto* p = fx->getParameterPages()[0][idx];
                         *p = v;
                         fx->prepare (rate, 256, 1);
