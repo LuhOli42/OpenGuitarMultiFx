@@ -9,7 +9,7 @@ revision and the one with a complete published service schematic).
 - Ampeg SVT-CL service manual, schematic pages `07S519` (PWA preamp), `07S419-03` (power amp), and the
   output-tube PCB — component designators used below are the schematic's own.
 - Ampeg published specifications (1969 SVT data sheet): Treble ±12 dB @ 4 kHz, Bass ±12 dB @ 40 Hz,
-  Mid ±20 dB @ 220 / 800 / 3000 Hz (3-position switch), Ultra-Hi +20 dB @ 8 kHz, Ultra-Lo −20 dB @ 600 Hz;
+  Mid ±20 dB @ 220 / 800 / 3000 Hz (3-position switch), Ultra-Hi +20 dB @ 8 kHz, Ultra-Lo −20 dB @ 600 Hz (the SVT-CL manual: Ultra-Hi +9 dB @ 8 kHz, Ultra-Lo +2 dB @ 40 Hz / −10 dB @ 500 Hz);
   300 W RMS into 4 or 2 ohms; six 6550 output tubes; sensitivity 0.019 V for full power.
 - Norman Koren's tube parameters ("Improved vacuum tube models for SPICE", Table 1): 12AX7, 12AU7 and 6550
   sets used verbatim; see "Tubes" below.
@@ -40,15 +40,18 @@ Three physically separate chassis sharing one umbilical:
 PREAMP BLOCK (always solved)
   in --R1 22k--R3 100k-- g(V1:B);  R4 3.3M leak
   V1:B 12AX7: plate --R7 100k-- rail(345);  k --R8 1.5k || C2 22u-- gnd
-  plate --C3 .1-- na --R11 100k-- gainPotTop
-       na --R19 220k-- gnd;  na --C4 56p-- gnd
-       Ultra-Lo (switched): na --R20 330k-- u --R21 220k-- gainPotTop;  u --C8 .0047-- gnd;  u --R22 3.3M-- gnd
-  gainPot (P1 1M-A) wiper --C9 .1-- g(V1:A);  R26 1M leak
-  V1:A 12AX7: plate --R27 100k-- rail;  k --R28 1.5k--R29 1.5k-- gnd, C10 .033 across R29
+  plate --C3 .1-- na;  na --C4 56p-- gnd
+       na --R19 220k-- vx --R21 220k-- gainPotTop;  vx --R20 330k-- [SW1:B normal: gnd]
+       vx --C8 .0047-- z --R23 3.3M-- gnd;  z --[SW1:B ULTRA LOW: gnd]
+       na --R11 100k-- t --C7 470p-- w --R22 3.3M-- gnd;  w --[SW1:B ULTRA LOW: gainPotTop]
+       gainPotTop --[SW1:B normal: vx]
+  gainPot (P1 1M-A) wiper --C9 .1-- g(V1:A);  R26 1M leak to the R28/R29 junction
+  V1:A 12AX7: plate --R27 100k-- rail;  k --R28 1.5k--R29 1.5k-- gnd
+       k --C10 .033-- c10 --R31 100k-- gnd;  c10 --[SW1:A ULTRA HIGH: gnd]
   plate --C11 .1-- ti
-  TONE:  ti --R48 220k-- P2top;  P2bot --R37 22k-- gnd;
-         P2wiper --C20 .001 [+ C21 .01 Ultra-Hi] --R30 100k-- t2
-         ti --C23 470p-- t2;  t2 --P4(track)-- C27 .0047 -- gnd;  P4wiper = out
+  TONE:  ti --R48 220k-- P2top;  P2bot --R37 22k-- gnd;  P2top --C20 .001-- P2wiper --C21 .01-- P2bot
+         P2wiper --R30 100k-- P4wiper
+         ti --C23 470p-- P4top;  P4bot --C27 .0047-- gnd;  P4wiper = out
   out --R32 100k-- C16 .1 -- g(V2:B);  R40 470k leak
   V2:B 12AX7: plate --R43 100k-- rail;  k --R44 1.5k--R45 2.2k-- gnd, C12 10u across R45
   plate --C5 .1-- midNode (R12 100k + R13 8.2k bias string to rail)
@@ -97,9 +100,16 @@ Speaker (2/4/8 ohm) and Output (plug-in level — the real amp has no output-lev
 - The PI is modelled as a long-tailed pair; the CL's actual V1B grid is a paraphase-style tap of V1:A's
   plate through a bias network. Same differential function, more robust for the solver; the small
   balance difference is folded into the driver level-shifter anyway.
-- Ultra-Lo is modelled as the switched R20/R21/C8 mid-scoop divider shown on the preamp schematic;
-  Ultra-Hi as the switched extra C21 .01 in the bass wiper leg. The exact switch-pin routing is partly
-  illegible on the scan; the published responses (±20 dB at 8 kHz / 600 Hz mid scoop) bound the error.
+- Ultra-Lo, Ultra-Hi and the tone stack were re-read on 2026-11-02 from a clean 07S519-12 PDF (el34world). The
+  earlier reading had them wrong: R11/R19 swapped, C21 treated as the Ultra-Hi switch, C10 always across R29,
+  R30 into the treble pot top. Each switch made the amp quieter, where the real amp does not.
+  - **SW1:B ULTRA LOW** is a DPDT with its commons on the Gain pot top and ground. Normal: Gain top = Vx, with
+    R20 330k to ground. Ultra Low: C8 grounded (lows through R19/R21) and the R11 → C7 470 pF treble path into the
+    Gain top.
+  - **SW1:A ULTRA HIGH** grounds C10 .033 from V1:A's cathode.
+  - Measured small-signal (AmpSwitchResponseSurvey, SWITCH_FR=1): Ultra Lo +1.7 dB at 40 Hz and −10.6 dB at
+    500 Hz, highs unchanged; Ultra Hi +8.8 dB at 8 kHz, flat below 500 Hz. Ampeg's SVT-CL spec is +2 / −10 dB and
+    +9 dB at 8 kHz. Unity trim −0.15 → +0.59 dB.
 - The mid trap uses (C,L) pairs per position — measured resonances: 800 mH+.68 µF ≈ 216 Hz,
   300 mH+.15 µF ≈ 752 Hz, 100 mH+.033 µF ≈ 2.77 kHz, against the published 220/800/3000 Hz.
 - OT primary impedance is not published. ~600 ohm plate-to-plate is used: consistent with 300 W into

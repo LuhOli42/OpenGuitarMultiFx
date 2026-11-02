@@ -88,6 +88,77 @@ public:
 
 static AmpSwitchLevelSurvey ampSwitchLevelSurvey;
 
+/** Small-signal frequency response of each page-1 switch (SWITCH_FR=1; AMPS="key,key"): every position against the
+    first, sine at 40 Hz - 8 kHz and 10 mV so the amp stays linear. For checking switches against a manufacturer's
+    spec (e.g. Ampeg's Ultra Hi: +7 dB at 8 kHz and nothing elsewhere). */
+class AmpSwitchResponseSurvey : public juce::UnitTest
+{
+public:
+    AmpSwitchResponseSurvey() : juce::UnitTest ("AmpSwitchResponseSurvey", "Bench") {}
+
+    static double sineDb (EffectProcessor& p, double f)
+    {
+        constexpr double sr = 48000.0;
+        const double twoPi = 2.0 * juce::MathConstants<double>::pi;
+        const int warm = (int) (1.0 * sr), len = (int) (0.5 * sr);
+        juce::AudioBuffer<float> buf (1, 256);
+        double sOut = 0.0;
+        for (long long base = 0; base < warm + len; base += 256)
+        {
+            for (int i = 0; i < 256; ++i)
+                buf.setSample (0, i, (float) (0.01 * std::sin (twoPi * f * (double) (base + i) / sr)));
+            p.process (buf);
+            if (base >= warm)
+                for (int i = 0; i < 256; ++i)
+                    sOut += juce::square ((double) buf.getSample (0, i));
+        }
+        return 10.0 * std::log10 (sOut / (double) len + 1.0e-30);
+    }
+
+    void runTest() override
+    {
+        if (juce::SystemStats::getEnvironmentVariable ("SWITCH_FR", {}).isEmpty())
+            return;
+        beginTest ("switch response survey");
+        EffectRegistry registry;
+        registerBuiltInEffects (registry);
+        const auto only = juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("AMPS", {}), ",", "");
+        const double freqs[] = { 40.0, 100.0, 220.0, 500.0, 1000.0, 3000.0, 8000.0 };
+        for (auto& key : registry.getRegisteredNames())
+        {
+            if (registry.categoryForKey (key) != EffectRegistry::Category::amps || (! only.isEmpty() && ! only.contains (key)))
+                continue;
+            auto layout = registry.create (key);
+            const auto pages = layout->getParameterPages();
+            for (size_t idx = 0; idx < pages[0].size(); ++idx)
+            {
+                const auto range = pages[0][idx]->getNormalisableRange();
+                if (range.interval < 1.0f)
+                    continue;
+                std::vector<double> ref;
+                for (float v = range.start; v <= range.end + 0.01f; v += range.interval)
+                {
+                    auto fx = registry.create (key);
+                    auto* p = fx->getParameterPages()[0][idx];
+                    *p = v;
+                    fx->prepare (48000.0, 256, 1);
+                    juce::String line = key + " " + p->getName (24) + " = " + p->getCurrentValueAsText() + ":";
+                    for (size_t i = 0; i < std::size (freqs); ++i)
+                    {
+                        const double db = sineDb (*fx, freqs[i]);
+                        if (ref.size() < std::size (freqs))
+                            ref.push_back (db);
+                        line << " " << juce::String (freqs[i], 0) << " " << juce::String (db - ref[i], 1);
+                    }
+                    logMessage (line);
+                }
+            }
+        }
+    }
+};
+
+static AmpSwitchResponseSurvey ampSwitchResponseSurvey;
+
 /** Hiss each amp makes from an audio interface's own noise floor (NOISE_SURVEY=1): white noise at -90 dBFS rms in,
     every knob at its default; logs the output noise in dBFS and how much the amp amplified it. */
 class AmpNoiseSurvey : public juce::UnitTest

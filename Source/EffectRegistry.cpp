@@ -582,7 +582,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // input (see SVTStyleAmplifierProcessor.cpp) -- scaling the setpoint the global-NFB loop
     // regulates toward, so the physical outputScale = 1/55 stays and the rated ~49 V output keeps
     // its ~0.9 full-scale headroom instead of needing a >0 dB trim that would clip it.
-    registry.registerType ("SVTStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.15f); }, "Bass");
+    registry.registerType ("SVTStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<SVTStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 0.59f); }, "Bass");
     // Trainwreck Express (docs/circuits/TrainwreckExpress.md) and the Trainwreck-descended Komet Concorde
     // (docs/circuits/KometConcorde.md): three-12AX7 anode-driven preamps, LTP, 2x EL34, no global feedback. Full
     // netlist; one reducedOrder flag on the shared base class serves both models (each has its own fitted constants).
@@ -660,7 +660,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("AmpegB15StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegB15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -3.20f); }, "Bass");
     AmpegV4BStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AmpegV4BStyleAmplifier");
-    registry.registerType ("AmpegV4BStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -5.87f); }, "Bass");
+    registry.registerType ("AmpegV4BStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AmpegV4BStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -0.22f); }, "Bass");
     MesaBass400PlusStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("MesaBass400PlusStyleAmplifier");
     registry.registerType ("MesaBass400PlusStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<MesaBass400PlusStyleAmplifierProcessor> (Orders { 0, 0, 1 }), 12.10f); }, "Bass");

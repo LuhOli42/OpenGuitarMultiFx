@@ -217,7 +217,7 @@ namespace
         NodalCircuit& c;
         int srcVcc = 0, srcIn = 0;
         int rGainTop = 0, rGainBot = 0, rBassTop = 0, rBassBot = 0, rTrebleTop = 0, rTrebleBot = 0;
-        int rMasterTop = 0, rMasterBot = 0, rMid = 0, rUltraLoA = 0, rUltraLoB = 0, capUltraHi = 0;
+        int rMasterTop = 0, rMasterBot = 0, rMid = 0, swUlGainVx = 0, swUlR20 = 0, swUlGainC7 = 0, swUlC8 = 0, swUhC10 = 0;
         int grpMidL = 0, capMidC = 0;
         NodalCircuit::Node plate1 = 0, plate2 = 0, tone = 0, plate3 = 0, mid = 0, out = 0;
     };
@@ -248,45 +248,63 @@ namespace
         c.setInitialGuess (k1, 1.4);
         c.setInitialGuess (p1, 235.0);
 
-        // V1:B plate -> C3 -> the Ultra-Lo / bright network -> the Gain pot.
-        const auto na = c.addNode(), u = c.addNode(), gt = c.addNode(), gw = c.addNode();
+        // V1:B plate -> C3 -> the ULTRA LOW network -> the Gain pot (re-read 2026-11-02 at 450 dpi). SW1:B is a DPDT
+        // with its commons on the Gain pot's top (pin 8) and ground (pin 11):
+        //   normal (8-7, 11-10): Gain top = Vx, and R20 330k from Vx to ground -- a flat ~-4.4 dB divider after R19;
+        //   ULTRA LOW (8-9, 11-12): C8 .0047 from Vx to ground (lows only, through R19) reaches the Gain top via R21,
+        //   and the treble arrives through R11 100k -> C7 470 pF: lows and highs pass, the mids drop -- Ampeg's
+        //   "+2 dB at 40 Hz, -10 dB at 500 Hz".
+        const auto na = c.addNode(), vx = c.addNode(), s10 = c.addNode(), z = c.addNode(), t7 = c.addNode(),
+                   w7 = c.addNode(), gt = c.addNode(), gw = c.addNode();
         c.addCapacitor (p1, na, 0.1e-6);                 // C3
-        c.addResistor (na, gnd, 220.0e3);                // R19
         c.addCapacitor (na, gnd, 56.0e-12);              // C4
-        c.addResistor (na, gt, 100.0e3);                 // R11
-        b.rUltraLoA = c.addResistor (na, u, 1.0e9);      // SW1:B open: R20 330k when engaged
-        b.rUltraLoB = c.addResistor (u, gt, 1.0e9);      // R21 220k when engaged
-        c.addCapacitor (u, gnd, 0.0047e-6);              // C8
-        c.addResistor (u, gnd, 3.3e6);                   // R22
+        c.addResistor (na, vx, 220.0e3);                 // R19
+        c.addResistor (vx, gt, 220.0e3);                 // R21
+        c.addResistor (vx, s10, 330.0e3);                // R20
+        c.addCapacitor (vx, z, 0.0047e-6);               // C8
+        c.addResistor (z, gnd, 3.3e6);                   // R23
+        c.addResistor (na, t7, 100.0e3);                 // R11
+        c.addCapacitor (t7, w7, 470.0e-12);              // C7
+        c.addResistor (w7, gnd, 3.3e6);                  // R22
+        b.swUlGainVx = c.addResistor (gt, vx, 1.0);      // pins 8-7
+        b.swUlR20 = c.addResistor (s10, gnd, 1.0);       // pins 11-10
+        b.swUlGainC7 = c.addResistor (gt, w7, 1.0e12);   // pins 8-9
+        b.swUlC8 = c.addResistor (z, gnd, 1.0e12);       // pins 11-12
         b.rGainTop = c.addResistor (gt, gw, 500.0e3);    // P1 1M audio
         b.rGainBot = c.addResistor (gw, gnd, 500.0e3);
         c.setInitialGuess (na, 0.0);
 
-        // V1:A -- second gain stage (plate ~240 V).
-        const auto g2 = c.addNode(), p2 = c.addNode(), k2 = c.addNode(), kb = c.addNode();
+        // V1:A -- second gain stage (plate ~240 V). R26 returns the grid to the R28 / R29 junction. ULTRA HIGH (SW1:A,
+        // pins 5-6) grounds C10 .033 from the cathode, bypassing R28 + R29 above ~1.6 kHz -- a pure treble lift (Ampeg:
+        // +9 dB at 8 kHz); off, C10 only sees R31 100k to ground.
+        const auto g2 = c.addNode(), p2 = c.addNode(), k2 = c.addNode(), kb = c.addNode(), c10 = c.addNode();
         c.addCapacitor (gw, g2, 0.1e-6);                 // C9
-        c.addResistor (g2, gnd, 1.0e6);                  // R26
+        c.addResistor (g2, kb, 1.0e6);                   // R26
         c.addTriode (p2, g2, k2, triode12AX7());
         c.addCapacitor (g2, p2, cgp);
         c.addResistor (vcc, p2, 100.0e3);                // R27
         c.addResistor (k2, kb, 1.5e3);                   // R28
         c.addResistor (kb, gnd, 1.5e3);                  // R29
-        c.addCapacitor (kb, gnd, 0.033e-6);              // C10
+        c.addCapacitor (k2, c10, 0.033e-6);              // C10
+        c.addResistor (c10, gnd, 100.0e3);               // R31
+        b.swUhC10 = c.addResistor (c10, gnd, 1.0e12);    // SW1:A pins 5-6
         c.setInitialGuess (k2, 1.4);
         c.setInitialGuess (p2, 240.0);
 
         // Baxandall-style bass/treble section: C11 into the network, P2 bass leg, C23 treble feed, P4 treble
         // pot whose wiper is the output (docs/circuits/AmpegSVT.md has the ASCII netlist).
+        // Re-read 2026-11-02: C20 .001 spans the bass pot's top half and C21 .01 its bottom half (both fixed parts,
+        // C21 is not a switch), and R30 runs from the bass wiper to the TREBLE WIPER, which is the output.
         const auto ti = c.addNode(), t1 = c.addNode(), w1 = c.addNode(), nb = c.addNode(),
-                   ns = c.addNode(), t2 = c.addNode(), wt = c.addNode(), tb = c.addNode();
+                   t2 = c.addNode(), wt = c.addNode(), tb = c.addNode();
         c.addCapacitor (p2, ti, 0.1e-6);                 // C11
         c.addResistor (ti, t1, 220.0e3);                 // R48
         b.rBassTop = c.addResistor (t1, w1, 500.0e3);    // P2 1M audio: top half
         b.rBassBot = c.addResistor (w1, nb, 500.0e3);    // bottom half
         c.addResistor (nb, gnd, 22.0e3);                 // R37
-        c.addCapacitor (w1, ns, 0.001e-6);               // C20
-        b.capUltraHi = c.addCapacitor (w1, ns, 1.0e-12); // C21 .01, switched in by ULTRA HIGH (off = ~open)
-        c.addResistor (ns, t2, 100.0e3);                 // R30
+        c.addCapacitor (t1, w1, 0.001e-6);               // C20
+        c.addCapacitor (w1, nb, 0.01e-6);                // C21
+        c.addResistor (w1, wt, 100.0e3);                 // R30
         c.addCapacitor (ti, t2, 470.0e-12);              // C23 treble feed
         b.rTrebleTop = c.addResistor (t2, wt, 500.0e3);  // P4 1M audio
         b.rTrebleBot = c.addResistor (wt, tb, 500.0e3);
@@ -405,9 +423,11 @@ void SVTStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rMasterTop = b.rMasterTop;
         ch.rMasterBot = b.rMasterBot;
         ch.rMid = b.rMid;
-        ch.rUltraLoA = b.rUltraLoA;
-        ch.rUltraLoB = b.rUltraLoB;
-        ch.capUltraHi = b.capUltraHi;
+        ch.swUlGainVx = b.swUlGainVx;
+        ch.swUlR20 = b.swUlR20;
+        ch.swUlGainC7 = b.swUlGainC7;
+        ch.swUlC8 = b.swUlC8;
+        ch.swUhC10 = b.swUhC10;
         ch.grpMidL = b.grpMidL;
         ch.capMidC = b.capMidC;
         ch.pPlate1 = b.plate1;
@@ -621,10 +641,9 @@ void SVTStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double midR = juce::jmax (1.0, 50.0e3 * k.middle);
     const double masterBot = juce::jmax (1.0, 50.0e3 * k.master);
 
-    // Ultra-Lo engages the R20 330k / R21 220k scoop divider; Ultra-Hi adds C21 .01 across the bass wiper leg.
-    const double ulA = k.ultraLo > 0.5 ? 330.0e3 : 1.0e9;
-    const double ulB = k.ultraLo > 0.5 ? 220.0e3 : 1.0e9;
-    const double uhC = k.ultraHi > 0.5 ? 0.01e-6 : 1.0e-12;
+    // SW1:B ULTRA LOW throws both poles (see buildPreamp); SW1:A ULTRA HIGH grounds C10.
+    const double ulOn = k.ultraLo > 0.5 ? 1.0 : 1.0e12, ulOff = k.ultraLo > 0.5 ? 1.0e12 : 1.0;
+    const double uhSw = k.ultraHi > 0.5 ? 1.0 : 1.0e12;
 
     // Bias: the level-shifter tap resistor; ~265k lands the grids near -45 V. The knob sweeps the bias
     // trims' range: more resistance pulls the tap toward the driver plates = hotter (less negative).
@@ -647,9 +666,11 @@ void SVTStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rMid, midR);
         ch.pre.setResistance (ch.rMasterTop, juce::jmax (1.0, 50.0e3 - masterBot));
         ch.pre.setResistance (ch.rMasterBot, masterBot);
-        ch.pre.setResistance (ch.rUltraLoA, ulA);
-        ch.pre.setResistance (ch.rUltraLoB, ulB);
-        ch.pre.setCapacitance (ch.capUltraHi, uhC);
+        ch.pre.setResistance (ch.swUlGainVx, ulOff);
+        ch.pre.setResistance (ch.swUlR20, ulOff);
+        ch.pre.setResistance (ch.swUlGainC7, ulOn);
+        ch.pre.setResistance (ch.swUlC8, ulOn);
+        ch.pre.setResistance (ch.swUhC10, uhSw);
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rBiasTapA, biasR);

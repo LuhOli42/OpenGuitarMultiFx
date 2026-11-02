@@ -145,7 +145,11 @@ private:
             const double cold = amp.plateCurrentTotal();
             setParam (amp, "ampegv4b_bias", 1.0f);
             juce::AudioBuffer<float> b (1, 128);
-            for (int i = 0; i < 20; ++i) amp.process (b);
+            for (int i = 0; i < 20; ++i)
+            {
+                b.clear(); // AudioBuffer's constructor does not zero it, and the output must not be fed back in
+                amp.process (b);
+            }
             const double hot = amp.plateCurrentTotal();
             expectGreaterThan (hot / juce::jmax (1.0e-9, cold), 1.2,
                                "idle plate current hot " + juce::String (hot) + " vs cold " + juce::String (cold));
