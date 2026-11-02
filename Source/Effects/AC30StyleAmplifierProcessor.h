@@ -14,9 +14,9 @@ namespace openguitarmultifx
     A Vox AC30-style guitar amplifier (the classic "Top Boost" 4xEL84 head/combo, Top Boost channel only --
     docs/circuits/AC30TopBoost.md -- read that file to understand this processor). Shares the AC15's own family
     traits (cathode-biased EL84 output tubes, no global negative feedback -- confirmed absent on this circuit's own
-    factory power-amp drawing) but scales up: FOUR EL84s as two parallel pairs (not two single tubes), a genuine
-    self-balancing phase inverter -- the real AC30 network (cathode-driven second half, floating tail, 47k
-    bootstrap to the driven grid), not a textbook LTP, fixed 2026-10-11 -- and
+    factory power-amp drawing) but scales up: FOUR EL84s as two parallel pairs (not two single tubes), a
+    long-tailed-pair phase inverter (joined cathodes, one 1k2 to the tap that both grid leaks return to, 47k to
+    ground -- re-read 2026-11-01; the earlier ground-referenced leaks starved it) -- and
     a newly-built two-gain-stage-plus-cathode-follower preamp feeding the famous "Top Boost" Treble/Bass tone stack
     (a bridged RC network, not a simple TMB ladder). The Normal channel (no Top Boost tone stack, mixed in on the
     real amp) is not modelled, matching this project's single-channel scoping for the JTM45/JCM800/AC15.
@@ -55,16 +55,18 @@ public:
     // Refit 2026-10-24 against the full netlist as it stands after the #99 audit (rail / PI rework): the old
     // 7 / 0.128 / 2.0 curve compressed too late and too hard (+2.8 dB at 0.05 input); this one tracks the
     // reference within 0.65 dB from 0.005 to 0.6 (AC30 test "reducedOrder power stage tracks the reference").
-    static constexpr double bmGain0 = 20.0;
-    static constexpr double bmYmax = 0.29;
+    static constexpr double bmGain0 = 230.0;
+    static constexpr double bmYmax = 0.45;
     // Refitted 2026-10-31 against the full netlist (sine sweep 5 mV-0.6 V and chords at Volume 0.4 / 0.8): the old fit
     // (knee 0.75, ceiling 0.13) saturated at ~2/3 of the real output and ran 4-5 dB hot with +7 dB mids -- the user's
     // "too much gain / strange at full volume". The real stage compresses gradually, hence the soft but physical knee.
-    static constexpr double bmKneeN = 1.5;
+    // Refitted again 2026-11-01 after the PI / tone stack / EL84 corrections (docs/circuits/AC30TopBoost.md): the
+    // corrected PI has ~8x the old gain, so the curve now starts at 230 V/V and saturates higher.
+    static constexpr double bmKneeN = 2.5;
     static constexpr double bmShelfHz = 120.0;
-    static constexpr double bmShelfHfGain = 0.7;
-    static constexpr double bmLevelTrim = 0.40;
-    static constexpr double bmMidHz = 500.0, bmMidQ = 0.5, bmMidDb = -6.0;
+    static constexpr double bmShelfHfGain = 0.6;
+    static constexpr double bmLevelTrim = 0.30;
+    static constexpr double bmMidHz = 500.0, bmMidQ = 0.5, bmMidDb = -4.5;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
