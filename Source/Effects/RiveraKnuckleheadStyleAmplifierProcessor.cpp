@@ -905,6 +905,9 @@ void RiveraKnuckleheadStyleAmplifierProcessor::process (juce::AudioBuffer<float>
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
+        // Channel / Boost level match (user request 2026-11-02), eased over ~10 ms.
+        const double chanTrimTarget = std::pow (10.0, (-channelLevelMatchDb[juce::jlimit (0, 2, channelChoice)] - (boostParam->get() > 0.5f ? boostLevelMatchDb : 0.0)) / 20.0);
+        const double chanTrimAlpha = 1.0 - std::exp (-1.0 / (0.01 * sampleRate));
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
@@ -983,7 +986,8 @@ void RiveraKnuckleheadStyleAmplifierProcessor::process (juce::AudioBuffer<float>
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
+                ch.chanTrim += chanTrimAlpha * (chanTrimTarget - ch.chanTrim);
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain * ch.chanTrim;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;

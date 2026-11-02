@@ -1,6 +1,7 @@
 #include "EffectRegistry.h"
 
 #include <juce_dsp/juce_dsp.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 #include <juce_core/juce_core.h>
 
@@ -17,8 +18,49 @@ class AmpSwitchLevelSurvey : public juce::UnitTest
 public:
     AmpSwitchLevelSurvey() : juce::UnitTest ("AmpSwitchLevelSurvey", "Bench") {}
 
+    /** The repo's guitar DI fixture, mono, at its own 44.1 kHz (SWITCH_DI=1): the level a real player hits the amp
+        with, where a gain boost lifts the output far more than on the hotter E3 / E1 test tones. */
+    static std::vector<float>& diFixture()
+    {
+        static std::vector<float> di = []
+        {
+            std::vector<float> v;
+            juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+            std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (
+                juce::File::getCurrentWorkingDirectory().getChildFile ("Tests/fixtures/di/guitar-di.wav")));
+            if (rd == nullptr)
+                return v;
+            const int len = (int) juce::jmin ((juce::int64) (rd->sampleRate * 12.0), rd->lengthInSamples);
+            juce::AudioBuffer<float> b (1, len);
+            rd->read (&b, 0, len, 0, true, false);
+            v.assign (b.getReadPointer (0), b.getReadPointer (0) + len);
+            return v;
+        }();
+        return di;
+    }
+
+    static double diRmsDb (EffectProcessor& p)
+    {
+        const auto& di = diFixture();
+        juce::AudioBuffer<float> buf (1, 256);
+        double sOut = 0.0;
+        long long n = 0;
+        for (size_t base = 0; base + 256 <= di.size(); base += 256)
+        {
+            buf.copyFrom (0, 0, di.data() + base, 256);
+            p.process (buf);
+            if (base > 44100)
+                for (int i = 0; i < 256; ++i, ++n)
+                    sOut += juce::square ((double) buf.getSample (0, i));
+        }
+        return 10.0 * std::log10 (sOut / (double) juce::jmax (1LL, n) + 1.0e-30);
+    }
+
     static double rmsDb (EffectProcessor& p, double f0)
     {
+        if (f0 <= 0.0)
+            return diRmsDb (p);
         constexpr double sr = 48000.0;
         const double twoPi = 2.0 * juce::MathConstants<double>::pi;
         double norm = 0.0;
@@ -57,12 +99,14 @@ public:
         {
             if (registry.categoryForKey (key) != EffectRegistry::Category::amps || (! only.isEmpty() && ! only.contains (key)))
                 continue;
-            for (double f0 : { 164.81, 41.2 })
+            const bool useDi = juce::SystemStats::getEnvironmentVariable ("SWITCH_DI", {}).isNotEmpty();
+            for (double f0 : useDi ? std::vector<double> { 0.0 } : std::vector<double> { 164.81, 41.2 })
             {
+                const double rate = f0 <= 0.0 ? 44100.0 : 48000.0;
                 auto ref = registry.create (key);
-                ref->prepare (48000.0, 256, 1);
+                ref->prepare (rate, 256, 1);
                 const double base = rmsDb (*ref, f0);
-                juce::String line = key + (f0 < 100.0 ? " [E1]" : " [E3]") + ": ";
+                juce::String line = key + (f0 <= 0.0 ? " [DI]" : f0 < 100.0 ? " [E1]" : " [E3]") + ": ";
                 auto layout = registry.create (key); // keep it alive: its parameters back the pointers below
                 const auto pages = layout->getParameterPages();
                 for (size_t idx = 0; idx < pages[0].size(); ++idx)
@@ -77,7 +121,7 @@ public:
                         auto fx = registry.create (key);
                         auto* p = fx->getParameterPages()[0][idx];
                         *p = v;
-                        fx->prepare (48000.0, 256, 1);
+                        fx->prepare (rate, 256, 1);
                         line << p->getCurrentValueAsText() << " " << juce::String (rmsDb (*fx, f0) - base, 1) << "; ";
                     }
                     line << "}  ";

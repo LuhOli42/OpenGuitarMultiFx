@@ -52,6 +52,9 @@ public:
     static constexpr double outputScale = 1.0 / 56.0;
 
     // ---- reduced-order power stage ----
+    // Clean vs Orange / Red at the default knobs (AmpSwitchLevelSurvey: the dB midpoint of the E3 tone and the guitar DI, so neither picking strength is off by more than ~6 dB): the clean channel is raised by this much
+    // (user request 2026-11-02: the clean channel was far too quiet).
+    static constexpr double cleanLevelMatchDb = 28.0;
     static inline bool reducedOrder = false;
     // Twin Reverb's fitted 6L6GC constants (same tube type and push-pull topology).
     static constexpr double bmGain0 = 9.5;
@@ -110,6 +113,7 @@ private:
         int failStreak = 0;
         int restRefreshCounter = 0;
         double lastEmitted = 0.0, declick = 0.0;
+        double chanTrim = 1.0; // eased channel level match
         bool alignOutput = false;
 
         // preamp: four cascaded 12AX7 gain stages + cathode follower

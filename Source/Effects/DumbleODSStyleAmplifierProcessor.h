@@ -50,6 +50,9 @@ public:
     static constexpr double outputScale = 1.0 / 28.0;
 
     // ---- reduced-order power stage ----
+    // Overdrive vs Normal at the default knobs (AmpSwitchLevelSurvey: the dB midpoint of the E3 tone and the guitar DI, so neither picking strength is off by more than ~6 dB): engaging the overdrive lowered by this much
+    // so the switch keeps the level (user request 2026-11-02: big jump when the OD / Ratio is engaged).
+    static constexpr double overdriveLevelMatchDb = 14.2;
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 9.5;
     static constexpr double bmYmax = 0.09;
@@ -86,6 +89,7 @@ private:
         int failStreak = 0;
         int restRefreshCounter = 0;
         double lastEmitted = 0.0, declick = 0.0;
+        double chanTrim = 1.0; // eased channel level match
         bool alignOutput = false;
 
         // preamp: V1A, stack, V1B, the relay, V2A / V2B, Master

@@ -231,7 +231,7 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         c.addCapacitor (cathode, gnd, 25.0e-6);
         c.setInitialGuess (plate, 180.0);
         c.setInitialGuess (cathode, 1.2);
-        ch.prePlate = plate;
+        ch.ef86Plate = plate; // not ch.prePlate: that probe reads ch.pre, and this stage lives in ch.pre2
         return plate;
     };
 
@@ -930,11 +930,16 @@ void EL84BoutiqueAmpCore::updateSupply (Channel& ch)
 void EL84BoutiqueAmpCore::trackEf86Screen (Channel& ch, double dt) const noexcept
 {
     // Screen = rail - 2M2 * Ig2 through the 0.1 uF bypass (tau 0.22 s); dt < 0: jump to the static value (prepare()).
-    double ip = 0.0, ig2 = 0.0;
-    ch.pre2.pentodeCurrents (ch.ef86Pen, ip, ig2);
+    // The screen current comes straight from the grid / screen voltages: pentodeCurrents() derives it from the plate
+    // current, which reads zero once the plate bottoms out -- with the screen starting at the rail the EF86 saturated,
+    // its "screen current" read 0 and the screen stayed at the rail: a dead channel (2026-11-02, HC-30 Ch2 sat ~50 dB
+    // down and needed a +52 dB registry trim).
+    const double ig2 = ch.pre2.pentodeScreenCurrent (ch.ef86Pen);
     const double rail = ch.preRailFiltered > 0.0 ? ch.preRailFiltered : railNominal * 0.725;
     const double target = juce::jlimit (5.0, rail, rail - 2.2e6 * juce::jmax (0.0, ig2));
-    ch.ef86Screen = dt < 0.0 ? target : ch.ef86Screen + (1.0 - std::exp (-dt / (2.2e6 * 0.1e-6))) * (target - ch.ef86Screen);
+    // prepare() (dt < 0) relaxes toward the fixed point -- a 2M2 dropper is a high-gain loop that a plain jump overshoots.
+    ch.ef86Screen = dt < 0.0 ? ch.ef86Screen + 0.3 * (target - ch.ef86Screen)
+                             : ch.ef86Screen + (1.0 - std::exp (-dt / (2.2e6 * 0.1e-6))) * (target - ch.ef86Screen);
     ch.pre2.setPentodeScreen (ch.ef86Pen, ch.ef86Screen);
 }
 
@@ -957,7 +962,7 @@ double EL84BoutiqueAmpCore::behavioralPowerStage (Channel& ch, double drive) con
     // the reference at the new defaults (was 1.17 / 14.0).
     // matchless 2.02 -> 5.2 (2026-10-24), 6.2 after the DC-30 trace rebuild (2026-10-25): 2.02 had been fitted against a test that ran the reference at Volume 2 = 0.6
     // and the reduced path at its default; at equal knobs it sat 7-10 dB under the netlist.
-    const double level = model == Model::matchlessHC30 ? 6.2 :
+    const double level = model == Model::matchlessHC30 ? 9.96 :
                          model == Model::hotCat30 ? 40.0 :
                          model == Model::carmenGhia ? 33.0 : 28.3;
     // The Carmen Ghia's netlist compresses gradually (its NFB): a soft knee x / (1 + |x|^1.4)^(1/1.4), not tanh.
@@ -1011,7 +1016,7 @@ void EL84BoutiqueAmpCore::prepare (double newSampleRate, int, int)
             if (hasSecondPreamp())
                 ok = ch.pre2.prepare (sampleRate) && ok;
             if (ch.ef86Pen >= 0)
-                for (int pass = 0; pass < 6; ++pass) // the EF86 screen on its 2M2 dropper, to its own DC point
+                for (int pass = 0; pass < 40; ++pass) // the EF86 screen on its 2M2 dropper, to its own DC point (relaxed)
                 {
                     ch.pre2.solveSample();
                     trackEf86Screen (ch, -1.0);
@@ -1087,6 +1092,11 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
     smoothedOutputGain.setTargetValue ((float) outputTarget);
     const int speakerIndex = juce::jlimit (0, 2, juce::roundToInt ((float) param (speakerParam, 2.0)));
     const bool useSecondChannel = hasSecondPreamp() && param (channelParam, 1.0) >= 0.5;
+    // HC-30 channel level match (user request 2026-11-02: Ch1 jumped ~17 dB over Ch2 with a real guitar at the default
+    // knobs, slammed into the output limiter -- the hot test tone hid it, both channels sat at the ceiling).
+    constexpr double hc30Ch1LevelMatchDb = -5.2; // Ch1 sits 5.2 dB under Ch2 at the defaults (DI and E3 agree)
+    const double chanTrimTarget = model == Model::matchlessHC30 && ! useSecondChannel ? std::pow (10.0, -hc30Ch1LevelMatchDb / 20.0) : 1.0;
+    const double chanTrimAlpha = 1.0 - std::exp (-1.0 / (0.01 * sampleRate));
 
     for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
@@ -1156,7 +1166,8 @@ void EL84BoutiqueAmpCore::process (juce::AudioBuffer<float>& buffer)
                 speakerVolts = 0.0;
                 ok = false;
             }
-            const double out = speakerVolts * outputScale * output * std::pow (speakerNominal[2] / speakerNominal[speakerIndex], -0.8);
+            ch.chanTrim += chanTrimAlpha * (chanTrimTarget - ch.chanTrim);
+            const double out = speakerVolts * outputScale * output * std::pow (speakerNominal[2] / speakerNominal[speakerIndex], -0.8) * ch.chanTrim;
             samples[i] = (float) out;
             if (chIdx == 0)
             {

@@ -202,7 +202,7 @@ public:
             expectGreaterThan (boosted, rock * 1.2);
         }
 
-        beginTest ("at the defaults Overdrive sits a few dB over Normal, not tens");
+        beginTest ("at the defaults Overdrive is level-matched to Normal (user request 2026-11-02)");
         {
             const auto rms = [&] (int od)
             {
@@ -215,8 +215,7 @@ public:
             const double db = 20.0 * std::log10 (overdrive / normal);
             logMessage ("0.2 V: Normal " + juce::String (normal, 4) + ", Overdrive " + juce::String (overdrive, 4) + " ("
                         + juce::String (db, 1) + " dB)");
-            expectGreaterThan (db, 3.0);
-            expectLessThan (db, 15.0);
+            expectLessThan (std::abs (db), 4.0);
         }
 
         Amp::reducedOrder = true;

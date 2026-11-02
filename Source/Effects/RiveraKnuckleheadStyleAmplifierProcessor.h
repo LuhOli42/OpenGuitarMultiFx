@@ -54,6 +54,10 @@ public:
 
     /** ~100 W into the 16 ohm tap is ~57 V peak at the speaker terminals. */
     static constexpr double outputScale = 1.0 / 57.0;
+    // Channel / Boost level match at the default knobs (AmpSwitchLevelSurvey, E3; user request 2026-11-02: the level
+    // jumped on every switch). Crunch and Lead come down to Clean; Boost keeps ~3 dB of its +8.4 dB lift.
+    static constexpr double channelLevelMatchDb[3] = { 0.0, 6.8, 13.4 };
+    static constexpr double boostLevelMatchDb = 12.4;
     static inline bool reducedOrder = false;
     static constexpr double fullOutputScale = outputScale;
 
@@ -95,6 +99,7 @@ private:
         int failStreak = 0;
         int restRefreshCounter = 0;
         double lastEmitted = 0.0, declick = 0.0;
+        double chanTrim = 1.0; // eased channel level match
         bool alignOutput = false;
 
         // preamp: clean path + lead path in one netlist
