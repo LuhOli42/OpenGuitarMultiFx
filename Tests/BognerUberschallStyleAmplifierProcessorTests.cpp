@@ -5,6 +5,7 @@
 #include <juce_core/juce_core.h>
 
 #include <cmath>
+#include <vector>
 
 namespace openguitarmultifx
 {
@@ -45,6 +46,49 @@ public:
                         + ", bias node " + juce::String (amp.debugVoltage (P::powerGridA), 1));
             expect (amp.railPlates() > 420.0 && amp.railPlates() < 520.0);
             expect (amp.railV2() > 100.0 && amp.railV2() < 450.0);
+        }
+
+        beginTest ("the clean channel swings like the tracing: stage levels for a 165 Hz note");
+        {
+            auto swing = [&] (float channel, std::initializer_list<P> probes)
+            {
+                BognerUberschallStyleAmplifierProcessor amp;
+                setParam (amp, "uber_channel", channel);
+                amp.prepare (sr, 128, 2);
+                juce::AudioBuffer<float> buf (2, 128);
+                std::vector<double> lo (probes.size(), 1.0e9), hi (probes.size(), -1.0e9);
+                double phase = 0.0;
+                for (int b = 0; b < (int) (1.0 * sr / 128); ++b)
+                {
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        const float x = (float) (0.1 * std::sin (phase));
+                        phase += juce::MathConstants<double>::twoPi * 165.0 / sr;
+                        buf.setSample (0, i, x);
+                        buf.setSample (1, i, x);
+                    }
+                    amp.process (buf);
+                    if (b > (int) (0.5 * sr / 128))
+                    {
+                        size_t j = 0;
+                        for (auto p : probes)
+                        {
+                            const double v = amp.debugVoltage (p);
+                            lo[j] = juce::jmin (lo[j], v);
+                            hi[j] = juce::jmax (hi[j], v);
+                            ++j;
+                        }
+                    }
+                }
+                juce::String s;
+                for (size_t j = 0; j < lo.size(); ++j)
+                    s << juce::String (hi[j] - lo[j], 2) << " ";
+                return s;
+            };
+            logMessage ("clean p-p (block ends) V1a / V4b / out / master top: "
+                        + swing (0.0f, { P::cleanV1aPlate, P::cleanV4bPlate, P::cleanOut, P::cleanMasterTop }));
+            logMessage ("OD p-p V1a / follower / master top / tone out: "
+                        + swing (1.0f, { P::v1aPlate, P::followerOut, P::cleanMasterTop, P::toneStackOut }));
         }
 
         beginTest ("the model settles: no drift and no failures with silence at the input");

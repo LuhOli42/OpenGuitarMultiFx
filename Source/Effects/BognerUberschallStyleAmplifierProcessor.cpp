@@ -205,6 +205,92 @@ namespace
         c.addFollower (b.plateV3a, b.follower, followerDrop);
         return b;
     }
+
+    struct CleanBuild
+    {
+        int srcIn = 0, srcE = 0, srcD = 0;
+        int gainTop = 0, gainBot = 0, bass = 0, mid = 0, trebleTop = 0, trebleBot = 0, pres = 0, volTop = 0, volBot = 0;
+        NodalCircuit::Node out = 0, plateV1a = 0, plateV4b = 0;
+    };
+
+    /** The CLEAN channel (same tracing, lower half of the preamp sheet; added 2026-11-02 -- the real amp has two
+        channels with a full set of controls each). V1A (the shared input stage, rebuilt here) -> 100nF -> A;
+        A -> R303 499K || C305 680p -> B; A -> C306 3n3 -> RX5 499K -> B; B -> BASS P8 220K rheostat to ground;
+        B -> R302 340K -> T, with C303 150p from A straight to T; T -> R301 100K || C301 470p -> GAIN P7 390K log
+        (C302 82p bright, top to wiper) -> V4b (100K plate, R26a 1K + K16 10uF) -> CX5 47n -> P; P -> R305 100K -> Q;
+        Q -> C4 -> MIDDLE P9 22K rheostat to ground; P -> C309 -> TREBLE P10 240K, its bottom on C308 100n from Q and
+        R306 220K to ground; treble wiper -> C310 + PRESENCE P11 270K rheostat + R320 22K to ground (a treble shunt),
+        and -> C311 100p || R308 360K -> VOLUME P12 430K -> CLEAN OUT. The tracing leaves C309, C4 and C310 blank:
+        470p, 22n and 1n are ESTIMATED (typical values for those positions). */
+    CleanBuild buildCleanPreamp (NodalCircuit& c)
+    {
+        const auto gnd = NodalCircuit::ground;
+        CleanBuild b;
+        const auto vccE = c.addNode(), vccD = c.addNode(), in = c.addNode();
+        b.srcE = c.addSource (vccE, 400.0);
+        b.srcD = c.addSource (vccD, 410.0);
+        b.srcIn = c.addSource (in, 0.0);
+
+        const auto g1 = c.addNode(), k1 = c.addNode();
+        b.plateV1a = c.addNode();
+        c.addResistor (in, g1, 68.0e3);
+        c.addResistor (g1, gnd, 100.0e3);
+        c.addTriode (b.plateV1a, g1, k1, triode12AX7());
+        c.addCapacitor (g1, b.plateV1a, cgp);
+        c.addResistor (vccE, b.plateV1a, 180.0e3);
+        c.addResistor (k1, gnd, 1.8e3);
+        c.addCapacitor (k1, gnd, 4.7e-6);
+        c.setInitialGuess (b.plateV1a, 210.0);
+        c.setInitialGuess (k1, 1.6);
+
+        const auto a = c.addNode(), bN = c.addNode(), t = c.addNode(), x5 = c.addNode(), gTop = c.addNode(), wiper = c.addNode();
+        c.addCapacitor (b.plateV1a, a, 100.0e-9);
+        c.addResistor (a, bN, 499.0e3);                  // R303
+        c.addCapacitor (a, bN, 680.0e-12);               // C305
+        c.addCapacitor (a, x5, 3.3e-9);                  // C306
+        c.addResistor (x5, bN, 499.0e3);                 // RX5
+        b.bass = c.addResistor (bN, gnd, 110.0e3);       // BASS P8 220K rheostat
+        c.addResistor (bN, t, 340.0e3);                  // R302
+        c.addCapacitor (a, t, 150.0e-12);                // C303
+        c.addResistor (t, gTop, 100.0e3);                // R301
+        c.addCapacitor (t, gTop, 470.0e-12);             // C301
+        b.gainTop = c.addResistor (gTop, wiper, 195.0e3); // GAIN P7 390K log
+        b.gainBot = c.addResistor (wiper, gnd, 195.0e3);
+        c.addCapacitor (gTop, wiper, 82.0e-12);          // C302 bright
+        c.setInitialGuess (a, 0.0);
+
+        const auto k4 = c.addNode();
+        b.plateV4b = c.addNode();
+        c.addTriode (b.plateV4b, wiper, k4, triode12AX7());
+        c.addCapacitor (wiper, b.plateV4b, cgp);
+        c.addResistor (vccD, b.plateV4b, 100.0e3);
+        c.addResistor (k4, gnd, 1.0e3);                  // R26a
+        c.addCapacitor (k4, gnd, 10.0e-6);               // K16
+        c.setInitialGuess (b.plateV4b, 260.0);
+        c.setInitialGuess (k4, 1.3);
+
+        const auto pN = c.addNode(), q = c.addNode(), mN = c.addNode(), trTop = c.addNode(), trBot = c.addNode(),
+                   o = c.addNode(), pr = c.addNode(), pr2 = c.addNode(), v = c.addNode();
+        b.out = c.addNode();
+        c.addCapacitor (b.plateV4b, pN, 47.0e-9);        // CX5
+        c.addResistor (pN, q, 100.0e3);                  // R305
+        c.addResistor (q, gnd, 10.0e6);                  // numerical DC reference only (P / Q only see capacitors)
+        c.addCapacitor (q, mN, 22.0e-9);                 // C4 (estimated)
+        b.mid = c.addResistor (mN, gnd, 11.0e3);         // MIDDLE P9 22K rheostat
+        c.addCapacitor (pN, trTop, 470.0e-12);           // C309 (estimated)
+        b.trebleTop = c.addResistor (trTop, o, 120.0e3); // TREBLE P10 240K
+        b.trebleBot = c.addResistor (o, trBot, 120.0e3);
+        c.addCapacitor (q, trBot, 100.0e-9);             // C308
+        c.addResistor (trBot, gnd, 220.0e3);             // R306
+        c.addCapacitor (o, pr, 1.0e-9);                  // C310 (estimated)
+        b.pres = c.addResistor (pr, pr2, 135.0e3);       // PRESENCE P11 270K rheostat
+        c.addResistor (pr2, gnd, 22.0e3);                // R320
+        c.addResistor (o, v, 360.0e3);                   // R308
+        c.addCapacitor (o, v, 100.0e-12);                // C311
+        b.volTop = c.addResistor (v, b.out, 215.0e3);    // VOLUME P12 430K
+        b.volBot = c.addResistor (b.out, gnd, 215.0e3);
+        return b;
+    }
 }
 
 namespace
@@ -220,6 +306,11 @@ BognerUberschallStyleAmplifierProcessor::BognerUberschallStyleAmplifierProcessor
     {
         return std::make_unique<juce::AudioParameterFloat> (id, name, juce::NormalisableRange<float> (0.0f, 1.0f), def);
     };
+    auto channel = std::make_unique<juce::AudioParameterFloat> (
+        "uber_channel", "Channel", juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f), 1.0f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+        { return juce::roundToInt (v) == 0 ? juce::String ("Clean") : juce::String ("Overdrive"); }));
+    auto chVolume = make ("uber_volume", "Volume", 0.5f);
     auto volume = make ("uber_gain", "Gain", 0.5f);
     auto treble = make ("uber_treble", "Treble", 0.5f);
     auto mid = make ("uber_mid", "Middle", 0.5f);
@@ -237,6 +328,8 @@ BognerUberschallStyleAmplifierProcessor::BognerUberschallStyleAmplifierProcessor
             return juce::String (speakerNominal[juce::jlimit (0, 2, juce::roundToInt (v))], 0) + " ohm";
         }));
 
+    channelParam = channel.get();
+    volumeParam = chVolume.get();
     gainParam = volume.get();
     trebleParam = treble.get();
     midParam = mid.get();
@@ -250,7 +343,9 @@ BognerUberschallStyleAmplifierProcessor::BognerUberschallStyleAmplifierProcessor
     speakerParam = speaker.get();
 
     auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
-        "bogner_uber", "Bogner Uberschall", "|", std::move (volume));
+        "bogner_uber", "Bogner Uberschall", "|", std::move (channel));
+    group->addChild (std::move (volume));
+    group->addChild (std::move (chVolume));
     group->addChild (std::move (treble));
     group->addChild (std::move (mid));
     group->addChild (std::move (bass));
@@ -266,6 +361,30 @@ BognerUberschallStyleAmplifierProcessor::BognerUberschallStyleAmplifierProcessor
     page2->addChild (std::move (cab));
     group->addChild (std::move (page2));
     parameters = std::move (group);
+
+    // Each channel has its own Gain / Volume / Treble / Middle / Bass / Presence on the real panel. The clean
+    // channel's starting voicing follows the manual's suggested settings (Gain 3 o'clock, Bass 11 o'clock, the rest
+    // high); Master stays global.
+    knobMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
+        std::vector<juce::AudioParameterFloat*> { gainParam, volumeParam, trebleParam, midParam, bassParam, presenceParam });
+    knobMemory->setDefaults (0, { 0.75f, 0.5f, 0.75f, 0.75f, 0.45f, 0.75f });
+    knobMemory->setDefaults (1, { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.3f });
+}
+
+void BognerUberschallStyleAmplifierProcessor::setState (const juce::XmlElement& state)
+{
+    {
+        const ChannelKnobMemory::ScopedSuspend suspend (*knobMemory);
+        EffectProcessor::setState (state);
+    }
+    knobMemory->readState (state);
+}
+
+std::unique_ptr<juce::XmlElement> BognerUberschallStyleAmplifierProcessor::getState() const
+{
+    auto xml = EffectProcessor::getState();
+    knobMemory->writeState (*xml);
+    return xml;
 }
 
 void BognerUberschallStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -331,6 +450,26 @@ void BognerUberschallStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pFollower = b.follower;
     }
 
+    // ================================================================ clean channel preamp
+    {
+        const auto b = buildCleanPreamp (ch.preClean);
+        ch.cSrcIn = b.srcIn;
+        ch.cSrcE = b.srcE;
+        ch.cSrcD = b.srcD;
+        ch.cGainTop = b.gainTop;
+        ch.cGainBot = b.gainBot;
+        ch.cBass = b.bass;
+        ch.cMid = b.mid;
+        ch.cTrebleTop = b.trebleTop;
+        ch.cTrebleBot = b.trebleBot;
+        ch.cPres = b.pres;
+        ch.cVolTop = b.volTop;
+        ch.cVolBot = b.volBot;
+        ch.cOut = b.out;
+        ch.cPlateV1a = b.plateV1a;
+        ch.cPlateV4b = b.plateV4b;
+    }
+
     // ================================================================ tone stack (Uberschall-style TMB, always built and solved)
     // 150pF treble cap, 56K slope, .022 bass/mid caps, 240K treble, 720K bass, 25K mid; Master 1M after.
     {
@@ -341,7 +480,7 @@ void BognerUberschallStyleAmplifierProcessor::buildChannel (Channel& ch)
 
         const auto ti = c.addNode(), top = c.addNode(), nB = c.addNode(), nT = c.addNode(), nM = c.addNode(), nMw = c.addNode();
         ch.wToneIn = ti;
-        const auto masterNode = c.addNode();
+        const auto masterNode = c.addNode(), mTop = c.addNode(), cleanIn = c.addNode();
         ch.wTone = c.addNode();
         c.addResistor (cf, ti, cathodeFollowerImpedance);
         c.addCapacitor (ti, top, 150.0e-12);               // treble coupling cap
@@ -354,7 +493,13 @@ void BognerUberschallStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rMidTop = c.addResistor (nM, nMw, 12.5e3);      // MID 25K, split
         ch.rMidBottom = c.addResistor (nMw, gnd, 12.5e3);
         c.addCapacitor (nB, nMw, 0.022e-6);                // mid cap
-        ch.rMasterTop = c.addResistor (masterNode, ch.wTone, 500.0e3);
+        // Channel select at the Master's top: the OD stack's output (masterNode) or the clean channel's (an ideal source
+        // carrying the same DC, so a switch never steps the PI's coupling cap). Switched elements: 1 ohm / 1T.
+        ch.wSrcClean = c.addSource (cleanIn, 0.0);
+        ch.wStackOut = masterNode;
+        ch.swOd = c.addResistor (masterNode, mTop, 1.0);
+        ch.swClean = c.addResistor (cleanIn, mTop, 1.0e12);
+        ch.rMasterTop = c.addResistor (mTop, ch.wTone, 500.0e3);
         ch.rMasterBottom = c.addResistor (ch.wTone, gnd, 500.0e3);
     }
 
@@ -481,22 +626,45 @@ void BognerUberschallStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
 
+    // The visible Gain / Volume / EQ / Presence knobs belong to the selected channel (ChannelKnobMemory swaps them), so
+    // they move only that channel's pots; the other channel keeps what it had.
+    const bool clean = k.channel == 0;
     for (auto& ch : channels)
     {
-        const double gainBottom = juce::jmax (1.0, 475.0e3 * pots::audio (k.gain));
-        ch.pre.setResistance (ch.rGainBot, gainBottom);
-        ch.pre.setResistance (ch.rGainTop, juce::jmax (1.0, 475.0e3 - gainBottom));
-        ch.power.setResistance (ch.rTrebleTop, trebleTop);
-        ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
-        ch.power.setResistance (ch.rBass, bassR);
-        ch.power.setResistance (ch.rMidTop, midTop);
-        ch.power.setResistance (ch.rMidBottom, midBottom);
         ch.power.setResistance (ch.rMasterBottom, masterR);
         ch.power.setResistance (ch.rMasterTop, juce::jmax (1.0, 1.0e6 - masterR));
+        if (clean)
+        {
+            const double cGainBottom = juce::jmax (1.0, 390.0e3 * pots::audio (k.gain));
+            ch.preClean.setResistance (ch.cGainBot, cGainBottom);
+            ch.preClean.setResistance (ch.cGainTop, juce::jmax (1.0, 390.0e3 - cGainBottom));
+            ch.preClean.setResistance (ch.cBass, juce::jmax (1.0, 220.0e3 * pots::audio (k.bass)));
+            ch.preClean.setResistance (ch.cMid, juce::jmax (1.0, 22.0e3 * k.mid));
+            ch.preClean.setResistance (ch.cTrebleBot, juce::jmax (1.0, 240.0e3 * k.treble));
+            ch.preClean.setResistance (ch.cTrebleTop, juce::jmax (1.0, 240.0e3 * (1.0 - k.treble)));
+            ch.preClean.setResistance (ch.cPres, juce::jmax (1.0, 270.0e3 * k.presence)); // more = less treble shunted
+            const double cVolBottom = juce::jmax (1.0, 430.0e3 * pots::audio (k.volume));
+            ch.preClean.setResistance (ch.cVolBot, cVolBottom);
+            ch.preClean.setResistance (ch.cVolTop, juce::jmax (1.0, 430.0e3 - cVolBottom));
+        }
+        else
+        {
+            const double gainBottom = juce::jmax (1.0, 475.0e3 * pots::audio (k.gain));
+            ch.pre.setResistance (ch.rGainBot, gainBottom);
+            ch.pre.setResistance (ch.rGainTop, juce::jmax (1.0, 475.0e3 - gainBottom));
+            ch.power.setResistance (ch.rTrebleTop, trebleTop);
+            ch.power.setResistance (ch.rTrebleBottom, trebleBottom);
+            ch.power.setResistance (ch.rBass, bassR);
+            ch.power.setResistance (ch.rMidTop, midTop);
+            ch.power.setResistance (ch.rMidBottom, midBottom);
+        }
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rPresTop, presTop);
-            ch.power.setResistance (ch.rPresBottom, presBottom);
+            if (! clean)
+            {
+                ch.power.setResistance (ch.rPresTop, presTop);
+                ch.power.setResistance (ch.rPresBottom, presBottom);
+            }
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
         }
@@ -544,6 +712,7 @@ void BognerUberschallStyleAmplifierProcessor::recover (Channel& ch) const
 {
     ++recoveries;
     ch.pre.restoreDynamicState (ch.preRest);
+    ch.preClean.restoreDynamicState (ch.preCleanRest);
     ch.power.restoreDynamicState (ch.powerRest);
     ch.supply.restoreDynamicState (ch.supplyRest);
     ch.screenDropA = ch.screenDropB = 0.0;
@@ -576,6 +745,8 @@ void BognerUberschallStyleAmplifierProcessor::updateSupply (Channel& ch) const
     ch.pre.setSource (ch.pSrcV3, rail (ch.sC, 490.0));
     ch.pre.setSource (ch.pSrcV2, rail (ch.sD, 490.0));
     ch.pre.setSource (ch.pSrcE, rail (ch.sE, 490.0));
+    ch.preClean.setSource (ch.cSrcD, rail (ch.sD, 490.0));
+    ch.preClean.setSource (ch.cSrcE, rail (ch.sE, 490.0));
     ch.vScreen = rail (ch.sB, 570.0);
     ch.vCt = rail (ch.sA, 570.0);
 }
@@ -632,6 +803,10 @@ double BognerUberschallStyleAmplifierProcessor::debugVoltage (Probe p) const noe
         case Probe::speaker: return reducedOrder ? ch.bmOutput : ch.power.voltage (ch.wOut);
         case Probe::biasNode: return ch.power.voltage (ch.wBias);
         case Probe::feedbackNode: return ch.power.voltage (ch.wFeedback);
+        case Probe::cleanV1aPlate: return ch.preClean.voltage (ch.cPlateV1a);
+        case Probe::cleanV4bPlate: return ch.preClean.voltage (ch.cPlateV4b);
+        case Probe::cleanOut: return ch.preClean.voltage (ch.cOut);
+        case Probe::cleanMasterTop: return ch.power.voltage (ch.wStackOut);
     }
     return 0.0;
 }
@@ -695,6 +870,7 @@ void BognerUberschallStyleAmplifierProcessor::prepare (double newSampleRate, int
         s.setCurrentAndTargetValue (p->get());
     };
     setup (smoothedGain, gainParam, 0.02);
+    setup (smoothedVolume, volumeParam, 0.02);
     setup (smoothedTreble, trebleParam, 0.02);
     setup (smoothedMid, midParam, 0.02);
     setup (smoothedBass, bassParam, 0.02);
@@ -709,7 +885,7 @@ void BognerUberschallStyleAmplifierProcessor::prepare (double newSampleRate, int
     appliedSpeaker = matchedSpeaker;
     updatePots ({ gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
                   presenceParam->get(), masterParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
-                  juce::roundToInt (speakerParam->get()) });
+                  juce::roundToInt (speakerParam->get()), volumeParam->get(), juce::roundToInt (channelParam->get()) });
 
     dcOk = true;
     for (auto& ch : channels)
@@ -726,6 +902,9 @@ void BognerUberschallStyleAmplifierProcessor::prepare (double newSampleRate, int
             ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sD));
             ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sE));
             passOk = ch.pre.prepare (newSampleRate) && passOk;
+            ch.preClean.setSource (ch.cSrcD, ch.supply.voltage (ch.sD));
+            ch.preClean.setSource (ch.cSrcE, ch.supply.voltage (ch.sE));
+            passOk = ch.preClean.prepare (newSampleRate) && passOk;
             ch.followerDc = ch.pre.voltage (ch.pFollower);
 
             ch.power.setSource (ch.wSrcCf, ch.followerDc);
@@ -742,6 +921,9 @@ void BognerUberschallStyleAmplifierProcessor::prepare (double newSampleRate, int
             }
             passOk = ch.power.prepare (newSampleRate) && passOk;
             ch.power.solveSample();
+            // The clean injection rides on the OD stack's own DC at the Master's top (measured with the OD switch in).
+            ch.masterDc = ch.power.voltage (ch.wStackOut);
+            ch.power.setSource (ch.wSrcClean, ch.masterDc);
 
             if (! reducedOrder)
             {
@@ -784,10 +966,14 @@ void BognerUberschallStyleAmplifierProcessor::prepare (double newSampleRate, int
         ch.pre.setSource (ch.pSrcV3, ch.supply.voltage (ch.sC));
         ch.pre.setSource (ch.pSrcV2, ch.supply.voltage (ch.sD));
         ch.pre.setSource (ch.pSrcE, ch.supply.voltage (ch.sE));
+        ch.preClean.setSource (ch.cSrcD, ch.supply.voltage (ch.sD));
+        ch.preClean.setSource (ch.cSrcE, ch.supply.voltage (ch.sE));
         ch.pre.saveDynamicState (ch.preRest);
+        ch.preClean.saveDynamicState (ch.preCleanRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.failStreak = 0;
+        ch.chanMix = 0.0;
         ch.bmRail = railPlatesNominal;
         ch.bmEnvelope = 0.0;
         ch.bmOutput = 0.0;
@@ -795,6 +981,12 @@ void BognerUberschallStyleAmplifierProcessor::prepare (double newSampleRate, int
         ch.piCoupling.prepare (newSampleRate, 0.022e-6, 1.0e6, ch.power.voltage (ch.wTone));
     }
     updatePots (lastKnobs);
+    // The netlists come up with the OD switch in; a clean selection flips it on the first sample.
+    cleanSwitched = false;
+    channels[0].chanMix = juce::roundToInt (channelParam->get()) == 0 ? 1.0 : 0.0;
+    chanTrim = juce::roundToInt (channelParam->get()) == 0 ? std::pow (10.0, cleanLevelMatchDb / 20.0) : 1.0;
+    if (juce::roundToInt (channelParam->get()) == 1)
+        odVolumeHeld = pots::audio ((double) volumeParam->get()) / pots::audio (0.5);
 
     controlCounter = 0;
     sampleCount = 0;
@@ -811,6 +1003,7 @@ void BognerUberschallStyleAmplifierProcessor::process (juce::AudioBuffer<float>&
     const int solveChannels = shortcut.begin (channels, buffer, sampleRate);
 
     smoothedGain.setTargetValue (gainParam->get());
+    smoothedVolume.setTargetValue (volumeParam->get());
     smoothedTreble.setTargetValue (trebleParam->get());
     smoothedMid.setTargetValue (midParam->get());
     smoothedBass.setTargetValue (bassParam->get());
@@ -821,10 +1014,14 @@ void BognerUberschallStyleAmplifierProcessor::process (juce::AudioBuffer<float>&
     smoothedBias.setTargetValue (biasParam->get());
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
+    const int channelChoice = juce::roundToInt (channelParam->get()) == 0 ? 0 : 1;
+    const double mixTarget = channelChoice == 0 ? 1.0 : 0.0;
+    const double mixStep = 1.0 / (0.010 * sampleRate); // a full channel change in ~10 ms
 
     for (int i = 0; i < numSamples; ++i)
     {
         const float gn = smoothedGain.getNextValue();
+        const float vo = smoothedVolume.getNextValue();
         const float tr = smoothedTreble.getNextValue();
         const float mi = smoothedMid.getNextValue();
         const float ba = smoothedBass.getNextValue();
@@ -838,13 +1035,37 @@ void BognerUberschallStyleAmplifierProcessor::process (juce::AudioBuffer<float>&
         if (++controlCounter >= controlInterval)
         {
             controlCounter = 0;
-            updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice });
+            updatePots ({ gn, tr, mi, ba, pr, ms, pw, bi, fe, speakerChoice, (double) vo, channelChoice });
         }
 
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
+        // Channel change: the outgoing channel fades to nothing, the Master-top switch flips at the half-way point,
+        // the incoming one fades up. The OD channel's Volume (a 10K pot after its stack on the real amp) scales the
+        // OD drive into that linear stack -- the same thing -- normalised to the old fixed level at noon.
+        auto& ch0 = channels[0];
+        ch0.chanMix = mixTarget > ch0.chanMix ? juce::jmin (mixTarget, ch0.chanMix + mixStep)
+                                              : juce::jmax (mixTarget, ch0.chanMix - mixStep);
+        const double mix = ch0.chanMix;
+        const bool cleanSide = mix >= 0.5;
+        if (cleanSide != cleanSwitched)
+        {
+            cleanSwitched = cleanSide;
+            for (auto& c : channels)
+            {
+                c.power.setResistance (c.swOd, cleanSide ? 1.0e12 : 1.0);
+                c.power.setResistance (c.swClean, cleanSide ? 1.0 : 1.0e12);
+            }
+        }
+        const double odWeight = juce::jlimit (0.0, 1.0, 1.0 - 2.0 * mix);
+        const double cleanWeight = juce::jlimit (0.0, 1.0, 2.0 * mix - 1.0);
+        const double odVolume = channelChoice == 1 ? pots::audio ((double) vo) / pots::audio (0.5) : odVolumeHeld;
+        if (channelChoice == 1)
+            odVolumeHeld = odVolume;
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
+        const double trimTarget = cleanSwitched ? std::pow (10.0, cleanLevelMatchDb / 20.0) : 1.0;
+        chanTrim += (trimTarget - chanTrim) * (1.0 - std::exp (-1.0 / (0.01 * sampleRate)));
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
@@ -852,11 +1073,28 @@ void BognerUberschallStyleAmplifierProcessor::process (juce::AudioBuffer<float>&
             auto* data = buffer.getWritePointer (chIdx);
 
             const double x = std::isfinite (data[i]) ? inputLimit ((double) data[i]) : 0.0;
-            ch.pre.setSource (ch.pSrcIn, x);
-            const bool okPre = ch.pre.solveSample();
+            // Only the channel that is sounding is solved (both during a change).
+            bool okPre = true;
+            if (odWeight > 0.0)
+            {
+                ch.pre.setSource (ch.pSrcIn, x);
+                okPre = ch.pre.solveSample();
+                ch.power.setSource (ch.wSrcCf, ch.followerDc
+                                                   + odWeight * odVolume * masterGain * cathodeFollowerGain
+                                                         * (ch.pre.voltage (ch.pFollower) - ch.followerDc));
+            }
+            else
+                ch.power.setSource (ch.wSrcCf, ch.followerDc);
+            if (cleanWeight > 0.0)
+            {
+                ch.preClean.setSource (ch.cSrcIn, x);
+                okPre = ch.preClean.solveSample() && okPre;
+                ch.power.setSource (ch.wSrcClean, ch.masterDc + cleanWeight * masterGain * ch.preClean.voltage (ch.cOut));
+            }
+            else
+                ch.power.setSource (ch.wSrcClean, ch.masterDc);
             bool ok = okPre;
 
-            ch.power.setSource (ch.wSrcCf, ch.followerDc + masterGain * cathodeFollowerGain * (ch.pre.voltage (ch.pFollower) - ch.followerDc));
             if (! reducedOrder)
             {
                 ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
@@ -903,6 +1141,7 @@ void BognerUberschallStyleAmplifierProcessor::process (juce::AudioBuffer<float>&
                 {
                     ch.restRefreshCounter = 0;
                     ch.pre.saveDynamicState (ch.preRest);
+                    ch.preClean.saveDynamicState (ch.preCleanRest);
                     ch.power.saveDynamicState (ch.powerRest);
                     ch.supply.saveDynamicState (ch.supplyRest);
                 }
@@ -916,7 +1155,7 @@ void BognerUberschallStyleAmplifierProcessor::process (juce::AudioBuffer<float>&
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                out = speakerVolts * outputScale * outGain * chanTrim * speakerGain;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;

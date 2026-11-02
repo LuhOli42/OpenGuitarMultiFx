@@ -4,7 +4,7 @@
 
 Factory preamp schematic (educational tracing circulated on el34world — carries its own "may contain
 errors" disclaimer; values cross-checked where legible) plus the published control layout. ~120 W
-dual-channel head, four EL34s. This model covers the **overdrive channel**.
+dual-channel head, four EL34s. Both channels are modelled (the clean one since 2026-11-02).
 
 ## What the amp actually is
 
@@ -28,9 +28,31 @@ without the flub of bigger-coupled high-gain designs.
   kp 100, kvb 24) with standard pair scaling — a real published fit, not an estimate.
 - Supply sag, resonant speaker, `reducedOrder` behavioural stage.
 
+## Clean channel (2026-11-02)
+
+Lower half of the same tracing, its own netlist (`preClean`), solved only while it sounds:
+
+- V1A rebuilt (shared input stage) → 100nF → R303 499K ∥ C305 680p, plus C306 3n3 → RX5 499K → **Bass**
+  P8 220K rheostat; R302 340K with C303 150p across → R301 100K ∥ C301 470p → **Gain** P7 390K log
+  (C302 82p bright) → V4b (100K plate, R26a 1K + K16 10µF).
+- CX5 47n → R305 100K → C4 → **Middle** P9 22K rheostat; C309 → **Treble** P10 240K, its bottom on
+  C308 100n + R306 220K; wiper → C310 → **Presence** P11 270K rheostat + R320 22K (a treble shunt) and
+  → C311 100p ∥ R308 360K → **Volume** P12 430K → CLEAN OUT.
+- C309, C4 and C310 are blank on the tracing: 470p, 22n and 1n are **ESTIMATED**. A 10M resistor on
+  node Q is a numerical DC reference only (P/Q see nothing but capacitors).
+- CLEAN OUT enters at the Master's top through the channel switch (an ideal source riding the OD stack's
+  own DC, so the PI coupling cap never steps); the NFB presence belongs to the OD channel only.
+- Stage swings for a 0.1 V 165 Hz note (test log): V1a 7.4 Vpp, V4b 8.7 Vpp, clean out 0.14 Vpp — against
+  23 Vpp at the Master's top from the saturated OD channel.
+- Level match (see `ChannelLevelMatch.md`): Clean sat −46.7 dB (E3) / −55.5 dB (guitar DI) under the OD
+  channel; ~16 dB of that is the OD Volume being normalised to unity at noon while the clean Volume keeps
+  its log law. The 51.1 dB midpoint is an eased **output** trim — injected before the PI it drove the
+  EL34s to ~20% THD and the clean channel stopped being clean. After: +4.4 / −4.4 dB, clean THD 0.05%
+  (0.05 sine) to 1.3% (0.6 sine).
+
 ## Deliberate simplifications
 
-- Clean channel, optocoupler/relay switching, FX-loop buffers (V5a/V5b) and the send/return: not
+- Optocoupler/relay switching (the channel change is a ~10 ms fade + a switch at the Master's top), FX-loop buffers (V5a/V5b) and the send/return: not
   modelled — the loop is bypassed as it is on the real amp with nothing plugged in.
 - The Uberschall's interactive presence network is approximated by the family's standard NFB-presence
   block; the NFB resistor is an estimate.
@@ -38,14 +60,18 @@ without the flub of bigger-coupled high-gain designs.
 
 ## Controls
 
-Page 1 mirrors the OD channel: Gain, Treble, Mid, Bass, Presence, Master.
+Page 1 mirrors the real panel: Channel (Clean / Overdrive), then the selected channel's own Gain, Volume,
+Treble, Middle, Bass, Presence (per-channel knobs via `ChannelKnobMemory`, saved in the state), and the
+shared Master. The OD Volume is a 10K pot after its stack on the real amp; it scales the OD drive into the
+linear stack, normalised to the old fixed level at noon.
 Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output.
 
 ## Stability / verification
 
 - kg1×40 on PI triodes and EL34 pairs -- REMOVED (see CircuitFamilies.md's dead-reference repair
   section); DC plates ~460V; unity trim for PedalUnityLevel.
-- `Tests/BognerUberschallStyleAmplifierProcessorTests.cpp`: DC, silence settle, pluck.
+- `Tests/BognerUberschallStyleAmplifierProcessorTests.cpp`: DC, silence settle, pluck, clean-channel stage
+  swings (logged).
 
 ## Reduced path refit (2026-11-01)
 
