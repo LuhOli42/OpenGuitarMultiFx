@@ -60,13 +60,16 @@ namespace
     /** EL84 (6BQ5) pentode, published Koren SPICE fit (mu 16, Kg1 570, Kg2 4200, Kp 50, Kvb 24, Ex 1.35 -- a
         commonly-circulated set, not independently re-fitted to this specific amp's own measured curve the way the
         Marshall/Fender power tubes on this roadmap were -- see docs/circuits/AC15Twin.md). Each EL84 has its OWN
-        grid/plate (a real push-pull pair, not two tubes sharing nodes) -- no pair-halving here. */
+        grid/plate (a real push-pull pair, not two tubes sharing nodes) -- no pair-halving here.
+        kg1 1140, not the published 570 (2026-11-01, same correction as the AC30): 570 draws ~103 mA at the datasheet
+        point (Va = Vg2 = 250 V, Vg1 = -7.3 V, 48 mA), and this amp idled at 16 V on its 130 ohm cathode resistor
+        (~62 mA, ~19 W per tube) where a real AC15 sits near 11-12 V. */
     KorenPentode::Parameters pentodeEL84()
     {
         KorenPentode::Parameters p;
         p.mu = 16.0;
         p.ex = 1.35;
-        p.kg1 = 570.0;
+        p.kg1 = 1140.0;
         p.kg2 = 4200.0;
         p.kp = 50.0;
         p.kvb = 24.0;
