@@ -344,6 +344,7 @@ struct PowerStageTail
             presAdd = 0.0;
         coreAmt = v.core; asymAmt = v.asym; dynAmt = v.dyn;
         invRef = 1.0 / juce::jmax (1.0e-9, refVolts);
+        refV = juce::jmax (1.0e-9, refVolts);
         lp1 = lp2 = lfState = env = dc = 0.0;
         resX1 = resX2 = resY1 = resY2 = 0.0;
         presX1 = presX2 = presY1 = presY2 = 0.0;
@@ -393,13 +394,19 @@ struct PowerStageTail
         }
         // Even-order content: a push-pull pair is never perfectly balanced. The quadratic leaves a
         // positive mean under drive which a transformer can't pass -- remove it like the real OT does.
-        const double v = v0 + asymAmt * v0 * v0 * invRef;
+        // Bounded: a bare v0 + a v0^2 turns back on itself below -ref / 2a (AC15's 0.4 reaches that), which sounds like
+        // a sputtering fuzz; u^2 / (1 + u^2) is the same parabola at small signal and stays monotonic for a < 1.5.
+        const double u = v0 * invRef;
+        const double v = v0 + asymAmt * refV * u * u / (1.0 + u * u);
         dc += dcC * (v - dc);
         const double vdc = v - dc;
         // OT core saturation: only the LF split saturates (flux ~ V/f).
         lfState += lfC * (vdc - lfState);
         const double lfn = lfState * invRef;
-        const double vc = (vdc - lfState) + lfState / (1.0 + coreAmt * lfn * lfn);
+        // x / sqrt(1 + 2 c x^2) matches the old x / (1 + c x^2) to third order but never folds back: the old curve fell
+        // past |x| = 1 / sqrt(c) (~1.05 ref for classAChime), so a loud bass note at full volume chopped itself and
+        // the treble riding on it -- the "failing fuzz" the EL84 amps had at full volume (2026-11-02).
+        const double vc = (vdc - lfState) + lfState / std::sqrt (1.0 + 2.0 * coreAmt * lfn * lfn);
         // OT leakage inductance (the solid-state voicing has none -- lpC < 0 there).
         double base = vc;
         if (lpC >= 0.0)
@@ -450,7 +457,7 @@ private:
     double lpC = 0.0, lfC = 0.0, envC = 0.0, dcC = 0.0;
     double resB0 = 0.0, resB2 = 0.0, resA1 = 0.0, resA2 = 0.0, resAdd = 0.0;
     double presB0 = 0.0, presB2 = 0.0, presA1 = 0.0, presA2 = 0.0, presAdd = 0.0;
-    double coreAmt = 0.0, asymAmt = 0.0, dynAmt = 0.0, invRef = 1.0;
+    double coreAmt = 0.0, asymAmt = 0.0, dynAmt = 0.0, invRef = 1.0, refV = 1.0;
     double cabMix = 0.0, cabMixC = 0.0, cabTarget = 0.0, cabFs = 0.0;
     const juce::AudioParameterFloat* cabParam = nullptr; // watched at audio rate; written once at prepare
     CabProfile stockCab;

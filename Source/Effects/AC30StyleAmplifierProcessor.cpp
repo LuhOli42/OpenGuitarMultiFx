@@ -186,6 +186,7 @@ namespace
         c.addResistor (in, g1, 68.0e3);
         c.addResistor (g1, gnd, 1.0e6);
         c.addTriode (b.plate, g1, k1, triode12AX7());
+        c.addCapacitor (g1, b.plate, cgp); // grid-plate (Miller) capacitance -- see V2a
         c.addResistor (k1, gnd, 1.5e3);
         c.addCapacitor (k1, gnd, 25.0e-6);
         c.addResistor (rail, b.plate, 220.0e3);
@@ -208,6 +209,10 @@ namespace
         const auto k2 = c.addNode();
         const auto plate2a = c.addNode();
         c.addTriode (plate2a, b.volOut, k2, triode12AX7());
+        // Grid-plate (Miller) capacitance, ~100 pF effective at this stage's gain. It was missing from both preamp
+        // stages (only the PI had it), so a clipping V2a switched between cutoff and saturation within one sample at
+        // full Volume -- a sputtering square the real tube cannot make (2026-11-02, "fuzz falhando").
+        c.addCapacitor (b.volOut, plate2a, cgp);
         c.addResistor (rail, plate2a, 100.0e3);
         c.addResistor (k2, gnd, 1.5e3);
         c.addCapacitor (k2, gnd, 25.0e-6);
