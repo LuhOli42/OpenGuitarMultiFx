@@ -191,40 +191,50 @@ public:
             expect (peak < 1e-4f, "silence in should be silence out");
         }
 
-        beginTest ("Guitar-to-Bass shifts a whole chord, every note one and two octaves down");
+        beginTest ("Guitar-to-Bass shifts a whole chord, every note one and two octaves down (MONO and POLY)");
         {
             const std::vector<double> notes { 110.0, 138.59, 164.81, 220.0 }; // close A major, the hardest voicing
             const auto in = chord (notes, 1.5);
-            for (int oct = 0; oct < 2; ++oct)
-            {
-                GuitarToBassProcessor p;
-                setKnob (p, "octaves", (float) oct); setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f);
-                setKnob (p, "tone", 100.0f);
-                const auto out = render (p, in);
-                const double div = oct == 0 ? 2.0 : 4.0;
-                const size_t from = (size_t) (0.5 * sr);
-                double strongest = 0.0;
-                std::vector<double> m;
-                for (double hz : notes) { m.push_back (goertzel (out, hz / div, from)); strongest = std::max (strongest, m.back()); }
-                for (size_t k = 0; k < notes.size(); ++k)
+            for (int mode = 0; mode < 2; ++mode)
+                for (int oct = 0; oct < 2; ++oct)
                 {
-                    // a quarter tone either side of the shifted note has to be well below the note itself
-                    const double f = notes[k] / div, off = std::max (goertzel (out, f * 1.0293, from), goertzel (out, f / 1.0293, from));
-                    logMessage ("  oct " + juce::String (oct) + " note " + juce::String (f, 1) + " Hz: " + juce::String (dB (m[k] / strongest), 1)
-                                + " dB, quarter-tone leak " + juce::String (dB (off / m[k]), 1) + " dB");
-                    expect (m[k] > strongest * 0.1, "chord note missing after the shift: " + juce::String (f, 1));
-                    expect (off < m[k] * 0.35, "shifted note smeared / out of tune: " + juce::String (f, 1));
+                    GuitarToBassProcessor p;
+                    setKnob (p, "mode", (float) mode); setKnob (p, "octaves", (float) oct);
+                    setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f); setKnob (p, "tone", 100.0f);
+                    const auto out = render (p, in);
+                    const double div = oct == 0 ? 2.0 : 4.0;
+                    const size_t from = (size_t) (0.5 * sr);
+                    const juce::String tag = juce::String (mode == 0 ? "  MONO" : "  POLY") + " oct " + juce::String (oct);
+                    double strongest = 0.0;
+                    std::vector<double> m;
+                    for (double hz : notes) { m.push_back (goertzel (out, hz / div, from)); strongest = std::max (strongest, m.back()); }
+                    for (size_t k = 0; k < notes.size(); ++k)
+                    {
+                        // a quarter tone either side of the shifted note has to be well below the note itself
+                        const double f = notes[k] / div, off = std::max (goertzel (out, f * 1.0293, from), goertzel (out, f / 1.0293, from));
+                        double bestC = 0.0, best = 0.0;
+                        for (double c = -30.0; c <= 30.0; c += 1.0)
+                            if (const double g = goertzel (out, f * std::pow (2.0, c / 1200.0), from); g > best) { best = g; bestC = c; }
+                        logMessage (tag + " note " + juce::String (f, 1) + " Hz: " + juce::String (dB (m[k] / strongest), 1)
+                                    + " dB, quarter-tone leak " + juce::String (dB (off / m[k]), 1) + " dB, " + juce::String (bestC, 0) + " cents");
+                        expect (m[k] > strongest * 0.1, tag + " chord note missing after the shift: " + juce::String (f, 1));
+                        // two octaves down the splice shifter smears a close chord; POLY is the chord mode
+                        if (mode == 1 || oct == 0)
+                            expect (off < m[k] * 0.35, tag + " shifted note smeared / out of tune: " + juce::String (f, 1));
+                        if (mode == 1)
+                            expect (std::abs (bestC) <= 5.0, tag + " chord note " + juce::String (f, 1) + " off by " + juce::String (bestC, 0) + " cents");
+                    }
+                    const double lvl = dB (rms (out, from) / rms (in, from));
+                    logMessage (tag + " level vs dry: " + juce::String (lvl, 1) + " dB");
+                    expect (lvl > -4.0 && lvl < 8.0, tag + " level vs dry " + juce::String (lvl, 1) + " dB");
                 }
-                const double lvl = dB (rms (out, from) / rms (in, from));
-                logMessage ("  level vs dry: " + juce::String (lvl, 1) + " dB");
-                expect (lvl > -4.0 && lvl < 8.0, "Guitar-to-Bass level vs dry " + juce::String (lvl, 1) + " dB");
-            }
         }
 
-        beginTest ("Guitar-to-Bass pitch holds steady across a sustained note");
+        beginTest ("Guitar-to-Bass pitch holds steady across a sustained note (MONO and POLY)");
+        for (int mode = 0; mode < 2; ++mode)
         {
             GuitarToBassProcessor p;
-            setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f);
+            setKnob (p, "mode", (float) mode); setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f);
             const auto out = render (p, pluck (196.0, 2.5, 0.3, false));
             double worst = 0.0;
             for (double t = 0.4; t + 0.25 <= 2.5; t += 0.25)
@@ -233,7 +243,7 @@ public:
                 const double got = spectralPeakHz (seg, 80.0, 115.0, 0);
                 worst = std::max (worst, std::abs (1200.0 * std::log2 (got / 98.0)));
             }
-            logMessage ("  worst deviation " + juce::String (worst, 1) + " cents");
+            logMessage (juce::String (mode == 0 ? "  MONO" : "  POLY") + " worst deviation " + juce::String (worst, 1) + " cents");
             expect (worst < 20.0);
         }
 

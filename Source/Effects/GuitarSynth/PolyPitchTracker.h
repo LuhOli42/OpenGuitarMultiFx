@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RealFft.h"
 #include "SynthParts.h"
 
 #include <juce_dsp/juce_dsp.h>
@@ -50,7 +51,8 @@ public:
         order = 1;
         while ((1 << order) < winLen) ++order;
         size = 1 << order;
-        fft = std::make_unique<juce::dsp::FFT> (order);
+        fft.prepare (order);
+        spec.assign ((size_t) size + 2, 0.0f);
         ring.assign ((size_t) size, 0.0f);
         work.assign ((size_t) size * 2, 0.0f);
         window.resize ((size_t) size);
@@ -139,8 +141,9 @@ private:
         ++frameIndex;
         for (int i = 0; i < size; ++i)
             work[(size_t) i] = ring[(size_t) ((writePos + size - winLen + i) & (size - 1))] * window[(size_t) i];
-        std::fill (work.begin() + size, work.end(), 0.0f);
-        fft->performFrequencyOnlyForwardTransform (work.data(), true);
+        fft.forward (work.data(), spec.data());
+        for (int k = 0; k <= size / 2; ++k)
+            work[(size_t) k] = std::sqrt (spec[(size_t) (2 * k)] * spec[(size_t) (2 * k)] + spec[(size_t) (2 * k + 1)] * spec[(size_t) (2 * k + 1)]);
 
         // peaks
         const int maxBin = std::min (size / 2 - 2, (int) (5500.0 / binHz));
@@ -303,7 +306,8 @@ private:
 
     double fs = 48000.0, rate = 16000.0, binHz = 15.625;
     int dec = 3, order = 11, size = 2048, winLen = 1536, hop = 96;
-    std::unique_ptr<juce::dsp::FFT> fft;
+    RealFft fft;
+    std::vector<float> spec;
     std::vector<float> ring, work, window;
     mt::Biquad aa[2];
     int writePos = 0, decCount = 0, hopCount = 0;

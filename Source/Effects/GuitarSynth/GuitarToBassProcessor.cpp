@@ -5,6 +5,7 @@ namespace openguitarmultifx
 GuitarToBassProcessor::GuitarToBassProcessor() : SynthEffect ("Guitar-to-Bass", "octaver", "guitarToBass")
 {
     octaves = addChoice ("octaves", "Octave", { "DOWN 1", "DOWN 2" }, 0);
+    mode = addChoice ("mode", "Mode", { "MONO", "POLY" }, 0);
     voicing = addChoice ("voicing", "Voicing", { "FINGER", "PICK", "ROUND" }, 0);
     tone = addFloat ("tone", "Tone", 0, 100, 50, 1.0f, "%", 0);
     body = addFloat ("body", "Body", 0, 12, 4, 1.0f, "dB");
@@ -18,6 +19,7 @@ void GuitarToBassProcessor::prepare (double sampleRate, int, int)
 {
     fs = sampleRate;
     shifter.prepare (fs);
+    poly.prepare (fs);
     mixLevel.prepare (fs);
     reset();
 }
@@ -25,9 +27,11 @@ void GuitarToBassProcessor::prepare (double sampleRate, int, int)
 void GuitarToBassProcessor::reset()
 {
     shifter.reset();
+    poly.reset();
     comp.reset();
     hp.reset(); shelf.reset(); toneLp[0].reset(); toneLp[1].reset(); pick.reset(); blendLp.reset();
     lastShape = -1.0;
+    lastMode = -1;
 }
 
 void GuitarToBassProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -39,6 +43,13 @@ void GuitarToBassProcessor::process (juce::AudioBuffer<float>& buffer)
 
     updateMix();
     const double ratio = mt::asIndex (octaves) == 0 ? 0.5 : 0.25;
+    const int m = mt::asIndex (mode);
+    if (m != lastMode)
+    {
+        // the idle shifter was not fed, so its history is stale; both restart from silence
+        if (lastMode >= 0) { shifter.reset(); poly.reset(); }
+        lastMode = m;
+    }
     const int v = mt::asIndex (voicing);
     // voicing: tone multiplier, extra body, pick-attack shelf gain
     const double toneMul = v == 0 ? 1.0 : (v == 1 ? 1.8 : 0.55);
@@ -64,7 +75,7 @@ void GuitarToBassProcessor::process (juce::AudioBuffer<float>& buffer)
     {
         const double inL = L[i], inR = R != nullptr ? R[i] : inL;
         const float mono = (float) (0.5 * (inL + inR));
-        const double shifted = shifter.process (mono, ratio);
+        const double shifted = m == 1 ? poly.process (mono, ratio) : shifter.process (mono, ratio);
 
         double x = hp.process (shifted);
         x = shelf.process (x);
