@@ -150,7 +150,7 @@ private:
         // not two channels mixed together -- see the header's own note on why this amp's preamp differs from every
         // other one on this project's roadmap.
         int pSrcV1 = 0, pSrcV2 = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
+        int rGainTop = 0, rGainBot = 0, swHigh = 0, swHighGnd = 0, swV1a = 0, swLow = 0;
         NodalCircuit::Node pPlate2 = 0, pFollower = 0, pPlateV1a = 0, pPlateV1b = 0;
         double followerDc = 0.0;
 
@@ -191,6 +191,7 @@ private:
     void recover (Channel& ch) const;
     void applySpeaker (Channel& ch, int index) const;
     int appliedSpeaker = -1;
+    int appliedInput = -1; // jack switches last written into the preamp netlists (-1 = rebuilt, write again)
     double speakerGain = 1.0; // loudness compensation for the 4 / 8 ohm loads on the 16 ohm tap
     bool resistiveLoadForced = false;
     mutable int recoveries = 0;

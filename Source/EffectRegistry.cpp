@@ -512,7 +512,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // newly built (4 cascaded gain stages). reducedOrder placeholder trim pending its own J8_POWERCAL measurement.
     JCM800StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("JCM800StyleAmplifier");
-    registry.registerType ("JCM800StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<JCM800StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -13.75f); }, "High-Gain");
+    registry.registerType ("JCM800StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<JCM800StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -11.91f); }, "High-Gain");
     // docs/circuits/AC15Twin.md. Genuinely new family: EF86 pentode preamp, cathodyne (split-load) phase inverter,
     // cathode-biased EL84 pair, no global feedback. reducedOrder calibrated (A15_POWERCAL) against this amp's own
     // stable reference (no instability investigation needed, unlike the JTM45/JCM800).
