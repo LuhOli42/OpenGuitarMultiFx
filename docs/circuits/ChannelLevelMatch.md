@@ -24,7 +24,7 @@ is off by more than ~6 dB.
 | Rivera Knucklehead | Crunch / Lead | −6.8 / −13.4 dB |
 | Rivera Knucklehead | Boost | −12.4 dB (it keeps ~3 dB of lift) |
 | Matchless HC-30 | Ch1 | +5.2 dB |
-| Bogner Uberschall | Clean | +51.1 dB (output trim; ~16 dB is the OD Volume normalised at noon, see BognerUberschall.md) |
+| Bogner Uberschall | Clean | +54.8 dB (output trim; ~16 dB is the OD Volume normalised at noon, see BognerUberschall.md) |
 
 ## HC-30: a dead EF86 channel, not a level problem
 The HC-30's EF86 channel (Ch2) sat ~50 dB under where it should, and a +51.92 dB registry trim hid it. That trim then

@@ -208,11 +208,11 @@ private:
 
     bool cleanSwitched = false;   // the Master-top switch's current side (channel change, see process())
     double odVolumeHeld = 1.0;    // the OD Volume factor while the clean channel holds the visible knobs
-    // Channel level match (docs/circuits/ChannelLevelMatch.md): Clean sat -46.7 dB (E3) / -55.5 dB (guitar DI) under
+    // Channel level match (docs/circuits/ChannelLevelMatch.md): Clean sat -46.7 dB (E3) / -62.9 dB (guitar DI) under
     // Overdrive at the defaults -- ~16 dB of it because the OD Volume is normalised to unity at noon while the clean
     // Volume keeps its real log law, the rest the saturated OD channel's compression. The midpoint is an output trim
     // (eased over ~10 ms): applied at the Master's top it drove the PI / EL34s into 20% THD and the clean was gone.
-    static constexpr double cleanLevelMatchDb = 51.1;
+    static constexpr double cleanLevelMatchDb = 54.8;
     double chanTrim = 1.0;
     double sampleRate = 0.0;
     int controlCounter = 0;

@@ -44,11 +44,12 @@ Lower half of the same tracing, its own netlist (`preClean`), solved only while 
   own DC, so the PI coupling cap never steps); the NFB presence belongs to the OD channel only.
 - Stage swings for a 0.1 V 165 Hz note (test log): V1a 7.4 Vpp, V4b 8.7 Vpp, clean out 0.14 Vpp — against
   23 Vpp at the Master's top from the saturated OD channel.
-- Level match (see `ChannelLevelMatch.md`): Clean sat −46.7 dB (E3) / −55.5 dB (guitar DI) under the OD
+- Level match (see `ChannelLevelMatch.md`): Clean sat −46.7 dB (E3) / −62.9 dB (guitar DI) under the OD
   channel; ~16 dB of that is the OD Volume being normalised to unity at noon while the clean Volume keeps
-  its log law. The 51.1 dB midpoint is an eased **output** trim — injected before the PI it drove the
-  EL34s to ~20% THD and the clean channel stopped being clean. After: +4.4 / −4.4 dB, clean THD 0.05%
-  (0.05 sine) to 1.3% (0.6 sine).
+  its log law. The 54.8 dB midpoint is an eased **output** trim — injected before the PI it drove the
+  EL34s to ~20% THD and the clean channel stopped being clean. After: +8.1 (E3) / −8.1 dB (DI), clean THD
+  0.05% (0.05 sine) to 1.3% (0.6 sine). (The first cut used 51.1 dB: its "DI" figure was really the E1
+  tone, measured on a test build from before SWITCH_DI existed.)
 
 ## Deliberate simplifications
 
