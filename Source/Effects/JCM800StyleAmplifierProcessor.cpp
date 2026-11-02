@@ -190,7 +190,7 @@ namespace
     {
         NodalCircuit& c;
         int srcV1 = 0, srcV2 = 0, srcIn = 0;
-        int rGainTop = 0, rGainBot = 0;
+        int rGainTop = 0, rGainBot = 0, swHigh = 0, swHighGnd = 0, swV1a = 0, swLow = 0;
         NodalCircuit::Node plate2 = 0, follower = 0, plateV1a = 0, plateV1b = 0, nodeV1 = 0, nodeV2 = 0;
     };
 
@@ -209,34 +209,43 @@ namespace
         b.nodeV2 = vcc2;
         b.srcV1 = c.addSource (vcc1, v1Guess);
         b.srcV2 = c.addSource (vcc2, v2Guess);
-        b.srcIn = c.addSource (in, 0.0); // High/Low sensitivity is a plain gain factor applied in process(), not a
-                                          // separate resistor network -- see the header's own note on this simplification
+        b.srcIn = c.addSource (in, 0.0);
+        // Jacks (re-read 2026-11-02): HIGH feeds V1a through R3 68k; its shorting contact grounds that path when it
+        // is empty. LOW skips V1a altogether -- its jack sits between C3 (V1a's output) and the Gain network, so a plug
+        // there drives the Gain network directly and disconnects V1a. Switched elements: 1 ohm closed, 1T open.
+        const auto inHigh = c.addNode(), c3out = c.addNode();
+        b.swHigh = c.addResistor (in, inHigh, 1.0);
+        b.swHighGnd = c.addResistor (inHigh, gnd, 1.0e12);
 
         // V1a: R3 68k grid stopper, R4 100k plate (vcc1), R1 2k7 cathode with a 0.68 uF bypass -- the real 2203
         // value: against 2.7k it only bypasses above ~90 Hz, so bass gets less gain than mids/treble (full bass
         // gain needs a far bigger cap; 68 uF was a misread).
         const auto g1 = c.addNode(), k1 = c.addNode();
         b.plateV1a = c.addNode();
-        c.addResistor (in, g1, 68.0e3);
+        c.addResistor (inHigh, g1, 68.0e3);
+        c.addResistor (g1, gnd, 1.0e6);                  // R2
         c.addTriode (b.plateV1a, g1, k1, triode12AX7());
         c.addCapacitor (g1, b.plateV1a, cgp);
         c.addResistor (vcc1, b.plateV1a, 100.0e3);
         c.addResistor (k1, gnd, 2.7e3);
         c.addCapacitor (k1, gnd, 0.68e-6);
+        c.addCapacitor (b.plateV1a, k1, 100.0e-12);      // C2 100 pF, plate to cathode
         c.setInitialGuess (b.plateV1a, 230.0);
         c.setInitialGuess (k1, 1.0);
 
-        // Gain pot (VR1, 1M log): C 0.022 uF couples V1a's plate into the pot's top lug; R5 470k / C4 470 pF / C5 1 nF
-        // form a bright-compensation network across the pot (a standard trick for a log-taper gain control in a
-        // cascaded-gain preamp, read directly off the schematic though its exact internal wiring at scan resolution
-        // was not fully legible -- modelled here as a parallel RC bridging the pot's own top-to-wiper segment).
-        const auto gainIn = c.addNode();
-        c.addCapacitor (b.plateV1a, gainIn, 0.022e-6);
+        // Gain network (re-read 2026-11-02 at 300 dpi): C3 .022 -> R5 470k || C4 470 pF IN SERIES -> the top of VR1
+        // (1M log); C5 1 nF from the pot's top to its wiper. The model used to put R5 / C4 across the pot's top segment
+        // instead, which skipped R5's bass cut and ~3 dB of loss into V1b.
+        const auto gainIn = c.addNode(), potTop = c.addNode();
+        c.addCapacitor (b.plateV1a, c3out, 0.022e-6);    // C3
+        b.swV1a = c.addResistor (c3out, gainIn, 1.0);
+        b.swLow = c.addResistor (in, gainIn, 1.0e12);
+        c.addResistor (gainIn, potTop, 470.0e3);         // R5
+        c.addCapacitor (gainIn, potTop, 470.0e-12);      // C4
         const auto gainWiper = c.addNode();
-        b.rGainTop = c.addResistor (gainIn, gainWiper, 1.0e6);
+        b.rGainTop = c.addResistor (potTop, gainWiper, 1.0e6);
         b.rGainBot = c.addResistor (gainWiper, gnd, 1.0e6);
-        c.addResistor (gainIn, gainWiper, 470.0e3); // R5 (fixed, across the pot's top-to-wiper segment)
-        c.addCapacitor (gainIn, gainWiper, 470.0e-12 + 1.0e-9); // C4 + C5, both bridging the same segment
+        c.addCapacitor (potTop, gainWiper, 1.0e-9);      // C5
 
         // V1b: R7 100k plate (vcc1), R6 10k cathode -- UNBYPASSED (no cap), a real local negative-feedback stage that
         // gives this preamp its harder, more compressed character than the earlier bypassed-cathode amps.
@@ -252,12 +261,15 @@ namespace
         c.setInitialGuess (b.plateV1b, 200.0);
         c.setInitialGuess (k2, 1.4);
 
-        // V2a: C7 0.022 uF coupling, R11 470k grid leak, R12 100k plate
+        // V2a: C7 0.022 uF -> R10 470k || C8 470 pF IN SERIES -> grid, R11 470k grid leak (a 470k / 470k divider with a
+        // treble bypass -- the model used to drop R10 / C8, driving V2a ~6 dB hotter with full bass), R12 100k plate
         // (vcc2), R9 820 ohm cathode -- UNBYPASSED again.
-        const auto g3 = c.addNode(), k3 = c.addNode();
+        const auto g3 = c.addNode(), k3 = c.addNode(), c7out = c.addNode();
         b.plate2 = c.addNode();
-        c.addCapacitor (b.plateV1b, g3, 0.022e-6);
-        c.addResistor (g3, gnd, 470.0e3);
+        c.addCapacitor (b.plateV1b, c7out, 0.022e-6);
+        c.addResistor (c7out, g3, 470.0e3);              // R10
+        c.addCapacitor (c7out, g3, 470.0e-12);           // C8
+        c.addResistor (g3, gnd, 470.0e3);                // R11
         c.addTriode (b.plate2, g3, k3, triode12AX7());
         c.addCapacitor (g3, b.plate2, cgp);
         c.addResistor (vcc2, b.plate2, 100.0e3);
@@ -330,6 +342,10 @@ void JCM800StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.pSrcIn = b.srcIn;
         ch.rGainTop = b.rGainTop;
         ch.rGainBot = b.rGainBot;
+        ch.swHigh = b.swHigh;
+        ch.swHighGnd = b.swHighGnd;
+        ch.swV1a = b.swV1a;
+        ch.swLow = b.swLow;
         ch.pPlate2 = b.plate2;
         ch.pFollower = b.follower;
         ch.pPlateV1a = b.plateV1a;
@@ -768,6 +784,7 @@ void JCM800StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     if (juce::exactlyEqual (sampleRate, newSampleRate) && sampleRate > 0.0)
         return;
     sampleRate = newSampleRate;
+    appliedInput = -1; // fresh netlists come up on the HIGH jack
 
     for (auto& ch : channels)
     {
@@ -910,9 +927,20 @@ void JCM800StyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedFeel.setTargetValue (tubeFeelParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
     const int inputChoice = juce::roundToInt (inputParam->get()); // 0 High, 1 Low sensitivity jack
-    // The two jacks share one gain stage on the real amp -- modelled as a plain input attenuation
-    // rather than a second resistor network, since both jacks feed the exact same grid.
-    const double inputGain = inputChoice == 0 ? 1.0 : 0.25;
+    if (inputChoice != appliedInput)
+    {
+        // LOW skips V1a (see buildPreamp): switch the jack contacts, not a gain factor.
+        appliedInput = inputChoice;
+        const bool low = inputChoice == 1;
+        for (auto& ch : channels)
+        {
+            ch.pre.setResistance (ch.swHigh, low ? 1.0e12 : 1.0);
+            ch.pre.setResistance (ch.swHighGnd, low ? 1.0 : 1.0e12);
+            ch.pre.setResistance (ch.swV1a, low ? 1.0e12 : 1.0);
+            ch.pre.setResistance (ch.swLow, low ? 1.0 : 1.0e12);
+        }
+    }
+    const double inputGain = 1.0;
 
     for (int i = 0; i < numSamples; ++i)
     {
