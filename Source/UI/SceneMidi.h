@@ -107,7 +107,8 @@ public:
 
     /** What a CC message should do right now: the scene to switch to, or -1 for nothing (unbound CC, a release, or
         a bounce). Call it once per incoming message. */
-    int targetFor (int cc, int value, int currentScene, juce::uint32 nowMs = juce::Time::getMillisecondCounter())
+    int targetFor (int cc, int value, int currentScene, juce::uint32 nowMs = juce::Time::getMillisecondCounter(),
+                   int sceneCount = snapshotxml::maxSnapshots)
     {
         const auto it = byCc.find (cc);
         if (it == byCc.end())
@@ -115,12 +116,13 @@ public:
         if (! stomps.isPress (cc, value, nowMs))
             return -1;
 
-        constexpr int count = snapshotxml::maxSnapshots;
+        // Next / previous wrap over the scenes in use, not all eight slots; a scene pedal past them does nothing.
+        const int count = juce::jlimit (1, snapshotxml::maxSnapshots, sceneCount);
         switch (it->second)
         {
             case nextScene:     return (currentScene + 1) % count;
             case previousScene: return (currentScene + count - 1) % count;
-            default:            return it->second;
+            default:            return it->second < count ? it->second : -1;
         }
     }
 

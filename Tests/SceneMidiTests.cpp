@@ -46,6 +46,19 @@ public:
             expectEquals (b.targetFor (12, 127, 4, 4000), 3);
         }
 
+        beginTest ("next and previous wrap over the scenes in use; a scene pedal past them does nothing");
+        {
+            Bindings b;
+            b.bind (11, scenemidi::nextScene);
+            b.bind (12, scenemidi::previousScene);
+            b.bind (13, 5);
+            expectEquals (b.targetFor (11, 127, 2, 1000, 3), 0);
+            expectEquals (b.targetFor (12, 127, 0, 2000, 3), 2);
+            expectEquals (b.targetFor (13, 127, 0, 3000, 3), -1);
+            expectEquals (b.targetFor (13, 127, 0, 4000, 6), 5);
+            expectEquals (b.targetFor (11, 127, 0, 5000, 1), 0);
+        }
+
         beginTest ("one CC drives one action and one action has one CC");
         {
             Bindings b;

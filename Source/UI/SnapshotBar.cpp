@@ -15,6 +15,16 @@ void SnapshotBar::setCurrent (int index)
     }
 }
 
+void SnapshotBar::setCount (int scenesInUse)
+{
+    scenesInUse = juce::jlimit (1, snapshotxml::maxSnapshots, scenesInUse);
+    if (count != scenesInUse)
+    {
+        count = scenesInUse;
+        repaint();
+    }
+}
+
 void SnapshotBar::setLabels (const std::array<juce::String, snapshotxml::maxSnapshots>& names,
                              const std::array<juce::Colour, snapshotxml::maxSnapshots>& colours)
 {
@@ -55,7 +65,7 @@ int SnapshotBar::cellIndexAt (juce::Point<int> position) const
     if (position.y < hintHeight)
         return -1; // the caption strip isn't a cell
     const int index = position.x * snapshotxml::maxSnapshots / juce::jmax (1, getWidth());
-    return index >= 0 && index < snapshotxml::maxSnapshots ? index : -1;
+    return index >= 0 && (index < count || index == addCellIndex()) ? index : -1;
 }
 
 void SnapshotBar::mouseDown (const juce::MouseEvent& event)
@@ -71,7 +81,12 @@ void SnapshotBar::timerCallback()
     if (pressedIndex >= 0 && isMouseButtonDown() && cellIndexAt (getMouseXYRelative()) == pressedIndex)
     {
         longPressFired = true;
-        if (onSnapshotLongPressed)
+        if (pressedIndex == addCellIndex())
+        {
+            if (onAddLongPressed)
+                onAddLongPressed();
+        }
+        else if (onSnapshotLongPressed)
             onSnapshotLongPressed (pressedIndex);
     }
 }
@@ -82,9 +97,16 @@ void SnapshotBar::mouseUp (const juce::MouseEvent& event)
     if (longPressFired)
         return;
 
-    if (event.mouseWasClicked() && onSnapshotSelected)
-        if (const int index = cellIndexAt (event.getPosition()); index >= 0)
-            onSnapshotSelected (index);
+    if (! event.mouseWasClicked())
+        return;
+    const int index = cellIndexAt (event.getPosition());
+    if (index >= 0 && index == addCellIndex())
+    {
+        if (onAddPressed)
+            onAddPressed();
+    }
+    else if (index >= 0 && onSnapshotSelected)
+        onSnapshotSelected (index);
 }
 
 void SnapshotBar::paint (juce::Graphics& g)
@@ -94,13 +116,31 @@ void SnapshotBar::paint (juce::Graphics& g)
     const bool learning = captionOverride.isNotEmpty();
     g.setColour (learning ? juce::Colours::orange : juce::Colours::grey.withAlpha (0.55f));
     g.setFont (juce::Font (juce::FontOptions (11.0f)));
-    g.drawText (learning ? captionOverride : juce::String ("tap: recall -- hold: edit"),
+    g.drawText (learning ? captionOverride : juce::String (count < snapshotxml::maxSnapshots ? "tap: recall -- hold: edit -- +: new scene"
+                                                                                   : "tap: recall -- hold: edit"),
                 getLocalBounds().removeFromTop (hintHeight), juce::Justification::centred);
 
     const float cellsTop = (float) hintHeight;
     const float cellWidth = (float) getWidth() / (float) snapshotxml::maxSnapshots;
 
-    for (int i = 0; i < snapshotxml::maxSnapshots; ++i)
+    if (const int add = addCellIndex(); add >= 0)
+    {
+        const auto cell = juce::Rectangle<float> ((float) add * cellWidth, cellsTop, cellWidth,
+                                                  (float) getHeight() - cellsTop)
+                              .reduced (2.0f);
+        g.setColour (juce::Colours::grey.withAlpha (0.6f));
+        const float dashes[] = { 4.0f, 3.0f };
+        juce::Path outline;
+        outline.addRoundedRectangle (cell.reduced (0.5f), 8.0f);
+        juce::PathStrokeType (1.0f).createDashedStroke (outline, outline, dashes, 2);
+        g.fillPath (outline);
+        const auto c = cell.getCentre();
+        const float arm = juce::jmin (cell.getWidth(), cell.getHeight()) * 0.2f;
+        g.drawLine (c.x - arm, c.y, c.x + arm, c.y, 2.0f);
+        g.drawLine (c.x, c.y - arm, c.x, c.y + arm, 2.0f);
+    }
+
+    for (int i = 0; i < count; ++i)
     {
         auto cell = juce::Rectangle<float> ((float) i * cellWidth, cellsTop, cellWidth,
                                             (float) getHeight() - cellsTop)

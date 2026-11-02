@@ -12,7 +12,7 @@ looking at how commercial units do it. Each stage below has its own card on the 
 | What a snapshot stores | Every block's bypass state and **every** float parameter of every block, automatically. The user does not mark which knobs are snapshot-controlled. A knob whose value differs between snapshots gets a small marker. |
 | What a snapshot cannot do | Add, remove, reorder or swap blocks, change routing, or load a different NAM model / IR. That is what a preset is for. |
 | Edits while playing | **Recall**: a knob edit stays in the current snapshot and is still there after switching away and back, until the preset is saved or the changes are discarded. |
-| MIDI | Program Change keeps selecting the preset. **CC 69** selects the snapshot (value 0–7 = A–H), the same convention as Line 6. A footswitch that can only send one fixed CC per switch (e.g. XTONE Pro) is learned instead: press and hold a letter on the A–H bar → *Footswitch (MIDI)* → *Learn pedal* for that scene, *next scene* or *previous scene*, then stomp the switch. Global (`scene_midi.xml`), not per preset; only the press counts, so a momentary switch's release is ignored. Next/previous wrap A↔H. |
+| MIDI | Program Change keeps selecting the preset. **CC 69** selects the snapshot (value 0–7 = A–H), the same convention as Line 6. A footswitch that can only send one fixed CC per switch (e.g. XTONE Pro) is learned instead: press and hold a letter on the A–H bar → *Footswitch (MIDI)* → *Learn pedal* for that scene, *next scene* or *previous scene*, then stomp the switch. Global (`scene_midi.xml`), not per preset; only the press counts, so a momentary switch's release is ignored. Next/previous wrap over the scenes in use. |
 | Display | The preset badge shows number + letter, e.g. **"3B"**. |
 
 ## Why snapshots are gapless and presets are not
@@ -47,5 +47,11 @@ That only sounds clean if the engine handles jumps well. The code has three gaps
    the A–H bar for Rename / Colour / Copy to; the live snapshot's name shows in the title ("orange fat · Solo") and
    small inside its cell; a knob whose value differs between snapshots has its name drawn in the live snapshot's
    colour.
+   Scenes in use (2026-11-01): a new preset starts with one scene, A. The "+" cell after the last letter adds the
+   next one holding the live scene's values; press and hold "+" to choose which scene it copies. The letter menu
+   also has *Copy from* and *Remove scene* (later scenes move up a letter). `<Snapshots count="N">` stores how many
+   are in use; a preset saved before that attribute counts up to its last slot that differs from A (or has a
+   name/colour), so an untouched one loads as a single scene. CC 69 values, scene pedals and next/previous only
+   reach the scenes in use.
 4. **Preset browser**: card grid with the chain's icons, banks of 4/8, setlists, search, tags, favourites.
 5. **Preset spillover**: delay/reverb tails surviving a preset change. Hardest; last.

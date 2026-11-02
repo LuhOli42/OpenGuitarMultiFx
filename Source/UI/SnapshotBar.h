@@ -12,10 +12,10 @@ namespace openguitarmultifx
 
 /**
     The A-H snapshot strip that sits next to the preset badge in the top
-    bar (docs/PresetsAndSnapshots.md, stage 3: "A-H bar"). Eight fixed
-    cells, one per snapshot, tap to recall -- the whole recall surface
-    for this stage; the full snapshots editor (names, colours, per-knob
-    markers) is a later card. Custom-painted rather than eight
+    bar (docs/PresetsAndSnapshots.md, stage 3: "A-H bar"). One cell per
+    scene in use, tap to recall, and a "+" cell after them to add the
+    next one (user request 2026-11-01: start with one scene, grow to
+    eight on demand). Custom-painted rather than eight
     TextButtons, same reasoning as PresetBadge: one component, no
     LookAndFeel font cap, and the current cell draws in the snapshot's
     colour rather than a generic button highlight.
@@ -38,6 +38,9 @@ class SnapshotBar : public juce::Component,
 public:
     /** 0-7 highlights that letter as the live snapshot. */
     void setCurrent (int index);
+
+    /** Scenes in use (1-8): cells A up to that letter, then a "+" cell while there is room for another. */
+    void setCount (int scenesInUse);
 
     /** Each slot's name (drawn small under its letter; empty = letter only) and colour (the live cell's fill). */
     void setLabels (const std::array<juce::String, snapshotxml::maxSnapshots>& names,
@@ -64,6 +67,9 @@ public:
     /** Press and hold (longPressMs) a cell: the snapshot's edit menu (rename, colour, copy). A tap stays a pure,
         instant recall, which is what the bar is for on stage -- same hidden-gesture pattern as MIDI Learn. */
     std::function<void (int)> onSnapshotLongPressed;
+    /** Tap "+": add a scene (the owner copies the live one). Hold "+": choose which scene the new one copies. */
+    std::function<void()> onAddPressed;
+    std::function<void()> onAddLongPressed;
 
     static constexpr int longPressMs = 550;
 
@@ -74,7 +80,11 @@ private:
     int cellIndexAt (juce::Point<int> position) const;
     void timerCallback() override;
 
+    /** The "+" cell's index, or -1 when all eight are in use. */
+    int addCellIndex() const noexcept { return count < snapshotxml::maxSnapshots ? count : -1; }
+
     int current = 0;
+    int count = 1;
     int pressedIndex = -1;
     bool longPressFired = false;
     std::array<juce::String, snapshotxml::maxSnapshots> labels;

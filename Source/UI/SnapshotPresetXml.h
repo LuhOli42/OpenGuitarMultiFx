@@ -68,10 +68,13 @@ void applyBlock (EffectProcessor& processor, const BlockSnapshot& snapshot);
 /** Appends the <Snapshots> element to a preset being saved. Always
     writes all eight slots -- unused ones just hold defaults, matching
     the "8 fixed slots" model the doc chose. `currentIndex` records
-    which snapshot was live at save time so a reload lands back on it. */
+    which snapshot was live at save time so a reload lands back on it;
+    `count` is how many slots the player has in use (the bar shows A up
+    to that letter plus a "+"). */
 void write (juce::XmlElement& presetXml,
             const std::array<Snapshot, maxSnapshots>& snapshots,
-            int currentIndex);
+            int currentIndex,
+            int count = maxSnapshots);
 
 /** Reads the <Snapshots> element of a preset being loaded into
     `snapshots` (fully replaced) and the saved live index into
@@ -79,10 +82,17 @@ void write (juce::XmlElement& presetXml,
     no <Snapshots> element at all -- every preset saved before this
     feature -- so the caller can fall back to a default single-state
     instead of misreading old files. Snapshot indices outside 0-7 are
-    skipped, not fatal. */
+    skipped, not fatal. `count` (optional) receives the slots in use,
+    from the saved attribute or inferCount() for older presets. */
 bool read (const juce::XmlElement& presetXml,
            std::array<Snapshot, maxSnapshots>& snapshots,
-           int& currentIndex);
+           int& currentIndex,
+           int* count = nullptr);
+
+/** Slots in use for a preset saved before the `count` attribute existed: one past the last slot that differs from A
+    (blocks, name or colour), and never less than current + 1 -- a preset whose scenes were never touched comes back
+    as one scene instead of eight identical ones. */
+int inferCount (const std::array<Snapshot, maxSnapshots>& snapshots, int currentIndex);
 
 /** "A".."H" for 0..7. */
 juce::String letterFor (int index);

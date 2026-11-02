@@ -41,10 +41,12 @@ void applyBlock (EffectProcessor& processor, const BlockSnapshot& snapshot)
 
 void write (juce::XmlElement& presetXml,
             const std::array<Snapshot, maxSnapshots>& snapshots,
-            int currentIndex)
+            int currentIndex,
+            int count)
 {
     auto* snapshotsXml = presetXml.createNewChildElement ("Snapshots");
     snapshotsXml->setAttribute ("current", juce::jlimit (0, maxSnapshots - 1, currentIndex));
+    snapshotsXml->setAttribute ("count", juce::jlimit (1, maxSnapshots, count));
 
     for (int i = 0; i < maxSnapshots; ++i)
     {
@@ -73,7 +75,8 @@ void write (juce::XmlElement& presetXml,
 
 bool read (const juce::XmlElement& presetXml,
            std::array<Snapshot, maxSnapshots>& snapshots,
-           int& currentIndex)
+           int& currentIndex,
+           int* count)
 {
     auto* snapshotsXml = presetXml.getChildByName ("Snapshots");
     if (snapshotsXml == nullptr)
@@ -111,7 +114,34 @@ bool read (const juce::XmlElement& presetXml,
         }
     }
 
+    if (count != nullptr)
+        *count = snapshotsXml->hasAttribute ("count")
+                     ? juce::jlimit (currentIndex + 1, maxSnapshots, snapshotsXml->getIntAttribute ("count"))
+                     : inferCount (snapshots, currentIndex);
+
     return true;
+}
+
+int inferCount (const std::array<Snapshot, maxSnapshots>& snapshots, int currentIndex)
+{
+    const auto sameBlocks = [] (const Snapshot& a, const Snapshot& b)
+    {
+        if (a.blocks.size() != b.blocks.size())
+            return false;
+        for (size_t i = 0; i < a.blocks.size(); ++i)
+            if (a.blocks[i].bypassed != b.blocks[i].bypassed || a.blocks[i].params != b.blocks[i].params)
+                return false;
+        return true;
+    };
+
+    int count = juce::jlimit (0, maxSnapshots - 1, currentIndex) + 1;
+    for (int i = 1; i < maxSnapshots; ++i)
+    {
+        const auto& s = snapshots[(size_t) i];
+        if (s.name.isNotEmpty() || s.colour.isNotEmpty() || ! sameBlocks (s, snapshots[0]))
+            count = juce::jmax (count, i + 1);
+    }
+    return count;
 }
 
 juce::String letterFor (int index)
