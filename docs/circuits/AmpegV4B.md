@@ -20,9 +20,14 @@ The previous model was built from the SVT preamp and power amp. Its R-numbers we
   - C3 .1 feeds R101 100k to ground, then the **Ultra-Lo** switch. OFF passes the signal straight through. ON
     routes it through C101 .015 to ground and three series C102–C104 .0047, with R102 1.5M and R103 1.2M legs.
 - **Volume:** VR101, 1M **linear**.
-- **Ultra-Hi** does two things:
-  - it switches C105 500 pF from the Volume's top to the wiper;
-  - it lifts V1b's cathode bypass (C106 6.8 µF) behind R107 47k.
+- **Ultra-Hi** only switches C105 500 pF from the Volume's top to the wiper.
+- **Ultra-Lo's second pole** shorts R107 47k, which otherwise sits in series with V1b's cathode bypass (C106
+  6.8 µF), so the stage is barely bypassed when Ultra-Lo is off. With Ultra-Lo on, the full bypass is ~+9 dB of
+  make-up for the ladder's loss. The 1971 redraw (J. Piazza, schematicheaven `v4bpreamp.pdf`) labels that switch
+  "Ultra-lo sw."; the model used to give it to Ultra-Hi, so both rockers cut the level. Re-read 2026-11-02.
+  Measured small-signal: Ultra-Hi +5.4 dB at 8 kHz, flat below 500 Hz. Ultra-Lo +3.5 / +5.3 dB at 100 / 220 Hz,
+  −4.5 dB at 40 Hz, −13 dB at 3 kHz: the 1971 rocker darkens, it does not mid-scoop like the reissue. Unity trim
+  −5.87 → −0.22 dB.
 - **V1b:** R13 68k plate (230 V), R14 3.3k cathode (2.1 V).
 - **Tone network.** C7 .1 feeds the bass/treble network, P.E.C. 6470000: Bass VR105 and Treble VR103 are 1M log,
   joined by R109 120k between the wipers. Channel 2's V2b joins the same node through C22 .03.
@@ -58,7 +63,7 @@ The previous model was built from the SVT preamp and power amp. Its R-numbers we
 ## What's modelled
 
 1. **`pre`** is channel 1 exactly as above:
-   - V1a, the switched Ultra-Lo ladder, the linear Volume, Ultra-Hi (cap and cathode bypass), V1b and the tone
+   - V1a, the switched Ultra-Lo ladder (and its cathode-bypass pole), the linear Volume, Ultra-Hi (cap), V1b and the tone
      network;
    - the full 6K11 stage with its DC-coupled feedback, the mid pot and the L101 leg;
    - the cathode follower to the jack node.

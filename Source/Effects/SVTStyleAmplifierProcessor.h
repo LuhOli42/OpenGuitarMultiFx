@@ -108,7 +108,7 @@ private:
         // preamp
         int pSrcVcc = 0, pSrcIn = 0;
         int rGainTop = 0, rGainBot = 0, rBassTop = 0, rBassBot = 0, rTrebleTop = 0, rTrebleBot = 0;
-        int rMasterTop = 0, rMasterBot = 0, rMid = 0, rUltraLoA = 0, rUltraLoB = 0, capUltraHi = 0;
+        int rMasterTop = 0, rMasterBot = 0, rMid = 0, swUlGainVx = 0, swUlR20 = 0, swUlGainC7 = 0, swUlC8 = 0, swUhC10 = 0;
         int grpMidL = 0, capMidC = 0;
         NodalCircuit::Node pPlate1 = 0, pPlate2 = 0, pTone = 0, pPlate3 = 0, pMid = 0, pFollower = 0;
 

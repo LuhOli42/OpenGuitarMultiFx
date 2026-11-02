@@ -243,8 +243,10 @@ namespace
         b.rUlOut = c.addResistor (uc, v, 1.0e12);
         c.setInitialGuess (a, 0.0);
 
-        // Volume VR101 1M LINEAR; Ultra-Hi switches C105 500 pF from its top to the wiper and lifts V1b's cathode
-        // bypass (C106 6.8 uF) behind R107 47k.
+        // Volume VR101 1M LINEAR; Ultra-Hi switches C105 500 pF from its top to the wiper -- nothing else. V1b's cathode
+        // bypass C106 6.8 uF sits behind R107 47k (barely bypassing), and the second pole of the ULTRA-LO switch shorts
+        // R107 (the 1971 drawing labels that switch "Ultra-lo sw."; re-read 2026-11-02 against J. Piazza's redraw): the
+        // full bypass is the ~+9 dB make-up for the ladder's loss, so Ultra-Lo darkens without dropping the lows.
         b.rVolTop = c.addResistor (v, w, 500.0e3);
         b.rVolBot = c.addResistor (w, gnd, 500.0e3);
         b.capUltraHi = c.addCapacitor (v, w, 1.0e-12);
@@ -615,7 +617,7 @@ void AmpegV4BStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.pre.setResistance (ch.rUlIn, ultraLo ? 1.0 : 1.0e12);
         ch.pre.setResistance (ch.rUlOut, ultraLo ? 1.0 : 1.0e12);
         ch.pre.setCapacitance (ch.capUltraHi, ultraHi ? 500.0e-12 : 1.0e-12);
-        ch.pre.setResistance (ch.rUhBypass, ultraHi ? 47.0e3 : 1.0);
+        ch.pre.setResistance (ch.rUhBypass, ultraLo ? 1.0 : 47.0e3);
         if (! reducedOrder)
         {
             ch.power.setSource (ch.wSrcNeg, biasV);
