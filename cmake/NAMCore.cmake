@@ -7,7 +7,7 @@
 # float32, matching juce::AudioBuffer<float> -- no per-sample double<->float
 # conversion at the NAMProcessor boundary.
 
-# Pinned to the exact commit NeuralAmpModelerCore v0.5.4 itself vendors as
+# Pinned to the exact commit NeuralAmpModelerCore v0.5.4 and v0.6.0 vendor as
 # its Dependencies/eigen submodule (checked via the GitHub contents API,
 # not guessed) -- the 3.4.1 tag is close but NOT the same: it's missing
 # Eigen::placeholders::lastN, which NAM/lstm.h uses, and fails to compile.
@@ -34,7 +34,7 @@ FetchContent_MakeAvailable(nlohmann_json_src)
 FetchContent_Declare(
   nam_core_src
   GIT_REPOSITORY https://github.com/sdatkinson/NeuralAmpModelerCore.git
-  GIT_TAG v0.5.4
+  GIT_TAG v0.6.0
   GIT_SHALLOW TRUE
   SOURCE_SUBDIR NAM
 )

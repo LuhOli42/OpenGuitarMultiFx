@@ -452,7 +452,21 @@ void Tone3000Manager::downloadFirstModelForTone (int toneId,
             const auto data = parsed.getProperty ("data", juce::var());
 
             if (auto* array = data.getArray(); array != nullptr && ! array->isEmpty())
+            {
+                // Prefer an A2 model when the tone ships several: it is the cheaper architecture on the CPU and
+                // NAM core v0.6.0 loads it. The field is read defensively ("2", 2 or "a2"); anything else falls
+                // back to the first model, as before.
                 modelUrl = array->getReference (0).getProperty ("model_url", {}).toString();
+                for (const auto& model : *array)
+                {
+                    const auto arch = model.getProperty ("architecture", {}).toString().trim().toLowerCase();
+                    if ((arch == "2" || arch == "a2") && model.getProperty ("model_url", {}).toString().isNotEmpty())
+                    {
+                        modelUrl = model.getProperty ("model_url", {}).toString();
+                        break;
+                    }
+                }
+            }
 
             if (modelUrl.isEmpty())
                 error = "No downloadable model found for this tone.";

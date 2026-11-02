@@ -21,13 +21,15 @@ Tone3000SearchDialog::Tone3000SearchDialog (Tone3000Manager& managerToUse, juce:
     // TONE3000 defaults to "A1 + Custom, excluding A2" when this isn't sent
     // at all -- see Tone3000Manager::searchTones()'s doc comment. Exposed as
     // an explicit choice rather than picked for the user, since there's no
-    // single value that means "everything".
+    // single value that means "everything". A2 is the default since NAM core
+    // v0.6.0 loads it: it is the cheaper architecture on the CPU (user
+    // request 2026-11-02; 5.6 % vs 7.1 % for a standard A1 WaveNet here).
     addAndMakeVisible (architectureBox);
-    architectureBox.addItem ("A1 + Custom (default)", 1);
-    architectureBox.addItem ("A2", 2);
+    architectureBox.addItem ("A2 (default)", 2);
+    architectureBox.addItem ("A1 + Custom", 1);
     architectureBox.addItem ("A1 only", 3);
     architectureBox.addItem ("Custom only", 4);
-    architectureBox.setSelectedId (1, juce::dontSendNotification);
+    architectureBox.setSelectedId (2, juce::dontSendNotification);
 
     addAndMakeVisible (searchButton);
     searchButton.onClick = [this] { doSearch(); };
