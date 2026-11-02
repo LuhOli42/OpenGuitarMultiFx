@@ -189,3 +189,18 @@ shelf 0.6, mid cut −4.5 dB.
 The band residual is drive-dependent treble: the full stage brightens by ~4 dB more than the curve from light to hard
 chords. A static filter only moves it between the two drive levels. Pre/de-emphasis around the curve was tried and
 brightened the light chords too, because they already sit in the knee.
+
+## Full-volume fizz and pot tapers (2026-11-02)
+User report: at full Volume the AC30 sounded like a sputtering fuzz, mostly in the treble.
+
+- **Taper.** The Top Boost Treble and Bass pots are 1M LOG ("1M LOG TREB" / "1M LOG BASS" on the 1978 factory
+  drawing) and are now modelled that way. They were linear, which at noon left the treble wiper half-way up the track
+  instead of at ~15 %: a brighter, hotter stack than the real amp.
+- **Aliasing.** The corrected PI hands ~20 V to a ~0.65 V knee, so the stage switches within a sample, which aliases
+  at 48 kHz. The amp is now oversampled 2x at eco/balanced and 4x at high.
+- **Reduced stage.** Knee 2.0 and HF shelf 0.7.
+- **Preamp.** V1a and V2a got their Miller capacitance.
+- **Unity trim:** −13.71 → −14.34 dB.
+
+By hand from the drawn values, the amp still runs well into crunch at noon: 50 mV at 111 Hz reaches the EL84 grids
+above their bias.

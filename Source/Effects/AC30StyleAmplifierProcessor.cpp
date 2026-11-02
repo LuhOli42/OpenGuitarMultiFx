@@ -405,14 +405,14 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
 void AC30StyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
-    // Treble: 1M linear (the Top Boost pot is a linear pot in the real amp), wiper is the stage output --
-    // more knob moves the wiper toward the A (50 pF-fed) lug: the A->wiper segment shrinks (brighter),
-    // the wiper->D segment grows. Previous code had this backwards (knob up darkened).
-    const double trebleTop = juce::jmax (1.0, 1.0e6 * (1.0 - k.treble));
-    const double trebleBottom = juce::jmax (1.0, 1.0e6 * k.treble);
-    // Bass: 1M linear, wiper E rides the D->F track; more knob moves E toward D (more bass).
-    const double bassTop = juce::jmax (1.0, 1.0e6 * (1.0 - k.bass));
-    const double bassBottom = juce::jmax (1.0, 1.0e6 * k.bass);
+    // Treble and Bass are 1M LOG pots ("1M LOG TREB" / "1M LOG BASS" on the 1978 factory drawing; they were modelled
+    // linear until 2026-11-02, which at noon left the treble wiper half-way up the track instead of ~15 % -- a much
+    // brighter, hotter stack than the real amp, the "badly configured" fizz the user heard). Treble's wiper is the
+    // stage output; more knob moves it toward the A (50 pF-fed) lug. More Bass moves E toward D.
+    const double trebleBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.treble));
+    const double trebleTop = juce::jmax (1.0, 1.0e6 - trebleBottom);
+    const double bassBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.bass));
+    const double bassTop = juce::jmax (1.0, 1.0e6 - bassBottom);
     // Volume: 500k audio taper.
     const double volBottom = juce::jmax (1.0, 500.0e3 * pots::audio (k.volume));
 

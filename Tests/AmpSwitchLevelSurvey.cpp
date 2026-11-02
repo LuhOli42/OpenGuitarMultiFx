@@ -1,5 +1,7 @@
 #include "EffectRegistry.h"
 
+#include <juce_dsp/juce_dsp.h>
+
 #include <juce_core/juce_core.h>
 
 #include <cmath>
@@ -201,5 +203,82 @@ public:
 };
 
 static AmpNoiseSurvey ampNoiseSurvey;
+
+/** Aliasing at full drive (ALIAS_SURVEY=1; AMPS="key,key"): every page-1 knob named like gain / volume / drive /
+    master / loudness at 1, the rest at their defaults; a 0.1 V sine on an exact FFT bin (330 Hz and 1318 Hz), and the
+    share of the output that is NOT on a harmonic of it, in dB. A clean amp sits below -60 dB; a hard clipper rendered
+    without enough oversampling folds its upper harmonics back between them (the "failing fuzz" sound). Uses the
+    registry's current oversampling tier (OGMFX_QUALITY). */
+class AmpAliasSurvey : public juce::UnitTest
+{
+public:
+    AmpAliasSurvey() : juce::UnitTest ("AmpAliasSurvey", "Bench") {}
+
+    static double inharmonicDb (EffectProcessor& p, int bin)
+    {
+        constexpr double sr = 48000.0;
+        constexpr int order = 15, n = 1 << order;
+        const double f0 = bin * sr / n;
+        const int warm = (int) sr, total = warm + n;
+        juce::AudioBuffer<float> buf (1, 256);
+        std::vector<float> out ((size_t) n * 2, 0.0f);
+        for (int base = 0; base < total; base += 256)
+        {
+            const int len = juce::jmin (256, total - base);
+            for (int i = 0; i < len; ++i)
+                buf.setSample (0, i, (float) (0.1 * std::sin (2.0 * juce::MathConstants<double>::pi * f0 * (base + i) / sr)));
+            juce::AudioBuffer<float> view (buf.getArrayOfWritePointers(), 1, len);
+            p.process (view);
+            for (int i = 0; i < len; ++i)
+                if (base + i >= warm)
+                    out[(size_t) (base + i - warm)] = buf.getSample (0, i);
+        }
+        juce::dsp::FFT fft (order);
+        fft.performFrequencyOnlyForwardTransform (out.data());
+        double all = 0.0, harm = 0.0;
+        for (int k = 1; k < n / 2; ++k)
+        {
+            const double e = juce::square ((double) out[(size_t) k]);
+            all += e;
+            if (k % bin == 0)
+                harm += e;
+        }
+        return 10.0 * std::log10 ((all - harm) / juce::jmax (1.0e-30, all) + 1.0e-12);
+    }
+
+    void runTest() override
+    {
+        if (juce::SystemStats::getEnvironmentVariable ("ALIAS_SURVEY", {}).isEmpty())
+            return;
+        beginTest ("alias survey");
+        EffectRegistry registry;
+        registerBuiltInEffects (registry);
+        const auto only = juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("AMPS", {}), ",", "");
+        for (auto& key : registry.getRegisteredNames())
+        {
+            if (registry.categoryForKey (key) != EffectRegistry::Category::amps || (! only.isEmpty() && ! only.contains (key)))
+                continue;
+            juce::String line = key.paddedRight (' ', 40);
+            for (int bin : { 225, 900 })
+            {
+                auto fx = registry.create (key);
+                const auto pages = fx->getParameterPages(); // a temporary: keep it alive across the loop
+                for (auto* p : pages[0])
+                {
+                    const auto name = p->getName (64).toLowerCase();
+                    if (p->getNormalisableRange().interval < 1.0f
+                        && (name.contains ("gain") || name.contains ("volume") || name.contains ("drive")
+                            || name.contains ("master") || name.contains ("loud")))
+                        *p = p->getNormalisableRange().end;
+                }
+                fx->prepare (48000.0, 256, 1);
+                line << (bin == 225 ? "330 Hz " : "  1318 Hz ") << juce::String (inharmonicDb (*fx, bin), 1);
+            }
+            logMessage (line);
+        }
+    }
+};
+
+static AmpAliasSurvey ampAliasSurvey;
 
 } // namespace openguitarmultifx
