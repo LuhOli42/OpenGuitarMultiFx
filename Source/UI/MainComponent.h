@@ -10,6 +10,7 @@
 #include "BypassPedalXml.h"
 #include "SceneMidi.h"
 #include "SnapshotBar.h"
+#include "UndoHistory.h"
 #include "SnapshotPresetXml.h"
 #include "../EffectRegistry.h"
 #include "../Engine/AudioEngine.h"
@@ -393,6 +394,13 @@ private:
     // Saves the currently loaded preset in place, no dialog -- only visible
     // once one is actually loaded (see updatePresetDisplay()).
     juce::TextButton quickSaveButton { "Save" };
+
+    // Undo / Redo (user request 2026-11-01) over whole-board snapshots -- see UndoHistory. Polled from timerCallback().
+    UndoHistory undoHistory;
+    juce::TextButton undoButton { "Undo" }, redoButton { "Redo" };
+    int undoPollCounter = 0;
+    void pollUndoHistory();
+    void restoreUndoState (const juce::XmlElement& target);
     juce::Label titleLabel { {}, "No preset loaded" };
     juce::Label cpuLabel;
     /** The retry action next to the cpuLabel's NO AUDIO DEVICE warning
