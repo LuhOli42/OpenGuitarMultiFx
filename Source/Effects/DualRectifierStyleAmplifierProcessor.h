@@ -12,25 +12,20 @@ namespace openguitarmultifx
 {
 
 /**
-    A Mesa/Boogie Dual Rectifier-style guitar amplifier, modelled at component level on NodalCircuit from
-    the factory Mesa Boogie schematic (2-channel, dated 6-93 GEO. M.; docs/circuits/DualRectifier.md -- read
-    that file to understand this processor). The Dual Rectifier is one of the defining high-gain amplifiers of
-    the 1990s--2000s metal and hard rock era, known for its massive low-end, saturated gain and chunky rhythm tone.
+    A Mesa/Boogie Dual Rectifier-style guitar amplifier (the original 2-channel solo head), modelled at component level on
+    NodalCircuit from the factory schematic set (preamp "RF-1F", power amp, supplies and LDR switching matrix, 6-93
+    GEO. M.; docs/circuits/DualRectifier.md -- read that file to understand this processor).
 
-    All three channels are modelled: CLEAN bypasses both V2A and V2B (signal goes V1A -> Gain pot ->
-    bypass -> V3A -> follower); ORANGE bypasses V2B only (V1A -> V2A -> bypass -> V3A); RED uses all
-    four preamp gain stages (V1A -> V2A -> V2B -> V3A) for maximum saturation. Channel switching is
-    via switchable series resistors in the netlist. The LDR switching circuitry, tube/diode rectifier
-    select, and FX loop are not implemented. Solid-state rectification only is modelled.
+    One preamp chain (V1A -> V2A -> V2B -> V3A -> V3B follower), two Gain pots, two complete tone stacks with their own
+    Masters, and the drawing's LDRs re-voicing it into the five modes of its truth table: ORANGE Normal (Vintage), ORANGE
+    Clean, ORANGE cloned to Modern, RED Modern, RED cloned to Vintage. Modern drops the global negative feedback and the
+    treble rolloff; Clean opens the cathode bypasses, pads V1A's output and doubles the feedback. 12AX7 long-tailed-pair
+    PI, four 6L6GC or EL34 (the rear BIAS switch swaps the tube model and the -51 V / -39 V bias) as two push-pull pairs.
 
-    Architecture: up to FIVE cascaded 12AX7 gain stages (V1A -> [V2A] -> [V2B] -> V3A -> V3D follower),
-    a Fender-derived TMB tone stack, a 12AX7 long-tailed-pair phase inverter with global negative feedback,
-    and four 6L6GC beam tetrodes as two push-pull pairs in a fixed-bias output stage.
-
-    Controls, page 1: Channel (Clean / Orange / Red), Gain (1MA), Treble, Mid, Bass, Presence, Master -- each channel
-    keeps its own full set (ChannelKnobMemory.h), like the real amp's three rows of pots -- plus the real Rectifier
-    switch (Bold / Spongy). Page 2 (synthetic): Power
-    Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
+    Controls, page 1 = the real panel: Channel (Orange / Red) with that channel's own Gain, Treble, Mid, Bass, Presence,
+    Master (ChannelKnobMemory.h), and the rear switches Orange Gain (Clean / Hi Gain), Channel Style (Normal / Orange to
+    Modern / Red to Vintage), Rectifier (Tubes / Diodes), Power (Bold / Spongy), Bias Switch (6L6 / EL34). Page 2
+    (synthetic): Power Drive, Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output, Cab.
 */
 class DualRectifierStyleAmplifierProcessor : public EffectProcessor
 {
@@ -52,29 +47,36 @@ public:
     static constexpr double outputScale = 1.0 / 56.0;
 
     // ---- reduced-order power stage ----
-    // Clean vs Orange / Red at the default knobs (AmpSwitchLevelSurvey: the dB midpoint of the E3 tone and the guitar DI, so neither picking strength is off by more than ~6 dB): the clean channel is raised by this much
-    // (user request 2026-11-02: the clean channel was far too quiet).
-    static constexpr double cleanLevelMatchDb = 28.0;
+    // Per-mode level match against RED Modern at the default knobs (AmpSwitchLevelSurvey, SWITCH_BASE for the Orange
+    // modes: the dB midpoint of the E3 tone and the guitar DI, docs/circuits/ChannelLevelMatch.md). Order: Orange
+    // Normal, Orange Clean, Orange to Modern, Red Modern, Red to Vintage. The Vintage modes sit ~13 dB under Modern
+    // because their feedback loop takes that much gain off the power amp (the manual warns Modern is far louder).
+    static constexpr std::array<double, 5> modeLevelMatchDb { 13.6, 11.3, 0.2, 0.0, 13.3 };
     static inline bool reducedOrder = false;
-    // Twin Reverb's fitted 6L6GC constants (same tube type and push-pull topology).
-    static constexpr double bmGain0 = 9.5;
+    // Refitted 2026-11-02 against the rebuilt full netlist (factory PI with BOTH halves conducting -- the old one had
+    // V5A cut off, so the loop and the Presence were dead): Modern (no loop, the default) is the base. G0 from the
+    // small-signal level (Red, Gain .05, Master .25: within ~2 dB at 100 Hz / 1 kHz / 4 kHz); the rest by the
+    // AmpFullVsReduced chord search (worst band 6.4 -> 1.9 dB, level < 1 dB).
+    static constexpr double bmGain0 = 55.0;
     static constexpr double bmYmax = 0.198;
     static constexpr double bmKneeN = 6.0;
-    // The frequency response the reduced path's removed stages used to provide, fitted to THIS amp's own
-    // full-order lock-in sweep (toneStackOut -> speaker): an LF bump peaking ~+6 dB at ~80 Hz that rolls off
-    // below (resonant high-pass, bmBumpQp = resonance height), a one-pole low cut at bmCutHz finishing
-    // the steep sub-30 Hz fall the reference measures, and a zero/pole pair for the ~3-4 kHz presence ridge into
-    // the top rolloff. The earlier one-pole shelf (bmShelfHz/bmShelfHfGain) could not reproduce the bump.
-    // The reference's presence pot is inside the dead NFB loop (kg1 collapse) and measures 0.0 dB at every
-    // setting, so there is no presence feed here -- the knob only matters in the full model.
-    static constexpr double bmBumpHz = 80.0, bmBumpQp = 2.0;
+    // The frequency response the reduced path's removed stages provide: an LF bump at bmBumpHz (resonant high-pass,
+    // bmBumpQp = resonance height), a one-pole low cut at bmCutHz, and a zero/pole pair for the presence ridge into
+    // the top rolloff.
+    static constexpr double bmBumpHz = 80.0, bmBumpQp = 1.3;
     static constexpr double bmCutHz = 15.0;
-    static constexpr double bmTopZHz = 2000.0, bmTopPHz = 5000.0, bmTopQp = 0.9;
+    static constexpr double bmTopZHz = 1000.0, bmTopPHz = 5000.0, bmTopQp = 1.4;
     // physical ceiling: the stages this replaces clip at the rail, and the fitted filters' resonance can
     // overshoot the knee's bound ~2x on saturated LF -- the cap keeps emitted volts inside the sanity bound.
     static constexpr double bmOutMax = 62.0;
-    // re-trim to unity at noon after the fitted sections changed the broadband level.
-    static constexpr double bmLevelTrim = 0.59; // +0.6 dB: the OT tail's HF rolloff puts the noon level back at unity
+    static constexpr double bmLevelTrim = 0.55;
+    // The loop and tube switches, folded into the behavioural stage: drive into / level out of it, in dB, at Vintage's
+    // loop (nfbAmount 1), Clean's doubled loop (~2) and with EL34s; Modern (no loop) is the fitted base. Interpolated in
+    // nfbAmount so an LDR fade glides. From the full netlist's small-signal levels (Vintage -10.5..-15.7 dB under Modern;
+    // EL34 +3.7 dB over 6L6 in Modern); the saturated levels then match within 1 dB with no output correction.
+    static constexpr double bmVintageInDb = -14.5, bmVintageOutDb = 0.0;
+    static constexpr double bmCleanInDb = -18.5, bmCleanOutDb = 0.0;
+    static constexpr double bmEL34InDb = 3.0, bmEL34OutDb = 0.0;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -106,6 +108,9 @@ public:
     double screenCurrentTotal() const noexcept;
 
 private:
+    // The drawing's switching LDRs (LDR11-13 are the FX loop, not modelled).
+    enum Ldr { ldr1, ldr2, ldr3a, ldr3b, ldr4, ldr5, ldr6, ldr7, ldr8, ldr9, ldr10, ldr14, ldr15, ldr16, ldr19, ldr20, numLdrs };
+
     struct Channel
     {
         NodalCircuit pre, power, supply;
@@ -118,15 +123,19 @@ private:
 
         // preamp: four cascaded 12AX7 gain stages + cathode follower
         int pSrcV2 = 0, pSrcV3 = 0, pSrcE = 0, pSrcIn = 0;
-        int rGainTop = 0, rGainBot = 0, rV2aSeries = 0, rBypassV2a = 0, rV2bSeries = 0, rBypassV2b = 0;
+        int rRdGainTop = 0, rRdGainBot = 0, rOrGainTop = 0, rOrGainBot = 0;
+        std::array<int, numLdrs> ldr {}; // resistor handles, in `pre` or `power` (see updateLdrs)
         NodalCircuit::Node pPlateV1a = 0, pPlateV2a = 0, pPlateV2b = 0, pPlateV3a = 0, pFollower = 0;
         double followerDc = 0.0;
 
         // power section
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
-        int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
-            rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMaster = 0;
+        int rFeedback = 0, rPresence = 0, rBiasTrim = 0;
+        int rRdTrebleTop = 0, rRdTrebleBottom = 0, rRdBass = 0, rRdMidTop = 0, rRdMidBottom = 0, rRdMasterTop = 0,
+            rRdMasterBottom = 0, rRdPresence = 0;
+        int rOrTrebleTop = 0, rOrTrebleBottom = 0, rOrBass = 0, rOrMidTop = 0, rOrMidBottom = 0, rOrMasterTop = 0,
+            rOrMasterBottom = 0;
         int penA = 0, penB = 0;
         NodalCircuit::Node wToneIn = 0, wOut = 0, wPlateA = 0, wPlateB = 0, wGridA = 0, wTail = 0,
                            wTone = 0, wPP1 = 0, wPP2 = 0, wPowerGridA = 0, wBias = 0, wFeedback = 0;
@@ -156,8 +165,26 @@ private:
     {
         double gain, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
         int speaker;
+        int channel; // whose pots the knobs move: 0 Orange, 1 Red
     };
     void updatePots (const Knobs& k);
+    void updateLdrs (bool snap);
+    /** 0 Orange Normal, 1 Orange Clean, 2 Orange to Modern, 3 Red Modern, 4 Red to Vintage. */
+    int currentMode() const noexcept
+    {
+        if (juce::roundToInt (channelParam->get()) == 1)
+            return juce::roundToInt (styleParam->get()) == 2 ? 4 : 3;
+        if (orangeGainParam->get() < 0.5f)
+            return 1;
+        return juce::roundToInt (styleParam->get()) == 1 ? 2 : 0;
+    }
+    std::array<double, numLdrs> ldrLog {};
+    double nfbAmount = 1.0;       // reducedOrder: 0 = no loop (Modern), 1 = Vintage's, ~2 = Clean's doubled loop
+    double orangePresence = 0.3;  // the Orange Presence (in the NFB loop), held while Red is selected
+    KorenPentode model6L6, modelEL34;
+    bool appliedEL34 = false;
+    bool appliedEL34Reduced = false;
+    static constexpr double spongyRailScale = 0.90;
     void recover (Channel& ch) const;
     void applySpeaker (Channel& ch, int index) const;
     int appliedSpeaker = -1;
@@ -174,6 +201,13 @@ private:
     double behavioralPowerStage (Channel& ch, double toneVoltage) const noexcept;
     void designPowerFilters();
     // power-stage biquads (bilinear-transformed in designPowerFilters())
+    struct ReducedFit
+    {
+        double g0 = bmGain0, ymax = bmYmax, knee = bmKneeN, bumpHz = bmBumpHz, bumpQp = bmBumpQp, cutHz = bmCutHz,
+               topZ = bmTopZHz, topP = bmTopPHz, topQp = bmTopQp, trim = bmLevelTrim,
+               vinDb = bmVintageInDb, voutDb = bmVintageOutDb, cinDb = bmCleanInDb, coutDb = bmCleanOutDb,
+               elInDb = bmEL34InDb, elOutDb = bmEL34OutDb;
+    } fit;
     double bmAB0 = 1.0, bmAB1 = 0.0, bmAB2 = 0.0, bmAA1 = 0.0, bmAA2 = 0.0;
     double bmBB0 = 1.0, bmBB1 = 0.0, bmBB2 = 0.0, bmBA1 = 0.0, bmBA2 = 0.0;
 
@@ -194,10 +228,14 @@ private:
     juce::AudioParameterFloat* biasParam = nullptr;
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* spongyParam = nullptr;
+    juce::AudioParameterFloat* orangeGainParam = nullptr;
+    juce::AudioParameterFloat* styleParam = nullptr;
+    juce::AudioParameterFloat* rectifierParam = nullptr;
+    juce::AudioParameterFloat* tubesParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
-    double spongyScale = 1.0;   // rectifier resistance multiplier (1 = Bold/diode, 5 = Spongy/5U4)
-    double spongySag = 1.0;     // extra sag depth in the reduced model when Spongy
-    double railNow = 460.0;     // B+ after rectifier droop (= railPlatesNominal when Bold)
+    double rectifierScale = 1.0; // rectifier resistance multiplier (1 = diodes, 5 = 5U4 tubes)
+    double rectifierSag = 1.0;   // extra sag depth in the reduced model with the tube rectifier
+    double railNow = 460.0;      // B+ after the rectifier / Spongy droop
 
     juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;

@@ -438,6 +438,15 @@ public:
         t.vg2Pow = t.model.screenFactor (volts);
     }
 
+    /** Swaps a pentode's whole model (a power-tube type switch). Realtime-safe when `model` was set up off the audio
+        thread: copying a KorenPentode only copies its shared table pointers. */
+    void setPentodeModel (int handle, const KorenPentode& model) noexcept
+    {
+        auto& t = pentodes[(size_t) handle];
+        t.model = model;
+        t.vg2Pow = t.model.screenFactor (t.vg2);
+    }
+
     /** Plate and screen current of a pentode at the last solved sample, from the converged port currents (cheap: no
         model evaluation beyond one arctan). */
     void pentodeCurrents (int handle, double& ip, double& ig2) const noexcept

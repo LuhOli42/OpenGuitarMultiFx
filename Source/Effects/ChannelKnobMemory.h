@@ -73,6 +73,15 @@ public:
         loadSlot (active);
     }
 
+    /** A slot's stored value for knob `knob` (the live knob when it is the visible slot). Control thread only, like the
+        swap itself -- for amps whose hidden channel still sounds through a shared part of the circuit. */
+    float slotValue (int slot, size_t knob) const
+    {
+        if (slot == active)
+            return knobs[knob]->get();
+        return values[(size_t) juce::jlimit (0, numSlots - 1, slot)][knob];
+    }
+
     /** setState() writes the channel parameter before the knobs; suppress the swap while it does. */
     struct ScopedSuspend
     {

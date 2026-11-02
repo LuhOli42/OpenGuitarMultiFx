@@ -123,6 +123,130 @@ public:
             expect (true);
         }
 
+        beginTest ("every mode of the LDR truth table plays: finite, no failures, audible, logged levels");
+        {
+            struct Mode { const char* name; float channel, orangeGain, style; };
+            const Mode modes[] = { { "Orange Normal", 0, 1, 0 }, { "Orange Clean", 0, 0, 0 }, { "Orange to Modern", 0, 1, 1 },
+                                   { "Red Modern", 1, 1, 0 }, { "Red to Vintage", 1, 1, 2 } };
+            for (const auto& m : modes)
+            {
+                DualRectifierStyleAmplifierProcessor amp;
+                setParam (amp, "drec_channel", m.channel);
+                setParam (amp, "drec_orange_gain", m.orangeGain);
+                setParam (amp, "drec_style", m.style);
+                amp.prepare (sr, 128, 2);
+                juce::AudioBuffer<float> buf (2, 128);
+                double phase = 0.0, sum = 0.0, v1 = 1.0e9, v1h = -1.0e9, f = 1.0e9, fh = -1.0e9;
+                long long n = 0;
+                bool finite = true;
+                for (int b = 0; b < (int) (0.8 * sr / 128); ++b)
+                {
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        const float x = (float) (0.1 * std::sin (phase));
+                        phase += juce::MathConstants<double>::twoPi * 165.0 / sr;
+                        buf.setSample (0, i, x);
+                        buf.setSample (1, i, x);
+                    }
+                    amp.process (buf);
+                    if (b > (int) (0.4 * sr / 128))
+                    {
+                        for (int i = 0; i < 128; ++i)
+                        {
+                            const double y = buf.getSample (0, i);
+                            finite = finite && std::isfinite (y);
+                            sum += y * y;
+                            ++n;
+                        }
+                        const double a = amp.debugVoltage (P::v1aPlate), t = amp.debugVoltage (P::toneStackOut);
+                        v1 = juce::jmin (v1, a); v1h = juce::jmax (v1h, a);
+                        f = juce::jmin (f, t); fh = juce::jmax (fh, t);
+                    }
+                }
+                const double rmsDb = 20.0 * std::log10 (std::sqrt (sum / (double) juce::jmax (1LL, n)) + 1.0e-12);
+                logMessage (juce::String (m.name) + ": out " + juce::String (rmsDb, 1) + " dBFS, V1a p-p " + juce::String (v1h - v1, 1)
+                            + ", master bus p-p " + juce::String (fh - f, 2) + ", failures " + juce::String (amp.getSolveFailureRate(), 6));
+                expect (finite);
+                expect (amp.dcConverged());
+                expectLessThan (amp.getSolveFailureRate(), 1.0e-4);
+                expectGreaterThan (rmsDb, -60.0);
+            }
+        }
+
+        beginTest ("small-signal power-amp voicing per feedback mode (full vs reducedOrder): logged");
+        {
+            // Red, low Gain and Master so nothing clips: what is left between modes is the NFB loop and the tube type.
+            struct Case { const char* name; float style, channel, orangeGain, tubes; };
+            const Case cases[] = { { "Red Modern", 0, 1, 1, 0 }, { "Red Vintage", 2, 1, 1, 0 }, { "Orange Clean", 0, 0, 0, 0 },
+                                   { "Red Modern EL34", 0, 1, 1, 1 }, { "Red Vintage EL34", 2, 1, 1, 1 } };
+            for (const auto& cs : cases)
+            {
+                juce::String line = juce::String (cs.name) + ":";
+                for (bool reduced : { false, true })
+                {
+                    DualRectifierStyleAmplifierProcessor::reducedOrder = reduced;
+                    for (double f0 : { 100.0, 1000.0, 4000.0 })
+                    {
+                        DualRectifierStyleAmplifierProcessor amp;
+                        setParam (amp, "drec_channel", cs.channel);
+                        setParam (amp, "drec_orange_gain", cs.orangeGain);
+                        setParam (amp, "drec_style", cs.style);
+                        setParam (amp, "drec_bias_switch", cs.tubes);
+                        setParam (amp, "drec_gain", 0.05f);
+                        setParam (amp, "drec_master", 0.25f);
+                        amp.prepare (sr, 128, 2);
+                        juce::AudioBuffer<float> buf (2, 128);
+                        double phase = 0.0, sum = 0.0;
+                        long long n = 0;
+                        for (int b = 0; b < (int) (0.6 * sr / 128); ++b)
+                        {
+                            for (int i = 0; i < 128; ++i)
+                            {
+                                const float x = (float) (0.003 * std::sin (phase));
+                                phase += juce::MathConstants<double>::twoPi * f0 / sr;
+                                buf.setSample (0, i, x);
+                                buf.setSample (1, i, x);
+                            }
+                            amp.process (buf);
+                            if (b > (int) (0.3 * sr / 128))
+                                for (int i = 0; i < 128; ++i, ++n)
+                                    sum += juce::square ((double) buf.getSample (0, i));
+                        }
+                        line << " " << (reduced ? "R" : "F") << juce::String ((int) f0) << " "
+                             << juce::String (10.0 * std::log10 (sum / (double) juce::jmax (1LL, n) + 1.0e-30), 1);
+                    }
+                }
+                logMessage (line);
+            }
+            DualRectifierStyleAmplifierProcessor::reducedOrder = false;
+        }
+
+        beginTest ("the Bias Switch: EL34s at -39 V idle sanely, and the switch survives a live change");
+        {
+            DualRectifierStyleAmplifierProcessor ref;
+            ref.prepare (sr, 128, 2);
+            logMessage ("6L6 idle at prepare " + juce::String (1000.0 * ref.plateCurrentTotal(), 1) + " mA");
+            DualRectifierStyleAmplifierProcessor amp;
+            setParam (amp, "drec_bias_switch", 1.0f);
+            amp.prepare (sr, 128, 2);
+            expect (amp.dcConverged());
+            const double el34 = amp.plateCurrentTotal();
+            juce::AudioBuffer<float> buf (2, 128);
+            buf.clear();
+            setParam (amp, "drec_bias_switch", 0.0f);
+            for (int b = 0; b < 200; ++b)
+            {
+                buf.clear();
+                amp.process (buf);
+            }
+            const double l6 = amp.plateCurrentTotal();
+            logMessage ("idle plate current (both pairs): EL34 " + juce::String (1000.0 * el34, 1) + " mA, 6L6 "
+                        + juce::String (1000.0 * l6, 1) + " mA");
+            expect (el34 > 0.12 && el34 < 0.2);   // four tubes at ~30-50 mA
+            expect (l6 > 0.12 && l6 < 0.24);
+            expectLessThan (amp.getSolveFailureRate(), 1.0e-4);
+        }
+
         // ---- reducedOrder tests ----
         DualRectifierStyleAmplifierProcessor::reducedOrder = true;
 
