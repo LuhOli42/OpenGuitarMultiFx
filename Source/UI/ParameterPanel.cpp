@@ -262,6 +262,12 @@ void ParameterPanel::rebuildForCurrentProcessor()
                     row.slider->updateText();
                 }
 
+                if (current->prefersFader (*floatParam))
+                {
+                    row.slider->setSliderStyle (juce::Slider::LinearVertical);
+                    row.fader = true;
+                }
+
                 auto* rawSlider = row.slider.get();
 
                 if (! isSelector)
@@ -699,7 +705,10 @@ void ParameterPanel::resized()
                 // The knob and its value field split the old 90x118 slider cell:
                 // 90px of rotary + a 26px tap-to-type box, exactly where the
                 // (keyboard-bound) text box used to sit.
-                row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter);
+                if (row.fader) // a vertical fader keeps the knob's height, at the 48px touch width
+                    row.widget()->setBounds (x + (knobCellWidth - touch::minTapTarget) / 2, y + 22, touch::minTapTarget, knobDiameter);
+                else
+                    row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter);
                 row.valueBox->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22 + knobDiameter + 2, knobDiameter, 26);
             }
             else

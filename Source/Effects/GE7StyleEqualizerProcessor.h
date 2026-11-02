@@ -4,6 +4,7 @@
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
 
+#include <algorithm>
 #include <array>
 
 namespace openguitarmultifx
@@ -37,6 +38,11 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** Every control on the pedal is a slider. */
+    bool prefersFader (const juce::AudioParameterFloat& p) const override
+    {
+        return &p == level || std::find (bands.begin(), bands.end(), &p) != bands.end();
+    }
     const char* getName() const override { return "GE-7"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2fa36b); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

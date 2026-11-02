@@ -4,6 +4,7 @@
 #include "NodalCircuit.h"
 #include "TubeAmpCommon.h"
 
+#include <algorithm>
 #include <array>
 
 namespace openguitarmultifx
@@ -37,6 +38,11 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    /** The seven-band graphic EQ is a row of sliders on the real panel. */
+    bool prefersFader (const juce::AudioParameterFloat& p) const override
+    {
+        return std::find (std::begin (eqParam), std::end (eqParam), &p) != std::end (eqParam);
+    }
     const char* getName() const override { return "Bass 400+"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8a5ac9); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
