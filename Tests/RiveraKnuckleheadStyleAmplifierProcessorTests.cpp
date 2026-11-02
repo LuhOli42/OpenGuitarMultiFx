@@ -127,7 +127,9 @@ public:
                 logMessage ("channel " + juce::String (chSel, 0) + " full gain, 0.5 V 196 Hz: out RMS " + juce::String (rms, 4)
                             + ", failure rate " + juce::String (amp.getSolveFailureRate(), 6)
                             + ", recoveries " + juce::String (amp.debugRecoveries()));
-                expect (std::isfinite (rms) && rms > 0.05 && rms < 1.5);
+                // Floor: audible. The channel level match (-6.8 / -13.4 dB on Crunch / Lead, ChannelLevelMatch.md) put
+                // the full-gain Lead at ~0.025, under the 0.05 this floor had before the match.
+                expect (std::isfinite (rms) && rms > 0.01 && rms < 1.5);
                 expectLessThan (amp.getSolveFailureRate(), 0.001);
             }
         }
