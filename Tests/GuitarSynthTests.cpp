@@ -1,4 +1,5 @@
 #include "Effects/GuitarSynth/GuitarToBassProcessor.h"
+#include "Effects/GuitarSynth/PolyPitchTracker.h"
 #include "Effects/GuitarSynth/SpectralMorphProcessor.h"
 #include "Effects/GuitarSynth/SubOctaveSynthProcessor.h"
 #include "Effects/GuitarSynth/TrackedSynthProcessor.h"
@@ -6,6 +7,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -93,6 +95,26 @@ public:
         return bestHz;
     }
 
+    static std::vector<float> chord (const std::vector<double>& notes, double seconds, double amp = 0.15)
+    {
+        std::vector<float> x ((size_t) (seconds * sr), 0.0f);
+        for (double hz : notes)
+        {
+            const auto p = pluck (hz, seconds, amp, false);
+            for (size_t i = 0; i < x.size(); ++i) x[i] += p[i];
+        }
+        return x;
+    }
+
+    static double rms (const std::vector<float>& x, size_t from)
+    {
+        double e = 0.0;
+        for (size_t i = from; i < x.size(); ++i) e += (double) x[i] * x[i];
+        return std::sqrt (e / (double) juce::jmax<size_t> (1, x.size() - from));
+    }
+
+    static double dB (double v) { return 20.0 * std::log10 (v + 1e-12); }
+
     void runTest() override
     {
         beginTest ("pitch tracker follows plucked notes from low E to high A within 1.5%");
@@ -168,6 +190,150 @@ public:
             const auto out = render (p, std::vector<float> ((size_t) sr / 2, 0.0f));
             float peak = 0; for (auto s : out) peak = std::max (peak, std::abs (s));
             expect (peak < 1e-4f, "silence in should be silence out");
+        }
+
+        beginTest ("Guitar-to-Bass shifts a whole chord, every note one and two octaves down (MONO and POLY)");
+        {
+            const std::vector<double> notes { 110.0, 138.59, 164.81, 220.0 }; // close A major, the hardest voicing
+            const auto in = chord (notes, 1.5);
+            for (int mode = 0; mode < 2; ++mode)
+                for (int oct = 0; oct < 2; ++oct)
+                {
+                    GuitarToBassProcessor p;
+                    setKnob (p, "mode", (float) mode); setKnob (p, "octaves", (float) oct);
+                    setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f); setKnob (p, "tone", 100.0f);
+                    const auto out = render (p, in);
+                    const double div = oct == 0 ? 2.0 : 4.0;
+                    const size_t from = (size_t) (0.5 * sr);
+                    const juce::String tag = juce::String (mode == 0 ? "  MONO" : "  POLY") + " oct " + juce::String (oct);
+                    double strongest = 0.0;
+                    std::vector<double> m;
+                    for (double hz : notes) { m.push_back (goertzel (out, hz / div, from)); strongest = std::max (strongest, m.back()); }
+                    for (size_t k = 0; k < notes.size(); ++k)
+                    {
+                        // a quarter tone either side of the shifted note has to be well below the note itself
+                        const double f = notes[k] / div, off = std::max (goertzel (out, f * 1.0293, from), goertzel (out, f / 1.0293, from));
+                        double bestC = 0.0, best = 0.0;
+                        for (double c = -30.0; c <= 30.0; c += 1.0)
+                            if (const double g = goertzel (out, f * std::pow (2.0, c / 1200.0), from); g > best) { best = g; bestC = c; }
+                        logMessage (tag + " note " + juce::String (f, 1) + " Hz: " + juce::String (dB (m[k] / strongest), 1)
+                                    + " dB, quarter-tone leak " + juce::String (dB (off / m[k]), 1) + " dB, " + juce::String (bestC, 0) + " cents");
+                        expect (m[k] > strongest * 0.1, tag + " chord note missing after the shift: " + juce::String (f, 1));
+                        // two octaves down the splice shifter smears a close chord; POLY is the chord mode
+                        if (mode == 1 || oct == 0)
+                            expect (off < m[k] * 0.35, tag + " shifted note smeared / out of tune: " + juce::String (f, 1));
+                        if (mode == 1)
+                            expect (std::abs (bestC) <= 5.0, tag + " chord note " + juce::String (f, 1) + " off by " + juce::String (bestC, 0) + " cents");
+                    }
+                    const double lvl = dB (rms (out, from) / rms (in, from));
+                    logMessage (tag + " level vs dry: " + juce::String (lvl, 1) + " dB");
+                    expect (lvl > -4.0 && lvl < 8.0, tag + " level vs dry " + juce::String (lvl, 1) + " dB");
+                }
+        }
+
+        beginTest ("Guitar-to-Bass pitch holds steady across a sustained note (MONO and POLY)");
+        for (int mode = 0; mode < 2; ++mode)
+        {
+            GuitarToBassProcessor p;
+            setKnob (p, "mode", (float) mode); setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f);
+            const auto out = render (p, pluck (196.0, 2.5, 0.3, false));
+            double worst = 0.0;
+            for (double t = 0.4; t + 0.25 <= 2.5; t += 0.25)
+            {
+                std::vector<float> seg (out.begin() + (long) (t * sr), out.begin() + (long) ((t + 0.25) * sr));
+                const double got = spectralPeakHz (seg, 80.0, 115.0, 0);
+                worst = std::max (worst, std::abs (1200.0 * std::log2 (got / 98.0)));
+            }
+            logMessage (juce::String (mode == 0 ? "  MONO" : "  POLY") + " worst deviation " + juce::String (worst, 1) + " cents");
+            expect (worst < 20.0);
+        }
+
+        beginTest ("Guitar-to-Bass note onset arrives quickly (MONO < 25 ms, POLY < 50 ms)");
+        for (int mode = 0; mode < 2; ++mode)
+        {
+            GuitarToBassProcessor p;
+            setKnob (p, "mode", (float) mode); setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f);
+            const size_t start = (size_t) (0.3 * sr), win = 480;
+            std::vector<float> in (start, 0.0f);
+            const auto note = pluck (110.0, 1.0, 0.3, false);
+            in.insert (in.end(), note.begin(), note.end());
+            const auto out = render (p, in);
+            std::vector<double> env;
+            for (size_t i = start; i + win < start + (size_t) (0.3 * sr); i += 48)
+            {
+                double e = 0.0;
+                for (size_t j = i; j < i + win; ++j) e += (double) out[j] * out[j];
+                env.push_back (std::sqrt (e / win));
+            }
+            const double peak = *std::max_element (env.begin(), env.end());
+            size_t k = 0;
+            while (env[k] < 0.5 * peak) ++k;
+            const double ms = (double) (k * 48 + win / 2) / sr * 1000.0;
+            logMessage (juce::String (mode == 0 ? "  MONO" : "  POLY") + " onset at half level after " + juce::String (ms, 1) + " ms");
+            expect (ms < (mode == 0 ? 25.0 : 50.0));
+        }
+
+        beginTest ("PolyPitchTracker finds every note of a chord and no ghosts");
+        for (const auto& notes : { std::vector<double> { 82.41, 123.47, 164.81, 207.65, 246.94, 329.63 },
+                                   std::vector<double> { 110.0, 138.59, 164.81, 220.0 },
+                                   std::vector<double> { 146.83, 220.0, 293.66, 369.99 },
+                                   std::vector<double> { 196.0 } })
+        {
+            gs::PolyPitchTracker t;
+            t.prepare (sr);
+            const auto x = chord (notes, 0.6);
+            for (auto v : x) t.push (v);
+            auto cents = [] (double a, double b) { return std::abs (1200.0 * std::log2 (a / b)); };
+            juce::String got;
+            int ghosts = 0;
+            for (const auto& s : t.getSlots())
+            {
+                if (! s.active) continue;
+                got << juce::String (s.hz, 1) << " ";
+                bool match = false;
+                for (double hz : notes) match = match || cents (s.hz, hz) < 20.0;
+                ghosts += match ? 0 : 1;
+            }
+            logMessage ("  " + juce::String ((int) notes.size()) + " notes -> " + got);
+            for (double hz : notes)
+            {
+                // an exact octave of a lower chord note shares every partial with it, so it is allowed to merge into it
+                bool doubling = false;
+                for (double lower : notes)
+                    doubling = doubling || (lower < hz && std::fmod (1200.0 * std::log2 (hz / lower) + 20.0, 1200.0) < 40.0);
+                bool found = false;
+                for (const auto& s : t.getSlots()) found = found || (s.active && cents (s.hz, hz) < 20.0);
+                expect (found || doubling, "missed chord note " + juce::String (hz, 1) + ": " + got);
+            }
+            expect (ghosts == 0, "ghost notes: " + got);
+        }
+
+        beginTest ("Tracked Synth voices every note of a chord, in tune, at a sane level");
+        {
+            const std::vector<double> notes { 110.0, 138.59, 164.81, 220.0 };
+            TrackedSynthProcessor p;
+            setKnob (p, "detune", 0.0f); setKnob (p, "sub", 0.0f); setKnob (p, "cutoff", 6000.0f); setKnob (p, "envAmount", 0.0f);
+            const auto in = chord (notes, 1.5);
+            const auto out = render (p, in);
+            const size_t from = (size_t) (0.4 * sr);
+            double strongest = 0.0;
+            for (double hz : notes) strongest = std::max (strongest, goertzel (out, hz, from));
+            for (double hz : notes)
+            {
+                const double m = goertzel (out, hz, from);
+                const double off = std::max (goertzel (out, hz * 1.0293, from), goertzel (out, hz / 1.0293, from));
+                logMessage ("  " + juce::String (hz, 1) + " Hz: " + juce::String (dB (m / strongest), 1) + " dB, quarter-tone leak "
+                            + juce::String (dB (off / m), 1) + " dB");
+                expect (m > strongest * 0.2, "synth lost a chord note: " + juce::String (hz, 1));
+                expect (off < m * 0.3, "synth voice out of tune near " + juce::String (hz, 1));
+            }
+
+            TrackedSynthProcessor single;
+            setKnob (single, "detune", 0.0f); setKnob (single, "sub", 0.0f); setKnob (single, "cutoff", 6000.0f); setKnob (single, "envAmount", 0.0f);
+            const auto one = render (single, pluck (110.0, 1.5, 0.3, false));
+            const double chordVsNote = dB (rms (out, from) / rms (one, from));
+            logMessage ("  chord vs single note level: " + juce::String (chordVsNote, 1) + " dB");
+            expect (std::abs (chordVsNote) < 4.5, "chords should not jump in level");
         }
 
         beginTest ("Spectral Morph: EE puts more energy at 2.3 kHz than OO, relative to 870 Hz");
