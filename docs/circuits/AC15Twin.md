@@ -130,3 +130,19 @@ chords (rms 0.03 and 0.40, three bands) and this amp's own 100 Hz sine sweep (5 
 
 Changed: `bmGain0` 11, `bmYmax` 0.04, `bmKneeN` 2, `bmShelfHfGain` 0.8, new output trim `bmLevelTrim` 0.78. The unity
 trim moved +4.09 → +4.44 dB to keep the amp at unity.
+
+## EL84 operating point (2026-11-01)
+The published EL84 Koren fit (kg1 570) draws ~103 mA at the datasheet point (Va = Vg2 = 250 V, Vg1 = −7.3 V), where the
+datasheet gives 48 mA. The amp idled at 16.1 V on its 130 ohm cathode resistor, ~62 mA and ~19 W per tube. A real AC15
+sits near 11-12 V. With kg1 1140 the amp idles at 12.5 V and 96.5 mA in total. The same correction went into the AC30.
+
+The full stage now has ~2.8 dB less small-signal gain and less breakup. THD at Volume 0.2 with 0.05 / 0.2 / 0.6 V sines
+is 0.7 / 2.9 / 9.5 %.
+
+The reduced path was refitted: `bmGain0` 8, `bmYmax` 0.0295, knee 1.5, level trim 0.71, HF shelf 0.95.
+
+| Check | Result |
+|---|---|
+| Sine tracking | within 2 dB (worst −1.9 dB) |
+| Chords | level 2.02 dB, band 1.87 dB (bound 2.5 / 2.0) |
+| Unity trim | 4.44 → 7.45 dB |

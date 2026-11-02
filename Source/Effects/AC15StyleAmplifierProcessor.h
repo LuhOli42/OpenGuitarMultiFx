@@ -54,12 +54,14 @@ public:
     static inline bool reducedOrder = false;
     // Fitted (2026-10-05) to the full reference after its plate resistors were rewired in series with the OT (they
     // were a shunt across each half-primary that killed ~35 dB of output; the old constants were fitted to that).
-    static constexpr double bmGain0 = 11.0;
-    static constexpr double bmLevelTrim = 0.78; // output level against the full netlist (refit 2026-11-01)
-    static constexpr double bmYmax = 0.04;
-    static constexpr double bmKneeN = 2.0;
+    // Refit again 2026-11-01 after the EL84 kg1 correction (570 -> 1140): the full stage lost ~2.8 dB of small-signal
+    // gain and saturates lower.
+    static constexpr double bmGain0 = 8.0;
+    static constexpr double bmLevelTrim = 0.71;
+    static constexpr double bmYmax = 0.0295;
+    static constexpr double bmKneeN = 1.5;
     static constexpr double bmShelfHz = 120.0;
-    static constexpr double bmShelfHfGain = 0.8;
+    static constexpr double bmShelfHfGain = 0.95;
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
