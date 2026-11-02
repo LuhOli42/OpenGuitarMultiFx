@@ -56,6 +56,9 @@ public:
     static constexpr double outputScale = 1.0 / 56.0;
 
     // ---- reduced-order power stage ----
+    // Rhythm vs Lead at the default knobs (AmpSwitchLevelSurvey: the dB midpoint of the E3 tone and the guitar DI, so neither picking strength is off by more than ~6 dB): the Rhythm channel's output is raised by this
+    // much so a channel switch keeps the level (user request 2026-11-02).
+    static constexpr double rhythmLevelMatchDb = 27.3;
     static inline bool reducedOrder = false;
     // Twin Reverb's fitted 6L6GC constants (same tube type and push-pull topology).
     static constexpr double bmGain0 = 9.5;
@@ -113,6 +116,7 @@ public:
     double screenCurrentTotal() const noexcept;
 
 private:
+    double chanTrim = 1.0; // eased channel level match (see rhythmLevelMatchDb)
     static constexpr int geqBands = 5;
     static constexpr double geqFreqs[geqBands] = { 80.0, 240.0, 750.0, 2200.0, 6600.0 };
     struct BiquadState { double s1 = 0.0, s2 = 0.0; };

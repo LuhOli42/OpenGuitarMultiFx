@@ -77,6 +77,7 @@ private:
         int preInput = 0, preInput2 = 0, preRail = 0, preRail2 = 0;
         int ef86Pen = -1;          // Matchless Ch2 EF86: its screen hangs on a 2M2 dropper (screen volts follow its current)
         double ef86Screen = 90.0;
+        NodalCircuit::Node ef86Plate = 0; // in ch.pre2
         int preRailA = -1; // Astroverb: the 272 V node (cathode follower plate) one 10k above the preamp's 258 V node
         int preVolumeTop = -1, preVolumeBottom = -1, preVolume2Top = -1, preVolume2Bottom = -1;
         int rTrebleTop = -1, rTrebleBottom = -1, rBassTop = -1, rBassBottom = -1, rMid = -1;
@@ -91,7 +92,7 @@ private:
         int supplyCurrent = 0, supplySource = 0, rectifierResistance = -1;
         NodalCircuit::Node supplyA = 0, supplyB = 0, preRailNode = 0;
         int supplyCounter = 0, currentCount = 0;
-        double currentSum = 0.0, preRailFiltered = 0.0, outputState = 0.0, envelope = 0.0;
+        double currentSum = 0.0, preRailFiltered = 0.0, outputState = 0.0, envelope = 0.0, chanTrim = 1.0;
         tubeamp::PowerStageTail bmTail; // reducedOrder only: OT + speaker reaction + even-order tail
         double preDc = 0.0, pre2Dc = 0.0;
         int lastTonePosition = -1, lastSpeakerIndex = -1;

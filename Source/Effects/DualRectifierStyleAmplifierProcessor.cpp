@@ -944,6 +944,9 @@ void DualRectifierStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
+        // Clean channel level match (user request 2026-11-02), eased over ~10 ms.
+        const double chanTrimTarget = juce::jlimit (0, 2, juce::roundToInt (channelParam->get())) == 0 ? std::pow (10.0, cleanLevelMatchDb / 20.0) : 1.0;
+        const double chanTrimAlpha = 1.0 - std::exp (-1.0 / (0.01 * sampleRate));
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
@@ -1015,7 +1018,8 @@ void DualRectifierStyleAmplifierProcessor::process (juce::AudioBuffer<float>& bu
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * outputScale * outGain * speakerGain;
+                ch.chanTrim += chanTrimAlpha * (chanTrimTarget - ch.chanTrim);
+                out = speakerVolts * outputScale * outGain * speakerGain * ch.chanTrim;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;

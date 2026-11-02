@@ -1126,7 +1126,12 @@ void MarkIICPlusStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buff
         const double geqBlendAlpha = 1.0 - std::exp (-1.0 / (0.005 * sampleRate));
 
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
-        const double outGain = std::pow (10.0, outDb / 20.0);
+        // Channel level match (user request 2026-11-02: switching to Rhythm dropped ~21 dB at the default knobs). The
+        // real amp balances its channels with Master vs Lead Master; here the Rhythm channel gets the measured
+        // difference back (AmpSwitchLevelSurvey, E3 note), eased over ~10 ms with the rest of the channel crossfade.
+        const double chanTrimTarget = channelSel == 0 ? std::pow (10.0, rhythmLevelMatchDb / 20.0) : 1.0;
+        chanTrim += geqBlendAlpha * (chanTrimTarget - chanTrim);
+        const double outGain = std::pow (10.0, outDb / 20.0) * chanTrim;
 
         for (int chIdx = 0; chIdx < solveChannels; ++chIdx)
         {
