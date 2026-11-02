@@ -61,10 +61,12 @@ public:
     // (knee 0.75, ceiling 0.13) saturated at ~2/3 of the real output and ran 4-5 dB hot with +7 dB mids -- the user's
     // "too much gain / strange at full volume". The real stage compresses gradually, hence the soft but physical knee.
     // Refitted again 2026-11-01 after the PI / tone stack / EL84 corrections (docs/circuits/AC30TopBoost.md): the
-    // corrected PI has ~8x the old gain, so the curve now starts at 230 V/V and saturates higher.
-    static constexpr double bmKneeN = 2.5;
+    // corrected PI has ~8x the old gain, so the curve now starts at 230 V/V and saturates higher. Knee 2.5 -> 2.0 and
+    // shelf 0.6 -> 0.7 on 2026-11-02 with 2x oversampling: at full Volume the hard knee turned the 20 V+ tone-stack
+    // signal into a stepped square (-31 dB inharmonic at 330 Hz, the user's "failing fuzz").
+    static constexpr double bmKneeN = 2.0;
     static constexpr double bmShelfHz = 120.0;
-    static constexpr double bmShelfHfGain = 0.6;
+    static constexpr double bmShelfHfGain = 0.7;
     static constexpr double bmLevelTrim = 0.30;
     static constexpr double bmMidHz = 500.0, bmMidQ = 0.5, bmMidDb = -4.5;
 

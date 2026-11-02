@@ -61,8 +61,11 @@ public:
         auto up = oversampler->processSamplesUp (block);
 
         // Wrap the oversampled block's channels in an AudioBuffer (pointer array lives on the stack; no allocation).
-        float* channelPointers[2] = { up.getChannelPointer (0), up.getNumChannels() > 1 ? up.getChannelPointer (1) : nullptr };
-        juce::AudioBuffer<float> high (channelPointers, (int) juce::jmin ((size_t) 2, up.getNumChannels()), (int) up.getNumSamples());
+        // Only as many channels as came in: the oversampler is built with at least two, and handing a mono signal's
+        // unused second channel to the inner processor doubled the cost of every oversampled effect in mono.
+        const int channels = juce::jmin (2, buffer.getNumChannels(), (int) up.getNumChannels());
+        float* channelPointers[2] = { up.getChannelPointer (0), channels > 1 ? up.getChannelPointer (1) : nullptr };
+        juce::AudioBuffer<float> high (channelPointers, channels, (int) up.getNumSamples());
         inner->process (high);
 
         oversampler->processSamplesDown (block);
