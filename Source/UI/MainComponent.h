@@ -163,6 +163,13 @@ private:
     void freeCcForLearning (int cc);
     void refreshScenePedalDisplay();
     void copySnapshot (int from, int to);
+    /** "+" on the scene bar: a new scene after the last one, holding `source`'s values (the live scene by default --
+        "carrega o valor da scene ai como default"), and switches to it. No-op when all eight are in use. */
+    void addSnapshot (int source);
+    /** Hold "+": pick which scene the new one copies. */
+    void showAddSnapshotMenu();
+    /** Removes scene `index`; later scenes move up a letter (names and colours with them). The last scene stays. */
+    void removeSnapshot (int index);
     juce::Colour colourOfSnapshot (int index) const;
     /** Pushes the live snapshot's colour everywhere it owns the accent: the
         LookAndFeel's app accent (knob fill, scrollbar thumb, button borders
@@ -387,6 +394,9 @@ private:
     // switch/save -- see storeCurrentSnapshot().
     std::array<snapshotxml::Snapshot, snapshotxml::maxSnapshots> snapshots;
     int currentSnapshot = 0;
+    // Scenes in use, A up to this letter (user request 2026-11-01: start with one, "+" adds up to eight). Slots past
+    // it are ignored -- not recalled, not offered in menus -- and overwritten when "+" brings one back.
+    int snapshotCount = 1;
     // The A-H recall strip next to the badge -- tap a letter to call
     // selectSnapshot(). This is the whole snapshot UI for stage 3; the
     // per-snapshot editor (names/colours/knob markers) is a later card.

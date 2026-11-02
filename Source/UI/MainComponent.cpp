@@ -131,9 +131,12 @@ MainComponent::MainComponent()
     // selectSnapshot()). Shown from the start -- an unsaved chain still has
     // an active snapshot, same as a hardware pedalboard before you save.
     addAndMakeVisible (snapshotBar);
+    snapshotBar.setCount (snapshotCount);
     snapshotBar.setCurrent (currentSnapshot);
     snapshotBar.onSnapshotSelected = [this] (int index) { selectSnapshot (index); };
     snapshotBar.onSnapshotLongPressed = [this] (int index) { showSnapshotMenu (index); };
+    snapshotBar.onAddPressed = [this] { addSnapshot (currentSnapshot); };
+    snapshotBar.onAddLongPressed = [this] { showAddSnapshotMenu(); };
     parameterPanel.getSnapshotMarkerColour = [this] (EffectProcessor* processor, juce::AudioParameterFloat* param)
     {
         return snapshotVaries (processor, param) ? colourOfSnapshot (currentSnapshot) : juce::Colours::transparentBlack;
@@ -1505,8 +1508,7 @@ void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::Mid
 
 void MainComponent::selectSnapshot (int index)
 {
-    index = juce::jlimit (0, snapshotxml::maxSnapshots - 1, index);
-    if (index == currentSnapshot)
+    if (index < 0 || index >= snapshotCount || index == currentSnapshot)
         return;
 
     // Recall semantics (docs/PresetsAndSnapshots.md): edits made in the
@@ -1534,7 +1536,7 @@ void MainComponent::selectSnapshot (int index)
 
 void MainComponent::showSnapshotMenu (int index)
 {
-    index = juce::jlimit (0, snapshotxml::maxSnapshots - 1, index);
+    index = juce::jlimit (0, snapshotCount - 1, index);
     const auto label = [this] (int i)
     {
         const auto& name = snapshots[(size_t) i].name;
@@ -1554,16 +1556,21 @@ void MainComponent::showSnapshotMenu (int index)
     // every other popup in the app.
     colours.addItem (150, "Custom colour...");
 
-    juce::PopupMenu copyTo;
-    for (int t = 0; t < snapshotxml::maxSnapshots; ++t)
+    juce::PopupMenu copyTo, copyFrom;
+    for (int t = 0; t < snapshotCount; ++t)
         if (t != index)
+        {
             copyTo.addItem (200 + t, label (t));
+            copyFrom.addItem (400 + t, label (t));
+        }
 
     juce::PopupMenu menu;
     menu.addSectionHeader ("Snapshot " + label (index));
     menu.addItem (1, "Rename...");
     menu.addSubMenu ("Colour", colours);
-    menu.addSubMenu ("Copy to", copyTo);
+    menu.addSubMenu ("Copy to", copyTo, snapshotCount > 1);
+    menu.addSubMenu ("Copy from", copyFrom, snapshotCount > 1);
+    menu.addItem (2, "Remove scene", snapshotCount > 1);
 
     // Footswitch -> scene. The pedal sends one fixed CC per switch, so each
     // action learns its own (CC 69 with a value per scene still works for
@@ -1620,9 +1627,17 @@ void MainComponent::showSnapshotMenu (int index)
                                                              : snapshotxml::defaultColourFor (result - 101).toString();
             updatePresetDisplay();
         }
+        else if (result == 2)
+        {
+            removeSnapshot (index);
+        }
         else if (result >= 200 && result < 200 + snapshotxml::maxSnapshots)
         {
             copySnapshot (index, result - 200);
+        }
+        else if (result >= 400 && result < 400 + snapshotxml::maxSnapshots)
+        {
+            copySnapshot (result - 400, index);
         }
         else if (result == 300)
             toggleScenePedal (index);
@@ -1633,6 +1648,66 @@ void MainComponent::showSnapshotMenu (int index)
         else if (result == 303 && sceneMidiArmed != scenemidi::noAction)
             toggleScenePedal (sceneMidiArmed);
     });
+}
+
+void MainComponent::addSnapshot (int source)
+{
+    if (snapshotCount >= snapshotxml::maxSnapshots || source < 0 || source >= snapshotCount)
+        return;
+
+    if (source == currentSnapshot)
+        storeCurrentSnapshot(); // the live chain IS the source's latest state (Recall)
+
+    const int added = snapshotCount++;
+    auto& slot = snapshots[(size_t) added];
+    slot = {}; // no leftover name / colour from a scene removed earlier
+    slot.blocks = snapshots[(size_t) source].blocks;
+    selectSnapshot (added);
+}
+
+void MainComponent::showAddSnapshotMenu()
+{
+    if (snapshotCount >= snapshotxml::maxSnapshots)
+        return;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("New scene " + snapshotxml::letterFor (snapshotCount) + ": copy from");
+    for (int i = 0; i < snapshotCount; ++i)
+    {
+        const auto& name = snapshots[(size_t) i].name;
+        menu.addItem (1 + i, snapshotxml::letterFor (i) + (name.isNotEmpty() ? " - " + name : juce::String())
+                                 + (i == currentSnapshot ? "  (current)" : ""));
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapshotBar)
+                                                   .withStandardItemHeight (touch::minTapTarget),
+                        [this, alive = aliveFlag] (int result)
+    {
+        if (alive->load() && result > 0)
+            addSnapshot (result - 1);
+    });
+}
+
+void MainComponent::removeSnapshot (int index)
+{
+    if (snapshotCount <= 1 || index < 0 || index >= snapshotCount)
+        return;
+
+    storeCurrentSnapshot();
+    for (int i = index; i + 1 < snapshotCount; ++i)
+        snapshots[(size_t) i] = std::move (snapshots[(size_t) i + 1]);
+    snapshots[(size_t) --snapshotCount] = {};
+    normaliseSnapshots();
+
+    // The live scene keeps sounding unless it was the one removed; then the one before it (or the new A) takes over.
+    const bool removedLive = index == currentSnapshot;
+    if (currentSnapshot > index || (removedLive && currentSnapshot > 0))
+        --currentSnapshot;
+    if (removedLive)
+        for (int i = 0; i < (int) chain.size() && i < (int) snapshots[(size_t) currentSnapshot].blocks.size(); ++i)
+            snapshotxml::applyBlock (*chain[(size_t) i], snapshots[(size_t) currentSnapshot].blocks[(size_t) i]);
+
+    updatePresetDisplay();
 }
 
 void MainComponent::toggleScenePedal (int action)
@@ -1808,7 +1883,7 @@ bool MainComponent::snapshotVaries (EffectProcessor* processor, juce::AudioParam
 
     // The live value stands in for the current snapshot (it may hold an edit not stored yet -- Recall).
     const float live = param->get();
-    for (int s = 0; s < snapshotxml::maxSnapshots; ++s)
+    for (int s = 0; s < snapshotCount; ++s)
     {
         if (s == currentSnapshot || block >= (int) snapshots[(size_t) s].blocks.size())
             continue;
@@ -1924,7 +1999,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         return;
     }
 
-    if (const int scene = sceneMidi.targetFor (ccNumber, ccValue, currentSnapshot); scene >= 0)
+    if (const int scene = sceneMidi.targetFor (ccNumber, ccValue, currentSnapshot, juce::Time::getMillisecondCounter(), snapshotCount); scene >= 0)
     {
         selectSnapshot (scene);
         return;
@@ -2009,6 +2084,7 @@ void MainComponent::updatePresetDisplay()
 {
     presetBadge.setNumber (currentPresetNumber);
     presetBadge.setSnapshotIndex (currentSnapshot);
+    snapshotBar.setCount (snapshotCount);
     snapshotBar.setCurrent (currentSnapshot);
 
     std::array<juce::String, snapshotxml::maxSnapshots> names;
@@ -2072,7 +2148,7 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
     currentToWrite.blocks.resize (chain.size());
     for (int i = 0; i < (int) chain.size(); ++i)
         currentToWrite.blocks[(size_t) i] = snapshotxml::captureBlock (*chain[(size_t) i]);
-    snapshotxml::write (*xml, snapshotsToWrite, currentSnapshot);
+    snapshotxml::write (*xml, snapshotsToWrite, currentSnapshot, snapshotCount);
 
     // The FULL per-row routing (device I/O, splits, merges), not just a
     // single global in/out pair -- see the class-level bug this fixes:
@@ -2240,8 +2316,8 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     // live at save time), else default every slot to the just-loaded state
     // -- a preset saved before this feature loads identically to how it
     // always did, as a single-state preset.
-    int savedCurrent = 0;
-    if (! snapshotxml::read (xml, snapshots, savedCurrent))
+    int savedCurrent = 0, savedCount = 1;
+    if (! snapshotxml::read (xml, snapshots, savedCurrent, &savedCount))
         snapshots = {};
 
     // Snapshot block entries are indexed by the SAVED <Block> order, so
@@ -2279,6 +2355,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 
     normaliseSnapshots();
     currentSnapshot = savedCurrent;
+    snapshotCount = savedCount;
 
     refreshRowEndpoints();
     rebuildSignalGraph();

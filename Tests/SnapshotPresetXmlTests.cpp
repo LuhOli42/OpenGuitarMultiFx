@@ -131,6 +131,38 @@ public:
                 expect (i == 3 || loaded[(size_t) i].name != "future");
         }
 
+        beginTest ("the scenes-in-use count round-trips and is inferred for older presets");
+        {
+            std::array<snapshotxml::Snapshot, snapshotxml::maxSnapshots> snapshots;
+            snapshotxml::BlockSnapshot block;
+            block.params.emplace_back ("tremolo_rate", 2.0f);
+            for (auto& s : snapshots)
+                s.blocks.push_back (block);
+
+            juce::XmlElement preset ("Preset");
+            snapshotxml::write (preset, snapshots, 1, 3);
+            std::array<snapshotxml::Snapshot, snapshotxml::maxSnapshots> loaded;
+            int current = 0, count = 0;
+            expect (snapshotxml::read (preset, loaded, current, &count));
+            expectEquals (count, 3);
+
+            // No count attribute (saved before it existed): eight identical slots are one scene...
+            preset.getChildByName ("Snapshots")->removeAttribute ("count");
+            preset.getChildByName ("Snapshots")->setAttribute ("current", 0);
+            expect (snapshotxml::read (preset, loaded, current, &count));
+            expectEquals (count, 1);
+
+            // ...a slot that differs (values, or just a name) keeps every scene up to it...
+            snapshots[4].blocks[0].params[0].second = 5.0f;
+            expectEquals (snapshotxml::inferCount (snapshots, 0), 5);
+            snapshots[6].name = "Lead";
+            expectEquals (snapshotxml::inferCount (snapshots, 0), 7);
+
+            // ...and the scene that was live at save time is always kept.
+            snapshots = {};
+            expectEquals (snapshotxml::inferCount (snapshots, 2), 3);
+        }
+
         beginTest ("CC 69 maps values 0-7 onto snapshots A-H and ignores the rest");
         {
             expectEquals (snapshotxml::snapshotSelectCcNumber, 69);
