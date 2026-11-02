@@ -142,6 +142,13 @@ MainComponent::MainComponent()
 
     addChildComponent (quickSaveButton); // only shown once a preset is actually loaded -- see updatePresetDisplay()
     quickSaveButton.onClick = [this] { if (currentPresetName.isNotEmpty()) savePresetAs (currentPresetName); };
+    for (auto* b : { &undoButton, &redoButton })
+    {
+        addAndMakeVisible (*b);
+        b->setEnabled (false);
+    }
+    undoButton.onClick = [this] { if (auto* target = undoHistory.undo()) restoreUndoState (*target); };
+    redoButton.onClick = [this] { if (auto* target = undoHistory.redo()) restoreUndoState (*target); };
 
     addAndMakeVisible (titleLabel);
     titleLabel.setFont (juce::Font (juce::FontOptions (42.0f, juce::Font::bold)));
@@ -1381,6 +1388,7 @@ void MainComponent::loadPresetAskingToSave (const juce::String& name, std::funct
 
 void MainComponent::newPreset()
 {
+    undoHistory.clear();
     // Back to the state the app launches in: an empty <Preset/> runs the same
     // teardown path a preset load does -- the chain retires through the
     // graveyard/spillover discipline, snapshots and MIDI bindings reset.
@@ -1450,6 +1458,7 @@ void MainComponent::loadPresetByName (const juce::String& name)
         currentPresetName = name;
         currentPresetNumber = xml->getIntAttribute ("number", 0);
         capturePresetBaseline();
+        undoHistory.clear(); // a fresh preset starts a fresh history: undo must not put the old board under the new name
         updatePresetDisplay();
     }
 }
@@ -2276,9 +2285,86 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     layoutChain();
 }
 
+void MainComponent::pollUndoHistory()
+{
+    // Every 4th tick (200 ms): building the preset XML walks the whole chain, cheap at this rate.
+    if (++undoPollCounter < 4)
+        return;
+    undoPollCounter = 0;
+    if (auto live = buildPresetXml())
+        undoHistory.noteState (*live);
+    undoButton.setEnabled (undoHistory.canUndo());
+    redoButton.setEnabled (undoHistory.canRedo());
+}
+
+void MainComponent::restoreUndoState (const juce::XmlElement& target)
+{
+    // A knob / bypass-only step is written straight into the live processors (what the knobs themselves do): no chain
+    // rebuild, so amps keep their state and nothing pops. Anything structural (blocks, routing, snapshots, MIDI Learn)
+    // goes through the full preset path.
+    const auto structureOf = [] (const juce::XmlElement& xml)
+    {
+        auto copy = std::make_unique<juce::XmlElement> (xml);
+        copy->deleteAllChildElementsWithTagName ("Snapshots");
+        for (auto* block : copy->getChildWithTagNameIterator ("Block"))
+        {
+            block->removeAttribute ("bypassed");
+            block->deleteAllChildElements();
+        }
+        return copy;
+    };
+    auto live = buildPresetXml();
+    const bool sameSnapshots = [&]
+    {
+        auto* a = live->getChildByName ("Snapshots");
+        auto* b = target.getChildByName ("Snapshots");
+        if (a == nullptr || b == nullptr)
+            return a == b;
+        // The current slot mirrors the live knobs; only the other slots and the selection matter here.
+        auto ca = std::make_unique<juce::XmlElement> (*a), cb = std::make_unique<juce::XmlElement> (*b);
+        if (ca->getIntAttribute ("current") != cb->getIntAttribute ("current"))
+            return false;
+        const int current = ca->getIntAttribute ("current");
+        int i = 0;
+        for (auto* s : ca->getChildWithTagNameIterator ("Snapshot"))
+            if (i++ == current) { s->deleteAllChildElements(); break; }
+        i = 0;
+        for (auto* s : cb->getChildWithTagNameIterator ("Snapshot"))
+            if (i++ == current) { s->deleteAllChildElements(); break; }
+        return ca->isEquivalentTo (cb.get(), false);
+    }();
+
+    if (sameSnapshots && structureOf (*live)->isEquivalentTo (structureOf (target).get(), false))
+    {
+        int i = 0;
+        for (auto* block : target.getChildWithTagNameIterator ("Block"))
+        {
+            if (i >= (int) chain.size())
+                break;
+            auto& fx = chain[(size_t) i++];
+            fx->setBypassed (block->getBoolAttribute ("bypassed"));
+            if (auto* state = block->getChildByName ("EffectState"))
+                for (auto* param : fx->getParameters()->getParameters (true))
+                    if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param))
+                        if (state->hasAttribute (f->paramID))
+                            *f = (float) state->getDoubleAttribute (f->paramID);
+        }
+    }
+    else
+    {
+        applyPresetXml (target);
+    }
+    if (auto now = buildPresetXml())
+        undoHistory.adopt (*now);
+    undoButton.setEnabled (undoHistory.canUndo());
+    redoButton.setEnabled (undoHistory.canRedo());
+    updatePresetDisplay();
+}
+
 void MainComponent::timerCallback()
 {
     refreshBypassPedalDisplay();
+    pollUndoHistory();
 
     // Re-derive device liveness every tick rather than latching it from
     // start()/rate-switch results -- a mid-session unplug, a start() that
@@ -2405,6 +2491,10 @@ void MainComponent::resized()
         quickSaveButton.setBounds (top.removeFromRight (80).withSizeKeepingCentre (80, touch::minTapTarget));
         top.removeFromRight (8);
     }
+    redoButton.setBounds (top.removeFromRight (72).withSizeKeepingCentre (72, touch::minTapTarget));
+    top.removeFromRight (6);
+    undoButton.setBounds (top.removeFromRight (72).withSizeKeepingCentre (72, touch::minTapTarget));
+    top.removeFromRight (8);
     titleLabel.setBounds (top);
 
     area.removeFromTop (8);
