@@ -160,7 +160,7 @@ public:
                 DividedBy13FTR37StyleAmplifierProcessor amp;
                 setParam (amp, "f37_input", 0.0f);
                 setParam (amp, "f37_click", click);
-                setParam (amp, "f37_ch1_volume", 0.8f);
+                setParam (amp, "f37_ch1_volume", 0.3f);
                 amp.prepare (sr, 128, 2);
                 const double twoPi = 2.0 * juce::MathConstants<double>::pi;
                 juce::AudioBuffer<float> buf (2, 128);
@@ -169,7 +169,7 @@ public:
                 for (int i = 0; i < (int) (0.8 * sr / 128); ++i)
                 {
                     for (int s = 0; s < 128; ++s)
-                        buf.setSample (0, s, (float) (0.05 * std::sin (twoPi * 6000.0 * (i * 128 + s) / sr)));
+                        buf.setSample (0, s, (float) (0.01 * std::sin (twoPi * 100.0 * (i * 128 + s) / sr)));
                     buf.copyFrom (1, 0, buf, 0, 0, 128);
                     amp.process (buf);
                     if (i > (int) (0.4 * sr / 128))
@@ -182,8 +182,9 @@ public:
                 }
                 return std::sqrt (sumSq / (double) n);
             };
-            // The click switch's highest position shunts the most top end.
-            expect (ch1Response (0.0f) > ch1Response (5.0f));
+            // The TONE rotary picks the series cap into the Volume (250p ... 22n): position 0 cuts the lows, position 5
+            // passes them (measured below the amp's saturation, at 100 Hz).
+            expect (ch1Response (5.0f) > ch1Response (0.0f));
         }
 
         {
