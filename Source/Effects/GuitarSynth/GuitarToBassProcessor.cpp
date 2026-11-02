@@ -2,12 +2,6 @@
 
 namespace openguitarmultifx
 {
-namespace
-{
-    constexpr int kControlEvery = 32;
-    constexpr double kMinGrainSeconds = 0.012, kDefaultGrainSeconds = 0.04, kMaxGrainSeconds = 0.12;
-}
-
 GuitarToBassProcessor::GuitarToBassProcessor() : SynthEffect ("Guitar-to-Bass", "octaver", "guitarToBass")
 {
     octaves = addChoice ("octaves", "Octave", { "DOWN 1", "DOWN 2" }, 0);
@@ -23,22 +17,17 @@ GuitarToBassProcessor::GuitarToBassProcessor() : SynthEffect ("Guitar-to-Bass", 
 void GuitarToBassProcessor::prepare (double sampleRate, int, int)
 {
     fs = sampleRate;
-    tracker.prepare (fs);
-    line.prepare ((int) (0.3 * fs));
+    shifter.prepare (fs);
     mixLevel.prepare (fs);
     reset();
 }
 
 void GuitarToBassProcessor::reset()
 {
-    tracker.reset();
-    line.reset();
+    shifter.reset();
     comp.reset();
     hp.reset(); shelf.reset(); toneLp[0].reset(); toneLp[1].reset(); pick.reset(); blendLp.reset();
-    phi = 0.0;
-    grainSamples = kDefaultGrainSeconds * fs;
     lastShape = -1.0;
-    controlCounter = 0;
 }
 
 void GuitarToBassProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -69,35 +58,13 @@ void GuitarToBassProcessor::process (juce::AudioBuffer<float>& buffer)
         blendLp.lowpass (200.0, fs, 0.707);
     }
     comp.set (4.0, 140.0, fs);
-    const double grainCoef = std::exp (-(double) kControlEvery / (0.03 * fs)); // applied once per control step
-    const double base = 2.0;
     const double thresholdLin = 0.08; // about -22 dBFS on the shifted signal
 
     for (int i = 0; i < n; ++i)
     {
         const double inL = L[i], inR = R != nullptr ? R[i] : inL;
         const float mono = (float) (0.5 * (inL + inR));
-        line.push (mono);
-        tracker.push (mono);
-
-        if (controlCounter == 0 && tracker.voiced && tracker.hz > 30.0)
-        {
-            // grain = m * period / ratio: each grain then reads a whole number of input periods and the half-grain
-            // offset between the two reads is a whole number of periods too, for -1 and -2 octaves alike
-            const double unit = fs / tracker.hz / ratio;
-            const double m = juce::jmax (1.0, std::round (kMinGrainSeconds * fs / unit));
-            const double target = juce::jmin (kMaxGrainSeconds * fs, m * unit);
-            grainSamples = target + (grainSamples - target) * grainCoef;
-        }
-        controlCounter = (controlCounter + 1) % kControlEvery;
-
-        phi += (1.0 - ratio) / grainSamples;
-        phi -= std::floor (phi);
-        double q = phi + 0.5;
-        q -= std::floor (q);
-        const double tri = 1.0 - std::abs (2.0 * phi - 1.0);
-        const double w1 = tri * tri * (3.0 - 2.0 * tri);
-        const double shifted = w1 * line.read (base + phi * grainSamples) + (1.0 - w1) * line.read (base + q * grainSamples);
+        const double shifted = shifter.process (mono, ratio);
 
         double x = hp.process (shifted);
         x = shelf.process (x);

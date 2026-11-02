@@ -36,9 +36,61 @@ void TrackedSynthProcessor::reset()
 {
     tracker.reset();
     env.reset();
-    osc = {}; osc2 = {}; subOsc = {};
+    voices = {};
     filter.reset();
-    curHz = 0.0; amp = 0.0; controlCounter = 0;
+    norm = 1.0; lowest = -1; clock = 0; gate = false; controlCounter = 0;
+}
+
+void TrackedSynthProcessor::assignVoices (double octMul)
+{
+    const auto& slots = tracker.getSlots();
+    const int legatoWindow = (int) (0.06 * fs);
+
+    for (auto& v : voices) // notes that ended (or whose slot moved on to another note) release
+        if (v.slot >= 0 && ! (slots[(size_t) v.slot].active && slots[(size_t) v.slot].id == v.slotId))
+        {
+            v.slot = -1;
+            v.releasedAt = clock;
+        }
+
+    int activeCount = 0;
+    double strongest = 0.0;
+    for (const auto& s : slots)
+        if (s.active) { ++activeCount; strongest = std::max (strongest, s.strength); }
+
+    for (int si = 0; si < (int) slots.size(); ++si)
+    {
+        const auto& s = slots[(size_t) si];
+        if (! s.active) continue;
+        Voice* owner = nullptr;
+        for (auto& v : voices)
+            if (v.slot == si && v.slotId == s.id) owner = &v;
+        if (owner == nullptr)
+        {
+            // a single-note line hands the new note to the voice that just let go, so Glide is portamento
+            Voice* legato = nullptr;
+            if (activeCount == 1)
+                for (auto& v : voices)
+                    if (v.slot < 0 && clock - v.releasedAt < legatoWindow && v.amp > 1e-3) legato = &v;
+            owner = legato;
+            if (owner == nullptr)
+            {
+                for (auto& v : voices)
+                    if (v.slot < 0 && (owner == nullptr || v.amp < owner->amp)) owner = &v;
+            }
+            if (owner == nullptr) continue;
+            const bool snap = owner != legato;
+            owner->slot = si;
+            owner->slotId = s.id;
+            if (snap) owner->hz = 0.0;
+        }
+        owner->targetHz = s.hz * octMul;
+        owner->weight = strongest > 0.0 ? juce::jlimit (0.35, 1.0, std::sqrt (s.strength / strongest)) : 1.0;
+    }
+
+    lowest = -1;
+    for (int i = 0; i < (int) voices.size(); ++i)
+        if (voices[(size_t) i].slot >= 0 && (lowest < 0 || voices[(size_t) i].targetHz < voices[(size_t) lowest].targetHz)) lowest = i;
 }
 
 void TrackedSynthProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -58,32 +110,42 @@ void TrackedSynthProcessor::process (juce::AudioBuffer<float>& buffer)
     const double dyn = dynamics->get() / 100.0, guitar = dryGuitar->get() / 100.0;
     const double thr = juce::Decibels::decibelsToGain ((double) sensitivity->get());
     env.set (1.5, release->get(), fs);
-    const double ampCoef = std::exp (-1.0 / (0.004 * fs));
+    const double attackCoef = std::exp (-1.0 / (0.004 * fs));
+    const double releaseCoef = std::exp (-1.0 / (0.25 * release->get() * 1e-3 * fs));
+    const double normCoef = std::exp (-1.0 / (0.02 * fs));
 
     for (int i = 0; i < n; ++i)
     {
         const double inL = L[i], inR = R != nullptr ? R[i] : inL;
         const float mono = (float) (0.5 * (inL + inR));
-        tracker.push (mono);
         const double e = env.process (mono);
-        const bool open = tracker.voiced && e > thr;
+        if (tracker.push (mono)) assignVoices (octMul);
+        gate = e > (gate ? 0.7 * thr : thr);
+        ++clock;
 
-        if (open)
-        {
-            const double target = tracker.hz * octMul;
-            curHz = curHz <= 0.0 ? target : target + (curHz - target) * glideCoef;
-        }
-        const double ampTarget = open ? (1.0 - dyn) * 0.6 + dyn * juce::jmin (1.0, e * 5.0) : 0.0;
-        amp = ampTarget + (amp - ampTarget) * ampCoef;
-
+        const double lvl = (1.0 - dyn) * 0.6 + dyn * juce::jmin (1.0, e * 5.0);
+        int sounding = 0;
         double y = 0.0;
-        if (curHz > 0.0 && amp > 1e-5)
+        for (int vi = 0; vi < (int) voices.size(); ++vi)
         {
-            const double inc = curHz / fs;
-            y = osc.next (w, inc) + osc2.next (w, inc * detMul) * 0.8;
-            y += subLevel * subOsc.next (gs::Wave::square, 0.5 * inc) * 0.9;
-            y *= 0.35;
+            auto& v = voices[(size_t) vi];
+            const bool on = gate && v.slot >= 0;
+            if (on)
+            {
+                ++sounding;
+                v.hz = v.hz <= 0.0 ? v.targetHz : v.targetHz + (v.hz - v.targetHz) * glideCoef;
+            }
+            const double target = on ? lvl * v.weight : 0.0;
+            v.amp = target + (v.amp - target) * (target > v.amp ? attackCoef : releaseCoef);
+            if (v.hz <= 0.0 || v.amp < 1e-5) continue;
+            const double inc = v.hz / fs;
+            double s = v.osc.next (w, inc) + v.osc2.next (w, inc * detMul) * 0.8;
+            if (vi == lowest) s += subLevel * v.sub.next (gs::Wave::square, 0.5 * inc) * 0.9;
+            y += s * v.amp;
         }
+        const double normTarget = 1.0 / std::sqrt ((double) juce::jmax (1, sounding));
+        norm = normTarget + (norm - normTarget) * normCoef;
+        y *= 0.22 * norm; // lands a realistic DI (peak ~0.4) within ~2 LU of the dry guitar
 
         if (controlCounter == 0)
         {
@@ -91,7 +153,7 @@ void TrackedSynthProcessor::process (juce::AudioBuffer<float>& buffer)
             filter.set (juce::jmin (16000.0, baseCut * std::exp2 (sweep)), res, fs);
         }
         controlCounter = (controlCounter + 1) % kControlEvery;
-        const double wet = gs::softClip (filter.lp (y)) * amp;
+        const double wet = gs::softClip (filter.lp (y));
 
         const auto gn = nextGains(); // the dry guitar rides inside the wet path so Mix = 0 stays a clean bypass
         L[i] = (float) gn.apply (inL, wet + guitar * inL);

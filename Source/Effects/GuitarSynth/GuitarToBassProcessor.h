@@ -1,13 +1,14 @@
 #pragma once
 
+#include "SpliceShifter.h"
 #include "SynthEffect.h"
 
 namespace openguitarmultifx
 {
 
 /** Makes a guitar sound like a bass.
-      guitar -> PitchTracker -> two-grain shifter (down 1 or 2 octaves), the grain locked to a whole number of
-      the tracked period so the two reads stay in phase and the shifted note keeps its body
+      guitar -> SpliceShifter (down 1 or 2 octaves at an exact ratio, no pitch tracker, so chords shift too; the
+      splices land where the input repeats itself)
       -> bass voicing: 35 Hz high-pass, low shelf (body), tone low-pass (the string's lost highs), a pick-attack
       shelf for PICK, soft asymmetric grit -> squash compressor
       + a little of the dry guitar low-passed at 200 Hz for the string's own attack. */
@@ -22,12 +23,10 @@ public:
 private:
     juce::AudioParameterFloat *octaves, *voicing, *tone, *body, *grit, *squash, *guitarBlend;
     double fs = 48000.0;
-    gs::PitchTracker tracker;
-    mt::DelayLine line;
+    gs::SpliceShifter shifter;
     gs::EnvelopeFollower comp;
     mt::Biquad hp, shelf, toneLp[2], pick, blendLp;
-    double phi = 0.0, grainSamples = 0.0, lastShape = -1.0;
-    int controlCounter = 0;
+    double lastShape = -1.0;
 };
 
 } // namespace openguitarmultifx
