@@ -518,7 +518,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // stable reference (no instability investigation needed, unlike the JTM45/JCM800).
     AC15StyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("AC15StyleAmplifier");
-    registry.registerType ("AC15StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AC15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), 7.45f); }, "Crunch");
+    registry.registerType ("AC15StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<AC15StyleAmplifierProcessor> (Orders { 0, 0, 1 }), -7.56f); }, "Crunch");
     // docs/circuits/AC30TopBoost.md. Top Boost channel only. Cathode-biased 4xEL84 (two parallel pairs), a genuine
     // long-tailed-pair phase inverter, no global feedback (confirmed absent on the factory power-amp drawing).
     AC30StyleAmplifierProcessor::reducedOrder = true;

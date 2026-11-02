@@ -54,12 +54,12 @@ public:
     static inline bool reducedOrder = false;
     // Fitted (2026-10-05) to the full reference after its plate resistors were rewired in series with the OT (they
     // were a shunt across each half-primary that killed ~35 dB of output; the old constants were fitted to that).
-    // Refit again 2026-11-01 after the EL84 kg1 correction (570 -> 1140): the full stage lost ~2.8 dB of small-signal
-    // gain and saturates lower.
-    static constexpr double bmGain0 = 8.0;
-    static constexpr double bmLevelTrim = 0.71;
-    static constexpr double bmYmax = 0.0295;
-    static constexpr double bmKneeN = 1.5;
+    // Refit 2026-11-01 after the EL84 kg1 correction (570 -> 1140) and the PI fix (grid leaks to the tail tap): the
+    // PI now has its real gain (+18 dB) and the stage reaches the AC15's real ~20 V rms instead of ~7.
+    static constexpr double bmGain0 = 64.0;
+    static constexpr double bmLevelTrim = 0.72;
+    static constexpr double bmYmax = 0.10;
+    static constexpr double bmKneeN = 1.9;
     static constexpr double bmShelfHz = 120.0;
     static constexpr double bmShelfHfGain = 0.95;
 
