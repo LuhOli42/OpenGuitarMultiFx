@@ -56,7 +56,7 @@ namespace
     }
 
     /** EL84 (6BQ5), same published Koren SPICE fit as the AC15's own (mu 16, Kg1 570, Kg2 4200, Kp 50, Kvb 24,
-        Ex 1.35) with `kg1` softened -- see triode12AX7Pi()'s own comment for the full story. A PAIR (two tubes in
+        Ex 1.35) with `kg1` corrected to the datasheet (below). A PAIR (two tubes in
         parallel on the same nodes -- confirmed on the drawing: this amp uses FOUR EL84s as two parallel pairs, not
         two singles) is one tube with twice the current (kg1/kg2 halved, grid conductance doubled, arc resistance
         halved) -- same trick as the Marshall amps' own EL34 pairs. */
@@ -65,7 +65,11 @@ namespace
         KorenPentode::Parameters p;
         p.mu = 16.0;
         p.ex = 1.35;
-        p.kg1 = 570.0 / 2.0;
+        // kg1 1140, not the published fit's 570: with 570 the model draws ~103 mA at the datasheet point (Va = Vg2 =
+        // 250 V, Vg1 = -7.3 V, 48 mA), twice a real EL84 -- the AC30 then idled each tube at ~75 mA (24 W, double
+        // the rating) with 14.7 V on the cathode, where a real one sits near 10-11 V. 1140 gives ~51 mA there; the
+        // screen current (kg2) already matched.
+        p.kg1 = 1140.0 / 2.0;
         p.kg2 = 4200.0 / 2.0;
         p.kp = 50.0;
         p.kvb = 24.0;
@@ -276,9 +280,10 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
 
         // Top Boost tone stack (a bridged RC network, not a simple TMB ladder -- confirmed on the drawing):
         // IN -(50pF)-> A -(1M Treble, wiper=out)-> D; IN -(100k)-> B; B -(.022uF)-> D; B -(.022uF)-> E -> Bass
-        // pot's wiper; Bass pot (1M) spans D..F; F -(10k)-> ground.
+        // pot's wiper; Bass pot (1M) spans D..ground; E -(10k)-> ground. (Re-read at 400 dpi 2026-11-01: the 10k
+        // hangs off the wiper node, and the pot's bottom end runs straight to the ground bus.)
         ch.wToneIn = cf;
-        const auto a = c.addNode(), b = c.addNode(), d = c.addNode(), e = c.addNode(), f = c.addNode();
+        const auto a = c.addNode(), b = c.addNode(), d = c.addNode(), e = c.addNode();
         c.addCapacitor (cf, a, 50.0e-12);
         c.addResistor (cf, b, 100.0e3);
         c.addCapacitor (b, d, 0.022e-6);
@@ -287,8 +292,8 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rTrebleTop = c.addResistor (a, ch.wTone, 1.0e6);
         ch.rTrebleBottom = c.addResistor (ch.wTone, d, 1.0e6);
         ch.rBass = c.addResistor (d, e, 1.0e6);
-        ch.rBassBottom = c.addResistor (e, f, 1.0e6);
-        c.addResistor (f, gnd, 10.0e3);
+        ch.rBassBottom = c.addResistor (e, gnd, 1.0e6);
+        c.addResistor (e, gnd, 10.0e3);
     }
 
     // ================================================================ phase inverter, power amp -- full reference
@@ -298,32 +303,31 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
         auto& c = ch.power;
         const auto rail = c.addNode();
         ch.wSrcRail = c.addSource (rail, railPlatesNominal);
-        // Cathode-coupled phase inverter -- the real AC30 network, NOT a textbook LTP: each cathode reaches
-        // the shared tail through its own 1k2; the tail is held by 47k to ground, and the second grid is
-        // AC-grounded through its own .01 uF with a 1M DC leak -- the second half is driven at its CATHODE
-        // by the shared tail, not at its grid. (The drawing's 47k likely bootstraps back to the driven
-        // grid; anchoring it to ground instead keeps the same values and cold-bias character while giving
-        // the solver a unique DC root.)
-        const auto g1 = c.addNode(), g2 = c.addNode(), kA = c.addNode(), kB = c.addNode(), tail = c.addNode();
+        // Long-tailed-pair phase inverter, as drawn (re-read at 400 dpi 2026-11-01): both cathodes are joined and
+        // reach the tap T through ONE 1k2; T goes to ground through 47k, and BOTH 1M grid leaks return to T, so the
+        // grids sit only the 1k2 drop below the cathodes. The second grid is AC-grounded by its .01 uF. The model
+        // used to return the leaks to ground (and give each cathode its own 1k2), which biased the PI tens of volts
+        // cold and made it distort at any level.
+        const auto g1 = c.addNode(), g2 = c.addNode(), k = c.addNode(), tail = c.addNode();
         ch.wPiGridA = g1;
         ch.wPiPlateA = c.addNode();
         ch.wPiPlateB = c.addNode();
         c.addCapacitor (ch.wTone, g1, 0.01e-6);
-        c.addResistor (g1, gnd, 1.0e6);
-        c.addTriode (ch.wPiPlateA, g1, kA, triode12AX7Pi());
-        c.addTriode (ch.wPiPlateB, g2, kB, triode12AX7Pi());
+        c.addResistor (g1, tail, 1.0e6);
+        c.addTriode (ch.wPiPlateA, g1, k, triode12AX7Pi());
+        c.addTriode (ch.wPiPlateB, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, ch.wPiPlateA, cgp);
         c.addCapacitor (g2, ch.wPiPlateB, cgp);
         c.addResistor (rail, ch.wPiPlateA, 100.0e3);
         c.addResistor (rail, ch.wPiPlateB, 100.0e3);
-        c.addResistor (kA, tail, 1.2e3);
-        c.addResistor (kB, tail, 1.2e3);
+        c.addResistor (k, tail, 1.2e3);
         c.addResistor (tail, gnd, 47.0e3);
-        c.addResistor (g2, gnd, 1.0e6);
+        c.addResistor (g2, tail, 1.0e6);
         c.addCapacitor (g2, gnd, 0.01e-6);
-        c.setInitialGuess (ch.wPiPlateA, 230.0);
-        c.setInitialGuess (ch.wPiPlateB, 230.0);
-        c.setInitialGuess (tail, 4.0);
+        c.setInitialGuess (ch.wPiPlateA, 280.0);
+        c.setInitialGuess (ch.wPiPlateB, 280.0);
+        c.setInitialGuess (tail, 90.0);
+        c.setInitialGuess (k, 92.0);
 
         ch.wGridA = c.addNode();
         ch.wGridB = c.addNode();
@@ -359,12 +363,11 @@ void AC30StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (ch.wPP1, ch.wPP2, 20.0e3);
         c.addCapacitor (ch.wPP1, gnd, 400.0e-12);
         c.addCapacitor (ch.wPP2, gnd, 400.0e-12);
-        // Each plate reaches its half of the primary through its own series resistor (on the drawing). It used to be
-        // wired from the rail straight to the plate, i.e. a 50 ohm shunt across each half-primary, which shorted
-        // almost all of the output away (the reference made ~0.3 V rms where a real amp makes tens of volts).
-        const auto a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode(), t1 = c.addNode(), t2 = c.addNode();
-        c.addResistor (t1, ch.wPP1, 50.0);
-        c.addResistor (t2, ch.wPP2, 50.0);
+        // Each pair's plates go straight to their half of the primary. The drawing's 50 ohm is the shared cathode
+        // resistor (rCathodeBias above), not a plate resistor -- the model once had it as a shunt across each
+        // half-primary, then as a series plate resistor; neither is on the drawing.
+        const auto a1 = c.addNode(), a2 = c.addNode(), sw = c.addNode();
+        const auto t1 = ch.wPP1, t2 = ch.wPP2;
         c.addResistor (rail, a1, primaryHalfResistance);
         c.addResistor (rail, a2, primaryHalfResistance);
         const double lh = primaryHalfInductance;
