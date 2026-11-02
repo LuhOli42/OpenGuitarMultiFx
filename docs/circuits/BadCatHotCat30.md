@@ -84,3 +84,21 @@ gain 0.9) was searched on level and distortion at Gain 0.2 / 0.5 / 0.8 and kept:
 Fully driven it squares off ~4 dB sooner than the netlist.
 
 The unity trim moved 14.75 → 13.19 dB to keep the amp at unity. AmpFullVsReducedConsistency bound 1 / 3 (was 3 / 11).
+
+## Gain channel re-read (2026-11-02)
+User report: the Gain channel has no distortion. Measured, it was cleaner than the Clean channel: 0.65 % THD at 50 mV
+with Gain at noon. Re-read against schematicheaven's `newamps/badcat_hotcat_30.pdf`.
+
+| Part | Drawing | Old model |
+|---|---|---|
+| V1a cathode | straight to ground (grid-leak bias; matches the marked 99 V plate) | 1k |
+| V1a → GAIN | **1n5 in series**, then 470k ∥ GAIN 250k log to ground; the wiper has 1n5 to ground, then 470k to V2b | 470k in series with 1n5 shunt: a ~226 Hz low-pass ahead of V2b |
+| EDGE | 22n → **470k fixed series** into V2a (150k ∥ 360p); EDGE is a 10n + 1M log rheostat to ground (treble shunt) | EDGE as the series element, with 470k + 10n to ground |
+| LEVEL | 10n into the pot's **wiper**; its top feeds 470k into V3b (270k leak) | a plain divider with an extra 470k shunt |
+
+Now 12.7 % THD at 50 mV with Gain at noon, and 26 % at full Gain.
+
+- **AFVR:** 0.33 / 1.76 dB.
+- **Unity trim:** 13.19 → −0.07 dB.
+- **Probe fix:** the clean branch (built into `pre2`) also wrote `ch.prePlate`, so the DC test read an unrelated node
+  of the gain netlist. It no longer does.

@@ -342,7 +342,8 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
         c.addCapacitor (cathode, gnd, 22.0e-6);
         c.setInitialGuess (plate, 150.0);
         c.setInitialGuess (cathode, 1.1);
-        ch.prePlate = plate;
+        // (not ch.prePlate: that probe reads ch.pre, and this channel lives in ch.pre2 -- writing its node index there
+        // made the DC test read an unrelated node of the gain channel)
 
         const auto volWiper = c.addNode(), out = c.addNode();
         ch.preVolumeTop = c.addResistor (plate, volWiper, 1.0e6);
@@ -356,63 +357,69 @@ void EL84BoutiqueAmpCore::buildPreamp (Channel& ch, NodalCircuit& c, bool channe
 
     if (model == Model::hotCat30)
     {
-        // Gain channel (Bad Cat schematic): V1a (220k plate + 1n5 bright) ->
-        // 470k -> node [1n5 to gnd; GAIN = 250k log shunt leg to ground] -> 470k
-        // -> V2b (220k, 1k5 + 100n) -> 22n -> node (10n + 470k to gnd) -> EDGE
-        // (1M log series rheostat) -> 150k + 360p to gnd -> V2a (100k, 1k5 +
-        // 1uF) -> 10n -> LEVEL 1M lin -> 470k -> V3b (100k, 1k; 270k leak) ->
-        // DC-coupled V3a follower (56k) -> T/B -> 220k -> MASTER.
-        const auto grid = c.addNode(), cathode = c.addNode(), plate = c.addNode();
+        // Gain channel, re-read 2026-11-02 against schematicheaven's badcat_hotcat_30.pdf (user report: the Gain channel
+        // had no distortion -- it measured cleaner than the Clean channel). As drawn:
+        //   V1a: 68k / 1M, 220k plate, cathode STRAIGHT to ground (grid-leak bias; the model had 1k) -> 1n5 IN SERIES
+        //   -> node [470k to gnd; GAIN 250k log to gnd] -> wiper [1n5 to gnd] -> 470k -> V2b (220k, 1k5 || 100n)
+        //   -> 22n -> node X [EDGE: 10n + 1M log rheostat to gnd, a treble shunt] -> 470k IN SERIES -> V2a grid
+        //   [150k || 360p to gnd] (100k, 1k5 || 1uF) -> 10n into the LEVEL pot's WIPER; LEVEL's top -> 470k -> V3b
+        //   grid (270k leak; 100k plate, 1k cathode) -> DC-coupled V3a follower (56k) -> T/B -> 220k -> MASTER.
+        // The old netlist had a 470k where the 1n5 coupling is (a ~226 Hz low-pass before V2b) and EDGE as a series
+        // rheostat in place of the fixed 470k -- the channel lost most of its gain.
+        const auto grid = c.addNode(), plate = c.addNode(), cathode = c.addNode();
         c.addResistor (in, grid, 68.0e3);
         c.addResistor (grid, gnd, 1.0e6);
         c.addTriode (plate, grid, cathode, tubes.triode);
+        c.addResistor (cathode, gnd, 1.0);               // the cathode's own wire to ground
+        c.addCapacitor (grid, plate, 1.7e-12);
         c.addResistor (rail, plate, 220.0e3);
-        c.addCapacitor (plate, rail, 1.5e-9);
-        c.addResistor (cathode, gnd, 1.0e3);
         c.setInitialGuess (plate, 99.0);
-        c.setInitialGuess (cathode, 1.0);
+        c.setInitialGuess (grid, -0.5);                  // zero-bias stage: the grid sits a contact potential below 0
+        c.setInitialGuess (cathode, 0.0);
         ch.prePlate = plate;
 
-        const auto gainNode = c.addNode(), v2bGrid = c.addNode();
+        const auto gainNode = c.addNode(), gainWiper = c.addNode(), v2bGrid = c.addNode();
         const auto v2bCath = c.addNode(), v2bPlate = c.addNode();
-        c.addResistor (plate, gainNode, 470.0e3);
-        c.addCapacitor (gainNode, gnd, 1.5e-9);
-        ch.rGainShunt = c.addResistor (gainNode, gnd, 250.0e3);
-        c.addResistor (gainNode, v2bGrid, 470.0e3);
+        c.addCapacitor (plate, gainNode, 1.5e-9);
+        c.addResistor (gainNode, gnd, 470.0e3);
+        ch.rGainTop = c.addResistor (gainNode, gainWiper, 125.0e3);
+        ch.rGainShunt = c.addResistor (gainWiper, gnd, 125.0e3);
+        c.addCapacitor (gainWiper, gnd, 1.5e-9);
+        c.addResistor (gainWiper, v2bGrid, 470.0e3);
         c.addTriode (v2bPlate, v2bGrid, v2bCath, tubes.triode);
+        c.addCapacitor (v2bGrid, v2bPlate, 1.7e-12);
         c.addResistor (rail, v2bPlate, 220.0e3);
         c.addResistor (v2bCath, gnd, 1.5e3);
         c.addCapacitor (v2bCath, gnd, 0.1e-6);
         c.setInitialGuess (v2bPlate, 145.0);
         c.setInitialGuess (v2bCath, 1.15);
 
-        const auto nodeN = c.addNode(), nodeE = c.addNode();
+        const auto nodeN = c.addNode(), edgeLeg = c.addNode();
         const auto v2aGrid = c.addNode(), v2aCath = c.addNode(), v2aPlate = c.addNode();
         c.addCapacitor (v2bPlate, nodeN, 22.0e-9);
-        c.addCapacitor (nodeN, gnd, 10.0e-9);
-        c.addResistor (nodeN, gnd, 470.0e3);
-        ch.rEdge = c.addResistor (nodeN, nodeE, 1.0e6);
-        c.addResistor (nodeE, gnd, 150.0e3);
-        c.addCapacitor (nodeE, gnd, 360.0e-12);
-        c.addResistor (nodeE, v2aGrid, 1.0);
+        c.addCapacitor (nodeN, edgeLeg, 10.0e-9);
+        ch.rEdge = c.addResistor (edgeLeg, gnd, 1.0e6);
+        c.addResistor (nodeN, v2aGrid, 470.0e3);
+        c.addResistor (v2aGrid, gnd, 150.0e3);
+        c.addCapacitor (v2aGrid, gnd, 360.0e-12);
         c.addTriode (v2aPlate, v2aGrid, v2aCath, tubes.triode);
+        c.addCapacitor (v2aGrid, v2aPlate, 1.7e-12);
         c.addResistor (rail, v2aPlate, 100.0e3);
         c.addResistor (v2aCath, gnd, 1.5e3);
         c.addCapacitor (v2aCath, gnd, 1.0e-6);
         c.setInitialGuess (v2aPlate, 225.0);
         c.setInitialGuess (v2aCath, 1.7);
 
-        // LEVEL pot: 1M linear divider after the 10nF coupling (470k leak on
-        // the top); wiper feeds V3b's grid through 470k (270k grid leak).
-        const auto levelTop = c.addNode(), levelWiper = c.addNode();
+        // LEVEL: the signal enters the WIPER; wiper-to-ground shunts it, wiper-to-top feeds 470k into V3b.
+        const auto levelWiper = c.addNode(), levelTop = c.addNode();
         const auto v3bGrid = c.addNode(), v3bCath = c.addNode(), v3bPlate = c.addNode();
-        c.addCapacitor (v2aPlate, levelTop, 10.0e-9);
-        c.addResistor (levelTop, gnd, 470.0e3);
+        c.addCapacitor (v2aPlate, levelWiper, 10.0e-9);
         ch.preVolume2Top = c.addResistor (levelTop, levelWiper, 1.0e6);
         ch.preVolume2Bottom = c.addResistor (levelWiper, gnd, 1.0e6);
-        c.addResistor (levelWiper, v3bGrid, 470.0e3);
+        c.addResistor (levelTop, v3bGrid, 470.0e3);
         c.addResistor (v3bGrid, gnd, 270.0e3);
         c.addTriode (v3bPlate, v3bGrid, v3bCath, tubes.triode);
+        c.addCapacitor (v3bGrid, v3bPlate, 1.7e-12);
         c.addResistor (rail, v3bPlate, 100.0e3);
         c.addResistor (v3bCath, gnd, 1.0e3);
         c.setInitialGuess (v3bPlate, 193.0);
@@ -815,9 +822,10 @@ void EL84BoutiqueAmpCore::updatePots (Channel& ch)
         const double bass = smoothedParam (ch, 10, bassParam, 0.5);
         // GAIN: 250k log pot as the shunt leg of the 470k divider after V1a
         // (0 = node grounded = silent, 1 = full 250k leg = max signal).
-        ch.pre.setResistance (ch.rGainShunt, boundedPot (pots::audio (smoothedParam (ch, 8, gainParam, 0.5)), 250.0e3));
+        setPot (ch.pre, ch.rGainTop, ch.rGainShunt, 250.0e3, pots::audio (smoothedParam (ch, 8, gainParam, 0.5)));
         // EDGE: 1M log series rheostat between V2b and V2a.
-        ch.pre.setResistance (ch.rEdge, boundedPot (1.0 - smoothedParam (ch, 13, edgeParam, 1.0), 1.0e6));
+        // EDGE is the 10n treble shunt's rheostat: more Edge = more resistance = less treble shunted.
+        ch.pre.setResistance (ch.rEdge, boundedPot (pots::audio (smoothedParam (ch, 13, edgeParam, 1.0)), 1.0e6));
         // LEVEL: 1M linear interstage divider before V3b.
         setPot (ch.pre, ch.preVolume2Top, ch.preVolume2Bottom, 1.0e6, smoothedParam (ch, 11, levelParam, 0.7));
         // Clean channel VOLUME: 1M log.
