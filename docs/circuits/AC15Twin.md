@@ -131,18 +131,30 @@ chords (rms 0.03 and 0.40, three bands) and this amp's own 100 Hz sine sweep (5 
 Changed: `bmGain0` 11, `bmYmax` 0.04, `bmKneeN` 2, `bmShelfHfGain` 0.8, new output trim `bmLevelTrim` 0.78. The unity
 trim moved +4.09 → +4.44 dB to keep the amp at unity.
 
-## EL84 operating point (2026-11-01)
-The published EL84 Koren fit (kg1 570) draws ~103 mA at the datasheet point (Va = Vg2 = 250 V, Vg1 = −7.3 V), where the
-datasheet gives 48 mA. The amp idled at 16.1 V on its 130 ohm cathode resistor, ~62 mA and ~19 W per tube. A real AC15
-sits near 11-12 V. With kg1 1140 the amp idles at 12.5 V and 96.5 mA in total. The same correction went into the AC30.
+## Phase inverter and EL84 operating point (2026-11-01)
+**PI.** The 1959 OS/005 drawing, re-read at 400 dpi, shows the same network as the AC30. The joined cathodes reach a
+node N through one 1K, and N goes to ground through 47K. Both 1M grid leaks return to N, so the grids sit only the 1K
+drop below the cathodes. Each grid is fed by one channel's volume through .01 uF: the PI is also the channel mixer.
 
-The full stage now has ~2.8 dB less small-signal gain and less breakup. THD at Volume 0.2 with 0.05 / 0.2 / 0.6 V sines
-is 0.7 / 2.9 / 9.5 %.
+The model grounded the leaks and gave each cathode its own 1k. That held the PI near cutoff, with 4.4 V of bias and
+~0.1 mA. The amp then reached only ~7 V rms (3 W) at full drive. Fixed, the PI idles at 265 V on the plates and 72 V on
+the cathodes, and the amp reaches ~20.5 V rms into 16 ohm.
 
-The reduced path was refitted: `bmGain0` 8, `bmYmax` 0.0295, knee 1.5, level trim 0.71, HF shelf 0.95.
+**EL84 fit.** The published Koren fit (kg1 570) draws ~103 mA at the datasheet point (Va = Vg2 = 250 V,
+Vg1 = −7.3 V), where the datasheet gives 48 mA. The amp idled at 16.1 V on its 130 ohm cathode resistor (~62 mA,
+~19 W per tube); a real AC15 sits near 11-12 V. With kg1 1140 it idles at 12.5 V and 96.5 mA in total. The same
+corrections went into the AC30.
+
+Breakup barely changes, because it is the preamp that distorts. THD at Volume 0.2 with 0.05 / 0.2 / 0.6 V sines is
+0.8 / 3.2 / 10 %. The level rose by ~18 dB, which the unity trim absorbs.
+
+The reduced path was refitted: `bmGain0` 64, `bmYmax` 0.10, knee 1.9, level trim 0.72, HF shelf 0.95.
 
 | Check | Result |
 |---|---|
-| Sine tracking | within 2 dB (worst −1.9 dB) |
-| Chords | level 2.02 dB, band 1.87 dB (bound 2.5 / 2.0) |
-| Unity trim | 4.44 → 7.45 dB |
+| Sine tracking | within 1.8 dB |
+| Chords | level 2.25 dB, band 1.96 dB (bound 2.5 / 2.0) |
+| Unity trim | 4.44 → −7.56 dB |
+
+Gap: at small signals the reduced curve distorts more than the full stage (Volume 0.5 at 0.05 V: ~3.9 % vs 0.8 %).
+The full stage now has headroom up to power clipping; the fitted knee compresses earlier.

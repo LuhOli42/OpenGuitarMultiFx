@@ -244,18 +244,20 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         const auto cf = c.addNode();
         ch.wSrcCf = c.addSource (cf, 0.0);
 
-        // Phase inverter: a 12AX7 long-tailed pair on OS/005 (the doc's "cathodyne" was wrong): 100k plate
-        // loads, each cathode through 1k to a common tail node held by 47k to ground; the second grid is
-        // AC-grounded by its own .01 uF with a 1M DC leak to ground, so the second half is driven at its
-        // CATHODE through the shared tail impedance, not at its grid. Driven grid takes the channel's
-        // .01 uF input cap + 1M leak.
+        // Phase inverter: a 12AX7 long-tailed pair on OS/005 (re-read at 400 dpi 2026-11-01): 100k plate loads, the
+        // joined cathodes reach node N through ONE 1K, N goes to ground through 47K, and BOTH 1M grid leaks return to
+        // N -- so the grids sit only the 1K drop below the cathodes. (The model used to ground the leaks and give
+        // each cathode its own 1k, which held the PI near cutoff: 4.4 V of bias, ~0.1 mA.) On the drawing each grid
+        // is fed by one channel's volume through .01 uF -- the PI doubles as the channel mixer; with only one channel
+        // modelled, the other grid's .01 uF goes to ground (its volume at zero).
         ch.wPiGrid = c.addNode();
-        const auto g2 = c.addNode(), k1 = c.addNode(), k2 = c.addNode(), tail = c.addNode();
+        const auto g2 = c.addNode(), k1 = c.addNode(), tail = c.addNode();
+        const auto k2 = k1;
         ch.wPiPlate = c.addNode();
         const auto piPlateB = c.addNode();
         ch.wPiCathode = k1; // the driven half's cathode; the tail node sits 1k below it
         c.addCapacitor (cf, ch.wPiGrid, 0.01e-6);
-        c.addResistor (ch.wPiGrid, gnd, 1.0e6);
+        c.addResistor (ch.wPiGrid, tail, 1.0e6);
         c.addTriode (ch.wPiPlate, ch.wPiGrid, k1, triode12AX7());
         c.addTriode (piPlateB, g2, k2, triode12AX7());
         c.addCapacitor (ch.wPiGrid, ch.wPiPlate, cgp);
@@ -263,13 +265,12 @@ void AC15StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (rail, ch.wPiPlate, 100.0e3);
         c.addResistor (rail, piPlateB, 100.0e3);
         c.addResistor (k1, tail, 1.0e3);
-        c.addResistor (k2, tail, 1.0e3);
         c.addResistor (tail, gnd, 47.0e3);
-        c.addResistor (g2, gnd, 1.0e6);
+        c.addResistor (g2, tail, 1.0e6);
         c.addCapacitor (g2, gnd, 0.01e-6);
-        c.setInitialGuess (ch.wPiPlate, 220.0);
-        c.setInitialGuess (piPlateB, 220.0);
-        c.setInitialGuess (tail, 2.0);
+        c.setInitialGuess (ch.wPiPlate, 250.0);
+        c.setInitialGuess (piPlateB, 250.0);
+        c.setInitialGuess (tail, 90.0);
 
         // Each output couples through a 0.05 uF cap into its own EL84's 10k grid stopper (confirmed on
         // the drawing, symmetric both sides).
