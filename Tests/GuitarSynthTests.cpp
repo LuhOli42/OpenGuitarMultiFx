@@ -7,6 +7,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -245,6 +246,31 @@ public:
             }
             logMessage (juce::String (mode == 0 ? "  MONO" : "  POLY") + " worst deviation " + juce::String (worst, 1) + " cents");
             expect (worst < 20.0);
+        }
+
+        beginTest ("Guitar-to-Bass note onset arrives quickly (MONO < 25 ms, POLY < 50 ms)");
+        for (int mode = 0; mode < 2; ++mode)
+        {
+            GuitarToBassProcessor p;
+            setKnob (p, "mode", (float) mode); setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f);
+            const size_t start = (size_t) (0.3 * sr), win = 480;
+            std::vector<float> in (start, 0.0f);
+            const auto note = pluck (110.0, 1.0, 0.3, false);
+            in.insert (in.end(), note.begin(), note.end());
+            const auto out = render (p, in);
+            std::vector<double> env;
+            for (size_t i = start; i + win < start + (size_t) (0.3 * sr); i += 48)
+            {
+                double e = 0.0;
+                for (size_t j = i; j < i + win; ++j) e += (double) out[j] * out[j];
+                env.push_back (std::sqrt (e / win));
+            }
+            const double peak = *std::max_element (env.begin(), env.end());
+            size_t k = 0;
+            while (env[k] < 0.5 * peak) ++k;
+            const double ms = (double) (k * 48 + win / 2) / sr * 1000.0;
+            logMessage (juce::String (mode == 0 ? "  MONO" : "  POLY") + " onset at half level after " + juce::String (ms, 1) + " ms");
+            expect (ms < (mode == 0 ? 25.0 : 50.0));
         }
 
         beginTest ("PolyPitchTracker finds every note of a chord and no ghosts");

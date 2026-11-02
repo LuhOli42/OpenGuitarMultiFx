@@ -12,8 +12,10 @@ namespace openguitarmultifx::gs
 /** Polyphonic fixed-ratio pitch shifter: a phase vocoder with identity phase locking (Laroche & Dolson).
     Each spectral peak moves to ratio x its measured frequency with its window lobe intact, and the bins around it
     keep their phase offset to the peak, so every note of a chord lands in tune (the splice shifter detunes the
-    thirds of a chord by ~14 cents). The window has to split a major third at A2 (~28 Hz apart), which takes
-    ~85 ms: that window length is also the latency. No allocation after prepare(). */
+    thirds of a chord by ~14 cents). Splitting a third at A1 takes a ~170 ms analysis window, but the window is
+    asymmetric: a slow rise over the past, then the fall of a short synthesis Hann over the newest ~32 ms, and only
+    that newest stretch is resynthesised (analysis x synthesis == Hann over it). Latency is the synthesis length,
+    not the analysis length (a symmetric 85 ms window cost 85 ms). No allocation after prepare(). */
 class PhaseVocoderShifter
 {
 public:
@@ -21,10 +23,11 @@ public:
     {
         fs = sampleRate;
         order = 1;
-        while ((1 << order) < (int) std::lround (0.085 * fs)) ++order;
+        while ((1 << order) < (int) std::lround (0.17 * fs)) ++order;
         size = 1 << order;
         mask = size - 1;
-        hop = size / 8;
+        synthLen = std::max (16, 4 * (int) std::lround (0.032 * fs / 4.0));
+        hop = synthLen / 4;
         bins = size / 2 + 1;
         fft.prepare (order);
         spec.assign ((size_t) size + 2, 0.0f);
@@ -32,13 +35,19 @@ public:
         out.assign ((size_t) size, 0.0f);
         frame.assign ((size_t) size, 0.0f);
         window.resize ((size_t) size);
-        double sumSq = 0.0;
+        synthWindow.resize ((size_t) synthLen);
+        const int rise = size - synthLen / 2;
         for (int i = 0; i < size; ++i)
         {
-            window[(size_t) i] = (float) (0.5 - 0.5 * std::cos (2.0 * kPi * i / size));
-            sumSq += (double) window[(size_t) i] * window[(size_t) i];
+            const double w = i < rise ? std::sin (kPi * i / (2.0 * rise)) : std::cos (kPi * (i - rise) / synthLen);
+            window[(size_t) i] = (float) (w * w);
         }
-        norm = (float) (hop / sumSq);
+        for (int m = 0; m < synthLen; ++m)
+        {
+            const double hann = std::pow (std::sin (kPi * m / synthLen), 2.0);
+            synthWindow[(size_t) m] = (float) (hann / std::max (1e-9, (double) window[(size_t) (size - synthLen + m)]));
+        }
+        norm = (float) (2.0 * hop / synthLen); // Hann at hop synthLen/4 overlap-adds to 2
         mag.assign ((size_t) bins, 0.0f);
         phase.assign ((size_t) bins, 0.0f);
         prevPhase.assign ((size_t) bins, 0.0f);
@@ -60,7 +69,7 @@ public:
         count = 0;
     }
 
-    int getLatencySamples() const noexcept { return size; }
+    int getLatencySamples() const noexcept { return synthLen; }
 
     /** Push one input sample and return one shifted sample, getLatencySamples() late. */
     float process (float x, double ratio)
@@ -131,15 +140,16 @@ private:
             if (accSet[(size_t) k] != 0) acc[(size_t) k] = princArg (newAcc[(size_t) k]);
         fft.inverse (spec.data(), frame.data());
 
-        for (int i = 0; i < size; ++i)
-            out[(size_t) ((pos + i) & mask)] += frame[(size_t) i] * window[(size_t) i] * norm;
+        // the frame's newest synthLen samples, starting at the next sample read out: synthLen samples late
+        for (int m = 0; m < synthLen; ++m)
+            out[(size_t) ((pos + m) & mask)] += frame[(size_t) (size - synthLen + m)] * synthWindow[(size_t) m] * norm;
     }
 
     double fs = 48000.0;
-    int order = 12, size = 4096, mask = 4095, hop = 512, bins = 2049, pos = 0, count = 0;
+    int order = 13, size = 8192, mask = 8191, synthLen = 1536, hop = 384, bins = 2049, pos = 0, count = 0;
     float norm = 1.0f;
     RealFft fft;
-    std::vector<float> in, out, frame, spec, window, mag, phase, prevPhase, trueFreq;
+    std::vector<float> in, out, frame, spec, window, synthWindow, mag, phase, prevPhase, trueFreq;
     std::vector<double> acc, newAcc;
     std::vector<char> accSet;
     std::vector<int> peaks;

@@ -32,10 +32,14 @@ Mode picks the shifter:
 - MONO (`SpliceShifter.h`, ~8 ms): resampling read tap, jumps of 10..40 ms chosen by normalised correlation so the
   splices land where the input repeats itself, cross-faded. Single notes and power chords within ~3 cents; the
   third of a chord lands ~14 cents sharp one octave down and close voicings smear two octaves down.
-- POLY (`PhaseVocoderShifter.h`, ~85 ms latency): 4096-point (at 48 kHz) phase vocoder, hop N/8, identity phase
-  locking -- each spectral peak moves to ratio x its true frequency with its lobe intact. Every chord note within
-  ~2 cents (one exception in the chord sheet: G major's 49/62/73 Hz cluster is closer than the window resolves).
-  Use it for pads / recording, not for fast riffs. Switching mode restarts both shifters from silence.
+- POLY (`PhaseVocoderShifter.h`, ~32 ms synthesis latency, ~41 ms median onset): phase vocoder with identity
+  phase locking -- each spectral peak moves to ratio x its true frequency with its lobe intact. The analysis window
+  is 8192 points (~170 ms at 48 kHz, enough to split the G-major 49/62/73 Hz cluster) but asymmetric: slow rise,
+  then the fall of a 32 ms synthesis Hann; only that newest 32 ms is resynthesised (hop 8 ms), so latency is the
+  synthesis length. Chord sheet: every note within ~2 cents at -1 oct (one +14 c outlier at -2 oct). A symmetric
+  4096 window measured the same tuning at 85 ms. Measured and rejected: 21 ms synthesis (thirds off by up to 25 c),
+  attack-from-MONO / sustain-from-POLY crossfade (the two paths are ~30 ms apart, so the fade leaves a ~5 dB hole).
+  Switching mode restarts both shifters from silence.
 Then bass voicing: 35 Hz high-pass, low shelf at 130 Hz (Body), 4th-order tone low-pass (450 Hz .. 4.5 kHz),
 FINGER / PICK (+4 dB shelf at 1.8 kHz, brighter) / ROUND (darker, +3 dB body), soft grit, squash compressor,
 and a little of the guitar low-passed at 200 Hz for the string's own attack.
@@ -65,4 +69,5 @@ CPU is recorded in the effect bench (`BENCH_FILTER=GuitarToBass,SubOctaveSynth,T
 
 ## Not done / next
 A neural timbre-transfer block (does not fit the 5 % core budget), per-string pitch trackers (hexaphonic pickup),
-a lower-latency polyphonic shifter (resolving a third at A1 needs the ~85 ms window).
+a polyphonic shifter under ~30 ms (resolving a third at A1 needs ~170 ms of history; shrinking the synthesis
+window below ~32 ms detunes the thirds).
