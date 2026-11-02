@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ChannelKnobMemory.h"
 #include "DualMono.h"
 #include "EffectProcessor.h"
 #include "NodalCircuit.h"
@@ -18,13 +19,16 @@ namespace openguitarmultifx
     a TMB/presence network, and FOUR EL34 pentodes -- famous for extreme gain with an unusually TIGHT
     low end, courtesy of small coupling capacitors throughout.
 
-    Modelled (overdrive channel): four 12AX7 gain stages plus a cathode follower into the TMB stack,
-    the 12AX7 long-tailed-pair phase inverter with global negative feedback and presence, four EL34s as
-    two push-pull pairs in fixed bias, and the output transformer into a resonant speaker load. The clean
-    channel, the optocoupler/relay channel switching, the FX loop buffers, and the master-section tube
-    buffers are not modelled (the FX loop is bypassed, as the real amp does when nothing is plugged in).
+    Modelled: both channels. The overdrive channel's four 12AX7 gain stages plus a cathode follower into the TMB
+    stack; the clean channel (V1A -> its bass network and Gain -> V4b -> its own Treble / Middle stack, Presence and
+    Volume, added 2026-11-02 from the same tracing); the 12AX7 long-tailed-pair phase inverter with global negative
+    feedback and presence, four EL34s as two push-pull pairs in fixed bias, and the output transformer into a resonant
+    speaker load. The FX loop buffers and the master-section tube buffers are not modelled (the FX loop is bypassed,
+    as the real amp does when nothing is plugged in).
 
-    Controls, page 1 (mirrors the OD channel): Gain, Treble, Mid, Bass, Presence, Master.
+    Controls, page 1 (the real front panel: each channel has its own Gain / Volume / Bass / Middle / Treble /
+    Presence, kept per channel by ChannelKnobMemory, plus the global Master): Channel, Gain, Volume, Treble, Middle,
+    Bass, Presence, Master.
     Page 2 (synthetic): Power Drive (PI drive), Bias, Tube Feel, Speaker (4 / 8 / 16 ohm), Output.
 */
 class BognerUberschallStyleAmplifierProcessor : public EffectProcessor
@@ -37,8 +41,8 @@ public:
     void reset() override { forceReprepare(); }
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    std::unique_ptr<juce::XmlElement> getState() const override { return EffectProcessor::getState(); }
-    void setState (const juce::XmlElement& state) override { EffectProcessor::setState (state); }
+    std::unique_ptr<juce::XmlElement> getState() const override;
+    void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return "Bogner Uberschall"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff1c2a3a); } // Bogner blue-black
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;
@@ -60,7 +64,8 @@ public:
     bool dcConverged() const noexcept { return dcOk; }
     enum class Probe { v1aPlate, v1bPlate, v2bPlate, v3aPlate, followerOut, toneStackOut,
                        phaseInverterGrid, phaseInverterPlateA, phaseInverterPlateB, phaseInverterTail,
-                       powerPlateA, powerPlateB, powerGridA, speaker, biasNode, feedbackNode };
+                       powerPlateA, powerPlateB, powerGridA, speaker, biasNode, feedbackNode,
+                       cleanV1aPlate, cleanV4bPlate, cleanOut, cleanMasterTop };
     double debugVoltage (Probe p) const noexcept;
     double getSolveFailureRate() const noexcept
     {
@@ -95,6 +100,14 @@ private:
         double lastEmitted = 0.0, declick = 0.0;
         bool alignOutput = false;
 
+        // clean channel preamp (its own netlist; its output joins the Master's top through swClean)
+        NodalCircuit preClean;
+        NodalCircuit::DynamicState preCleanRest;
+        int cSrcIn = 0, cSrcE = 0, cSrcD = 0;
+        int cGainTop = 0, cGainBot = 0, cBass = 0, cMid = 0, cTrebleTop = 0, cTrebleBot = 0, cPres = 0,
+            cVolTop = 0, cVolBot = 0;
+        NodalCircuit::Node cOut = 0, cPlateV1a = 0, cPlateV4b = 0;
+
         // preamp: four cascaded 12AX7 gain stages + cathode follower
         int pSrcV3 = 0, pSrcV2 = 0, pSrcE = 0, pSrcIn = 0;
         int rGainTop = 0, rGainBot = 0;
@@ -104,6 +117,10 @@ private:
         // power section
         int wSrcCf = 0, wSrcPi = 0, wSrcCt = 0, wSrcBias = 0;
         int rSpkRe = 0, rSpkRp = 0, rSpkEddy = 0, capSpkCp = 0, grpSpkLe = 0, grpSpkLp = 0;
+        int wSrcClean = 0, swOd = 0, swClean = 0; // channel select at the Master's top
+        NodalCircuit::Node wStackOut = 0;
+        double masterDc = 0.0; // the OD stack's DC at the Master's top: the clean injection rides on it (no thump)
+        double chanMix = 0.0;  // 0 = overdrive, 1 = clean (eased: fade out, flip the switch, fade in)
         int rFeedback = 0, rTrebleTop = 0, rTrebleBottom = 0, rBass = 0, rMidTop = 0, rMidBottom = 0,
             rPresTop = 0, rPresBottom = 0, rBiasTrim = 0, rMasterTop = 0, rMasterBottom = 0;
         int penA = 0, penB = 0;
@@ -132,6 +149,8 @@ private:
     {
         double gain, treble, mid, bass, presence, master, powerDrive, bias, tubeFeel;
         int speaker;
+        double volume = 0.5;
+        int channel = 1; // 0 = clean, 1 = overdrive
     };
     void updatePots (const Knobs& k);
     void recover (Channel& ch) const;
@@ -154,6 +173,9 @@ private:
 
     juce::AudioParameterFloat* cabParam = nullptr;
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
+    juce::AudioParameterFloat* channelParam = nullptr;
+    juce::AudioParameterFloat* volumeParam = nullptr;
+    std::unique_ptr<ChannelKnobMemory> knobMemory; // per-channel Gain / Volume / Treble / Middle / Bass / Presence
     juce::AudioParameterFloat* gainParam = nullptr;
     juce::AudioParameterFloat* trebleParam = nullptr;
     juce::AudioParameterFloat* midParam = nullptr;
@@ -166,6 +188,7 @@ private:
     juce::AudioParameterFloat* tubeFeelParam = nullptr;
     juce::AudioParameterFloat* speakerParam = nullptr;
 
+    juce::SmoothedValue<float> smoothedVolume;
     juce::SmoothedValue<float> smoothedGain, smoothedTreble, smoothedMid, smoothedBass,
         smoothedPresence, smoothedMaster, smoothedOutput, smoothedPower, smoothedBias, smoothedFeel;
 
@@ -183,6 +206,14 @@ private:
         prepare (sr, 0, 0);
     }
 
+    bool cleanSwitched = false;   // the Master-top switch's current side (channel change, see process())
+    double odVolumeHeld = 1.0;    // the OD Volume factor while the clean channel holds the visible knobs
+    // Channel level match (docs/circuits/ChannelLevelMatch.md): Clean sat -46.7 dB (E3) / -55.5 dB (guitar DI) under
+    // Overdrive at the defaults -- ~16 dB of it because the OD Volume is normalised to unity at noon while the clean
+    // Volume keeps its real log law, the rest the saturated OD channel's compression. The midpoint is an output trim
+    // (eased over ~10 ms): applied at the Master's top it drove the PI / EL34s into 20% THD and the clean was gone.
+    static constexpr double cleanLevelMatchDb = 51.1;
+    double chanTrim = 1.0;
     double sampleRate = 0.0;
     int controlCounter = 0;
     long long sampleCount = 0, failureCount = 0, failuresPre = 0, failuresPower = 0;
