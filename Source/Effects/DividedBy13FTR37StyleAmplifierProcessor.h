@@ -62,8 +62,8 @@ public:
 
     /** Amplifier output (speaker-terminal volts, 8 ohm tap) scaled to a signal level: 37 W into 8 ohm is ~17 V rms /
         ~24 V peak. The reduced-order stage emits the same speaker-volts scale. */
-    static constexpr double outputScale = 3.0 / 26.0;
-    static constexpr double fullOutputScale = 3.0 / 26.0;
+    static constexpr double outputScale = 3.0 / 52.0; // halved 2026-11-02: the 6V6 fix doubled the speaker volts, which hit outputLimit
+    static constexpr double fullOutputScale = 3.0 / 52.0;
 
     // ---- reduced-order power stage (same mechanism as TwinReverbStyleAmplifierProcessor's, see that header) ----
     // Boundary: the whole preamp (both channels + both tone stacks) stays a real solved circuit; the LTP PI, the four
@@ -72,15 +72,18 @@ public:
     static inline bool reducedOrder = false;
     static constexpr double bmGain0 = 70.0;   // closed-loop small-signal gain, pMix -> speaker, at the nominal rail (F37_POWERCAL)
     static constexpr double bmYmax = 0.30;    // peak output as a fraction of the (sagged) rail at full saturation -- fitted
-    static constexpr double bmLevelTrim = 0.212;   // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
-    static constexpr double bmKneeN = 6.0;
+    static constexpr double bmLevelTrim = 0.41;    // post-stage level trim fitted against this amp's own netlist (AmpFullVsReducedConsistency sweep)
+    static constexpr double bmKneeN = 2.0;
     static constexpr double bmShelfHz = 90.0;
     static constexpr double bmShelfHfGain = 0.55;
     // See TwinReverbStyleAmplifierProcessor's bmAsym/bmDcHz: real output stages clip
     // asymmetrically at centre bias (the odd saturator alone produces zero even harmonics);
     // bmAsym is fitted against this amp's full-order netlist (Tests/PowerStageAsymBench.cpp),
     // bmDcHz models the OT's inability to pass the rectified DC component.
-    static constexpr double bmAsym = 8.05;
+    // Refit 2026-11-02 after the 6V6 / input fixes: the old 8.05 rode the drive envelope and clipped one half-wave
+    // harder on every note attack (a sputtering, gated fuzz the user heard; 59 % THD at Volume 0.2 / 50 mV where the
+    // netlist gives 12 %), and knee 6 was close to a hard clipper. Now knee 2, no envelope offset, trim 0.45.
+    static constexpr double bmAsym = 0.0;
     static constexpr double bmDcHz = 8.0;
 
     // ---- diagnostics for tests ----

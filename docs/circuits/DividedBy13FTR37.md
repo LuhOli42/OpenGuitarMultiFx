@@ -87,3 +87,21 @@ Page 2 (synthetic): Power Drive, Bias, Tube Feel, Speaker, Output.
   shape (bound 2 / 4).
 - **Trim:** −8.90 dB, giving unity.
 - **CPU:** 11 % of a core in the shipped reduced build. The preamp now has the real stage count: 5879, follower, V5B.
+
+## Gain review (2026-11-02)
+User report: channel 1 has strangely high gain, the whole amp sounds too high-gain, and it has the same "failing fuzz"
+as the AC30.
+
+- **6V6 fit.** kg1 9000 → 2140, the datasheet point (~45 mA at Va = Vg2 = 250 V, Vg1 = −12.5 V). The 9000 was a
+  solver-stability softening borrowed from the Deluxe. The four tubes idled at 16 mA each and ran out of current at
+  a fraction of the real 37 W, so the stage saturated at any setting. They now idle at 32.5 mA; silence stays clean.
+  Both output scales are halved (3/26 → 3/52), because the speaker volts doubled and hit `outputLimit`.
+- **Inputs.** Each channel's two jacks sit on a 68k / 68k / 1M network. The empty jack's shorting contact grounds its
+  68k, giving a −6 dB divider. The model had a lone 68k, so both channels ran 6 dB hot.
+- **Reduced stage.** The shipped curve had `bmAsym` 8.05 riding the drive envelope: every note attack clipped one
+  half-wave much harder, the sputtering fuzz. Measured: 59 % THD at Volume 0.2 with 50 mV, where the netlist gives
+  12 %. With knee 6 it was close to a hard clipper. It is now knee 2, no envelope offset, trim 0.41.
+- **Results.** AFVR chords within 2 dB. The Ch1 TONE test now checks the real behaviour: the rotary's 250 pF
+  position cuts lows, it does not shunt highs.
+- **Kept.** The 5879 screen stays at 65 V. The trace marks 50 V, but 50 V puts the plate at 118 V where the trace
+  measures 81 V.

@@ -25,7 +25,7 @@ namespace
     constexpr double piFraction = 265.0 / 385.0;  // B+3 / B+4 (marked)
     constexpr double preFraction = 212.0 / 385.0; // B+2 / B+4 (marked)
     constexpr double pre1Fraction = 206.0 / 385.0; // B+1 / B+4 (marked)
-    constexpr double pentodeScreenVolts = 65.0;   // the 5879's screen: marked 50 V, but read through its 1M with a 20k/V meter (reads low)
+    constexpr double pentodeScreenVolts = 65.0;   // the 5879's screen: marked 50 V through its 1M with a 20k/V meter; 65 V is what reproduces the marked 81 V plate (50 V gives 118 V)
     // Mixed bias: each pair of 6V6s has its own 270 R 5 W + 50 uF cathode, and the grid leaks return to the BIAS circuit
     // (a 1N4007 off the HT winding, B25k trim). The fixed part is estimated so the quartet idles near 30 mA a tube.
     constexpr double biasNominal = -14.0;
@@ -51,15 +51,16 @@ namespace
         return p;
     }
 
-    /** 6V6GT beam tetrode: the Deluxe Reverb's own fit -- published Koren 6V6GT set with kg1 softened for solver
-        stability (the same documented departure that amp's file explains; no global feedback in this amp either,
-        and the softened value has proven stable across every 6V6 model built here). */
+    /** 6V6GT beam tetrode, Koren set with kg1 2140: ~45 mA at the datasheet point (Va = Vg2 = 250 V, Vg1 = -12.5 V).
+        It was 9000 (a solver-stability softening borrowed from the Deluxe), which left four 6V6s idling at 16 mA each
+        and running out of current at a fraction of the real 37 W -- the whole amp saturated at any setting. Now 32 mA
+        per tube at idle; silence stays clean (2026-11-02). */
     KorenPentode::Parameters pentode6V6()
     {
         KorenPentode::Parameters p;
         p.mu = 10.0;
         p.ex = 1.35;
-        p.kg1 = 9000.0;
+        p.kg1 = 2140.0;
         p.kg2 = 4500.0;
         p.kp = 48.5;
         p.kvb = 12.0;
@@ -248,7 +249,10 @@ void DividedBy13FTR37StyleAmplifierProcessor::buildPreampCh1 (NodalCircuit& c, C
     const auto g = c.addNode();
     ch.pK1 = c.addNode();
     ch.pPlate1 = c.addNode();
+    // Each channel has two jacks on a 68k / 68k / 1M network; the empty jack's shorting contact grounds its own 68k,
+    // so the grid sees 68k in and 68k to ground: -6 dB (it was a lone 68k, 6 dB hot). Re-read 2026-11-02.
     c.addResistor (in1, g, 68.0e3);
+    c.addResistor (g, gnd, 68.0e3);
     c.addResistor (g, gnd, 1.0e6);
     if (triodeStandin)
         c.addTriode (ch.pPlate1, g, ch.pK1, triode12AX7());
@@ -299,6 +303,7 @@ void DividedBy13FTR37StyleAmplifierProcessor::buildPreamp (NodalCircuit& c, Chan
     ch.pK2a = c.addNode();
     ch.pPlate2a = c.addNode();
     c.addResistor (in2, g, 68.0e3);
+    c.addResistor (g, gnd, 68.0e3);                // the empty jack's 68k, as on channel 1
     c.addResistor (g, gnd, 1.0e6);
     c.addCapacitor (g, ch.pPlate2a, cgp);
     c.addTriode (ch.pPlate2a, g, ch.pK2a, triode12AX7());
