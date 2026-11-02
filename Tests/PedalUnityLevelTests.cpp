@@ -80,9 +80,13 @@ public:
                     continue;
                 *f = juce::jlimit (f->range.start, f->range.end, 0.5f); // "noon", whatever a pedal's own default is
             }
+            // Intended departures from unity, each a user request: a model that saturates hard on this -20 dBFS reference
+            // sits at unity here but far under its peers at a real guitar's level (the Sunn Model T: -39 dBFS on the
+            // guitar DI at noon where the AC30 gives -29; 2026-11-02, "volume muito baixo geral").
+            const double targetDb = juce::String (key) == "SunnModelTStyleAmplifier" ? 10.0 : 0.0;
             const double gainDb = referenceGainDb (*pedal);
             logMessage (juce::String (key).paddedRight (' ', 24) + juce::String (gainDb, 2) + " dB");
-            expectWithinAbsoluteError (gainDb, 0.0, 1.0);
+            expectWithinAbsoluteError (gainDb, targetDb, 1.0);
         }
     }
 };

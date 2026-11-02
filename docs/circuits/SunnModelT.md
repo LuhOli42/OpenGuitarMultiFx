@@ -56,3 +56,11 @@ Drive, Bias, Tube Feel, Speaker (4/8/16Ω), Output. Unity trim −9.06 dB.
 - DC: plates ~505V; unity trim calibrated for the PedalUnityLevel suite.
 - `Tests/SunnModelTStyleAmplifierProcessorTests.cpp`: DC convergence, silence settle, pluck, both
   channels and the More/Normal volume interaction.
+
+## Output level (2026-11-02)
+User report: overall level too low. The unity trim matches every amp on a hot −20 dBFS reference. The Model T already
+saturates there, so at a real guitar's level it sat far under its peers: −39 dBFS on the guitar DI at noon, against
+−29 for the AC30. With every Volume and Master at maximum it reached −28, against −14 for the JCM800.
+
+The registry trim is now +10 dB over unity (−9.32 → +0.68 dB). `PedalUnityLevelTests` declares that offset as an
+intended departure.
