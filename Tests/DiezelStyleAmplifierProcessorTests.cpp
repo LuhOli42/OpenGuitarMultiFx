@@ -163,8 +163,10 @@ public:
             logMessage ("presence 0 / 1 at 6 kHz: " + juce::String (pLo, 5) + " / " + juce::String (pHi, 5));
             expectGreaterThan (pHi, pLo * 1.15);
 
-            const double dLo = level (0.0f, "deep", 0.0f, 100.0, 0.002), dHi = level (0.0f, "deep", 1.0f, 100.0, 0.002);
-            logMessage ("deep 0 / 1 at 100 Hz: " + juce::String (dLo, 5) + " / " + juce::String (dHi, 5));
+            // Deep is the drawing's .1 + 10k + 1-3 H leg on the feedback node: a series LC shunt resonating near 350 Hz, so
+            // it lifts the low mids it stops feeding back -- measured there, not at 100 Hz where the .1 still blocks it.
+            const double dLo = level (3.0f, "deep", 0.0f, 300.0, 0.002), dHi = level (3.0f, "deep", 1.0f, 300.0, 0.002);
+            logMessage ("deep 0 / 1 at 300 Hz: " + juce::String (dLo, 5) + " / " + juce::String (dHi, 5));
             expectGreaterThan (dHi, dLo * 1.1);
         }
 
@@ -185,6 +187,41 @@ public:
                         + " / " + juce::String (l2, 5) + " / " + juce::String (l3, 5));
             expectGreaterThan (l2, l0);       // mega is hotter than clean at matched knobs
             expectGreaterThan (l3, l1);       // lead is hotter than crunch
+        }
+
+        beginTest ("reducedOrder (shipped): CPU cost of the Lead channel is bounded");
+        {
+            const bool prev = Amp::reducedOrder;
+            Amp::reducedOrder = true;
+            {
+                Amp amp;
+                setParam (amp, juce::String (px) + "channel", 3.0f);
+                amp.prepare (sr, 128, 2);
+                juce::AudioBuffer<float> buf (2, 128);
+                double phase = 0.0;
+                const auto block = [&]
+                {
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        const float s = (float) (0.2 * std::sin (phase));
+                        phase += juce::MathConstants<double>::twoPi * 110.0 / sr;
+                        buf.setSample (0, i, s);
+                        buf.setSample (1, i, s);
+                    }
+                    amp.process (buf);
+                };
+                for (int b = 0; b < 100; ++b)
+                    block();
+                const auto t0 = juce::Time::getHighResolutionTicks();
+                constexpr int measureBlocks = 500;
+                for (int b = 0; b < measureBlocks; ++b)
+                    block();
+                const double wall = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0);
+                const double pct = 100.0 * wall / ((double) (measureBlocks * 128) / sr);
+                logMessage ("reducedOrder CPU (Lead) " + juce::String (pct, 1) + "%");
+                expectLessThan (pct, 60.0);
+            }
+            Amp::reducedOrder = prev;
         }
     }
 };

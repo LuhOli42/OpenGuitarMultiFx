@@ -44,10 +44,11 @@ namespace
     constexpr double reservoir = 100.0e-6;
     constexpr double screenResistor = 470.0;
     constexpr double piFraction = 310.0 / 430.0;
-    constexpr double preFraction = 270.0 / 430.0;
+    constexpr double preFraction = 367.0 / 430.0;   // the drawing's +367 V preamp rail
+    constexpr double preRailNominal = 367.0;
     constexpr double idlePlateCurrent = 0.085;   // per pair of KT77s
     constexpr double preampAndPiCurrent = 0.009;
-    constexpr double biasNominal = -44.0;        // fixed-bias trimmer for KT77 @ 430 V
+    constexpr double biasNominal = -47.0;        // ~35 mA a tube at idle (Diezel service manual)
     constexpr double biasSpan = 8.0;
 
     constexpr double otPrimary = 1800.0;         // ~100 W 4x6L6GC, plate-to-plate
@@ -159,13 +160,7 @@ DiezelStyleAmplifierProcessor::DiezelStyleAmplifierProcessor()
     // the VH4 stores Gain/TMB/Volume per channel (its MIDI memory); the visible knobs carry per-channel values.
     knobMemory = std::make_unique<ChannelKnobMemory> (*channelParam,
         std::vector<juce::AudioParameterFloat*> { gainParam, trebleParam, middleParam, bassParam, volumeParam });
-    // Default Volumes balance the channels at Master 0.5 (AmpDynamicsBench, 0.2 V in): the Mega/Lead preamps swing
-    // ~25 dB more than Clean's, which is what each channel's own Volume is for on the real amp. With every Volume at
-    // 0.8, switching from Clean jumped straight into the output limiter.
-    knobMemory->setDefaults (0, { 0.25f, 0.55f, 0.50f, 0.60f, 0.80f });   // Clean: high headroom
-    knobMemory->setDefaults (1, { 0.50f, 0.55f, 0.50f, 0.55f, 0.53f });   // Crunch
-    knobMemory->setDefaults (2, { 0.60f, 0.50f, 0.55f, 0.50f, 0.075f });  // Mega
-    knobMemory->setDefaults (3, { 0.70f, 0.50f, 0.55f, 0.45f, 0.07f });   // Lead
+    // Every channel starts at noon (the rebuilt circuit's channel levels are matched by modeLevelMatchDb instead).
 }
 
 void DiezelStyleAmplifierProcessor::buildChannel (Channel& ch)
@@ -191,83 +186,210 @@ void DiezelStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.setInitialGuess (ch.sB, screenNominal);
     }
 
-    // ================================================================ preamp: FOUR channel netlists, the
-    // VH4's progressively-hotter variants (service notes: shared V1-style front end, per-channel voicing in the
-    // cathodes/couplings/tone-stack). Only the selected channel's netlist is solved per sample.
-    struct StageSpec { double ra, rk, ck, stop; };
-    struct ChanSpec { int nStages; StageSpec st[4]; double slope, cTreble, cBass, cMid, midMax, couple; };
-    const ChanSpec specs[4] = {
-        // CH1 Clean -- high headroom, Fender-leaning stack (steeper slope, small treble cap, thin bass cap)
-        { 2, { { 100.0e3, 1.5e3, 22.0e-6, 68.0e3 }, { 100.0e3, 2.7e3, 0.0, 68.0e3 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } },
-          47.0e3, 250.0e-12, 22.0e-9, 47.0e-9, 50.0e3, 22.0e-9 },
-        // CH2 Crunch -- plexi-leaning stack, cold-clipper second stage
-        { 2, { { 100.0e3, 1.5e3, 22.0e-6, 68.0e3 }, { 100.0e3, 1.5e3, 1.0e-6, 68.0e3 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } },
-          33.0e3, 270.0e-12, 47.0e-9, 100.0e-9, 25.0e3, 22.0e-9 },
-        // CH3 Mega -- three stages, hotter second cathode, mid-forward stack
-        { 3, { { 100.0e3, 1.5e3, 22.0e-6, 68.0e3 }, { 100.0e3, 820.0, 22.0e-6, 68.0e3 }, { 100.0e3, 1.5e3, 0.68e-6, 1.0 }, { 0, 0, 0, 0 } },
-          22.0e3, 470.0e-12, 22.0e-9, 47.0e-9, 25.0e3, 22.0e-9 },
-        // CH4 Lead -- CH3 plus a fourth cold stage
-        { 4, { { 100.0e3, 1.5e3, 22.0e-6, 68.0e3 }, { 100.0e3, 820.0, 22.0e-6, 68.0e3 }, { 100.0e3, 1.5e3, 0.68e-6, 1.0 }, { 100.0e3, 2.7e3, 0.0, 1.0 } },
-          22.0e3, 470.0e-12, 22.0e-9, 47.0e-9, 25.0e3, 22.0e-9 },
-    };
+    // ================================================================ preamp: FOUR channel netlists (drawing "VH4 v1.0",
+    // docs/circuits/Diezel.md). Every channel starts at V1a and ends at V3a -> the V3b cathode follower -> C20 into the
+    // tone-stack bus TS; the relays between them are what makes the four channels:
+    //   CH1  V1a -> the passive C3 / 470k-chain network -> CH1 Gain -> V3a
+    //   CH2  V1a -> C8 10n / R9 3M3 || C9 680p -> CH2 Gain -> V2b -> C11 4.7n / R12 470k -> V3a
+    //   CH3  V1a -> C13 1n / R14 220k -> CH3 Gain -> R21 47k -> V2a -> C18 4.7n -> V3a
+    //   CH4  V1a -> C14 1n / R15 220k -> CH4 Gain -> V1b -> C16 2.2n / R19 470k + R20 220k -> R21 -> V2a -> V3a
+    // The other channels' input networks stay on V1a's plate in every netlist (they are always wired there), as
+    // simple equivalents; so do the four tone stacks on the follower (12.25k + 88n, four 10k + 39k + 22n legs).
+    // Only the selected channel's netlist is solved per sample.
     for (int i = 0; i < 4; ++i)
     {
         auto& c = ch.pre[i];
-        const ChanSpec& s = specs[i];
         const auto rail = c.addNode(), in = c.addNode();
-        ch.pSrcRail[i] = c.addSource (rail, screenNominal * preFraction);
+        ch.pSrcRail[i] = c.addSource (rail, preRailNominal);
         ch.pSrcIn[i] = c.addSource (in, 0.0);
-        NodalCircuit::Node drive = in;
-        for (int t = 0; t < s.nStages; ++t)
+        int stage = 0;
+        const auto triode = [&] (NodalCircuit::Node grid, double rk, double ck)
         {
-            const StageSpec& st = s.st[t];
-            const auto g = c.addNode(), p = c.addNode(), k = c.addNode();
-            c.addResistor (drive, g, st.stop);
-            c.addResistor (g, gnd, 1.0e6);
-            c.addTriode (p, g, k, triode12AX7());
-            c.addCapacitor (g, p, cgp);
-            c.addResistor (rail, p, st.ra);
-            c.addResistor (k, gnd, st.rk);
-            if (st.ck > 0.0)
-                c.addCapacitor (k, gnd, st.ck);
-            c.setInitialGuess (p, railPlatesNominal * 0.45);
+            const auto p = c.addNode(), k = c.addNode();
+            c.addTriode (p, grid, k, triode12AX7());
+            c.addCapacitor (grid, p, cgp);
+            c.addResistor (rail, p, 120.0e3);
+            c.addResistor (k, gnd, rk);
+            if (ck > 0.0)
+                c.addCapacitor (k, gnd, ck);
+            c.setInitialGuess (p, 200.0);
             c.setInitialGuess (k, 1.5);
-            ch.pPlate[i][t] = p;
-            ch.pK[i][t] = k;
-            if (t == 0)
+            ch.pPlate[i][(size_t) juce::jmin (stage, 3)] = p;
+            ch.pK[i][(size_t) juce::jmin (stage, 3)] = k;
+            ++stage;
+            return p;
+        };
+        const auto load = [&] (NodalCircuit::Node from, double cap, double r)
+        {
+            const auto n = c.addNode();
+            c.addCapacitor (from, n, cap);
+            c.addResistor (n, gnd, r);
+        };
+        const auto pot = [&] (NodalCircuit::Node top, int& rTop, int& rBot)
+        {
+            const auto w = c.addNode();
+            rTop = c.addResistor (top, w, 125.0e3);  // 250k Gain
+            rBot = c.addResistor (w, gnd, 125.0e3);
+            return w;
+        };
+
+        // V1a: In-1 -> R1 1M || C1 150p (the drawing's 100-200p) -> grid; R3 120k plate; R2 2k2 + C2 47u.
+        c.addResistor (in, gnd, 1.0e6);
+        c.addCapacitor (in, gnd, 150.0e-12);
+        const auto p1 = triode (in, 2.2e3, 47.0e-6);
+        if (i != 0) load (p1, 220.0e-9, 690.0e3);   // CH1: C3 into R4 + R7
+        if (i != 1) load (p1, 10.0e-9, 207.0e3);    // CH2: C8 into R8 || (R9 + Gain)
+        if (i != 2) load (p1, 1.0e-9, 470.0e3);     // CH3: C13 into R14 + Gain
+        if (i != 3) load (p1, 1.0e-9, 350.0e3);     // CH4: C14 into R15 + Gain || R16
+
+        // The V3a input: node1 (R24 1M) -> relay -> node2 (R25 1M) -> relay -> node3 -> R26 470k -> V3a.
+        const auto n3 = c.addNode();
+        NodalCircuit::Node v3aFeed = n3;
+        if (i == 0)
+        {
+            // CH1: C3 220n -> A; A -R4- j1 -R5- j2 -R6- B, C4 2.2n / C5 220p / C6 220p across them, R7 220k j1 to
+            // ground, C7 68p + R7' 10M across the chain (its switch open); B = CH1 Gain top, wiper -> node3.
+            const auto aa = c.addNode(), j1 = c.addNode(), j2 = c.addNode(), bb = c.addNode(), c7n = c.addNode();
+            c.addCapacitor (p1, aa, 220.0e-9);
+            c.addResistor (aa, j1, 470.0e3);
+            c.addResistor (j1, j2, 470.0e3);
+            c.addResistor (j2, bb, 470.0e3);
+            c.addCapacitor (aa, j1, 2.2e-9);
+            c.addCapacitor (j1, j2, 220.0e-12);
+            c.addCapacitor (j2, bb, 220.0e-12);
+            c.addResistor (j1, gnd, 220.0e3);
+            c.addCapacitor (aa, c7n, 68.0e-12);
+            c.addResistor (c7n, bb, 10.0e6);
+            const auto w = pot (bb, ch.rGainTop[i], ch.rGainBot[i]);
+            c.addResistor (w, n3, 1.0);
+        }
+        else if (i == 1)
+        {
+            // CH2: C8 10n -> R8 220k; R9 3M3 || C9 680p -> CH2 Gain -> V2b (R11 120k, R10 680R + C10 1u) -> C11 4.7n ->
+            // R12 470k (C12 470p + R13 10M across, switch open) -> R13 1M -> relay -> node2 (R25 1M) -> node3.
+            const auto n8 = c.addNode(), gt = c.addNode(), n11 = c.addNode(), n12 = c.addNode(), c12n = c.addNode(), n2 = c.addNode();
+            c.addCapacitor (p1, n8, 10.0e-9);
+            c.addResistor (n8, gnd, 220.0e3);
+            c.addResistor (n8, gt, 3.3e6);
+            c.addCapacitor (n8, gt, 680.0e-12);
+            const auto w = pot (gt, ch.rGainTop[i], ch.rGainBot[i]);
+            const auto p2b = triode (w, 680.0, 1.0e-6);
+            c.addCapacitor (p2b, n11, 4.7e-9);
+            c.addResistor (n11, n12, 470.0e3);
+            c.addCapacitor (n11, c12n, 470.0e-12);
+            c.addResistor (c12n, n12, 10.0e6);
+            c.addResistor (n12, gnd, 1.0e6);
+            c.addResistor (n12, n2, 1.0);
+            c.addResistor (n2, gnd, 1.0e6);
+            c.addResistor (n2, n3, 1.0);
+        }
+        else
+        {
+            // CH3 / CH4 -> R21 47k -> V2a (R22 3M3 leak; R24 120k, R23 680R + C17 1u) -> C18 4.7n -> node1 (R24 1M) ->
+            // node2 (R25 1M) -> node3.
+            const auto r21in = c.addNode();
+            if (i == 2)
             {
-                // stage 0 plate -> per-channel Gain pot -> anode-driven TMB -> next stage
-                const auto d = c.addNode(), w = c.addNode();
-                c.addCapacitor (p, d, s.couple);
-                ch.rGainTop[i] = c.addResistor (d, w, 800.0e3);   // Gain 1M audio
-                ch.rGainBot[i] = c.addResistor (w, gnd, 200.0e3);
-                const auto tt = c.addNode(), tw = c.addNode(), tb = c.addNode(), x = c.addNode(), mt = c.addNode();
-                c.addCapacitor (w, tt, s.cTreble);
-                ch.rTrebleTop[i] = c.addResistor (tt, tw, 125.0e3);
-                ch.rTrebleBot[i] = c.addResistor (tw, tb, 125.0e3);
-                c.addResistor (w, x, s.slope);
-                c.addCapacitor (x, tb, s.cBass);
-                c.addCapacitor (x, mt, s.cMid);
-                ch.rBass[i] = c.addResistor (tb, mt, 125.0e3);
-                ch.rMid[i] = c.addResistor (mt, gnd, s.midMax * 0.5);
-                drive = tw;
+                const auto n13 = c.addNode(), gt = c.addNode();
+                c.addCapacitor (p1, n13, 1.0e-9);
+                c.addResistor (n13, gt, 220.0e3);
+                const auto w = pot (gt, ch.rGainTop[i], ch.rGainBot[i]);
+                c.addResistor (w, r21in, 1.0);
             }
             else
             {
-                const auto d = c.addNode();
-                c.addCapacitor (p, d, s.couple);
-                drive = d;
+                // CH4: C14 1n -> R15 220k -> CH4 Gain -> V1b (R16 220k leak; R18 120k, R17 3k3 + C15 1u) -> C16 2.2n ->
+                // R19 470k / R20 220k -> R21.
+                const auto n14 = c.addNode(), gt = c.addNode(), n16 = c.addNode();
+                c.addCapacitor (p1, n14, 1.0e-9);
+                c.addResistor (n14, gt, 220.0e3);
+                const auto w = pot (gt, ch.rGainTop[i], ch.rGainBot[i]);
+                c.addResistor (w, gnd, 220.0e3);
+                const auto p1b = triode (w, 3.3e3, 1.0e-6);
+                c.addCapacitor (p1b, n16, 2.2e-9);
+                c.addResistor (n16, r21in, 470.0e3);
+                c.addResistor (r21in, gnd, 220.0e3);
             }
+            const auto g2a = c.addNode(), n1 = c.addNode(), n2 = c.addNode();
+            c.addResistor (r21in, g2a, 47.0e3);
+            c.addResistor (g2a, gnd, 3.3e6);
+            const auto p2a = triode (g2a, 680.0, 1.0e-6);
+            c.addCapacitor (p2a, n1, 4.7e-9);
+            c.addResistor (n1, gnd, 1.0e6);
+            c.addResistor (n1, n2, 1.0);
+            c.addResistor (n2, gnd, 1.0e6);
+            c.addResistor (n2, n3, 1.0);
         }
-        // per-channel Volume, then the shared Master ahead of the PI (both inside each netlist so the
-        // reducedOrder path keeps them working).
-        const auto vt = c.addNode(), vw = c.addNode();
-        c.addCapacitor (drive, vt, s.couple);
-        ch.rVolTop[i] = c.addResistor (vt, vw, 800.0e3);        // channel Volume 1M audio
-        ch.rVolBot[i] = c.addResistor (vw, gnd, 200.0e3);
+
+        // V3a (R28 120k, R27 680R + C19 2.2u) -> V3b cathode follower DC-coupled (plate on the rail, R29 120k) ->
+        // C20 220n -> TS (R30 1M; C20' 10u + R31 470k) with the four tone stacks' input legs on it.
+        const auto g3a = c.addNode();
+        c.addResistor (v3aFeed, g3a, 470.0e3);
+        const auto p3a = triode (g3a, 680.0, 2.2e-6);
+        const auto k3b = c.addNode();
+        c.addTriode (rail, p3a, k3b, triode12AX7());
+        c.addCapacitor (p3a, rail, cgp);
+        c.addResistor (k3b, gnd, 120.0e3);
+        c.setInitialGuess (k3b, 200.0);
+        ch.pPlate[i][3] = p3a;
+        ch.pK[i][3] = k3b;
         ch.pOut[i] = c.addNode();
-        ch.rMasterTop[i] = c.addResistor (vw, ch.pOut[i], 200.0e3);   // global Master 1M audio
-        ch.rMasterBot[i] = c.addResistor (ch.pOut[i], gnd, 800.0e3);
+        c.addCapacitor (k3b, ch.pOut[i], 220.0e-9);
+        c.addResistor (ch.pOut[i], gnd, 1.0e6);
+        {
+            const auto n31 = c.addNode(), sl = c.addNode();
+            c.addCapacitor (ch.pOut[i], n31, 10.0e-6);
+            c.addResistor (n31, gnd, 470.0e3);
+            c.addResistor (ch.pOut[i], sl, 12.25e3);
+            c.addCapacitor (sl, gnd, 88.0e-9);
+        }
+    }
+
+    // ================================================================ the selected channel's tone stack, Volume, the
+    // channel mixer and V4a / V4b -> Master (one netlist: the four stacks share values; the inactive three are the
+    // load inside the preamp netlists). TS -> R 10k -> S; S -> C 560p -> Treble 220k (wiper -> R 470k -> Volume 470k);
+    // Treble's bottom -> Bass 1M -> Middle 22k -> ground; S -> R 39k -> M -> 22n to the Bass wiper and 22n to the
+    // Middle wiper. Volume wiper -> relay -> R35 56k (CH1) / R39 R43 R47 680k -> V4a (R 120k, 640R) -> V4b cathode
+    // follower (R 120k) -> C 220n -> Master 1M -> the PI. The FX loop is not modelled: its unplugged return passes the
+    // send through.
+    {
+        auto& c = ch.post;
+        const auto rail = c.addNode(), ts = c.addNode();
+        ch.qSrcRail = c.addSource (rail, preRailNominal);
+        ch.qSrcIn = c.addSource (ts, 0.0);
+        const auto sn = c.addNode(), tt = c.addNode(), tw = c.addNode(), tb = c.addNode(), bw = c.addNode(), bb = c.addNode(),
+                   mw = c.addNode(), mm = c.addNode(), vt = c.addNode(), vw = c.addNode(), sum = c.addNode();
+        c.addResistor (ts, sn, 10.0e3);
+        c.addCapacitor (sn, tt, 560.0e-12);
+        ch.rTrebleTop = c.addResistor (tt, tw, 110.0e3);
+        ch.rTrebleBot = c.addResistor (tw, tb, 110.0e3);
+        ch.rBassTop = c.addResistor (tb, bw, 500.0e3);
+        ch.rBassBot = c.addResistor (bw, bb, 500.0e3);
+        ch.rMidTop = c.addResistor (bb, mw, 11.0e3);
+        ch.rMidBot = c.addResistor (mw, gnd, 11.0e3);
+        c.addResistor (sn, mm, 39.0e3);
+        c.addCapacitor (mm, bw, 22.0e-9);
+        c.addCapacitor (mm, mw, 22.0e-9);
+        c.addResistor (tw, vt, 470.0e3);
+        ch.rVolTop = c.addResistor (vt, vw, 235.0e3);
+        ch.rVolBot = c.addResistor (vw, gnd, 235.0e3);
+        ch.rMix = c.addResistor (vw, sum, 680.0e3);
+        const auto p4a = c.addNode(), k4a = c.addNode(), k4b = c.addNode(), mt = c.addNode();
+        c.addTriode (p4a, sum, k4a, triode12AX7());
+        c.addCapacitor (sum, p4a, cgp);
+        c.addResistor (rail, p4a, 120.0e3);
+        c.addResistor (k4a, gnd, 640.0);
+        c.setInitialGuess (p4a, 200.0);
+        c.setInitialGuess (k4a, 1.0);
+        c.addTriode (rail, p4a, k4b, triode12AX7());
+        c.addCapacitor (p4a, rail, cgp);
+        c.addResistor (k4b, gnd, 120.0e3);
+        c.setInitialGuess (k4b, 200.0);
+        c.addCapacitor (k4b, mt, 220.0e-9);
+        ch.qOut = c.addNode();
+        ch.rMasterTop = c.addResistor (mt, ch.qOut, 500.0e3);
+        ch.rMasterBot = c.addResistor (ch.qOut, gnd, 500.0e3);
+        ch.qPlateV4a = p4a;
     }
 
     // ================================================================ power: V5 LTP -> 4x6L6GC (2 pairs), fixed bias, NFB + Presence/Focus
@@ -284,45 +406,47 @@ void DiezelStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wPiGrid = c.addNode();
         c.addCapacitor (in, ch.wPiGrid, 22.0e-9);
 
-        // LTP: 82k5 / 100k plates (R205/R206), 470k grid leaks (R202/R204) to the tail mid node, 680R (R203)
-        // cathode->mid, 8k8 (R209/R210) mid->feedback node, .1 uF (C203) feedback->ground-side grid.
+        // PI (Caphead / WJD's VH4 output drawing, 2000-01 era): 12AX7 LTP, 120k / 120k plates; .022 from the Master into
+        // grid 1; both grids 1M to the tail node T under the 680R cathode resistor; T -> 10k -> J -> 4.7k -> ground; grid 2
+        // AC-grounded to J by .022; the NFB, the Presence and the Deep networks land on J.
         ch.wPiK = c.addNode();
         ch.wPiPlateA = c.addNode();
         ch.wPiPlateB = c.addNode();
         const auto gB = c.addNode(), nm = c.addNode(), fp = c.addNode();
         ch.wNfb = fp;
-        c.addResistor (ch.wPiGrid, nm, 470.0e3);
-        c.addResistor (gB, nm, 470.0e3);
+        c.addResistor (ch.wPiGrid, nm, 1.0e6);
+        c.addResistor (gB, nm, 1.0e6);
         c.addTriode (ch.wPiPlateA, ch.wPiGrid, ch.wPiK, triode12AX7());
         c.addTriode (ch.wPiPlateB, gB, ch.wPiK, triode12AX7());
         c.addCapacitor (ch.wPiGrid, ch.wPiPlateA, cgp);
         c.addCapacitor (gB, ch.wPiPlateB, cgp);
-        c.addResistor (piRail, ch.wPiPlateA, 82.5e3);
-        c.addResistor (piRail, ch.wPiPlateB, 100.0e3);
+        c.addResistor (piRail, ch.wPiPlateA, 120.0e3);
+        c.addResistor (piRail, ch.wPiPlateB, 120.0e3);
         c.addResistor (ch.wPiK, nm, 680.0);
-        c.addResistor (nm, fp, 8.8e3);
-        c.addCapacitor (fp, gB, 0.1e-6);
+        c.addResistor (nm, fp, 10.0e3);
+        c.addResistor (fp, gnd, 4.7e3);
+        c.addCapacitor (gB, fp, 0.022e-6);
         c.setInitialGuess (ch.wPiPlateA, 240.0);
-        c.setInitialGuess (ch.wPiPlateB, 235.0);
-        c.setInitialGuess (ch.wPiK, 33.0);
-        c.setInitialGuess (nm, 30.0);
-        c.setInitialGuess (ch.wPiGrid, 30.0);
-        c.setInitialGuess (gB, 30.0);
-        c.setInitialGuess (fp, 0.0);
+        c.setInitialGuess (ch.wPiPlateB, 240.0);
+        c.setInitialGuess (ch.wPiK, 30.0);
+        c.setInitialGuess (nm, 29.0);
+        c.setInitialGuess (ch.wPiGrid, 29.0);
+        c.setInitialGuess (gB, 29.0);
+        c.setInitialGuess (fp, 8.0);
 
-        // .022 couplings (C204/C205), 150k grid leaks to bias (R207/R208), 1k stoppers.
+        // .22 couplings, 220k grid leaks to the bias supply, 10k stoppers per tube (5k for a merged pair).
         ch.wBias = c.addNode();
         c.addResistor (biasSrc, ch.wBias, 1.0e3);
         c.addCapacitor (ch.wBias, gnd, 10.0e-6);
         ch.wGridA = c.addNode();
         ch.wGridB = c.addNode();
-        c.addCapacitor (ch.wPiPlateA, ch.wGridA, 22.0e-9);
-        c.addCapacitor (ch.wPiPlateB, ch.wGridB, 22.0e-9);
-        c.addResistor (ch.wGridA, ch.wBias, 150.0e3);
-        c.addResistor (ch.wGridB, ch.wBias, 150.0e3);
+        c.addCapacitor (ch.wPiPlateA, ch.wGridA, 0.22e-6);
+        c.addCapacitor (ch.wPiPlateB, ch.wGridB, 0.22e-6);
+        c.addResistor (ch.wGridA, ch.wBias, 220.0e3);
+        c.addResistor (ch.wGridB, ch.wBias, 220.0e3);
         const auto gAs = c.addNode(), gBs = c.addNode();
-        c.addResistor (ch.wGridA, gAs, 1.0e3);
-        c.addResistor (ch.wGridB, gBs, 1.0e3);
+        c.addResistor (ch.wGridA, gAs, 5.0e3);
+        c.addResistor (ch.wGridB, gBs, 5.0e3);
         c.setInitialGuess (ch.wBias, biasNominal);
         c.setInitialGuess (ch.wGridA, biasNominal);
         c.setInitialGuess (ch.wGridB, biasNominal);
@@ -368,18 +492,22 @@ void DiezelStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // Global NFB: 47k (R201) from the speaker terminal into the PI tail's feedback node. Presence (VR112 25k +
-        // C203 .1 uF) shunts feedback at HF; Focus (VR111 250k) shunts it at LF through a series inductor.
-        // A series cap would do the opposite (shunt opens at LF) — a series L rises with frequency, so only
-        // the low band is lifted. Knob up = less R = more feedback lifted = more lows in the output.
-        c.addResistor (ch.wOut, fp, 47.0e3);
+        // NFB (drawing): the speaker -> 10k || 470p -> 4.7k -> J. Presence: J -> .1 -> 25k rheostat, an HF shunt on the
+        // loop (more presence = less resistance = less treble fed back = brighter). Deep: J -> .1 -> 10k pot -> the
+        // 1-3 H inductor (2 H here) -> ground, an LF shunt (more deep = less resistance = less bass fed back).
         {
+            const auto f1 = c.addNode(), f2 = c.addNode();
+            c.addResistor (ch.wOut, f1, 10.0e3);
+            c.addCapacitor (ch.wOut, f1, 470.0e-12);
+            c.addResistor (f1, f2, 4.7e3);
+            c.addResistor (f2, fp, 1.0);
             const auto pr = c.addNode();
-            ch.rPresence = c.addResistor (fp, pr, 15.0e3);
-            c.addCapacitor (pr, gnd, 0.1e-6);
-            const auto fo = c.addNode();
-            ch.rDeep = c.addResistor (fp, fo, 60.0e3);
-            c.addCoupledInductors ({ { fo, gnd } }, { 60.0 });
+            c.addCapacitor (fp, pr, 0.1e-6);
+            ch.rPresence = c.addResistor (pr, gnd, 12.5e3);
+            const auto dc = c.addNode(), fo = c.addNode();
+            c.addCapacitor (fp, dc, 0.1e-6);
+            ch.rDeep = c.addResistor (dc, fo, 5.0e3);
+            c.addCoupledInductors ({ { fo, gnd } }, { 2.0 });
         }
         c.setInitialGuess (a1, railPlatesNominal);
         c.setInitialGuess (a2, railPlatesNominal);
@@ -389,32 +517,29 @@ void DiezelStyleAmplifierProcessor::buildChannel (Channel& ch)
 void DiezelStyleAmplifierProcessor::updatePots (const Knobs& k)
 {
     lastKnobs = k;
-    const double gainBot = juce::jmax (1.0, 1.0e6 * pots::audio (k.gain));
-    const double volBot = juce::jmax (1.0, 1.0e6 * pots::audio (k.volume));
-    const double masterBot = juce::jmax (1.0, 1.0e6 * pots::audio (k.master));
-    const double trebleBot = juce::jmax (1.0, 250.0e3 * pots::audio (k.treble));
-    const double bass = juce::jmax (1.0, 250.0e3 * k.bass);
-    static constexpr double midMax[4] = { 50.0e3, 25.0e3, 25.0e3, 25.0e3 };
-    const double presenceR = 200.0 + 25.0e3 * (1.0 - k.presence);
-    const double deepR = 1.0e3 + 249.0e3 * (1.0 - k.deep);
+    const auto split = [] (NodalCircuit& c, int top, int bot, double total, double fraction)
+    {
+        const double b = juce::jmax (1.0, total * fraction);
+        c.setResistance (bot, b);
+        c.setResistance (top, juce::jmax (1.0, total - b));
+    };
+    const double presenceR = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
+    const double deepR = juce::jmax (1.0, 10.0e3 * (1.0 - k.deep));
     const double biasVolts = biasNominal - biasSpan * (1.0 - 2.0 * k.bias);
     const double rectifier = rectifierR * (0.05 + 0.95 * k.tubeFeel);
+    const int sel = juce::jlimit (0, 3, k.channel);
 
     for (auto& ch : channels)
     {
-        for (int i = 0; i < 4; ++i)
-        {
-            ch.pre[i].setResistance (ch.rGainTop[i], juce::jmax (1.0, 1.0e6 - gainBot));
-            ch.pre[i].setResistance (ch.rGainBot[i], gainBot);
-            ch.pre[i].setResistance (ch.rVolTop[i], juce::jmax (1.0, 1.0e6 - volBot));
-            ch.pre[i].setResistance (ch.rVolBot[i], volBot);
-            ch.pre[i].setResistance (ch.rMasterTop[i], juce::jmax (1.0, 1.0e6 - masterBot));
-            ch.pre[i].setResistance (ch.rMasterBot[i], masterBot);
-            ch.pre[i].setResistance (ch.rTrebleTop[i], juce::jmax (1.0, 250.0e3 - trebleBot));
-            ch.pre[i].setResistance (ch.rTrebleBot[i], trebleBot);
-            ch.pre[i].setResistance (ch.rBass[i], bass);
-            ch.pre[i].setResistance (ch.rMid[i], juce::jmax (1.0, midMax[i] * k.middle));
-        }
+        // The visible knobs are the selected channel's (ChannelKnobMemory): its Gain in its own preamp netlist; the
+        // shared stack / Volume netlist takes its EQ and Volume.
+        split (ch.pre[sel], ch.rGainTop[sel], ch.rGainBot[sel], 250.0e3, pots::audio (k.gain));
+        split (ch.post, ch.rTrebleTop, ch.rTrebleBot, 220.0e3, k.treble);
+        split (ch.post, ch.rBassTop, ch.rBassBot, 1.0e6, pots::audio (k.bass));
+        split (ch.post, ch.rMidTop, ch.rMidBot, 22.0e3, k.middle);
+        split (ch.post, ch.rVolTop, ch.rVolBot, 470.0e3, pots::audio (k.volume));
+        split (ch.post, ch.rMasterTop, ch.rMasterBot, 1.0e6, pots::audio (k.master));
+        ch.post.setResistance (ch.rMix, sel == 0 ? 56.0e3 : 680.0e3);   // R35 / R39 R43 R47
         if (! reducedOrder)
         {
             ch.power.setResistance (ch.rPresence, presenceR);
@@ -469,6 +594,7 @@ void DiezelStyleAmplifierProcessor::recover (Channel& ch) const
     ++recoveries;
     for (int i = 0; i < 4; ++i)
         ch.pre[i].restoreDynamicState (ch.preRest[i]);
+    ch.post.restoreDynamicState (ch.postRest);
     ch.power.restoreDynamicState (ch.powerRest);
     ch.supply.restoreDynamicState (ch.supplyRest);
     ch.sumPlate = 0.0;
@@ -509,12 +635,12 @@ void DiezelStyleAmplifierProcessor::updateSupply (Channel& ch) const
         ch.power.setSource (ch.wSrcPi, ch.piRail);
     for (int i = 0; i < 4; ++i)
         ch.pre[i].setSource (ch.pSrcRail[i], ch.preRail);
+    ch.post.setSource (ch.qSrcRail, ch.preRail);
 }
 
-double DiezelStyleAmplifierProcessor::preampOutput (const Channel& ch, int channel) const noexcept
+double DiezelStyleAmplifierProcessor::preampOutput (const Channel& ch, int) const noexcept
 {
-    const int i = juce::jlimit (0, 3, channel);
-    return ch.pre[(size_t) i].voltage (ch.pOut[i]) - ch.outDc[i];
+    return ch.post.voltage (ch.qOut) - ch.qOutDc;
 }
 
 double DiezelStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double driveVoltage) const noexcept
@@ -549,7 +675,7 @@ double DiezelStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double 
     // when no sag is engaged, so it rides a ~120 Hz LP band, not the sag depth alone.
     const double lowCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 120.0 / juce::jmax (1.0, sampleRate));
     ch.bmLowState += lowCoeff * (raw - ch.bmLowState);
-    ch.bmOutput = ch.bmTail.process (ch.bmToneState + hfGain * (raw - ch.bmToneState) + (deep - 0.5) * 1.6 * ch.bmLowState);
+    ch.bmOutput = ch.bmTail.process (bmLevelTrim * (ch.bmToneState + hfGain * (raw - ch.bmToneState) + (deep - 0.5) * 1.6 * ch.bmLowState));
     return ch.bmOutput;
 }
 
@@ -621,10 +747,15 @@ void DiezelStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
     setup (smoothedOutput, outputParam, 0.02);
 
     appliedSpeaker = -1;
+    // Every channel's Gain from its stored row (each preamp netlist owns its pot), then the visible channel on top.
+    const int visible = juce::jlimit (0, 3, juce::roundToInt (channelParam->get()));
+    for (int c = 0; c < 4; ++c)
+        updatePots ({ knobMemory->slotValue (c, 0), trebleParam->get(), middleParam->get(), bassParam->get(), volumeParam->get(),
+                      masterParam->get(), presenceParam->get(), deepParam->get(), powerParam->get(), biasParam->get(),
+                      tubeFeelParam->get(), juce::roundToInt (speakerParam->get()), c });
     updatePots ({ gainParam->get(), trebleParam->get(), middleParam->get(), bassParam->get(), volumeParam->get(),
                   masterParam->get(), presenceParam->get(), deepParam->get(), powerParam->get(), biasParam->get(),
-                  tubeFeelParam->get(),
-                  juce::roundToInt (speakerParam->get()), juce::roundToInt (channelParam->get()) });
+                  tubeFeelParam->get(), juce::roundToInt (speakerParam->get()), visible });
 
     dcOk = true;
     for (auto& ch : channels)
@@ -651,6 +782,9 @@ void DiezelStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
                 passOk = ch.pre[i].prepare (newSampleRate) && passOk;
                 ch.pre[i].solveSample();
             }
+            ch.post.setSource (ch.qSrcRail, ch.preRail);
+            ch.post.setSource (ch.qSrcIn, 0.0);
+            passOk = ch.post.prepare (newSampleRate) && passOk;
 
             if (! reducedOrder)
             {
@@ -678,9 +812,13 @@ void DiezelStyleAmplifierProcessor::prepare (double newSampleRate, int, int)
             ch.outDc[i] = ch.pre[i].voltage (ch.pOut[i]);
             ch.pre[i].saveDynamicState (ch.preRest[i]);
         }
+        ch.post.solveSample();
+        ch.qOutDc = ch.post.voltage (ch.qOut);
+        ch.post.saveDynamicState (ch.postRest);
         ch.power.saveDynamicState (ch.powerRest);
         ch.supply.saveDynamicState (ch.supplyRest);
         ch.failStreak = 0;
+        ch.chanTrim = std::pow (10.0, channelLevelMatchDb[(size_t) visible] / 20.0);
     }
     updatePots (lastKnobs);
 
@@ -712,6 +850,9 @@ void DiezelStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
     smoothedOutput.setTargetValue (outputParam->get());
     const int speakerChoice = juce::roundToInt (speakerParam->get());
     const int channelChoice = juce::roundToInt (channelParam->get());
+    // Per-channel level match (user request 2026-11-02: a channel change must not jump in level), eased over ~10 ms.
+    const double chanTrimTarget = std::pow (10.0, channelLevelMatchDb[(size_t) juce::jlimit (0, 3, channelChoice)] / 20.0);
+    const double chanTrimAlpha = 1.0 - std::exp (-1.0 / (0.01 * sampleRate));
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -734,6 +875,7 @@ void DiezelStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             updatePots ({ gn, tr, mi, ba, vo, ms, pr, fc, pw, bi, fe, speakerChoice, channelChoice });
         }
 
+        // Power Drive (page 2) scales the Master's output into the power section: unity at its full default.
         const double masterGain = juce::jmax (0.002, pots::audio ((double) pw));
         const double outDb = ou < 0.5f ? ((double) ou - 0.5) * 60.0 : ((double) ou - 0.5) * 24.0;
         const double outGain = std::pow (10.0, outDb / 20.0);
@@ -752,7 +894,9 @@ void DiezelStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             const int sel = juce::jlimit (0, 3, channelChoice);
             auto& cur = ch.pre[(size_t) sel];
             cur.setSource (ch.pSrcIn[sel], x);
-            const bool okPre = cur.solveSample();
+            bool okPre = cur.solveSample();
+            ch.post.setSource (ch.qSrcIn, cur.voltage (ch.pOut[sel]) - ch.outDc[sel]);
+            okPre = ch.post.solveSample() && okPre;
 
             // reducedOrder: ch.power is empty, nothing to solve; the behavioural stage takes the drive directly.
             const double drive = masterGain * preampOutput (ch, channelChoice) * ch.chanFade;
@@ -794,6 +938,7 @@ void DiezelStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
                 {
                     ch.restRefreshCounter = 0;
                     ch.pre[sel].saveDynamicState (ch.preRest[sel]);
+                    ch.post.saveDynamicState (ch.postRest);
                     ch.power.saveDynamicState (ch.powerRest);
                     ch.supply.saveDynamicState (ch.supplyRest);
                 }
@@ -807,7 +952,8 @@ void DiezelStyleAmplifierProcessor::process (juce::AudioBuffer<float>& buffer)
             double out = ch.lastEmitted;
             if (sane)
             {
-                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain;
+                ch.chanTrim += chanTrimAlpha * (chanTrimTarget - ch.chanTrim);
+                out = speakerVolts * (reducedOrder ? outputScale : fullOutputScale) * outGain * speakerGain * ch.chanTrim;
                 if (ch.alignOutput)
                 {
                     ch.declick = ch.lastEmitted - out;
