@@ -91,19 +91,39 @@ AmpFullVsReduced per channel (bounds 4 / 6 dB):
 
 Page 2 (synthetic): Power Drive, Bias (fixed-bias trimmer), Tube Feel, Speaker, Output.
 
+## Inferred values (2026-11-03)
+
+The hand-drawn power amp marks a few values "?" and leaves one part's connection unclear. These were settled from
+the other amps in this repo and from the drawing's own geometry.
+
+| Point | Decision | Why |
+|---|---|---|
+| **.001 at the PI** | 1 nF from the +B rail to the driven half's plate | The drawing routes it to the left plate's line and draws a hop where that line crosses the right plate. This makes it a one-sided HF compensation, ~3 kHz against that plate's ~50k source. |
+| **4.7k at J** | Kept | 10k PI tail + 4.7k "NFB tail" is the standard Marshall-family tail: SLO-100, JCM800. |
+| **Presence 25k** | Kept | Standard value: SLO 25KL, Marshall 22k / 25k. |
+| **Deep 10k** | Kept | |
+| **Deep inductor (1-3 H)** | 2 H, the middle of the drawn range | A resonance of ~356 Hz with the .1. |
+| **NFB tap** | The 4 Ω tap | The draft doesn't say. From the 16 Ω tap, the drawn 10k ∥ 470p + 4.7k into the 4.7k tail feeds back ~0.24 of the speaker voltage, 2-5× every other high-gain amp modelled here: JCM800 / SLO / Dual Rectifier / Mark IIC+ ~0.05-0.06, Powerball ~0.15. From the 4 Ω tap, half the 16 Ω voltage, the same parts land at ~0.12, in that range. So at this model's 16 Ω terminal the leg's impedances are doubled. |
+
+Running the loop at that level makes the full netlist brighter while it is still linear: Clean at low level showed
+~9 dB more above 2 kHz than the saturated fit. The reduced path now has a matching first-order HF shelf
+(`bmLinearHf*`), weighted by how far below the knee the drive envelope sits. `bmLevelTrim` 1.24.
+
+AmpFullVsReduced, every channel at rms 0.03 and 0.40: worst level 1.6 dB, worst band 2.2 dB.
+
 ## Simplifications / open points
 
-- **Values marked "?" on the hand-drawn power amp are used as drawn**: the NFB 10k, the 4.7k at J, Presence 25k,
-  Deep 10k and the 2 H inductor. The .001 near the PI plates is not modelled; its exact connection cannot be read.
 - **Not modelled**: the FX loop (never modelled), MIDI switching, and the relay mute FETs. The open switches across
   C7 / C12 are left open, as drawn.
-- **Lead at full Gain**: with a 0.5 V input it has a 0.04% solver failure rate (a few recoveries). Realistic levels
-  run clean.
-- **CPU** (reducedOrder, Lead): 18%, from five triodes in the preamp netlist and two in `post`.
+- **Lead at full Gain**: with a 0.5 V input, the solver fails on 0.04% of samples (a few recoveries). Realistic
+  levels run clean.
+- **CPU** (reducedOrder, Lead): ~18-22%, from five triodes in the preamp netlist and two in `post`.
 
 ## Levels
 
 - Every channel's knobs start at noon.
-- The four channels land within ~2.6 dB of each other at the defaults, measured with E3 and the guitar DI. So
-  `channelLevelMatchDb` stays at 0, with the eased trim in place for later use.
-- Registry trim: −1.47 dB, which puts PedalUnityLevel at 0.0 dB.
+- With the 4 Ω-tap loop, Clean sat 7-21 dB under the other channels.
+- `channelLevelMatchDb` is an eased output trim against Lead: Clean +14.5, Crunch −0.9, Mega +0.7 dB. It is the
+  E3 / DI midpoint, so the channels now sit within ~2 dB. Clean compresses differently from the saturated channels,
+  so the E3 and DI readings still differ by up to ~7 dB.
+- Registry trim: −19.14 dB, which puts PedalUnityLevel at 0.0 dB.

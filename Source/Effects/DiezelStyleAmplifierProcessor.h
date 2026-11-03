@@ -66,11 +66,14 @@ public:
     static constexpr double bmShelfHz = 80.0;
     static constexpr double bmShelfHfGain = 1.0;
     static constexpr double bmDeepHz = 100.0;
-    // Re-levelled 2026-11-03 to the rebuilt full netlist (every channel sat ~3.5 dB under it; shape within bounds).
-    static constexpr double bmLevelTrim = 1.48;
+    // Re-levelled 2026-11-03 to the rebuilt full netlist. bmLinearHf*: the loop's treble while the power stage is still
+    // linear (an HF shelf above bmLinearHfHz, faded out as the drive envelope passes bmLinearHfKnee x the knee scale);
+    // fitted on AmpFullVsReduced, every channel at rms 0.03 and 0.40 -- worst level 1.6 dB, worst band 2.2 dB.
+    static constexpr double bmLevelTrim = 1.24;
+    static constexpr double bmLinearHfGain = 3.5, bmLinearHfHz = 2000.0, bmLinearHfKnee = 2.0;
     // Per-channel level match against Lead at the default knobs (AmpSwitchLevelSurvey, E3 / DI midpoint,
     // docs/circuits/ChannelLevelMatch.md). Order: Clean, Crunch, Mega, Lead.
-    static constexpr std::array<double, 4> channelLevelMatchDb { 0.0, 0.0, 0.0, 0.0 };
+    static constexpr std::array<double, 4> channelLevelMatchDb { 14.5, -0.9, 0.7, 0.0 };
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -134,7 +137,7 @@ private:
         double piRail = 0.0, preRail = 0.0;
 
         // reducedOrder only: behavioural power stage state (see behavioralPowerStage())
-        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmLowState = 0.0;
+        double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmLowState = 0.0, bmLinearHfState = 0.0;
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
         int appliedChannel = -1;
         double chanFade = 1.0;
