@@ -317,7 +317,7 @@ public:
             const double b = amp.debugVoltage (Amp::Probe::phaseInverterPlateB);
             logMessage (juce::String (name) + " PI plates at idle: " + juce::String (a, 1) + " / " + juce::String (b, 1) + " V");
             // Found 2026-11-02 with the copy-pasted PI (docs/circuits/CircuitFamilies.md); each fix removes its entry.
-            static const juce::StringArray knownCutOff { "FryetteDeliveranceD120", "DumbleSteelString", "MarkIICPlus" };
+            static const juce::StringArray knownCutOff { "FryetteDeliveranceD120", "MarkIICPlus" };
             if (knownCutOff.contains (name))
                 logMessage (juce::String ("  KNOWN cut-off PI, fix pending: ") + name);
             else

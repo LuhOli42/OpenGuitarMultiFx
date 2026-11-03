@@ -61,7 +61,7 @@ public:
     static constexpr double bmKneeN = 7.5;
     static constexpr double bmShelfHz = 72.0;
     static constexpr double bmShelfHfGain = 0.55;
-    static constexpr double bmLevelTrim = 0.8648;
+    static constexpr double bmLevelTrim = 1.85;
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
