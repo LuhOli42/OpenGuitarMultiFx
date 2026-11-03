@@ -66,6 +66,11 @@ public:
     static constexpr double bmShelfHz = 80.0;
     static constexpr double bmShelfHfGain = 1.0;
     static constexpr double bmDeepHz = 100.0;
+    // Re-levelled 2026-11-03 to the rebuilt full netlist (every channel sat ~3.5 dB under it; shape within bounds).
+    static constexpr double bmLevelTrim = 1.48;
+    // Per-channel level match against Lead at the default knobs (AmpSwitchLevelSurvey, E3 / DI midpoint,
+    // docs/circuits/ChannelLevelMatch.md). Order: Clean, Crunch, Mega, Lead.
+    static constexpr std::array<double, 4> channelLevelMatchDb { 0.0, 0.0, 0.0, 0.0 };
 
     // ---- diagnostics for tests ----
     bool dcConverged() const noexcept { return dcOk; }
@@ -91,19 +96,23 @@ public:
 private:
     struct Channel
     {
-        NodalCircuit pre[4], power, supply;     // one netlist per VH4 channel
-        NodalCircuit::DynamicState preRest[4], powerRest, supplyRest;
+        NodalCircuit pre[4], post, power, supply; // one preamp netlist per VH4 channel (V1a .. V3b), the shared stack / V4
+        NodalCircuit::DynamicState preRest[4], postRest, powerRest, supplyRest;
         int failStreak = 0;
         int restRefreshCounter = 0;
         double lastEmitted = 0.0, declick = 0.0;
         bool alignOutput = false;
+        double chanTrim = 1.0;
 
         // preamp: four channel paths, each its own netlist (only the selected one is solved per sample)
         int pSrcIn[4] = {}, pSrcRail[4] = {};
         int rGainTop[4] = {}, rGainBot[4] = {};
-        int rVolTop[4] = {}, rVolBot[4] = {};
-        int rMasterTop[4] = {}, rMasterBot[4] = {}; // the VH4's one global master is inside every channel path
-        int rTrebleTop[4] = {}, rTrebleBot[4] = {}, rBass[4] = {}, rMid[4] = {};
+        // the shared stack / Volume / V4a / V4b / Master netlist
+        int qSrcRail = 0, qSrcIn = 0;
+        int rTrebleTop = 0, rTrebleBot = 0, rBassTop = 0, rBassBot = 0, rMidTop = 0, rMidBot = 0, rVolTop = 0, rVolBot = 0,
+            rMix = 0, rMasterTop = 0, rMasterBot = 0;
+        NodalCircuit::Node qOut = 0, qPlateV4a = 0;
+        double qOutDc = 0.0;
         NodalCircuit::Node pPlate[4][4] = {}, pK[4][4] = {}, pOut[4] = {};
         double outDc[4] = {};
 
