@@ -319,7 +319,6 @@ public:
             // Found 2026-11-02 with the copy-pasted PI (docs/circuits/CircuitFamilies.md); each fix removes its entry.
             static const juce::StringArray knownCutOff { "FryetteDeliveranceD120",
                                                          "SLO100", "DumbleSteelString", "MarkIICPlus" };
-                                                         "SLO100", "DumbleSteelString", "MarkIICPlus" };
             if (knownCutOff.contains (name))
                 logMessage (juce::String ("  KNOWN cut-off PI, fix pending: ") + name);
             else
