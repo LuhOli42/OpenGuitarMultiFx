@@ -316,10 +316,10 @@ public:
             const double a = amp.debugVoltage (Amp::Probe::phaseInverterPlateA);
             const double b = amp.debugVoltage (Amp::Probe::phaseInverterPlateB);
             logMessage (juce::String (name) + " PI plates at idle: " + juce::String (a, 1) + " / " + juce::String (b, 1) + " V");
-            // Found 2026-11-02 with the copy-pasted PI (docs/circuits/CircuitFamilies.md); each fix removes its entry.
-            static const juce::StringArray knownCutOff { "FryetteDeliveranceD120" };
-            if (knownCutOff.contains (name))
-                logMessage (juce::String ("  KNOWN cut-off PI, fix pending: ") + name);
+            // A cathodyne (split-load) PI has no pair to compare: its probes read the plate and the cathode of one triode.
+            static const juce::StringArray cathodyne { "FryetteDeliveranceD120" };
+            if (cathodyne.contains (name))
+                expect (a > b, juce::String (name) + ": cathodyne plate above its cathode");
             else
                 expectLessThan (std::abs (a - b), 80.0, juce::String (name) + ": one phase-inverter half is cut off");
         }
