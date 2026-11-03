@@ -31,7 +31,7 @@ Overdrive Special and are not on it. Earlier versions of this model had them; th
 | Follower | V2B (U38); LNFB: C47 .22µ, R83 100K, R82 470K back to V1A's tail |
 | Reverb mixer | follower → R84 220K, return → R85 220K, meeting at C49 .01µ |
 | Level | 1M-A; Accent (U42) puts C50 1nF across its top leg |
-| PI | 12AX7 LTP: 100K / 220K plates, R12 820 + 18K tail, C9 .02 in, 68p plate compensation, NFB from the 16 Ω tap with Presence (25K, U11) |
+| PI | 12AX7 LTP: 100K / 220K plates, C9 .02 in, 68p plate compensation. Both grids return through 1M (R10 / R11) to the tail node T; cathodes → R12 820 → T → R9 18K → A → R8 270 → ground; C8 .1µ grounds U7's grid to A in AC; NFB is R20 2.7K from the speaker into A. U11 (25K) is the PI plate balance, not a presence control |
 | Power | 4× 6L6GC as two push-pull pairs, .047µ couplings, 220K leaks, 1.5K stoppers, fixed bias −51 V |
 | Supply | rectifier → 220µ + 150K bleeder → 10H choke → 220µ → 2.7K → PI rail → 22K → V2 rail → 15K → V1 rail |
 
@@ -132,3 +132,21 @@ rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constan
 
 Changed: `bmGain0` 11.875, `bmYmax` 0.1188, `bmKneeN` 7.5, `bmShelfHz` 72, `bmLevelTrim` 0.8648. The unity trim moved +24.07 → +20.34 dB to keep the amp at unity.
 
+
+## Phase inverter rewired (2026-11-02)
+
+The wiring now follows the geometry of the #002 LTspice file. I traced it from `sss002.asc` with a small wire
+parser, because the drawing is only geometry.
+
+The old netlist returned grid 2 to the ~0 V feedback node while the cathodes sat near 30 V. That half was cut off,
+the loop was dead, and a 25K "presence" shunt sat on the feedback node. The real U11 is the PI plate balance.
+
+| What changed | Before | After |
+|---|---|---|
+| PI plates at idle | 270 / 447 V | 301 / 270 V |
+| NFB resistor | 100K | R20 2.7K from the 8 Ω load, which is 3.82K at this model's 16 Ω tap |
+| Page-2 Presence Trim | acted in both paths | acts on the reduced path only |
+| Reduced `bmLevelTrim` | 0.8648 | 1.85, re-levelled to the now-live reference (AFVR 0.82 dB level / 2.09 dB band) |
+| Registry trim | 20.34 dB | 13.73 dB |
+
+The registry trim change cancels the level-trim change, so the app's level is unchanged.

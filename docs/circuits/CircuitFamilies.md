@@ -213,7 +213,7 @@ idle within ~20 V of each other; a cut-off half sits at the rail, 140-240 V abov
 | powerball | 57 / 229; fixed in its drawing rebuild (298 / 290) |
 | deliverance | 363 / 121 |
 | slo100 | 249 / 441 |
-| dumble (Steel String) | 270 / 447 |
+| dumble (Steel String) | 270 / 447; fixed from the #002 LTspice wiring (301 / 270, asymmetric 100K / 220K plates) |
 | markiic | 221 / 388 |
 | dualrect | cut off as well; fixed in its 2-channel rebuild |
 
