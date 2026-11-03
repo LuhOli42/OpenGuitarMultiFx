@@ -214,7 +214,7 @@ idle within ~20 V of each other; a cut-off half sits at the rail, 140-240 V abov
 | deliverance | 363 / 121 |
 | slo100 | 249 / 441; fixed from Rob Robinette's annotated factory schematic (296 / 297) |
 | dumble (Steel String) | 270 / 447; fixed from the #002 LTspice wiring (301 / 270, asymmetric 100K / 220K plates) |
-| markiic | 221 / 388 |
+| markiic | 221 / 388; fixed from the factory driver-circuit sheet (273 / 273) |
 | dualrect | cut off as well; fixed in its 2-channel rebuild |
 
 For dualrect the fix was to rewire the PI from the factory drawing. With both halves live, its feedback loop
