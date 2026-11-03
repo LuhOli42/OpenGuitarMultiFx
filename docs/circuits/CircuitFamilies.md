@@ -212,7 +212,7 @@ idle within ~20 V of each other; a cut-off half sits at the rail, 140-240 V abov
 | uberschall | 287 / 433; fixed from its power-amp tracing (289 / 280) |
 | powerball | 57 / 229; fixed in its drawing rebuild (298 / 290) |
 | deliverance | 363 / 121 |
-| slo100 | 249 / 441 |
+| slo100 | 249 / 441; fixed from Rob Robinette's annotated factory schematic (296 / 297) |
 | dumble (Steel String) | 270 / 447 |
 | markiic | 221 / 388 |
 | dualrect | cut off as well; fixed in its 2-channel rebuild |

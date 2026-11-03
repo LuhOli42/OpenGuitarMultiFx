@@ -88,7 +88,7 @@ public:
     static constexpr double bmPresMixK = 0.727, bmPresMixR = 0.909;
     // Level re-trim: the refit is ~5 dB hotter at noon than the shelf it replaced, and PedalUnityLevel needs
     // noon at unity while the registry's -18.92 dB trim stays put.
-    static constexpr double bmLevelTrim = 0.40;   // refitted 2026-10-27 with the loop buffer + V4B recovery in the preamp
+    static constexpr double bmLevelTrim = 0.64;   // 2026-11-02: re-levelled to the reference with both PI halves live (was 0.40)
 
     // ---- diagnostics ----
     bool dcConverged() const noexcept { return dcOk; }
