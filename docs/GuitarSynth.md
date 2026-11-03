@@ -37,8 +37,17 @@ Mode picks the shifter:
   is 8192 points (~170 ms at 48 kHz, enough to split the G-major 49/62/73 Hz cluster) but asymmetric: slow rise,
   then the fall of a 32 ms synthesis Hann; only that newest 32 ms is resynthesised (hop 8 ms), so latency is the
   synthesis length. Chord sheet: every note within ~2 cents at -1 oct (one +14 c outlier at -2 oct). A symmetric
-  4096 window measured the same tuning at 85 ms. Measured and rejected: 21 ms synthesis (thirds off by up to 25 c),
-  attack-from-MONO / sustain-from-POLY crossfade (the two paths are ~30 ms apart, so the fade leaves a ~5 dB hole).
+  4096 window measured the same tuning at 85 ms. Measured and rejected: 21 ms synthesis (thirds off by up to 25 c).
+- HYBRID (both shifters run): MONO's onset (~9 ms), POLY's tuning in the sustain. An envelope follower pair (1 ms vs
+  30 ms attack) spots each pick attack; 50 ms in, `PhaseVocoderShifter::alignToReference()` makes the next frame
+  start every partial at the phase MONO's output has it (both read at the analysis window's peak, then advanced by
+  the synthesis delay); once that frame is out (+40 ms) a 40 ms raised-cosine fade moves to POLY, and the next
+  attack fades back to MONO in 4 ms. Without the alignment the two paths are ~30 ms apart and the fade cancels
+  (worst -4.4 dB, single notes down to -8 dB at mid-fade); aligned the mid-fade loss is median -0.2 dB on the DI notes.
+  What is left is made up by a gain that holds the mix at the level a coherent blend of the two would have (capped
+  at +6 dB, only during the fade). Measured hole vs that coherent blend: worst -2.3 dB single notes, -2.9 dB chord
+  shapes, median -0.5 dB. Aligning earlier (20 ms) seeds phases from the pick transient and leaves some notes in
+  anti-phase. Legato note changes (no new attack) stay on POLY. Costs MONO + POLY together.
   Switching mode restarts both shifters from silence.
 Then bass voicing: 35 Hz high-pass, low shelf at 130 Hz (Body), 4th-order tone low-pass (450 Hz .. 4.5 kHz),
 FINGER / PICK (+4 dB shelf at 1.8 kHz, brighter) / ROUND (darker, +3 dB body), soft grit, squash compressor,
