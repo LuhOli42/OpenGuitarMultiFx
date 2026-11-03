@@ -88,9 +88,8 @@ namespace
     constexpr double couplingSecondary = 0.995;
     constexpr double primaryHalfResistance = 45.0;
     constexpr double secondaryResistance = 0.15;
-    // NFB: the SSS runs a fairly high NFB resistor off the 16-ohm tap (estimated; the real value is one
-    // of the per-unit Dumble tweaks). 100K + the PI-side 10K equivalent.
-    constexpr double feedbackResistor = 100.0e3;
+    // NFB: R20 2.7K from the 8 ohm load in the #002 model; this model taps 16 ohm (sqrt 2 more voltage), so 2.7K x sqrt 2.
+    constexpr double feedbackResistor = 3.82e3;
 
     constexpr double biasSupplyVolts = -51.0;  // 6L6GC fixed bias
 
@@ -523,9 +522,14 @@ void DumbleSteelStringStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wPlateB = pb;
         ch.wTail = nm;
         ch.wFeedback = fp;
-        c.addCapacitor (ch.wTone, g1, 0.02e-6);
-        c.addResistor (g1, nm, 1.0e6);
-        c.addResistor (g2, fp, 1.0e6);
+        // Wired per the #002 LTspice model (2026-11-02): both grids return through 1M (R10 / R11) to the tail node T;
+        // cathodes -> R12 820 -> T -> R9 18K -> A -> R8 270 -> ground; U7's grid is AC-grounded to A by C8 .1u and the
+        // NFB lands on A (R20 2.7K from the speaker). The old netlist returned grid 2 to the ~0 V feedback node with the
+        // cathodes near 30 V, so that half was cut off -- docs/circuits/CircuitFamilies.md.
+        c.addCapacitor (ch.wTone, g1, 0.02e-6);          // C9
+        c.addResistor (g1, nm, 1.0e6);                   // R10
+        c.addResistor (g2, nm, 1.0e6);                   // R11
+        c.addCapacitor (g2, fp, 0.1e-6);                 // C8
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
@@ -533,15 +537,16 @@ void DumbleSteelStringStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (vpi, pa, 100.0e3);
         c.addResistor (vpi, pb, 220.0e3);
         c.addCapacitor (pa, pb, 68.0e-12);
-        c.addResistor (k, nm, 820.0);
-        c.addResistor (nm, gnd, 18.0e3);
+        c.addResistor (k, nm, 820.0);                    // R12
+        c.addResistor (nm, fp, 18.0e3);                  // R9
+        c.addResistor (fp, gnd, 270.0);                  // R8
         c.setInitialGuess (pa, 250.0);
         c.setInitialGuess (pb, 245.0);
-        c.setInitialGuess (k, 30.0);
-        c.setInitialGuess (nm, 27.0);
-        c.setInitialGuess (g1, 27.0);
-        c.setInitialGuess (g2, 27.0);
-        c.setInitialGuess (fp, 2.0);
+        c.setInitialGuess (k, 40.0);
+        c.setInitialGuess (nm, 39.0);
+        c.setInitialGuess (g1, 39.0);
+        c.setInitialGuess (g2, 39.0);
+        c.setInitialGuess (fp, 0.6);
 
         // Power amplifier: 4 x 6L6GC as two push-pull pairs. .047uF couplings, 1.5K grid stoppers,
         // 220K grid leaks to the fixed bias rail. (The SSS's DC-coupled cathode-follower driver stage
@@ -598,13 +603,10 @@ void DumbleSteelStringStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: from speaker terminal through feedbackResistor to PI grid 2, with Presence 25K shunt and stray cap.
-        const auto wp = c.addNode();
+        // NFB: the speaker through R20 2.7K into A. The #002 has no presence network in the loop (U11, the 25K pot on the
+        // drawing, is the PI plate balance), so the page-2 Presence Trim acts on the reduced path only.
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        ch.rPresTop = c.addResistor (fp, wp, 12.5e3);
-        ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
-        c.addCapacitor (fp, wp, 0.1e-6);
-        c.addCapacitor (fp, gnd, 1.5e-9);
+        ch.rPresTop = ch.rPresBottom = -1;
 
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
@@ -649,8 +651,6 @@ void DumbleSteelStringStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double deepR = k.deep ? 270.0e3 : 1.0e9;
     const double brightC = k.bright ? 250.0e-12 : 1.0e-15;
     const double accentC = k.accent ? 0.001e-6 : 1.0e-15;
-    const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
-    const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
     const double masterR = juce::jmax (1.0, 1.0e6 * pots::audio (k.master));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
@@ -681,8 +681,6 @@ void DumbleSteelStringStyleAmplifierProcessor::updatePots (const Knobs& k)
         }
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rPresTop, presTop);
-            ch.power.setResistance (ch.rPresBottom, presBottom);
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
         }
