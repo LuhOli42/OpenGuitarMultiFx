@@ -211,7 +211,7 @@ idle within ~20 V of each other; a cut-off half sits at the rail, 140-240 V abov
 |---|---|
 | uberschall | 287 / 433; fixed from its power-amp tracing (289 / 280) |
 | powerball | 57 / 229; fixed in its drawing rebuild (298 / 290) |
-| deliverance | 363 / 121 |
+| deliverance | 363 / 121: not a fault. Its PI is a cathodyne, so the probes read one triode's plate and cathode (checked separately) |
 | slo100 | 249 / 441; fixed from Rob Robinette's annotated factory schematic (296 / 297) |
 | dumble (Steel String) | 270 / 447; fixed from the #002 LTspice wiring (301 / 270, asymmetric 100K / 220K plates) |
 | markiic | 221 / 388; fixed from the factory driver-circuit sheet (273 / 273) |
@@ -221,8 +221,8 @@ For dualrect the fix was to rewire the PI from the factory drawing. With both ha
 finally works: Modern / Vintage differ by 10-16 dB in small-signal gain. Its reduced path was then refitted to that
 healthy reference.
 
-The other six stay on the test's `knownCutOff` list (logged, not failed) until each gets the same treatment. Their
-reduced paths were fitted to single-ended references, so they carry that voicing.
+All five real cases were then fixed, one PR each (2026-11-02/03), and each reduced path re-levelled against its
+healthy reference. Deliverance was a false positive: its PI is a cathodyne, which the test now checks as such.
 
 Residual documented gaps vs the fitted reduced stages (healthy references, not collapses): v4b sits
 ~14 dB below its reduced path because its 15.8:1 half-to-secondary OT ratio onto the 4-ohm tap caps
