@@ -39,13 +39,18 @@ void GuitarToBassProcessor::reset()
 {
     shifter.reset();
     poly.reset();
-    onsetFast.reset(); onsetSlow.reset();
-    sinceOnset = 1 << 30; aligned = false; wasRising = false; polyWeight = 0.0;
-    pM = pP = pX = 0.0; compGain = 1.0;
+    resetHybrid();
     comp.reset();
     hp.reset(); shelf.reset(); toneLp[0].reset(); toneLp[1].reset(); pick.reset(); blendLp.reset();
     lastShape = -1.0;
     lastMode = -1;
+}
+
+void GuitarToBassProcessor::resetHybrid()
+{
+    onsetFast.reset(); onsetSlow.reset();
+    sinceOnset = 1 << 30; aligned = false; wasRising = false; polyWeight = 0.0;
+    pM = pP = pX = 0.0; compGain = 1.0;
 }
 
 void GuitarToBassProcessor::process (juce::AudioBuffer<float>& buffer)
@@ -61,7 +66,7 @@ void GuitarToBassProcessor::process (juce::AudioBuffer<float>& buffer)
     if (m != lastMode)
     {
         // the idle shifter was not fed, so its history is stale; both restart from silence
-        if (lastMode >= 0) { shifter.reset(); poly.reset(); }
+        if (lastMode >= 0) { shifter.reset(); poly.reset(); resetHybrid(); }
         lastMode = m;
     }
     const int v = mt::asIndex (voicing);

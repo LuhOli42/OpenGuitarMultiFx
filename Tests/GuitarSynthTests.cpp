@@ -307,6 +307,37 @@ public:
                 expect (worst > -3.0, "HYBRID crossfade hole " + juce::String (worst, 1) + " dB");
             }
 
+        beginTest ("Guitar-to-Bass switching back into HYBRID mid-sustain starts on MONO, not a silent POLY");
+        {
+            GuitarToBassProcessor p;
+            setKnob (p, "mode", 2.0f); setKnob (p, "octaves", 0.0f);
+            setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f); setKnob (p, "squash", 0.0f);
+            const auto in = pluck (110.0, 1.2, 0.3, false);
+            p.prepare (sr, 256, 1);
+            std::vector<float> out (in.size());
+            const size_t toMono = (size_t) (0.6 * sr) / 256 * 256, backToHybrid = toMono + 256 * 8;
+            for (size_t pos = 0; pos + 256 <= in.size(); pos += 256)
+            {
+                if (pos == toMono) setKnob (p, "mode", 0.0f);
+                if (pos == backToHybrid) setKnob (p, "mode", 2.0f);
+                juce::AudioBuffer<float> b (1, 256);
+                for (int i = 0; i < 256; ++i) b.setSample (0, i, in[pos + (size_t) i]);
+                p.process (b);
+                for (int i = 0; i < 256; ++i) out[pos + (size_t) i] = b.getSample (0, i);
+            }
+            auto rmsDb = [&] (size_t a, size_t n)
+            {
+                double e = 0.0;
+                for (size_t i = a; i < a + n; ++i) e += (double) out[i] * out[i];
+                return 0.5 * dB (e / (double) n + 1e-20);
+            };
+            const double before = rmsDb (toMono - (size_t) (0.1 * sr), (size_t) (0.1 * sr));
+            const double after = rmsDb (backToHybrid + (size_t) (0.015 * sr), (size_t) (0.03 * sr));
+            logMessage ("  sustain " + juce::String (before, 1) + " dB, 15..45 ms after re-entering HYBRID "
+                        + juce::String (after, 1) + " dB");
+            expect (after > before - 6.0, "HYBRID re-entry dropped to " + juce::String (after - before, 1) + " dB");
+        }
+
         beginTest ("PolyPitchTracker finds every note of a chord and no ghosts");
         for (const auto& notes : { std::vector<double> { 82.41, 123.47, 164.81, 207.65, 246.94, 329.63 },
                                    std::vector<double> { 110.0, 138.59, 164.81, 220.0 },

@@ -27,6 +27,7 @@ public:
 private:
     juce::AudioParameterFloat *octaves, *mode, *voicing, *tone, *body, *grit, *squash, *guitarBlend;
     double fs = 48000.0;
+    void resetHybrid();
     gs::SpliceShifter shifter;
     gs::PhaseVocoderShifter poly;
     int lastMode = -1;
