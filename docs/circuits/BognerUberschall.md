@@ -87,3 +87,24 @@ rms 0.03 and 0.40, three bands, and a coordinate search over the stage's constan
 
 Changed: `bmGain0` 17, `bmYmax` 0.19, `bmKneeN` 6, `bmShelfHz` 200, `bmShelfHfGain` 2.2, new output trim `bmLevelTrim` 0.484. The unity trim moved −0.14 → −7.21 dB to keep the amp at unity.
 
+
+## Phase inverter rewired (2026-11-02)
+
+The power-amp tracing (sheet 2) biases both PI grids from the tail node T through 1M:
+- R112 runs to V6a's grid, R122 to V6b's.
+- C105 100n AC-grounds V6b's grid to T, and C120 220p runs from V6a's grid to the cathodes.
+- The tail is R114 470 → T → R123 10K → J → R121 4.7K.
+- The feedback lands on J, through the optocoupler + C117 22µ + R126 10K. The cell's lit resistance is not on the
+  tracing, so feedbackResistor 56K stands for the whole leg.
+- The Presence is P5 2.2K behind C208 + C209 (12.2µ), shunting J.
+
+The old netlist returned V6b's grid to the ~0 V feedback node while the cathodes sat near 30 V. V6b was cut off, so
+the loop and the Presence were dead.
+
+| Check | Before | After |
+|---|---|---|
+| PI plates at idle | 287 / 433 V | 289 / 280 V |
+| AmpFullVsReduced, worst level | — | 1.34 dB (bound 2) |
+| AmpFullVsReduced, worst band | — | 4.05 dB (bound 6) |
+
+The reduced path the app runs is unchanged; it still tracks the corrected reference within those bounds.

@@ -209,7 +209,7 @@ idle within ~20 V of each other; a cut-off half sits at the rail, 140-240 V abov
 
 | Amp | Plates at idle (V) |
 |---|---|
-| uberschall | 287 / 433 |
+| uberschall | 287 / 433; fixed from its power-amp tracing (289 / 280) |
 | powerball | 57 / 229; fixed in its drawing rebuild (298 / 290) |
 | deliverance | 363 / 121 |
 | slo100 | 249 / 441 |
