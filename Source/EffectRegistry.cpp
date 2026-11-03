@@ -565,7 +565,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // (3 pre-tonestack + 3 post-tonestack), FMV tone stack, LTP PI, 4x6L6GC fixed-bias push-pull.
     ENGLPowerballStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("ENGLPowerballStyleAmplifier");
-    registry.registerType ("ENGLPowerballStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<ENGLPowerballStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -14.24f); }, "High-Gain");
+    registry.registerType ("ENGLPowerballStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<ENGLPowerballStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -15.65f); }, "High-Gain");
     // Orange Rockerverb 50 MK1 Dirty channel. Four cascaded 12AX7 gain stages, FMV tone stack,
     // LTP PI, 4x6V6 fixed-bias push-pull.
     RockerverbStyleAmplifierProcessor::reducedOrder = true;
