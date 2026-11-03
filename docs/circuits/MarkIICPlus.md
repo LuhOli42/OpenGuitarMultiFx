@@ -128,3 +128,25 @@ against this unreliable reference.
 - Full model plucked note: 0 failures, 0 recoveries (was near-silent under kg1 collapse; healed since)
 - Reduced-order: ~14.7% avg CPU, ~20.5% worst block (5 preamp gain stages — same cost class as the SLO-100)
 - Unity trim: -0.51 dB
+
+## Phase inverter rewired (2026-11-02)
+
+Source: the factory "Driver Circuit" on the Mark IIC+ power-amp sheet (el34world `Boogie_mkiic_plus.pdf`, page 2).
+V5B is drawn upside down on that sheet.
+
+- **Grids**: both return through 100K to the tail node T.
+- **Tail**: cathodes → 470 → T → 22K → N, then from N: 3.3K ∥ .047µ → 1.5K → ground.
+- **V5B's grid**: AC-grounded to N by 1µF.
+- **Feedback leg** into N: Presence 250K rheostat → 3.3K → 68K ∥ .0022µ. It comes from the 8 Ω speaker, so it is
+  scaled by √2 for this model's 16 Ω tap.
+
+The old netlist returned V5B's grid to the ~0 V feedback node while the cathodes sat near 30 V. That half was cut off,
+the loop was dead, and the Presence was a stand-in shunt.
+
+| | Before | After |
+|---|---|---|
+| PI plates at idle | 221 / 388 V | 273 / 273 V |
+| AFVR level | — | 0.57 dB |
+| AFVR band | — | 1.37 dB |
+
+The AFVR figures are within the 5 / 6 dB bounds. The reduced path the app runs is unchanged.

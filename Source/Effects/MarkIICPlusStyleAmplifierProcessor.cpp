@@ -85,8 +85,8 @@ namespace
     constexpr double couplingSecondary = 0.995;
     constexpr double primaryHalfResistance = 45.0;
     constexpr double secondaryResistance = 0.15;
-    // NFB: slightly less than SLO-100 (150K vs 175K) for a more aggressive lead character.
-    constexpr double feedbackResistor = 150.0e3;
+    // NFB: the fixed 3.3K of the feedback leg, scaled to the model's 16 ohm tap (see the netlist).
+    constexpr double feedbackResistor = 3.3e3 * 1.41421356;
 
     constexpr double biasSupplyVolts = -55.0;
 
@@ -489,8 +489,11 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcBias = c.addSource (vc18, biasSupplyVolts);
 
-        // Phase inverter: 12AX7 long-tailed pair. .022µF from tone stack out into grid 1 (10K series + 1M
-        // grid leak); 470Ω tail; 82K/81K plate loads; 47pF between plates; 1M grid leak on g2 from NFB node.
+        // Phase inverter V5 ("Driver Circuit", factory power-amp sheet; V5B is drawn upside down): 12AX7 long-tailed
+        // pair, 82K / 81K plates, 47pF between plates. Both grids return through 100K to the tail node T; cathodes ->
+        // 470 -> T -> 22K -> N -> 3.3K || .047 -> 1.5K -> ground; V5B's grid is AC-grounded to N by 1uF, and the NFB
+        // lands on N. (The old netlist returned V5B's grid to the ~0 V feedback node with the cathodes near 30 V: that
+        // half was cut off and the loop dead -- docs/circuits/CircuitFamilies.md.)
         const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
         ch.wGridA = g1;
         ch.wPlateA = pa;
@@ -498,8 +501,9 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wTail = nm;
         ch.wFeedback = fp;
         c.addCapacitor (ch.wTone, g1, 0.022e-6);
-        c.addResistor (g1, nm, 1.0e6);
-        c.addResistor (g2, fp, 1.0e6);
+        c.addResistor (g1, nm, 100.0e3);
+        c.addResistor (g2, nm, 100.0e3);
+        c.addCapacitor (g2, fp, 1.0e-6);
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
@@ -508,14 +512,20 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (vpi, pb, 81.0e3);
         c.addCapacitor (pa, pb, 47.0e-12);
         c.addResistor (k, nm, 470.0);
-        c.addResistor (nm, gnd, 10.0e3);
-        c.setInitialGuess (pa, 250.0);
-        c.setInitialGuess (pb, 245.0);
-        c.setInitialGuess (k, 30.0);
-        c.setInitialGuess (nm, 27.0);
-        c.setInitialGuess (g1, 27.0);
-        c.setInitialGuess (g2, 27.0);
-        c.setInitialGuess (fp, 2.0);
+        c.addResistor (nm, fp, 22.0e3);
+        {
+            const auto nb = c.addNode();
+            c.addResistor (fp, nb, 3.3e3);
+            c.addCapacitor (fp, nb, 0.047e-6);
+            c.addResistor (nb, gnd, 1.5e3);
+        }
+        c.setInitialGuess (pa, 260.0);
+        c.setInitialGuess (pb, 260.0);
+        c.setInitialGuess (k, 40.0);
+        c.setInitialGuess (nm, 39.0);
+        c.setInitialGuess (g1, 39.0);
+        c.setInitialGuess (g2, 39.0);
+        c.setInitialGuess (fp, 4.0);
 
         // Power amplifier: 4 × 6L6GC as two push-pull pairs. .047µF couplings, 1.1K grid stoppers (2.2K/pair),
         // 220K grid leaks to the fixed bias rail.
@@ -571,13 +581,18 @@ void MarkIICPlusStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: from speaker terminal through 150K to PI tail, with Presence 25K shunt and stray cap.
-        const auto wp = c.addNode();
-        ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        ch.rPresTop = c.addResistor (fp, wp, 12.5e3);
-        ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
-        c.addCapacitor (fp, wp, 0.1e-6);
-        c.addCapacitor (fp, gnd, 1.5e-9);             // stray for HF stability
+        // NFB (sheet): the 8 ohm speaker -> Presence 250K rheostat -> 3.3K -> 68K || .0022 -> N. This model taps 16 ohm
+        // (sqrt 2 the voltage), so the leg's impedances are scaled by sqrt 2. rFeedback is the fixed 3.3K; rPresTop the
+        // Presence (more presence = more of it in the leg = less feedback = brighter, looser).
+        {
+            const double z = std::sqrt (2.0);
+            const auto n1 = c.addNode(), n2 = c.addNode();
+            ch.rPresTop = c.addResistor (ch.wOut, n1, 125.0e3 * z);
+            ch.rPresBottom = -1;
+            ch.rFeedback = c.addResistor (n1, n2, feedbackResistor);
+            c.addResistor (n2, fp, 68.0e3 * z);
+            c.addCapacitor (n2, fp, 2.2e-9 / z);
+        }
         {
             const auto deepMid = c.addNode();
             ch.rDeepSeries = c.addResistor (fp, deepMid, 100.0e6);
@@ -606,8 +621,7 @@ void MarkIICPlusStyleAmplifierProcessor::updatePots (const Knobs& k)
     // Lead Master 250KA (rheostat): only in the lead path; in Rhythm the real amp's switching takes it out.
     const double leadMasterR = k.channel == 1 ? juce::jmax (1.0, 250.0e3 * pots::audio (k.leadMaster)) : 250.0e3;
     const double masterBottom = juce::jmax (1.0, 1.0e6 * pots::audio (k.master)); // Master 1MA
-    const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
-    const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
+    const double presR = juce::jmax (1.0, 250.0e3 * std::sqrt (2.0) * pots::audio (k.presence));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
     const double feedbackR = feedbackOverride > 0.0 ? feedbackOverride : feedbackResistor / (1.0 + 1.5 * (1.0 - k.tubeFeel));
@@ -634,8 +648,7 @@ void MarkIICPlusStyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.presenceMix = bmPresMixK * k.presence / juce::jmax (1.0e-3, 1.0 - bmPresMixR * k.presence);
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rPresTop, presTop);
-            ch.power.setResistance (ch.rPresBottom, presBottom);
+            ch.power.setResistance (ch.rPresTop, presR);
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
         }
