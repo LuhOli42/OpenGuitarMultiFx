@@ -36,6 +36,7 @@ public:
         frame.assign ((size_t) size, 0.0f);
         ref.assign ((size_t) size, 0.0f);
         refSpec.assign ((size_t) size + 2, 0.0f);
+        synth.assign ((size_t) size + 2, 0.0f);
         window.resize ((size_t) size);
         synthWindow.resize ((size_t) synthLen);
         const int rise = size - synthLen / 2;
@@ -143,7 +144,7 @@ private:
             if (mag[(size_t) k] > floorMag && mag[(size_t) k] > mag[(size_t) k - 1] && mag[(size_t) k] >= mag[(size_t) k + 1])
                 peaks[(size_t) numPeaks++] = k;
 
-        std::fill (spec.begin(), spec.end(), 0.0f);
+        std::fill (synth.begin(), synth.end(), 0.0f);
         std::fill (accSet.begin(), accSet.end(), (char) 0);
         for (int i = 0; i < numPeaks; ++i)
         {
@@ -166,27 +167,30 @@ private:
                     const double ar = refSpec[(size_t) (2 * o)], ai = refSpec[(size_t) (2 * o + 1)];
                     rr += ar * c - ai * sn;
                     ri += ar * sn + ai * c;
-                    const double d = phase[(size_t) k] - phase[(size_t) p], m = mag[(size_t) k];
-                    tr += m * (std::cos (d) * c - std::sin (d) * sn);
-                    ti += m * (std::cos (d) * sn + std::sin (d) * c);
+                    const double xr = spec[(size_t) (2 * k)], xi = spec[(size_t) (2 * k + 1)];
+                    tr += xr * c - xi * sn;
+                    ti += xr * sn + xi * c;
                 }
                 if (rr * rr + ri * ri > 0.0 && tr * tr + ti * ti > 0.0)
-                    phq = std::atan2 (ri, rr) - std::atan2 (ti, tr) + ratio * trueFreq[(size_t) p] * synthLen;
+                    phq = std::atan2 (ri, rr) - (std::atan2 (ti, tr) - phase[(size_t) p]) + ratio * trueFreq[(size_t) p] * synthLen;
             }
             newAcc[(size_t) q] = phq;
             accSet[(size_t) q] = 1;
+            // the lobe keeps its shape and moves to q with every bin's phase offset by phq - phase[p]: one complex
+            // multiply per bin instead of a cos/sin each (keeps a frame's worst-case cost down)
+            const double rc = std::cos (phq - phase[(size_t) p]), rs = std::sin (phq - phase[(size_t) p]);
             for (int k = lo; k <= hi; ++k)
             {
                 const int o = q + k - p;
                 if (o < 0 || o >= bins) continue;
-                const double ph = phq + phase[(size_t) k] - phase[(size_t) p];
-                spec[(size_t) (2 * o)] += (float) (mag[(size_t) k] * std::cos (ph));
-                spec[(size_t) (2 * o + 1)] += (float) (mag[(size_t) k] * std::sin (ph));
+                const double xr = spec[(size_t) (2 * k)], xi = spec[(size_t) (2 * k + 1)];
+                synth[(size_t) (2 * o)] += (float) (xr * rc - xi * rs);
+                synth[(size_t) (2 * o + 1)] += (float) (xr * rs + xi * rc);
             }
         }
         for (int k = 0; k < bins; ++k)
             if (accSet[(size_t) k] != 0) acc[(size_t) k] = princArg (newAcc[(size_t) k]);
-        fft.inverse (spec.data(), frame.data());
+        fft.inverse (synth.data(), frame.data());
 
         // the frame's newest synthLen samples, starting at the next sample read out: synthLen samples late
         for (int m = 0; m < synthLen; ++m)
@@ -197,7 +201,7 @@ private:
     int order = 13, size = 8192, mask = 8191, synthLen = 1536, hop = 384, bins = 2049, pos = 0, count = 0;
     float norm = 1.0f;
     RealFft fft;
-    std::vector<float> in, out, frame, spec, ref, refSpec, window, synthWindow, mag, phase, prevPhase, trueFreq;
+    std::vector<float> in, out, frame, spec, synth, ref, refSpec, window, synthWindow, mag, phase, prevPhase, trueFreq;
     bool alignPending = false;
     std::vector<double> acc, newAcc, rotCos, rotSin;
     std::vector<char> accSet;
