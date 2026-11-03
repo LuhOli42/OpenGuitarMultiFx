@@ -43,8 +43,11 @@ public:
                         + ", U7A plate " + juce::String (amp.debugVoltage (P::u7aPlate), 1)
                         + ", U7B plate " + juce::String (amp.debugVoltage (P::u7bPlate), 1)
                         + ", PI tail " + juce::String (amp.debugVoltage (P::phaseInverterTail), 1)
-                        + ", bias node " + juce::String (amp.debugVoltage (P::powerGridA), 1));
+                        + ", bias node " + juce::String (amp.debugVoltage (P::powerGridA), 1)
+                        + ", idle plate current " + juce::String (1000.0 * amp.plateCurrentTotal(), 1) + " mA (both pairs)");
             expect (amp.railPlates() > 400.0 && amp.railPlates() < 520.0);
+            // The drawing's bias note: 28-34 mA each power tube (four tubes).
+            expect (amp.plateCurrentTotal() > 4.0 * 0.020 && amp.plateCurrentTotal() < 4.0 * 0.045);
             expect (amp.railPreamp() > 100.0 && amp.railPreamp() < 480.0);
         }
 
@@ -54,15 +57,30 @@ public:
             amp.prepare (sr, 128, 2);
             juce::AudioBuffer<float> buf (2, 128);
             buf.clear();
-            double peak = 0.0, peakAt = 0.0;
+            double peak = 0.0, peakAt = 0.0, lastSecondPeak = 0.0, prevY = 0.0;
+            int crossings = 0;
             for (int b = 0; b < (int) (10.0 * sr / 128); ++b)
             {
                 buf.clear(); // silence in every block: without it the previous output is fed back in as input
                 amp.process (buf);
                 for (int i = 0; i < 128; ++i)
-                    if (std::abs (buf.getSample (0, i)) > peak) { peak = std::abs (buf.getSample (0, i)); peakAt = (b * 128 + i) / sr; }
+                {
+                    const double y = std::abs (buf.getSample (0, i));
+                    if (y > peak) { peak = y; peakAt = (b * 128 + i) / sr; }
+                    if (b * 128 > 9.0 * sr)
+                    {
+                        lastSecondPeak = juce::jmax (lastSecondPeak, y);
+                        const double ys = buf.getSample (0, i);
+                        if ((ys > 0.0) != (prevY > 0.0))
+                            ++crossings;
+                        prevY = ys;
+                    }
+                }
             }
-            logMessage ("10 s silence-settle peak " + juce::String (peak, 6) + " at " + juce::String (peakAt, 3) + " s, failure rate " + juce::String (amp.getSolveFailureRate(), 6));
+            logMessage ("10 s silence-settle peak " + juce::String (peak, 6) + " at " + juce::String (peakAt, 3) + " s (last second "
+                        + juce::String (lastSecondPeak, 6) + ", ~" + juce::String (crossings / 2) + " Hz), failure rate " + juce::String (amp.getSolveFailureRate(), 6)
+                        + ", speaker " + juce::String (amp.debugVoltage (P::speaker), 3) + " V, PI plates "
+                        + juce::String (amp.debugVoltage (P::phaseInverterPlateA), 1) + " / " + juce::String (amp.debugVoltage (P::phaseInverterPlateB), 1));
             expectLessThan (peak, 0.025);
             expectLessThan (amp.getSolveFailureRate(), 1.0e-6);
         }
@@ -100,6 +118,56 @@ public:
                         + ", recoveries " + juce::String (amp.debugRecoveries()));
             expect (finite);
             expectLessThan (peak, 5.0);
+        }
+
+        beginTest ("every mode plays through its own path: finite, no failures, audible, logged levels");
+        {
+            struct Mode { const char* name; float channel, style, bottom; };
+            const Mode modes[] = { { "Clean", 0, 0, 0 }, { "Crunch", 1, 0, 0 }, { "Lo Lead", 2, 0, 0 }, { "Hi Lead", 3, 0, 0 },
+                                   { "Hi Lead Focused", 3, 1, 0 }, { "Hi Lead Bottom", 3, 0, 1 }, { "Crunch Bottom", 1, 0, 1 } };
+            for (const auto& m : modes)
+            {
+                ENGLPowerballStyleAmplifierProcessor amp;
+                setParam (amp, "engl_pb_channel", m.channel);
+                setParam (amp, "engl_pb_style", m.style);
+                setParam (amp, "engl_pb_bottom", m.bottom);
+                amp.prepare (sr, 128, 2);
+                juce::AudioBuffer<float> buf (2, 128);
+                double phase = 0.0, sum = 0.0, lo = 1.0e9, hi = -1.0e9;
+                long long n = 0;
+                bool finite = true;
+                for (int b = 0; b < (int) (0.8 * sr / 128); ++b)
+                {
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        const float x = (float) (0.1 * std::sin (phase));
+                        phase += juce::MathConstants<double>::twoPi * 165.0 / sr;
+                        buf.setSample (0, i, x);
+                        buf.setSample (1, i, x);
+                    }
+                    amp.process (buf);
+                    if (b > (int) (0.4 * sr / 128))
+                    {
+                        for (int i = 0; i < 128; ++i)
+                        {
+                            const double y = buf.getSample (0, i);
+                            finite = finite && std::isfinite (y);
+                            sum += y * y;
+                            ++n;
+                        }
+                        const double v = amp.debugVoltage (P::toneStackOut);
+                        lo = juce::jmin (lo, v);
+                        hi = juce::jmax (hi, v);
+                    }
+                }
+                const double rmsDb = 20.0 * std::log10 (std::sqrt (sum / (double) juce::jmax (1LL, n)) + 1.0e-12);
+                logMessage (juce::String (m.name) + ": out " + juce::String (rmsDb, 1) + " dBFS, volume out p-p "
+                            + juce::String (hi - lo, 2) + ", failures " + juce::String (amp.getSolveFailureRate(), 6));
+                expect (finite);
+                expect (amp.dcConverged());
+                expectLessThan (amp.getSolveFailureRate(), 1.0e-4);
+                expectGreaterThan (rmsDb, -60.0);
+            }
         }
 
         beginTest ("page 2 parameters move without crashing");

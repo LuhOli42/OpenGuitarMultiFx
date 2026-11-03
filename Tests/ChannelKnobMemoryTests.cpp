@@ -94,25 +94,32 @@ public:
             expectWithinAbsoluteError (find (red, "drec_orange_gain")->get(), 1.0f, 1.0e-6f);
         }
 
-        beginTest ("Powerball: Gain/Volume per channel, EQ shared by Clean+Crunch and by the two Leads");
+        beginTest ("Powerball: the real panel's sharing (Gain / Bass / Middle per main channel, Treble Clean / Crunch / Lead, Volume per mode)");
         {
             ENGLPowerballStyleAmplifierProcessor amp;
             auto* channel = find (amp, "engl_pb_channel");
             auto* gain = find (amp, "engl_pb_gain");
             auto* bass = find (amp, "engl_pb_bass");
-            *channel = 0.0f; *gain = 0.1f; *bass = 0.9f;   // Clean
-            *channel = 1.0f;                                 // Crunch: own Gain, same EQ as Clean
-            expectWithinAbsoluteError (gain->get(), 0.5f, 1.0e-6f);
-            expectWithinAbsoluteError (bass->get(), 0.9f, 1.0e-6f);
-            *gain = 0.3f; *bass = 0.7f;
-            *channel = 2.0f;                                 // Lead: its own EQ section
-            expectWithinAbsoluteError (bass->get(), 0.5f, 1.0e-6f);
-            *bass = 0.2f;
-            *channel = 3.0f;                                 // Hi Lead shares Lead's EQ
-            expectWithinAbsoluteError (bass->get(), 0.2f, 1.0e-6f);
-            *channel = 0.0f;
+            auto* treble = find (amp, "engl_pb_treble");
+            auto* volume = find (amp, "engl_pb_master");
+            *channel = 0.0f; *gain = 0.1f; *bass = 0.9f; *treble = 0.2f; *volume = 0.3f; // Clean
+            *channel = 1.0f;                                 // Crunch: Ch I's Gain and Bass, its own Treble and Volume
             expectWithinAbsoluteError (gain->get(), 0.1f, 1.0e-6f);
-            expectWithinAbsoluteError (bass->get(), 0.7f, 1.0e-6f); // Crunch's change is Clean's too
+            expectWithinAbsoluteError (bass->get(), 0.9f, 1.0e-6f);
+            expectWithinAbsoluteError (treble->get(), 0.5f, 1.0e-6f);
+            expectWithinAbsoluteError (volume->get(), 0.5f, 1.0e-6f);
+            *treble = 0.7f; *volume = 0.8f;
+            *channel = 2.0f;                                 // Lo Lead: Ch II's own Gain / Bass / Treble
+            expectWithinAbsoluteError (gain->get(), 0.5f, 1.0e-6f);
+            expectWithinAbsoluteError (bass->get(), 0.5f, 1.0e-6f);
+            *gain = 0.6f; *treble = 0.4f; *volume = 0.25f;
+            *channel = 3.0f;                                 // Hi Lead shares Lo Lead's Gain and Treble, not its Volume
+            expectWithinAbsoluteError (gain->get(), 0.6f, 1.0e-6f);
+            expectWithinAbsoluteError (treble->get(), 0.4f, 1.0e-6f);
+            expectWithinAbsoluteError (volume->get(), 0.5f, 1.0e-6f);
+            *channel = 0.0f;
+            expectWithinAbsoluteError (treble->get(), 0.2f, 1.0e-6f);
+            expectWithinAbsoluteError (volume->get(), 0.3f, 1.0e-6f);
         }
 
         beginTest ("a preset saved before per-channel memory loads its knobs into every channel");
