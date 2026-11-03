@@ -192,11 +192,12 @@ public:
             expect (peak < 1e-4f, "silence in should be silence out");
         }
 
-        beginTest ("Guitar-to-Bass shifts a whole chord, every note one and two octaves down (MONO and POLY)");
+        auto modeName = [] (int m) { return m == 0 ? "  MONO" : (m == 1 ? "  POLY" : "  HYBRID"); };
+        beginTest ("Guitar-to-Bass shifts a whole chord, every note one and two octaves down (MONO, POLY, HYBRID)");
         {
             const std::vector<double> notes { 110.0, 138.59, 164.81, 220.0 }; // close A major, the hardest voicing
             const auto in = chord (notes, 1.5);
-            for (int mode = 0; mode < 2; ++mode)
+            for (int mode = 0; mode < 3; ++mode)
                 for (int oct = 0; oct < 2; ++oct)
                 {
                     GuitarToBassProcessor p;
@@ -205,7 +206,7 @@ public:
                     const auto out = render (p, in);
                     const double div = oct == 0 ? 2.0 : 4.0;
                     const size_t from = (size_t) (0.5 * sr);
-                    const juce::String tag = juce::String (mode == 0 ? "  MONO" : "  POLY") + " oct " + juce::String (oct);
+                    const juce::String tag = juce::String (modeName (mode)) + " oct " + juce::String (oct);
                     double strongest = 0.0;
                     std::vector<double> m;
                     for (double hz : notes) { m.push_back (goertzel (out, hz / div, from)); strongest = std::max (strongest, m.back()); }
@@ -219,10 +220,10 @@ public:
                         logMessage (tag + " note " + juce::String (f, 1) + " Hz: " + juce::String (dB (m[k] / strongest), 1)
                                     + " dB, quarter-tone leak " + juce::String (dB (off / m[k]), 1) + " dB, " + juce::String (bestC, 0) + " cents");
                         expect (m[k] > strongest * 0.1, tag + " chord note missing after the shift: " + juce::String (f, 1));
-                        // two octaves down the splice shifter smears a close chord; POLY is the chord mode
-                        if (mode == 1 || oct == 0)
+                        // two octaves down the splice shifter smears a close chord; POLY (and HYBRID's sustain) is the chord mode
+                        if (mode != 0 || oct == 0)
                             expect (off < m[k] * 0.35, tag + " shifted note smeared / out of tune: " + juce::String (f, 1));
-                        if (mode == 1)
+                        if (mode != 0)
                             expect (std::abs (bestC) <= 5.0, tag + " chord note " + juce::String (f, 1) + " off by " + juce::String (bestC, 0) + " cents");
                     }
                     const double lvl = dB (rms (out, from) / rms (in, from));
@@ -231,8 +232,8 @@ public:
                 }
         }
 
-        beginTest ("Guitar-to-Bass pitch holds steady across a sustained note (MONO and POLY)");
-        for (int mode = 0; mode < 2; ++mode)
+        beginTest ("Guitar-to-Bass pitch holds steady across a sustained note (MONO, POLY, HYBRID)");
+        for (int mode = 0; mode < 3; ++mode)
         {
             GuitarToBassProcessor p;
             setKnob (p, "mode", (float) mode); setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f);
@@ -244,12 +245,12 @@ public:
                 const double got = spectralPeakHz (seg, 80.0, 115.0, 0);
                 worst = std::max (worst, std::abs (1200.0 * std::log2 (got / 98.0)));
             }
-            logMessage (juce::String (mode == 0 ? "  MONO" : "  POLY") + " worst deviation " + juce::String (worst, 1) + " cents");
+            logMessage (juce::String (modeName (mode)) + " worst deviation " + juce::String (worst, 1) + " cents");
             expect (worst < 20.0);
         }
 
-        beginTest ("Guitar-to-Bass note onset arrives quickly (MONO < 25 ms, POLY < 50 ms)");
-        for (int mode = 0; mode < 2; ++mode)
+        beginTest ("Guitar-to-Bass note onset arrives quickly (MONO and HYBRID < 25 ms, POLY < 50 ms)");
+        for (int mode = 0; mode < 3; ++mode)
         {
             GuitarToBassProcessor p;
             setKnob (p, "mode", (float) mode); setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f);
@@ -269,9 +270,42 @@ public:
             size_t k = 0;
             while (env[k] < 0.5 * peak) ++k;
             const double ms = (double) (k * 48 + win / 2) / sr * 1000.0;
-            logMessage (juce::String (mode == 0 ? "  MONO" : "  POLY") + " onset at half level after " + juce::String (ms, 1) + " ms");
-            expect (ms < (mode == 0 ? 25.0 : 50.0));
+            logMessage (juce::String (modeName (mode)) + " onset at half level after " + juce::String (ms, 1) + " ms");
+            expect (ms < (mode == 1 ? 50.0 : 25.0));
         }
+
+        beginTest ("Guitar-to-Bass HYBRID hands a note and a chord from MONO to POLY without a hole");
+        for (const auto& notes : { std::vector<double> { 110.0 }, std::vector<double> { 110.0, 138.59, 164.81, 220.0 },
+                                   std::vector<double> { 82.41, 123.47, 164.81, 207.65 } })
+            for (int oct = 0; oct < 2; ++oct)
+            {
+                const size_t start = (size_t) (0.3 * sr), win = 2880;
+                std::vector<float> in (start, 0.0f);
+                const auto c = chord (notes, 1.0);
+                in.insert (in.end(), c.begin(), c.end());
+                std::vector<double> pw[3];
+                for (int mode = 0; mode < 3; ++mode)
+                {
+                    GuitarToBassProcessor p;
+                    setKnob (p, "mode", (float) mode); setKnob (p, "octaves", (float) oct);
+                    setKnob (p, "guitar", 0.0f); setKnob (p, "grit", 0.0f); setKnob (p, "squash", 0.0f);
+                    const auto out = render (p, in);
+                    for (size_t i = start + (size_t) (0.06 * sr); i + win < start + (size_t) (0.4 * sr); i += 48)
+                    {
+                        double e = 0.0;
+                        for (size_t j = i; j < i + win; ++j) e += (double) out[j] * out[j];
+                        pw[mode].push_back (e / win);
+                    }
+                }
+                // the handoff happens ~90..180 ms in. 60 ms windows, so a chord's own beating (which moves when POLY's
+                // phases are re-seeded) averages out and only a real cancellation shows
+                double worst = 0.0;
+                for (size_t k = 0; k < pw[2].size(); ++k)
+                    worst = std::min (worst, 0.5 * dB (pw[2][k] / (0.5 * (pw[0][k] + pw[1][k]))));
+                logMessage ("  " + juce::String ((int) notes.size()) + " note(s) oct " + juce::String (oct)
+                            + ": deepest dip vs the two paths' mean " + juce::String (worst, 1) + " dB");
+                expect (worst > -3.0, "HYBRID crossfade hole " + juce::String (worst, 1) + " dB");
+            }
 
         beginTest ("PolyPitchTracker finds every note of a chord and no ghosts");
         for (const auto& notes : { std::vector<double> { 82.41, 123.47, 164.81, 207.65, 246.94, 329.63 },

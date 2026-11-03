@@ -34,6 +34,8 @@ public:
         in.assign ((size_t) size, 0.0f);
         out.assign ((size_t) size, 0.0f);
         frame.assign ((size_t) size, 0.0f);
+        ref.assign ((size_t) size, 0.0f);
+        refSpec.assign ((size_t) size + 2, 0.0f);
         window.resize ((size_t) size);
         synthWindow.resize ((size_t) synthLen);
         const int rise = size - synthLen / 2;
@@ -56,6 +58,14 @@ public:
         newAcc.assign ((size_t) bins, 0.0);
         accSet.assign ((size_t) bins, 0);
         peaks.assign ((size_t) bins, 0);
+        rotCos.resize ((size_t) bins);
+        rotSin.resize ((size_t) bins);
+        for (int k = 0; k < bins; ++k)
+        {
+            const double a = 2.0 * kPi * k * (double) rise / size;
+            rotCos[(size_t) k] = std::cos (a);
+            rotSin[(size_t) k] = std::sin (a);
+        }
         reset();
     }
 
@@ -63,6 +73,8 @@ public:
     {
         std::fill (in.begin(), in.end(), 0.0f);
         std::fill (out.begin(), out.end(), 0.0f);
+        std::fill (ref.begin(), ref.end(), 0.0f);
+        alignPending = false;
         std::fill (prevPhase.begin(), prevPhase.end(), 0.0f);
         std::fill (acc.begin(), acc.end(), 0.0);
         pos = 0;
@@ -70,11 +82,18 @@ public:
     }
 
     int getLatencySamples() const noexcept { return synthLen; }
+    int getHopSamples() const noexcept { return hop; }
+
+    /** At the next frame, start every partial's phase where the `reference` signal passed to process() (the same
+        notes shifted another way, e.g. by the splice shifter) has it, so a crossfade from that signal into this one
+        does not cancel. Takes effect getHopSamples() + getLatencySamples() after the call at the latest. */
+    void alignToReference() noexcept { alignPending = true; }
 
     /** Push one input sample and return one shifted sample, getLatencySamples() late. */
-    float process (float x, double ratio)
+    float process (float x, double ratio, float reference = 0.0f)
     {
         in[(size_t) pos] = x;
+        ref[(size_t) pos] = reference;
         const float y = out[(size_t) pos];
         out[(size_t) pos] = 0.0f;
         pos = (pos + 1) & mask;
@@ -96,6 +115,14 @@ private:
         for (int i = 0; i < size; ++i)
             frame[(size_t) i] = in[(size_t) ((pos + i) & mask)] * window[(size_t) i];
         fft.forward (frame.data(), spec.data());
+        const bool align = alignPending;
+        alignPending = false;
+        if (align)
+        {
+            for (int i = 0; i < size; ++i)
+                frame[(size_t) i] = ref[(size_t) ((pos + i) & mask)] * window[(size_t) i];
+            fft.forward (frame.data(), refSpec.data());
+        }
 
         float top = 0.0f;
         for (int k = 0; k < bins; ++k)
@@ -124,7 +151,28 @@ private:
             const int lo = i > 0 ? (peaks[(size_t) i - 1] + p) / 2 + 1 : 0;
             const int hi = i + 1 < numPeaks ? (p + peaks[(size_t) i + 1]) / 2 : bins - 1;
             const int q = (int) std::lround (p * ratio);
-            const double phq = acc[(size_t) q] + ratio * trueFreq[(size_t) p] * hop;
+            double phq = acc[(size_t) q] + ratio * trueFreq[(size_t) p] * hop;
+            if (align)
+            {
+                // phase of the reference's partial and of this peak's lobe, both read at frame index `rise` (where
+                // the analysis window peaks, so the lobe phase does not depend on where the partial sits in its bin),
+                // then advanced by the synthesis delay: this frame is output synthLen samples after the reference's
+                double rr = 0.0, ri = 0.0, tr = 0.0, ti = 0.0;
+                for (int k = lo; k <= hi; ++k)
+                {
+                    const int o = q + k - p;
+                    if (o < 0 || o >= bins) continue;
+                    const double c = rotCos[(size_t) o], sn = rotSin[(size_t) o];
+                    const double ar = refSpec[(size_t) (2 * o)], ai = refSpec[(size_t) (2 * o + 1)];
+                    rr += ar * c - ai * sn;
+                    ri += ar * sn + ai * c;
+                    const double d = phase[(size_t) k] - phase[(size_t) p], m = mag[(size_t) k];
+                    tr += m * (std::cos (d) * c - std::sin (d) * sn);
+                    ti += m * (std::cos (d) * sn + std::sin (d) * c);
+                }
+                if (rr * rr + ri * ri > 0.0 && tr * tr + ti * ti > 0.0)
+                    phq = std::atan2 (ri, rr) - std::atan2 (ti, tr) + ratio * trueFreq[(size_t) p] * synthLen;
+            }
             newAcc[(size_t) q] = phq;
             accSet[(size_t) q] = 1;
             for (int k = lo; k <= hi; ++k)
@@ -149,8 +197,9 @@ private:
     int order = 13, size = 8192, mask = 8191, synthLen = 1536, hop = 384, bins = 2049, pos = 0, count = 0;
     float norm = 1.0f;
     RealFft fft;
-    std::vector<float> in, out, frame, spec, window, synthWindow, mag, phase, prevPhase, trueFreq;
-    std::vector<double> acc, newAcc;
+    std::vector<float> in, out, frame, spec, ref, refSpec, window, synthWindow, mag, phase, prevPhase, trueFreq;
+    bool alignPending = false;
+    std::vector<double> acc, newAcc, rotCos, rotSin;
     std::vector<char> accSet;
     std::vector<int> peaks;
 };
