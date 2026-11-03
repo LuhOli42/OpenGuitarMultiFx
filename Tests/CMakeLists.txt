@@ -23,6 +23,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   MasterEqTests.cpp
   AmpSmoothTests.cpp
   SnapshotPresetXmlTests.cpp
+  ThemeTests.cpp
   UpdateCoreTests.cpp
   GateProcessorTests.cpp
   CompressorProcessorTests.cpp

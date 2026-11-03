@@ -1,4 +1,5 @@
 #include "OverlayHost.h"
+#include "Theme.h"
 
 namespace openguitarmultifx
 {
@@ -72,7 +73,7 @@ void OverlayHost::paint (juce::Graphics& g)
     // Card background behind the top layer, so its content doesn't have to
     // paint its own edges/shadow to read as a sheet floating over the app.
     auto* top = layers.back().get();
-    g.setColour (juce::Colour (0xff1a1a1a));
+    g.setColour (theme::current().surface);
     g.fillRoundedRectangle (top->getBounds().toFloat().expanded (1.0f), 14.0f);
     g.setColour (juce::Colours::black.withAlpha (0.5f));
     g.drawRoundedRectangle (top->getBounds().toFloat().expanded (1.0f), 14.0f, 1.0f);

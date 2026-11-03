@@ -1,4 +1,5 @@
 #include "FooterBar.h"
+#include "Theme.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
 
@@ -155,7 +156,7 @@ void FooterBar::resized()
 
 void FooterBar::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1a1a1a));
+    g.fillAll (theme::current().surface);
 
     if (snapshotLabel.isNotEmpty())
     {
@@ -192,7 +193,7 @@ void FooterBar::paint (juce::Graphics& g)
 
 void FooterBar::drawHorizontalMeter (juce::Graphics& g, juce::Rectangle<float> bounds, float level, const juce::String& label) const
 {
-    g.setColour (juce::Colour (0xff2a2a2a));
+    g.setColour (theme::current().raisedHigh);
     g.fillRoundedRectangle (bounds, 4.0f);
 
     const auto fill = bounds.withWidth (bounds.getWidth() * level);

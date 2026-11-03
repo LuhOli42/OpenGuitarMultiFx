@@ -1,4 +1,5 @@
 #include "PromptCards.h"
+#include "Theme.h"
 
 #include "TouchSizing.h"
 
@@ -7,7 +8,7 @@ namespace openguitarmultifx
 
 namespace
 {
-    const juce::Colour cardBackground { 0xff1a1a1a };
+    juce::Colour cardBackground() { return theme::current().surface; }
 
     void styleTitle (juce::Label& label, const juce::String& text)
     {
@@ -60,7 +61,7 @@ void ChoiceCard::resized()
 
 void ChoiceCard::paint (juce::Graphics& g)
 {
-    g.fillAll (cardBackground);
+    g.fillAll (cardBackground());
 }
 
 void ChoiceCard::outsideTapDismissed()
@@ -119,7 +120,7 @@ void TextPromptCard::resized()
 
 void TextPromptCard::paint (juce::Graphics& g)
 {
-    g.fillAll (cardBackground);
+    g.fillAll (cardBackground());
 }
 
 void TextPromptCard::outsideTapDismissed()
@@ -135,7 +136,7 @@ ColourPickerCard::ColourPickerCard (const juce::String& title, juce::Colour init
     styleTitle (titleLabel, title);
     addAndMakeVisible (titleLabel);
 
-    selector.setColour (juce::ColourSelector::backgroundColourId, cardBackground);
+    selector.setColour (juce::ColourSelector::backgroundColourId, cardBackground());
     selector.setCurrentColour (initialColour);
     addAndMakeVisible (selector);
 
@@ -172,7 +173,7 @@ void ColourPickerCard::resized()
 
 void ColourPickerCard::paint (juce::Graphics& g)
 {
-    g.fillAll (cardBackground);
+    g.fillAll (cardBackground());
 }
 
 void ColourPickerCard::outsideTapDismissed()
@@ -291,7 +292,7 @@ void NumPadCard::resized()
 
 void NumPadCard::paint (juce::Graphics& g)
 {
-    g.fillAll (cardBackground);
+    g.fillAll (cardBackground());
 }
 
 } // namespace openguitarmultifx

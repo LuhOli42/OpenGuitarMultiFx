@@ -1,4 +1,5 @@
 #include "PresetBadge.h"
+#include "Theme.h"
 
 namespace openguitarmultifx
 {
@@ -38,7 +39,7 @@ void PresetBadge::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
 
-    g.setColour (juce::Colour (0xff1c1c1c));
+    g.setColour (theme::current().raised);
     g.fillRoundedRectangle (bounds, 10.0f);
 
     juce::String text;

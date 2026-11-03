@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "Theme.h"
 #include "MidiLearnPresetXml.h"
 #include "PromptCards.h"
 #include "SnapshotPresetXml.h"
@@ -1015,6 +1016,22 @@ void MainComponent::showSettingsPanel()
     panel->onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     panel->onPopOverlay  = [this] { overlayHost.popOverlay(); };
     panel->onQualityChanged = [this] (EffectRegistry::OversamplingQuality q) { applyRenderQuality (q); };
+    panel->onThemeChanged = [this] (theme::Id id)
+    {
+        theme::setCurrent (id);
+        theme::save();
+        if (auto* laf = dynamic_cast<OpenGuitarMultiFxLookAndFeel*> (&juce::LookAndFeel::getDefaultLookAndFeel()))
+            laf->applyTheme();
+        // Labels/buttons cache nothing, but lookAndFeelChanged() is where
+        // components re-pull colours; then one repaint of the whole tree.
+        if (auto* top = getTopLevelComponent())
+        {
+            if (auto* window = dynamic_cast<juce::ResizableWindow*> (top))
+                window->setBackgroundColour (theme::current().background);
+            top->sendLookAndFeelChange();
+            top->repaint();
+        }
+    };
     // The return value only reports whether the REQUESTED rate applied (Settings
     // shows it) -- a failed switch can still leave a device open, and timerCallback
     // re-derives audioDeviceOk from the device itself every tick regardless.
@@ -2739,7 +2756,7 @@ void MainComponent::scrollBarMoved (juce::ScrollBar* bar, double newRangeStart)
 
 void MainComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff141414));
+    g.fillAll (theme::current().background);
 
     // Inter-row connectors: every row before the last occupied one connects
     // to the start of the next with ONE continuous line -- down through the

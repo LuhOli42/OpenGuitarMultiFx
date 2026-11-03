@@ -1,5 +1,7 @@
 #include "OpenGuitarMultiFxLookAndFeel.h"
 
+#include "Theme.h"
+
 #include <BinaryData.h>
 
 namespace openguitarmultifx
@@ -17,42 +19,48 @@ OpenGuitarMultiFxLookAndFeel::OpenGuitarMultiFxLookAndFeel()
     extraBold = juce::Typeface::createSystemTypefaceFor (BinaryData::SoraExtraBold_ttf,
                                                            (size_t) BinaryData::SoraExtraBold_ttfSize);
 
+    applyTheme();
+}
+
+void OpenGuitarMultiFxLookAndFeel::applyTheme()
+{
     // Colour setup -- per user feedback 2026-09-10 ("muito amador", buttons
-    // and contrast called out specifically). LookAndFeel_V4's default dark
-    // scheme uses a slate-blue widgetBackground (0xff323e44) for buttons/
-    // comboboxes/text fields; every custom-painted surface in this app
-    // (MainComponent/ParameterPanel's paint(), EffectBlockComponent) is a
-    // near-black from a completely different grey family (0xff141414/
-    // 0xff1e1e1e/0xff2e2e2e). Sitting the stock widgets on top of that
-    // produced a visible seam -- two different "greys" -- which read as
-    // unpolished more than any single colour being wrong. Everything below
-    // is pulled from that same near-black family instead, with one shared
-    // accent (getAppAccentColour(), already what the rotary knobs render
-    // in by default) for anything interactive that needs to stand out.
-    const auto widget  = juce::Colour (0xff262626); // buttons/comboboxes/fields -- one step up from panel bg, reads as "raised"
-    const auto outline = juce::Colour (0xff3c3c3c); // resting border for the above
+    // and contrast called out specifically): the stock widgets must come from
+    // the same surface family as every custom-painted panel, or the two
+    // different "greys" read as a visible seam. Since the three selectable
+    // themes (Theme.h) both families come from the same tokens, with one
+    // shared accent (getAppAccentColour()) for anything interactive.
+    const auto& t = theme::current();
 
-    setColour (juce::ResizableWindow::backgroundColourId, juce::Colour (0xff141414));
+    setColour (juce::ResizableWindow::backgroundColourId, t.background);
 
-    setColour (juce::TextButton::buttonColourId, widget);
-    setColour (juce::TextButton::textColourOnId, juce::Colours::white);
-    setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    setColour (juce::ComboBox::backgroundColourId, widget);
-    setColour (juce::ComboBox::outlineColourId, outline);
-    setColour (juce::ComboBox::textColourId, juce::Colours::white);
+    setColour (juce::TextButton::buttonColourId, t.raised);
+    setColour (juce::TextButton::textColourOnId, t.text);
+    setColour (juce::TextButton::textColourOffId, t.text);
+    setColour (juce::ComboBox::backgroundColourId, t.raised);
+    setColour (juce::ComboBox::outlineColourId, t.lineStrong);
+    setColour (juce::ComboBox::textColourId, t.text);
 
-    setColour (juce::Slider::rotarySliderOutlineColourId, outline);
-    setColour (juce::Slider::textBoxTextColourId, juce::Colours::white);
-    setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff1a1a1a));
-    setColour (juce::Slider::textBoxOutlineColourId, outline);
+    setColour (juce::Label::textColourId, t.text);
+    setColour (juce::TextEditor::backgroundColourId, t.raised);
+    setColour (juce::TextEditor::textColourId, t.text);
+    setColour (juce::TextEditor::outlineColourId, t.lineStrong);
+    setColour (juce::ListBox::backgroundColourId, t.surface);
 
-    setColour (juce::ToggleButton::tickDisabledColourId, juce::Colours::grey);
-    setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+    setColour (juce::Slider::rotarySliderOutlineColourId, t.lineStrong);
+    setColour (juce::Slider::textBoxTextColourId, t.text);
+    setColour (juce::Slider::textBoxBackgroundColourId, t.surface);
+    setColour (juce::Slider::textBoxOutlineColourId, t.lineStrong);
+    setColour (juce::Slider::trackColourId, t.raisedHigh);
+    setColour (juce::Slider::backgroundColourId, t.raised);
 
-    setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff1e1e1e));
-    setColour (juce::PopupMenu::textColourId, juce::Colours::white);
+    setColour (juce::ToggleButton::tickDisabledColourId, t.textDim);
+    setColour (juce::ToggleButton::textColourId, t.text);
 
-    applyAccentColours();
+    setColour (juce::PopupMenu::backgroundColourId, t.surface);
+    setColour (juce::PopupMenu::textColourId, t.text);
+
+        applyAccentColours();
 }
 
 void OpenGuitarMultiFxLookAndFeel::applyAccentColours()
@@ -105,7 +113,7 @@ void OpenGuitarMultiFxLookAndFeel::drawButtonBackground (juce::Graphics& g, juce
                                                   bool shouldDrawButtonAsDown)
 {
     auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
-    constexpr float cornerSize = 6.0f;
+    const float cornerSize = juce::jmin (theme::current().smallRadius, bounds.getHeight() * 0.5f);
 
     // Flat fill, no gradient -- pressed reads as "pushed in" (slightly
     // darker), hovered as "lit up" (slightly lighter), rather than V4's

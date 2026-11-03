@@ -1,4 +1,5 @@
 #include "ModelListDialog.h"
+#include "Theme.h"
 
 #include "TouchSizing.h"
 
@@ -16,7 +17,7 @@ ModelListDialog::ModelListDialog (juce::String titleText, juce::Array<juce::File
     titleLabel.setFont (juce::Font (19.0f, juce::Font::bold));
 
     addAndMakeVisible (listBox);
-    listBox.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff141414));
+    listBox.setColour (juce::ListBox::backgroundColourId, theme::current().background);
     listBox.setRowHeight (touch::minTapTarget);
     listBox.setVisible (! files.isEmpty());
 
@@ -153,7 +154,7 @@ void ModelListDialog::updateEmptyState()
 
 void ModelListDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1a1a1a));
+    g.fillAll (theme::current().surface);
 }
 
 } // namespace openguitarmultifx
