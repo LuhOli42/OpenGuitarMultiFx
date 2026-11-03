@@ -1,4 +1,5 @@
 #include "Tone3000SearchDialog.h"
+#include "Theme.h"
 
 #include "TouchSizing.h"
 #include "../Tone3000/GearRouting.h"
@@ -35,7 +36,7 @@ Tone3000SearchDialog::Tone3000SearchDialog (Tone3000Manager& managerToUse, juce:
     searchButton.onClick = [this] { doSearch(); };
 
     addAndMakeVisible (resultsList);
-    resultsList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff161616));
+    resultsList.setColour (juce::ListBox::backgroundColourId, theme::current().surface);
     resultsList.setRowHeight (touch::minTapTarget);
 
     addAndMakeVisible (downloadButton);
@@ -206,7 +207,7 @@ void Tone3000SearchDialog::resized()
 
 void Tone3000SearchDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff141414));
+    g.fillAll (theme::current().background);
 }
 
 } // namespace openguitarmultifx

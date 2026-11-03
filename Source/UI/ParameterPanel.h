@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Effects/EffectProcessor.h"
+#include "Theme.h"
 #include "SelectorSwitch.h"
 #include "../Tone3000/Tone3000Manager.h"
 
@@ -218,7 +219,7 @@ private:
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override
         {
             auto bounds = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xff0f0f0f));
+            g.setColour (theme::current().background);
             g.fillRoundedRectangle (bounds, 4.0f);
             g.setColour (juce::Colours::white.withAlpha (down ? 0.45f : highlighted ? 0.35f : 0.22f));
             g.drawRoundedRectangle (bounds.reduced (0.5f), 4.0f, 1.0f);
