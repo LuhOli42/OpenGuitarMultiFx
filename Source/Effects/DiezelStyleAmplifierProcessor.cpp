@@ -422,6 +422,9 @@ void DiezelStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addCapacitor (gB, ch.wPiPlateB, cgp);
         c.addResistor (piRail, ch.wPiPlateA, 120.0e3);
         c.addResistor (piRail, ch.wPiPlateB, 120.0e3);
+        // .001 from the rail to the driven half's plate only (the drawing routes it to the left plate's line and hops
+        // the right one): a one-sided HF compensation, ~3 kHz against that plate's ~50k source.
+        c.addCapacitor (piRail, ch.wPiPlateA, 1.0e-9);
         c.addResistor (ch.wPiK, nm, 680.0);
         c.addResistor (nm, fp, 10.0e3);
         c.addResistor (fp, gnd, 4.7e3);
@@ -492,14 +495,17 @@ void DiezelStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB (drawing): the speaker -> 10k || 470p -> 4.7k -> J. Presence: J -> .1 -> 25k rheostat, an HF shunt on the
+        // NFB (drawing): the speaker -> 10k || 470p -> 4.7k -> J. The draft doesn't say which tap; from 16 ohm that leg would
+        // feed back ~0.24 of the speaker into the 4.7k tail, 2-5x what every other high-gain amp here runs (0.05-0.15).
+        // From the 4 ohm tap (half the 16 ohm voltage) it lands at ~0.12, so the leg is taken there: at this model's
+        // 16 ohm terminal its impedances are doubled. Presence: J -> .1 -> 25k rheostat, an HF shunt on the
         // loop (more presence = less resistance = less treble fed back = brighter). Deep: J -> .1 -> 10k pot -> the
         // 1-3 H inductor (2 H here) -> ground, an LF shunt (more deep = less resistance = less bass fed back).
         {
             const auto f1 = c.addNode(), f2 = c.addNode();
-            c.addResistor (ch.wOut, f1, 10.0e3);
-            c.addCapacitor (ch.wOut, f1, 470.0e-12);
-            c.addResistor (f1, f2, 4.7e3);
+            c.addResistor (ch.wOut, f1, 2.0 * 10.0e3);
+            c.addCapacitor (ch.wOut, f1, 470.0e-12 / 2.0);
+            c.addResistor (f1, f2, 2.0 * 4.7e3);
             c.addResistor (f2, fp, 1.0);
             const auto pr = c.addNode();
             c.addCapacitor (fp, pr, 0.1e-6);
@@ -675,7 +681,15 @@ double DiezelStyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double 
     // when no sag is engaged, so it rides a ~120 Hz LP band, not the sag depth alone.
     const double lowCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 120.0 / juce::jmax (1.0, sampleRate));
     ch.bmLowState += lowCoeff * (raw - ch.bmLowState);
-    ch.bmOutput = ch.bmTail.process (bmLevelTrim * (ch.bmToneState + hfGain * (raw - ch.bmToneState) + (deep - 0.5) * 1.6 * ch.bmLowState));
+    const double shaped = ch.bmToneState + hfGain * (raw - ch.bmToneState) + (deep - 0.5) * 1.6 * ch.bmLowState;
+    // The loop's treble while the power stage is still linear: the full netlist's speaker-impedance rise shows through the
+    // feedback until the stage saturates (Clean at low level runs ~9 dB brighter above ~2 kHz than the saturated fit).
+    // A first-order HF shelf weighted by how far below the knee the drive envelope sits.
+    const double hfCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmLinearHfHz / juce::jmax (1.0, sampleRate));
+    ch.bmLinearHfState += hfCoeff * (shaped - ch.bmLinearHfState);
+    const double e = ch.bmEnvelope / juce::jmax (1.0e-6, k * bmLinearHfKnee);
+    const double lift = bmLinearHfGain / (1.0 + e * e);
+    ch.bmOutput = ch.bmTail.process (bmLevelTrim * (shaped + lift * (shaped - ch.bmLinearHfState)));
     return ch.bmOutput;
 }
 

@@ -613,7 +613,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // the preamp nets are per-channel so only the selected channel solves per sample.
     DiezelStyleAmplifierProcessor::reducedOrder = true;
     registry.markQualityDependent ("DiezelStyleAmplifier");
-    registry.registerType ("DiezelStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DiezelStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -1.47f); }, "High-Gain");
+    registry.registerType ("DiezelStyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (oversampled<DiezelStyleAmplifierProcessor> (Orders { 0, 0, 1 }), -19.14f); }, "High-Gain");
     // Carr Rambler (docs/circuits/CarrRambler.md): blackface-like single-channel preamp, LTP PI, cathode-biased
     // 2x6L6GC, zero global feedback, bias-vary tremolo, pentode/triode switch. reducedOrder behavioral power stage.
     CarrRamblerStyleAmplifierProcessor::reducedOrder = true;

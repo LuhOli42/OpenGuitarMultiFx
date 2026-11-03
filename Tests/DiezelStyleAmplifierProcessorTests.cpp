@@ -124,8 +124,10 @@ public:
                 setParam (amp, juce::String (px) + "volume", 1.0f);
                 setParam (amp, juce::String (px) + "master", 1.0f);
                 setParam (amp, juce::String (px) + "gain", 1.0f);
-                const double rms = sineRms (amp, 196.0, 0.5);
-                logMessage ("channel " + juce::String (chSel, 0) + " full gain, 0.5 V 196 Hz: out RMS " + juce::String (rms, 4)
+                // The circuit's own level: without the channel's output level-match trim (Clean carries +14.5 dB).
+                const double trim = std::pow (10.0, Amp::channelLevelMatchDb[(size_t) chSel] / 20.0);
+                const double rms = sineRms (amp, 196.0, 0.5) / trim;
+                logMessage ("channel " + juce::String (chSel, 0) + " full gain, 0.5 V 196 Hz: out RMS (untrimmed) " + juce::String (rms, 4)
                             + ", failure rate " + juce::String (amp.getSolveFailureRate(), 6)
                             + ", recoveries " + juce::String (amp.debugRecoveries()));
                 expect (std::isfinite (rms) && rms > 0.02 && rms < 1.5);
@@ -180,7 +182,8 @@ public:
                 setParam (amp, juce::String (px) + "gain", 0.7f);
                 setParam (amp, juce::String (px) + "volume", 0.7f);
                 setParam (amp, juce::String (px) + "master", 0.7f);
-                return sineRms (amp, 220.0, 0.05);
+                // the circuit's own gain: the output level-match trim taken back out
+                return sineRms (amp, 220.0, 0.05) / std::pow (10.0, Amp::channelLevelMatchDb[(size_t) chSel] / 20.0);
             };
             const double l0 = chanLevel (0.0f), l1 = chanLevel (1.0f), l2 = chanLevel (2.0f), l3 = chanLevel (3.0f);
             logMessage ("per-channel out (clean/crunch/mega/lead): " + juce::String (l0, 5) + " / " + juce::String (l1, 5)
