@@ -95,10 +95,9 @@ namespace
     constexpr double couplingSecondary = 0.995;
     constexpr double primaryHalfResistance = 45.0;
     constexpr double secondaryResistance = 0.15;
-    // Feedback: the real amp takes NFB from the 4 ohm tap through 39K + 4.7K = 43.7K. Since this model taps from the
-    // 16 ohm terminal (turns ratio 2x from the 4 ohm tap), the equivalent feedback resistor at the 16 ohm terminal is
-    // 43.7K * (16/4) = ~175K to deliver the same current to the PI's grid.
-    constexpr double feedbackResistor = 175.0e3;
+    // Feedback: the real amp takes NFB from the 4 ohm tap through 39K into the 4.7K NFB tail. This model taps the
+    // 16 ohm terminal (2x the 4 ohm tap's voltage), so the same current needs 2 x 39K.
+    constexpr double feedbackResistor = 78.0e3;
 
     constexpr double biasSupplyVolts = -70.0;         // assumed: trimmer at noon gives ~-55V for 6L6GC
 
@@ -420,21 +419,23 @@ void SLO100StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcBias = c.addSource (vc18, biasSupplyVolts);
 
-        // Phase inverter V5: 12AX7 long-tailed pair. .02uF from OD MV wiper into grid 1 (10K series resistor + 1M
-        // grid leak); 470 ohm tail; 82K/81K plate loads (slightly asymmetric for balanced drive); 47pF between plates;
-        // 1M grid leak on g2 from the NFB node.
-        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
+        // Phase inverter V5 (factory sheet 2 / Rob Robinette's annotation): 12AX7 long-tailed pair. Both grids return
+        // through 1M to the tail node T; cathodes -> 470 -> T -> 10K (PI tail) -> J -> 4.7K (NFB tail) -> ground; V5A's
+        // grid is AC-shunted to J by .1uF ("AC shunt"); the NFB and the Presence land on J. 82K / 81K plates, 47pF
+        // snubber. (The old netlist returned V5A's grid to the ~0 V feedback node with the cathodes near 30 V: that half
+        // was cut off and the loop dead -- docs/circuits/CircuitFamilies.md.)
+        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nt = c.addNode(), fp = c.addNode();
         ch.wGridA = g1;
         ch.wPlateA = pa;
         ch.wPlateB = pb;
-        ch.wTail = nm;
+        ch.wTail = nt;
         ch.wFeedback = fp;
         // Power Drive is applied as a gain factor to the signal entering the tone stack (see process()),
-        // so the tone stack output at wTone already has the master volume applied. A .02uF couples the tone
-        // stack output to the PI's driven grid (through a 10K series resistor, matching Sheet 2).
+        // so the tone stack output at wTone already has the master volume applied.
         c.addCapacitor (ch.wTone, g1, 0.02e-6);
-        c.addResistor (g1, nm, 1.0e6);                   // grid 1 leak to tail node
-        c.addResistor (g2, fp, 1.0e6);                   // grid 2 leak from feedback node
+        c.addResistor (g1, nt, 1.0e6);
+        c.addResistor (g2, nt, 1.0e6);
+        c.addCapacitor (g2, fp, 0.1e-6);                 // AC shunt
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
@@ -442,15 +443,16 @@ void SLO100StyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (vpi, pa, 82.0e3);
         c.addResistor (vpi, pb, 81.0e3);                 // slightly asymmetric (81K vs 82K)
         c.addCapacitor (pa, pb, 47.0e-12);
-        c.addResistor (k, nm, 470.0);                    // tail resistor
-        c.addResistor (nm, gnd, 10.0e3);                 // tail to ground (the SLO's tail doesn't go to a feedback node)
-        c.setInitialGuess (pa, 250.0);
-        c.setInitialGuess (pb, 245.0);
-        c.setInitialGuess (k, 30.0);
-        c.setInitialGuess (nm, 27.0);
-        c.setInitialGuess (g1, 27.0);
-        c.setInitialGuess (g2, 27.0);
-        c.setInitialGuess (fp, 2.0);
+        c.addResistor (k, nt, 470.0);                    // cathode
+        c.addResistor (nt, fp, 10.0e3);                  // PI tail
+        c.addResistor (fp, gnd, 4.7e3);                  // NFB tail
+        c.setInitialGuess (pa, 280.0);
+        c.setInitialGuess (pb, 280.0);
+        c.setInitialGuess (k, 42.0);
+        c.setInitialGuess (nt, 41.0);
+        c.setInitialGuess (g1, 41.0);
+        c.setInitialGuess (g2, 41.0);
+        c.setInitialGuess (fp, 13.0);
 
         // Power amplifier: 4 x 6L6GC as two push-pull pairs. .047uF couplings, 2.2K grid stoppers (per pair = 1.1K),
         // 220K grid leaks to the fixed bias rail.
@@ -506,12 +508,12 @@ void SLO100StyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // Negative feedback: from the speaker terminal through the (equivalent) feedback resistor into the PI's tail
-        // node. The Presence pot (25K, linear) shunts the feedback node to ground: more presence = less NFB at HF.
+        // Negative feedback: from the speaker terminal through the (equivalent) feedback resistor into J, the bottom of
+        // the PI's tail. Presence: .1uF + 25KL rheostat shunting J: more presence = less of it = less NFB at HF.
         const auto wp = c.addNode();
         ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        ch.rPresTop = c.addResistor (fp, wp, 12.5e3);
-        ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
+        ch.rPresTop = c.addResistor (wp, gnd, 25.0e3);
+        ch.rPresBottom = -1;
         // Depth: the real SLO's DEPTH leg -- a 1M pot in series with 0.0047 uF fed from the OT tap into
         // the feedback node (added to the SLO-100 as a standard control; Soldano docs). More depth opens
         // the leg, feeding extra highs back so the low end reads deeper by contrast.
@@ -519,7 +521,6 @@ void SLO100StyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.rDepthPot = c.addResistor (ch.wOut, dn, 1.0e6);
         c.addCapacitor (dn, fp, 4.7e-9);
         c.addCapacitor (fp, wp, 0.1e-6);                  // .1uF in the Presence network
-        c.addCapacitor (fp, gnd, 1.5e-9);                 // stray capacitance for HF stability
 
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
@@ -539,8 +540,7 @@ void SLO100StyleAmplifierProcessor::updatePots (const Knobs& k)
     const double bassR = juce::jmax (1.0, 1.0e6 * pots::audio (k.bass));
     const double midBottom = juce::jmax (1.0, 25.0e3 * k.mid);
     const double midTop = juce::jmax (1.0, 25.0e3 - midBottom);
-    const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
-    const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
+    const double presR = juce::jmax (1.0, 25.0e3 * pots::audio (1.0 - k.presence)); // 25KL rheostat
     const double depth = depthParam != nullptr ? (double) depthParam->get() : 0.3;
     const double depthR = juce::jmax (1.0, 1.0e6 * (1.0 - pots::audio (depth)));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
@@ -574,8 +574,7 @@ void SLO100StyleAmplifierProcessor::updatePots (const Knobs& k)
         ch.presenceMix = bmPresMixK * k.presence / juce::jmax (1.0e-3, 1.0 - bmPresMixR * k.presence);
         if (! reducedOrder)
         {
-            ch.power.setResistance (ch.rPresTop, presTop);
-            ch.power.setResistance (ch.rPresBottom, presBottom);
+            ch.power.setResistance (ch.rPresTop, presR);
             ch.power.setResistance (ch.rDepthPot, depthR);
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
@@ -844,8 +843,12 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
 
     idleSupplyCurrent = 0.18;
     appliedSpeaker = matchedSpeaker;
+    // Same field order as Knobs (nMaster before powerDrive): this call used to skip nMaster, which shifted every later
+    // field -- Tube Feel took the speaker index and the DC operating point was solved with a negative feedback resistor,
+    // a start-up step once the first control tick applied the real knobs.
     updatePots ({ nGainParam->get(), gainParam->get(), trebleParam->get(), midParam->get(), bassParam->get(),
-                  presenceParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(), juce::roundToInt (speakerParam->get()) });
+                  presenceParam->get(), nMasterParam->get(), powerParam->get(), biasParam->get(), tubeFeelParam->get(),
+                  juce::roundToInt (speakerParam->get()) });
 
     dcOk = true;
     for (auto& ch : channels)
@@ -919,10 +922,25 @@ void SLO100StyleAmplifierProcessor::prepare (double newSampleRate, int, int)
         }
         dcOk = passOk && ch.supply.prepare (supplyRate) && dcOk;
         ch.vScreen = ch.supply.voltage (ch.sB);
+        // The last supply solve moves the rails a little: solve every block again at the rails it will run on, the power
+        // block last with the follower DC it will actually see (no start-up step).
+        for (auto& p : ch.pre)
+        {
+            p.net.setSource (p.srcV3, ch.supply.voltage (ch.sC));
+            p.net.setSource (p.srcV2, ch.supply.voltage (ch.sD));
+            p.net.setSource (p.srcV1, ch.supply.voltage (ch.sF));
+            dcOk = p.net.prepare (newSampleRate) && dcOk;
+            p.followerDc = p.net.voltage (p.follower);
+        }
+        ch.followerDc = ch.pre[(size_t) ch.activePre].followerDc;
+        ch.power.setSource (ch.wSrcCf, ch.followerDc);
         if (! reducedOrder)
         {
             ch.power.setSource (ch.wSrcCt, ch.supply.voltage (ch.sA));
             ch.power.setSource (ch.wSrcPi, ch.supply.voltage (ch.sC));
+            ch.power.setPentodeScreen (ch.penA, ch.vScreen - ch.screenDropA);
+            ch.power.setPentodeScreen (ch.penB, ch.vScreen - ch.screenDropB);
+            dcOk = ch.power.prepare (newSampleRate) && dcOk;
         }
         for (auto& p : ch.pre)
         {
