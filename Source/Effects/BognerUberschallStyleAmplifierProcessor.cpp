@@ -512,16 +512,22 @@ void BognerUberschallStyleAmplifierProcessor::buildChannel (Channel& ch)
         ch.wSrcCt = c.addSource (ct, railPlatesNominal);
         ch.wSrcBias = c.addSource (vc18, biasSupplyVolts);
 
-        // Phase inverter: 12AX7 long-tailed pair, 82K/100K plates, .047uF couplings.
-        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nm = c.addNode(), fp = c.addNode();
+        // Phase inverter (power-amp tracing, sheet 2): 12AX7 long-tailed pair, 82K / 100K plates, .047uF couplings. Both
+        // grids return through 1M to the tail node T (R112 / R122); V6b's grid is AC-grounded to T by C105 100n, C120 220p
+        // runs from V6a's grid to the cathodes; cathodes -> R114 470 -> T -> R123 10K -> J -> R121 4.7K -> ground. The
+        // feedback and the Presence land on J. (The old wiring returned V6b's grid to the ~0 V feedback node with the
+        // cathodes at ~30 V: V6b was cut off and the loop dead -- docs/circuits/CircuitFamilies.md.)
+        const auto g1 = c.addNode(), g2 = c.addNode(), pa = c.addNode(), pb = c.addNode(), k = c.addNode(), nt = c.addNode(), fp = c.addNode();
         ch.wGridA = g1;
         ch.wPlateA = pa;
         ch.wPlateB = pb;
-        ch.wTail = nm;
+        ch.wTail = nt;
         ch.wFeedback = fp;
-        c.addCapacitor (ch.wTone, g1, 0.022e-6);
-        c.addResistor (g1, nm, 1.0e6);
-        c.addResistor (g2, fp, 1.0e6);
+        c.addCapacitor (ch.wTone, g1, 0.03e-6);            // C103
+        c.addResistor (g1, nt, 1.0e6);                     // R112
+        c.addResistor (g2, nt, 1.0e6);                     // R122
+        c.addCapacitor (g2, nt, 0.1e-6);                   // C105
+        c.addCapacitor (g1, k, 220.0e-12);                 // C120
         c.addTriode (pa, g1, k, triode12AX7Pi());
         c.addTriode (pb, g2, k, triode12AX7Pi());
         c.addCapacitor (g1, pa, cgp);
@@ -529,15 +535,16 @@ void BognerUberschallStyleAmplifierProcessor::buildChannel (Channel& ch)
         c.addResistor (vpi, pa, 82.0e3);
         c.addResistor (vpi, pb, 100.0e3);
         c.addCapacitor (pa, pb, 47.0e-12);
-        c.addResistor (k, nm, 1.0e3);
-        c.addResistor (nm, gnd, 10.0e3);
-        c.setInitialGuess (pa, 250.0);
-        c.setInitialGuess (pb, 245.0);
-        c.setInitialGuess (k, 30.0);
-        c.setInitialGuess (nm, 27.0);
-        c.setInitialGuess (g1, 27.0);
-        c.setInitialGuess (g2, 27.0);
-        c.setInitialGuess (fp, 2.0);
+        c.addResistor (k, nt, 470.0);                      // R114
+        c.addResistor (nt, fp, 10.0e3);                    // R123
+        c.addResistor (fp, gnd, 4.7e3);                    // R121
+        c.setInitialGuess (pa, 280.0);
+        c.setInitialGuess (pb, 280.0);
+        c.setInitialGuess (k, 42.0);
+        c.setInitialGuess (nt, 41.0);
+        c.setInitialGuess (g1, 41.0);
+        c.setInitialGuess (g2, 41.0);
+        c.setInitialGuess (fp, 13.0);
 
         // Power amplifier: 4 x EL34 as two push-pull pairs. .047uF couplings, 1.5K grid stoppers,
         // 220K grid leaks to the fixed bias rail.
@@ -593,13 +600,17 @@ void BognerUberschallStyleAmplifierProcessor::buildChannel (Channel& ch)
             ch.capSpkCp = c.addCapacitor (nbb, gnd, sm.cp);
         }
 
-        // NFB: from speaker terminal through feedbackResistor to PI grid 2, with Presence 25K shunt and stray cap.
-        const auto wp = c.addNode();
-        ch.rFeedback = c.addResistor (ch.wOut, fp, feedbackResistor);
-        ch.rPresTop = c.addResistor (fp, wp, 12.5e3);
-        ch.rPresBottom = c.addResistor (wp, gnd, 12.5e3);
-        c.addCapacitor (fp, wp, 0.1e-6);
-        c.addCapacitor (fp, gnd, 1.5e-9);
+        // NFB (tracing): the speaker line -> the optocoupler cell -> C117 22u -> R126 10K -> J; the opto + R126 total is
+        // feedbackResistor (the cell's lit resistance is not on the tracing). Presence: J -> C208 2.2u || C209 10u ->
+        // P5 2.2K rheostat -> ground, a shunt across the bottom of the tail.
+        {
+            const auto fc = c.addNode(), wp = c.addNode();
+            c.addCapacitor (ch.wOut, fc, 22.0e-6);
+            ch.rFeedback = c.addResistor (fc, fp, feedbackResistor);
+            c.addCapacitor (fp, wp, 12.2e-6);
+            ch.rPresTop = c.addResistor (wp, gnd, 2.2e3);
+            ch.rPresBottom = -1;
+        }
 
         c.setInitialGuess (pp1, railPlatesNominal);
         c.setInitialGuess (pp2, railPlatesNominal);
@@ -619,8 +630,8 @@ void BognerUberschallStyleAmplifierProcessor::updatePots (const Knobs& k)
     const double bassR = juce::jmax (1.0, 720.0e3 * pots::audio (k.bass));
     const double midBottom = juce::jmax (1.0, 25.0e3 * k.mid);
     const double midTop = juce::jmax (1.0, 25.0e3 - midBottom);
-    const double presBottom = juce::jmax (1.0, 25.0e3 * (1.0 - k.presence));
-    const double presTop = juce::jmax (1.0, 25.0e3 - presBottom);
+    // P5 2.2K rheostat shunting the tail bottom: less of it = more feedback shunted away = brighter / looser.
+    const double presR = juce::jmax (1.0, 2.2e3 * (1.0 - k.presence));
     const double masterR = juce::jmax (1.0, 1.0e6 * pots::audio (k.master));
     const double trim = juce::jmax (1.0, 220.0e3 * k.bias);
     const double rectifier = rectifierResistance * (0.05 + 0.95 * k.tubeFeel);
@@ -662,8 +673,7 @@ void BognerUberschallStyleAmplifierProcessor::updatePots (const Knobs& k)
         {
             if (! clean)
             {
-                ch.power.setResistance (ch.rPresTop, presTop);
-                ch.power.setResistance (ch.rPresBottom, presBottom);
+                ch.power.setResistance (ch.rPresTop, presR);
             }
             ch.power.setResistance (ch.rFeedback, feedbackR);
             ch.power.setResistance (ch.rBiasTrim, trim);
