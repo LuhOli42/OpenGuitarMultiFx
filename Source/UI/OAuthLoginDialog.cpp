@@ -54,10 +54,10 @@ OAuthLoginDialog::OAuthLoginDialog (const juce::String& authorizeUrl, const juce
 
 void OAuthLoginDialog::resized()
 {
-    auto area = getLocalBounds().reduced (10);
+    auto area = getLocalBounds().reduced (16);
 
-    auto top = area.removeFromTop (touch::minTapTarget);
-    cancelButton.setBounds (top.removeFromRight (80));
+    auto top = area.removeFromTop (touch::minTapTarget + 8);
+    cancelButton.setBounds (top.removeFromRight (110).withSizeKeepingCentre (110, touch::minTapTarget));
     titleLabel.setBounds (top);
 
     area.removeFromTop (6);

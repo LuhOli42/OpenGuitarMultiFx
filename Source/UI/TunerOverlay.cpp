@@ -1,6 +1,7 @@
 #include "TunerOverlay.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
+#include "Theme.h"
 #include "TouchSizing.h"
 
 #include <cmath>
@@ -29,7 +30,7 @@ namespace
     juce::Colour tuningColour (float cents, bool active)
     {
         if (! active)
-            return juce::Colours::white.withAlpha (0.25f);
+            return theme::current().textDim;
         if (std::abs (cents) <= inTuneCents)
             return juce::Colour (0xff35d07f);                       // in tune
         if (std::abs (cents) <= 15.0f)
@@ -45,17 +46,20 @@ TunerOverlay::TunerOverlay()
     titleLabel.setFont (juce::Font (19.0f, juce::Font::bold));
 
     addAndMakeVisible (hintLabel);
-    hintLabel.setJustificationType (juce::Justification::centredLeft);
+    hintLabel.setJustificationType (juce::Justification::centred);
     hintLabel.setFont (14.0f);
-    hintLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     hintLabel.setText ("Chromatic - any string, any tuning", juce::dontSendNotification);
+
+    addAndMakeVisible (referenceLabel);
+    referenceLabel.setJustificationType (juce::Justification::centredRight);
+    referenceLabel.setFont (14.0f);
+    referenceLabel.setText ("A = 440 Hz", juce::dontSendNotification);
 
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
-    // Big enough to read from a few feet away on a stage (user request 2026-09-22). OverlayHost keeps whatever size the
-    // content picks for itself -- without this it collapses to its 240px minimum.
-    setSize (880, 560);
+    // Big enough to read from a few feet away on a stage. OverlayHost keeps whatever size the content picks for itself.
+    setSize (1080, 650);
 
     startTimerHz (30);
 }
@@ -68,87 +72,117 @@ TunerOverlay::~TunerOverlay()
 
 void TunerOverlay::resized()
 {
-    auto area = getLocalBounds().reduced (28, 22);
+    auto area = getLocalBounds().reduced (24, 18);
 
-    auto top = area.removeFromTop (touch::minTapTarget);
-    closeButton.setBounds (top.removeFromRight (120).withSizeKeepingCentre (120, touch::minTapTarget));
-    titleLabel.setBounds (top.removeFromLeft (110));
+    auto top = area.removeFromTop (touch::minTapTarget + 8);
+    closeButton.setBounds (top.removeFromRight (110).withSizeKeepingCentre (110, touch::minTapTarget));
+    referenceLabel.setBounds (top.removeFromRight (130));
+    titleLabel.setBounds (top.removeFromLeft (130));
     hintLabel.setBounds (top);
 
-    area.removeFromTop (10);
-    gaugeBounds = area.removeFromTop (96).toFloat();   // the tick ruler + needle
-    noteBounds = area.removeFromTop (250).toFloat();   // the big letter
-    readoutBounds = area.toFloat();                    // cents + Hz
+    area.removeFromTop (14);
+    gaugeBounds = area.removeFromTop (150).toFloat();
+    area.removeFromTop (16);
+
+    const int readoutHeight = 132;
+    const int noteHeight = juce::jmax (200, area.getHeight() - readoutHeight);
+    noteBounds = area.removeFromTop (noteHeight).toFloat();
+    readoutBounds = area.toFloat();
 }
 
 void TunerOverlay::paint (juce::Graphics& g)
 {
+    const auto& t = theme::current();
     const auto colour = tuningColour (cents, active);
 
-    // ---- the ruler: ticks every 5 cents across +-50, tall at the centre and at +-inTuneCents ----
-    const float centreX = gaugeBounds.getCentreX();
-    const float halfWidth = gaugeBounds.getWidth() * 0.5f - 30.0f;
-    const float baseY = gaugeBounds.getBottom() - 22.0f;
+    g.fillAll (t.background);
+    g.setColour (t.line);
+    g.drawHorizontalLine (gaugeBounds.getY() - 14.0f, 24.0f, (float) getWidth() - 24.0f);
 
+    const float centreX = gaugeBounds.getCentreX();
+    const float halfWidth = gaugeBounds.getWidth() * 0.5f - 42.0f;
+    const float baseY = gaugeBounds.getBottom() - 34.0f;
+
+    // ---- the ruler: ticks every 5 cents across +-50, tall at the centre and every 25 cents ----
     for (int tick = -10; tick <= 10; ++tick)
     {
         const float value = (float) tick * 5.0f;
         const float x = centreX + (value / gaugeRangeCents) * halfWidth;
-        const bool major = (tick % 5) == 0;
-        const float height = tick == 0 ? 40.0f : (major ? 24.0f : 13.0f);
-        g.setColour (juce::Colours::white.withAlpha (tick == 0 ? 0.55f : (major ? 0.30f : 0.16f)));
-        g.fillRoundedRectangle (x - (tick == 0 ? 2.0f : 1.5f), baseY - height, tick == 0 ? 4.0f : 3.0f, height, 1.5f);
+        const bool quarter = (tick % 5) == 0;
+        const bool major = (tick % 10) == 0;
+        const float height = major ? 52.0f : (quarter ? 32.0f : 16.0f);
+        g.setColour (major ? t.textDim : (quarter ? t.textMuted.withAlpha (0.55f) : t.lineStrong));
+        g.fillRoundedRectangle (x - (major ? 2.0f : 1.5f), baseY - height, major ? 4.0f : 3.0f, height, 1.5f);
+    }
+
+    // Cents labels under the ruler, so the scale is readable without guessing.
+    g.setFont (juce::FontOptions (12.5f));
+    g.setColour (t.textDim);
+    for (int label = -2; label <= 2; ++label)
+    {
+        const float value = (float) label * 25.0f;
+        const float x = centreX + (value / gaugeRangeCents) * halfWidth;
+        juce::String text;
+        if (label < 0) text = "-" + juce::String ((int) -value);
+        else if (label > 0) text = "+" + juce::String ((int) value);
+        else text = "0";
+        g.drawText (text, juce::Rectangle<float> (x - 24.0f, gaugeBounds.getBottom() - 22.0f, 48.0f, 18.0f),
+                    juce::Justification::centred);
     }
 
     // The in-tune window, so "dead centre" is a target you can see rather than a line you have to guess at.
     const float windowHalf = (inTuneCents / gaugeRangeCents) * halfWidth;
-    g.setColour ((active && std::abs (cents) <= inTuneCents ? juce::Colour (0xff35d07f) : juce::Colours::white).withAlpha (0.10f));
-    g.fillRoundedRectangle (centreX - windowHalf, baseY - 44.0f, windowHalf * 2.0f, 48.0f, 6.0f);
+    const bool inWindow = active && std::abs (cents) <= inTuneCents;
+    g.setColour ((inWindow ? juce::Colour (0xff35d07f) : t.text).withAlpha (0.10f));
+    g.fillRoundedRectangle (centreX - windowHalf, baseY - 58.0f, windowHalf * 2.0f, 62.0f, 6.0f);
 
     // ---- flat / sharp markers, lit on the side you are on ----
     const bool flat = active && cents < -inTuneCents;
     const bool sharp = active && cents > inTuneCents;
-    g.setFont (juce::Font (34.0f, juce::Font::bold));
-    g.setColour (flat ? colour : juce::Colours::white.withAlpha (0.18f));
-    g.drawText ("b", juce::Rectangle<float> (gaugeBounds.getX(), baseY - 44.0f, 26.0f, 44.0f), juce::Justification::centred);
-    g.setColour (sharp ? colour : juce::Colours::white.withAlpha (0.18f));
-    g.drawText ("#", juce::Rectangle<float> (gaugeBounds.getRight() - 26.0f, baseY - 44.0f, 26.0f, 44.0f), juce::Justification::centred);
+    g.setFont (juce::FontOptions (30.0f).withStyle ("Bold"));
+    g.setColour (flat ? colour : t.textDim.withAlpha (0.45f));
+    g.drawText ("b", juce::Rectangle<float> (gaugeBounds.getX(), baseY - 58.0f, 34.0f, 58.0f), juce::Justification::centred);
+    g.setColour (sharp ? colour : t.textDim.withAlpha (0.45f));
+    g.drawText ("#", juce::Rectangle<float> (gaugeBounds.getRight() - 34.0f, baseY - 58.0f, 34.0f, 58.0f), juce::Justification::centred);
 
     // ---- the needle ----
     if (active)
     {
         const float x = centreX + juce::jlimit (-1.0f, 1.0f, cents / gaugeRangeCents) * halfWidth;
+        g.setColour (colour.withAlpha (0.22f));
+        g.fillRoundedRectangle (x - 7.0f, baseY - 66.0f, 14.0f, 76.0f, 7.0f);
         g.setColour (colour);
-        g.fillRoundedRectangle (x - 4.0f, baseY - 52.0f, 8.0f, 60.0f, 4.0f);
-        g.fillEllipse (x - 11.0f, baseY + 2.0f, 22.0f, 22.0f);
+        g.fillRoundedRectangle (x - 4.0f, baseY - 62.0f, 8.0f, 72.0f, 4.0f);
+        g.fillEllipse (x - 12.0f, baseY + 4.0f, 24.0f, 24.0f);
+        g.setColour (t.background);
+        g.fillEllipse (x - 4.0f, baseY + 12.0f, 8.0f, 8.0f);
     }
 
     // ---- the note itself: the thing you read from across a stage ----
     if (active)
     {
         g.setColour (colour);
-        g.setFont (juce::Font (juce::FontOptions (noteBounds.getHeight() * 0.86f).withStyle ("Bold")));
-        const auto letterBox = noteBounds.withTrimmedRight (noteBounds.getWidth() * 0.12f);
+        g.setFont (juce::FontOptions (noteBounds.getHeight() * 0.82f).withStyle ("Bold"));
+        const auto letterBox = noteBounds.withTrimmedRight (noteBounds.getWidth() * 0.16f);
         g.drawText (noteLetter, letterBox, juce::Justification::centred);
 
-        // Sharp sign and octave ride alongside the letter rather than widening it, so the letter keeps its size.
         const float letterWidth = g.getCurrentFont().getStringWidthFloat (noteLetter);
-        const float sideX = letterBox.getCentreX() + letterWidth * 0.5f + 12.0f;
+        const float sideX = letterBox.getCentreX() + letterWidth * 0.5f + 16.0f;
         if (noteAccidental.isNotEmpty())
         {
-            g.setFont (juce::Font (juce::FontOptions (noteBounds.getHeight() * 0.34f).withStyle ("Bold")));
-            g.drawText (noteAccidental, juce::Rectangle<float> (sideX, noteBounds.getY() + 22.0f, 80.0f, 80.0f),
+            g.setFont (juce::FontOptions (noteBounds.getHeight() * 0.32f).withStyle ("Bold"));
+            g.drawText (noteAccidental, juce::Rectangle<float> (sideX, noteBounds.getY() + 26.0f, 90.0f, 90.0f),
                         juce::Justification::centredLeft);
         }
-        g.setColour (juce::Colours::white.withAlpha (0.45f));
-        g.setFont (juce::Font (juce::FontOptions (30.0f)));
-        g.drawText (juce::String (noteOctave), juce::Rectangle<float> (sideX, noteBounds.getBottom() - 104.0f, 80.0f, 60.0f),
+        g.setColour (t.textMuted);
+        g.setFont (juce::FontOptions (34.0f).withStyle ("Bold"));
+        g.drawText (juce::String (noteOctave), juce::Rectangle<float> (sideX, noteBounds.getBottom() - 116.0f, 90.0f, 70.0f),
                     juce::Justification::centredLeft);
     }
     else
     {
-        g.setColour (juce::Colours::white.withAlpha (0.28f));
-        g.setFont (juce::Font (juce::FontOptions (40.0f)));
+        g.setColour (t.textDim);
+        g.setFont (juce::FontOptions (42.0f));
         g.drawText ("play a note", noteBounds, juce::Justification::centred);
     }
 
@@ -156,14 +190,14 @@ void TunerOverlay::paint (juce::Graphics& g)
     if (active)
     {
         g.setColour (colour);
-        g.setFont (juce::Font (juce::FontOptions (40.0f).withStyle ("Bold")));
+        g.setFont (juce::FontOptions (38.0f).withStyle ("Bold"));
         const auto centsText = std::abs (cents) <= inTuneCents
                                    ? juce::String ("IN TUNE")
                                    : (cents > 0.0f ? "+" : "") + juce::String (cents, 1) + " cents";
-        g.drawText (centsText, readoutBounds.removeFromTop (46.0f), juce::Justification::centred);
+        g.drawText (centsText, readoutBounds.removeFromTop (48.0f), juce::Justification::centred);
 
-        g.setColour (juce::Colours::white.withAlpha (0.35f));
-        g.setFont (juce::Font (juce::FontOptions (20.0f)));
+        g.setColour (t.textMuted);
+        g.setFont (juce::FontOptions (20.0f));
         g.drawText (juce::String (frequencyHz, 2) + " Hz", readoutBounds, juce::Justification::centredTop);
     }
 }

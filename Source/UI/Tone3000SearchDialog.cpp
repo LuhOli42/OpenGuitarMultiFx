@@ -1,4 +1,5 @@
 #include "Tone3000SearchDialog.h"
+#include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 
 #include "TouchSizing.h"
@@ -16,7 +17,7 @@ Tone3000SearchDialog::Tone3000SearchDialog (Tone3000Manager& managerToUse, juce:
     titleLabel.setFont (juce::Font (18.0f, juce::Font::bold));
 
     addAndMakeVisible (searchField);
-    searchField.setTextToShowWhenEmpty ("JCM800, Plexi, Tube Screamer...", juce::Colours::grey);
+    searchField.setTextToShowWhenEmpty ("JCM800, Plexi, Tube Screamer...", theme::current().textDim);
     searchField.onReturnKey = [this] { doSearch(); };
 
     // TONE3000 defaults to "A1 + Custom, excluding A2" when this isn't sent
@@ -37,7 +38,7 @@ Tone3000SearchDialog::Tone3000SearchDialog (Tone3000Manager& managerToUse, juce:
 
     addAndMakeVisible (resultsList);
     resultsList.setColour (juce::ListBox::backgroundColourId, theme::current().surface);
-    resultsList.setRowHeight (touch::minTapTarget);
+    resultsList.setRowHeight (64);
 
     addAndMakeVisible (downloadButton);
     downloadButton.onClick = [this] { doDownloadSelected(); };
@@ -46,13 +47,12 @@ Tone3000SearchDialog::Tone3000SearchDialog (Tone3000Manager& managerToUse, juce:
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
     addAndMakeVisible (statusLabel);
-    statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     statusLabel.setFont (13.5f);
 
     if (! manager.isLoggedIn())
         statusLabel.setText ("Not logged in -- open TONE3000 from the toolbar to log in first.", juce::dontSendNotification);
 
-    setSize (520, 420);
+    setSize (640, 520);
     searchField.grabKeyboardFocus();
 }
 
@@ -161,21 +161,38 @@ void Tone3000SearchDialog::paintListBoxItem (int rowNumber, juce::Graphics& g, i
     if (rowNumber < 0 || rowNumber >= (int) results.size())
         return;
 
+    const auto& t = theme::current();
     const auto& toneResult = results[(size_t) rowNumber];
+    auto row = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height).reduced (3.0f, 2.0f);
 
     if (rowIsSelected)
-        g.fillAll (juce::Colour (0xff2d5c56));
+    {
+        g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour().withAlpha (0.28f));
+        g.fillRoundedRectangle (row, t.smallRadius);
+        g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
+        g.fillRoundedRectangle (row.removeFromLeft (4.0f), t.smallRadius);
+    }
+    else
+    {
+        g.setColour (t.raised);
+        g.fillRoundedRectangle (row, t.smallRadius);
+    }
 
-    g.setColour (juce::Colours::white);
-    g.setFont (15.5f);
-    g.drawText (toneResult.title, 8, 0, width - 16, height / 2, juce::Justification::centredLeft);
+    auto textArea = row.reduced (12.0f, 0.0f);
+    g.setColour (t.text);
+    g.setFont (juce::FontOptions (16.0f).withStyle ("Bold"));
+    g.drawText (toneResult.title, textArea.removeFromTop (height * 0.5f), juce::Justification::centredLeft);
 
-    g.setColour (juce::Colours::lightgrey);
-    g.setFont (12.5f);
+    g.setColour (t.textMuted);
+    g.setFont (juce::FontOptions (12.5f));
     juce::String subtitle = toneResult.author;
     if (toneResult.license.isNotEmpty())
-        subtitle += "  ·  " + toneResult.license;
-    g.drawText (subtitle, 8, height / 2, width - 16, height / 2, juce::Justification::centredLeft);
+        subtitle += "  -  " + toneResult.license;
+    g.drawText (subtitle, textArea, juce::Justification::centredLeft);
+
+    juce::String tag = toneResult.gear + " / " + toneResult.format;
+    g.setColour (t.textDim);
+    g.drawText (tag, row.getRight() - 120.0f, row.getY(), 112.0f, row.getHeight(), juce::Justification::centredRight);
 }
 
 void Tone3000SearchDialog::resized()

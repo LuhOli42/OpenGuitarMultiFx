@@ -1,4 +1,5 @@
 #include "ModelListDialog.h"
+#include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 
 #include "TouchSizing.h"
@@ -18,13 +19,12 @@ ModelListDialog::ModelListDialog (juce::String titleText, juce::Array<juce::File
 
     addAndMakeVisible (listBox);
     listBox.setColour (juce::ListBox::backgroundColourId, theme::current().background);
-    listBox.setRowHeight (touch::minTapTarget);
+    listBox.setRowHeight (56);
     listBox.setVisible (! files.isEmpty());
 
     addAndMakeVisible (emptyStateLabel);
     emptyStateLabel.setText ("Nothing installed yet.\nSearch TONE3000 to add some gear.", juce::dontSendNotification);
     emptyStateLabel.setJustificationType (juce::Justification::centred);
-    emptyStateLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     emptyStateLabel.setMinimumHorizontalScale (1.0f);
     emptyStateLabel.setVisible (files.isEmpty());
 
@@ -62,7 +62,7 @@ ModelListDialog::ModelListDialog (juce::String titleText, juce::Array<juce::File
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
-    setSize (420, 480);
+    setSize (480, 520);
 }
 
 int ModelListDialog::getNumRows()
@@ -75,12 +75,31 @@ void ModelListDialog::paintListBoxItem (int rowNumber, juce::Graphics& g, int wi
     if (rowNumber < 0 || rowNumber >= files.size())
         return;
 
-    if (rowIsSelected)
-        g.fillAll (juce::Colour (0xff2d5c56));
+    const auto& t = theme::current();
+    auto row = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height).reduced (3.0f, 2.0f);
 
-    g.setColour (juce::Colours::white);
-    g.setFont (16.0f);
-    g.drawText (files.getReference (rowNumber).getFileNameWithoutExtension(), 14, 0, width - 24, height,
+    if (rowIsSelected)
+    {
+        g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour().withAlpha (0.28f));
+        g.fillRoundedRectangle (row, t.smallRadius);
+        g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
+        g.fillRoundedRectangle (row.removeFromLeft (4.0f), t.smallRadius);
+    }
+    else
+    {
+        g.setColour (t.raised);
+        g.fillRoundedRectangle (row, t.smallRadius);
+    }
+
+    const auto& file = files.getReference (rowNumber);
+    auto textArea = row.reduced (14.0f, 0.0f);
+    g.setColour (t.text);
+    g.setFont (juce::FontOptions (16.0f).withStyle ("Bold"));
+    g.drawText (file.getFileNameWithoutExtension(), textArea.removeFromTop (height * 0.55f), juce::Justification::centredLeft);
+
+    g.setColour (t.textMuted);
+    g.setFont (juce::FontOptions (12.5f));
+    g.drawText (file.getFileExtension() + "  -  " + file.getParentDirectory().getFileName(), textArea,
                 juce::Justification::centredLeft);
 }
 
