@@ -10,6 +10,7 @@
 #include "BypassPedalXml.h"
 #include "SceneMidi.h"
 #include "SnapshotBar.h"
+#include "LiveOverlay.h"
 #include "UndoHistory.h"
 #include "SnapshotPresetXml.h"
 #include "../EffectRegistry.h"
@@ -101,6 +102,14 @@ private:
     void showPresetsPanel();
     void showTuner();
     void showMasterEq();
+    /** Stage-mode screen (redesign card 6): giant preset, TUNER/BPM and the
+        eight scene tiles -- see LiveOverlay.h. Opened from the top bar's
+        LIVE button. */
+    void showLive();
+    /** Pushes the live preset/scene/BPM state into the Live card, when one
+        is open -- called from updatePresetDisplay() (every snapshot/preset
+        change) and timerCallback() (BPM). */
+    void refreshLiveOverlay();
     std::unique_ptr<juce::XmlElement> buildPresetXml() const;
     void applyPresetXml (const juce::XmlElement& xml);
     /** Saves under `name`, reusing its existing number if `name` is already a
@@ -430,6 +439,11 @@ private:
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
     };
     GearButton settingsButton;
+
+    /** Top-bar LIVE button: opens the stage-mode LiveOverlay card. */
+    juce::TextButton liveButton { "LIVE" };
+    /** Non-owning: OverlayHost owns the card; nulled by its onDestroyed. */
+    LiveOverlay* liveOverlay = nullptr;
 
     // Every popup that used to be a separate OS window (TONE3000 login,
     // search, installed-model list) is a card drawn on top of this window
