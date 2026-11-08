@@ -739,7 +739,12 @@ void MainComponent::rebuildSignalGraph()
                 signalGraph->addLaneConnection (row, target); // target > row always -- forward-only, enforced in showRowOutputMenu()
     }
 
-    audioEngine.setSignalGraph (std::move (signalGraph));
+    auto outputMatrix = std::make_unique<OutputMatrix>();
+    for (int row = 0; row < numRows; ++row)
+        if (rowRouting[(size_t) row].toDevice)
+            outputMatrix->addRoute (row, rowRouting[(size_t) row].deviceOutputPair);
+
+    audioEngine.setSignalGraph (std::move (signalGraph), std::move (outputMatrix));
 }
 
 void MainComponent::layoutChain()
@@ -2201,6 +2206,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     for (int lane = 0; lane < numRows; ++lane)
     {
         spillLanes[(size_t) lane].writesDeviceOutput = outgoingRouting[(size_t) lane].toDevice;
+        spillLanes[(size_t) lane].outputPairStart = outgoingRouting[(size_t) lane].deviceOutputPair;
         for (int target = lane + 1; target < numRows; ++target)
             if (outgoingRouting[(size_t) lane].toRows[(size_t) target])
                 spillConnections.push_back ({ lane, target });

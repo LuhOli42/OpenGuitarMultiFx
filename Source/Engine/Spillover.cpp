@@ -1,6 +1,21 @@
 #include "Spillover.h"
 
 #include <algorithm>
+#include <cmath>
+
+namespace
+{
+    float peakMagnitude (const juce::AudioBuffer<float>& buffer, int numSamples) noexcept
+    {
+        float peak = 0.0f;
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        {
+            const auto range = juce::FloatVectorOperations::findMinAndMax (buffer.getReadPointer (ch), numSamples);
+            peak = juce::jmax (peak, juce::jmax (std::abs (range.getStart()), std::abs (range.getEnd())));
+        }
+        return peak;
+    }
+}
 
 namespace openguitarmultifx
 {
@@ -84,6 +99,11 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
     unit->graph = std::move (graph);
     unit->owners = std::move (owners);
     unit->silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds + longestWait;
+
+    for (int lane = 0; lane < SignalGraph::numLanes; ++lane)
+        if (lanes[(size_t) lane].writesDeviceOutput)
+            unit->outputMatrix.addRoute (lane, lanes[(size_t) lane].outputPairStart);
+
     return unit;
 }
 
@@ -143,7 +163,9 @@ void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate) no
         const int n = juce::jmin (numSamples, unit->scratch.getNumSamples());
         const int ch = juce::jmin (numChannels, unit->scratch.getNumChannels());
 
-        if (n <= 0 || ch <= 0 || unit->graph == nullptr)
+        const int graphChannels = juce::jmin (unit->graphChannels, ch);
+
+        if (n <= 0 || ch <= 0 || graphChannels <= 0 || unit->graph == nullptr)
         {
             unit->finished = true;
             continue;
@@ -151,14 +173,17 @@ void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate) no
 
         // A non-owning view over the pre-sized scratch: the outgoing chain
         // is fed silence -- the live input belongs to the new preset.
-        juce::AudioBuffer<float> tail (unit->scratch.getArrayOfWritePointers(), ch, n);
-        tail.clear();
-        unit->graph->process (tail);
+        juce::AudioBuffer<float> input (unit->scratch.getArrayOfWritePointers(), graphChannels, n);
+        input.clear();
+        unit->graph->processLanes (input);
+
+        juce::AudioBuffer<float> spillOut (unit->scratch.getArrayOfWritePointers(), ch, n);
+        unit->outputMatrix.render (spillOut, *unit->graph);
 
         for (int c = 0; c < ch; ++c)
-            buffer.addFrom (c, 0, tail, c, 0, n);
+            buffer.addFrom (c, 0, spillOut, c, 0, n);
 
-        unit->updateFinished (tail.getMagnitude (0, n), n, sampleRate);
+        unit->updateFinished (peakMagnitude (spillOut, n), n, sampleRate);
     }
 
     // Retire the finished. done is stored only when a unit drops out of

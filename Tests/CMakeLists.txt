@@ -5,6 +5,7 @@ juce_add_console_app(OpenGuitarMultiFx_Tests
 
 target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RunTests.cpp
+  OutputMatrixTests.cpp
   SignalGraphTests.cpp
   SignalGraphBench.cpp
   EffectRegistryCategoryTests.cpp

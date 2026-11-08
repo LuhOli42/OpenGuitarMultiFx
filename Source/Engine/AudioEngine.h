@@ -2,6 +2,7 @@
 
 #include "DeferredReclaimer.h"
 #include "MasterEq.h"
+#include "OutputMatrix.h"
 #include "PitchDetector.h"
 #include "SignalGraph.h"
 #include "Spillover.h"
@@ -45,8 +46,11 @@ public:
         the open error, or {} on success. */
     juce::String retryDevice();
 
-    /** Control thread. The engine takes ownership of the graph. */
-    void setSignalGraph (std::unique_ptr<SignalGraph> newGraph);
+    /** Control thread. The engine takes ownership of the graph and its
+        output-pair table. A null matrix (or one with no routes) keeps the
+        legacy single-pair fallback. */
+    void setSignalGraph (std::unique_ptr<SignalGraph> newGraph,
+                         std::unique_ptr<OutputMatrix> newOutputMatrix = nullptr);
 
     /** Control thread. Hands an outgoing preset's trail-capable processors
         to the engine as a spill unit: they keep processing on silence in
@@ -201,6 +205,7 @@ private:
 
     juce::AudioDeviceManager deviceManager;
     DeferredReclaimer<SignalGraph> graphSlot;
+    DeferredReclaimer<OutputMatrix> outputMatrixSlot;
     Spillover spillover;
     MasterEq masterEq;
 
@@ -221,6 +226,7 @@ private:
     SignalGraph* activeGraph = nullptr;      // the graph the previous block ran
     bool swapFadeActive = false;
     bool swapFadeRanThisBlock = false;       // set whenever the fade mixed any part of the current block
+    bool outputMatrixActiveThisBlock = false; // the OutputMatrix path ran (legacy pair silencing must not)
     int swapFadeSamplesThisBlock = 0;        // how many leading samples of this block the fade covered
     float* spillSlicePtrs[32] = {};          // scratch for the post-fade spillover view (no alloc)
     int fadeOutSamplesLeft = 0, fadeOutSamplesTotal = 0;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "OutputMatrix.h"
 #include "SignalGraph.h"
 
 #include <array>
@@ -46,6 +47,12 @@ public:
         /** Process-on-silence scratch, sized once on the control thread --
             the audio thread wraps a non-owning view of it, never resizes. */
         juce::AudioBuffer<float> scratch;
+        /** Lane -> pair table for this unit's own SignalGraph, built with it
+            on the control thread. */
+        OutputMatrix outputMatrix;
+        /** Channels the unit's graph was prepared for (usually stereo); the
+            scratch may be wider when it doubles as the device-output view. */
+        int graphChannels = 0;
         /** Quiet-output window before this unit is done: trailsSilenceSeconds
             + the retained processors' summed trailLatencySeconds(), so a
             long delay's pending repeat -- including one still sitting in
@@ -56,10 +63,12 @@ public:
         /** Control thread. prepareIfNeeded() keeps every processor's tail
             state (same sample rate/block size/channels = no-op), and the
             scratch is sized here, where allocating is allowed. */
-        void prepare (double sampleRate, int maxBlockSize, int numChannels)
+        void prepare (double sampleRate, int maxBlockSize, int numChannels, int outputChannels = -1)
         {
+            graphChannels = numChannels;
             graph->prepare (sampleRate, maxBlockSize, numChannels);
-            scratch.setSize (numChannels, maxBlockSize, false, true, true);
+            scratch.setSize (juce::jmax (1, outputChannels >= 0 ? outputChannels : numChannels),
+                             maxBlockSize, false, true, true);
         }
 
         std::atomic<bool> done { false }; // see the class doc -- the "unreachable" handshake
@@ -87,6 +96,7 @@ public:
     {
         std::vector<EffectProcessor*> processors;
         bool writesDeviceOutput = false;
+        int outputPairStart = 0; // first channel of the pair, like RowRouting::deviceOutputPair
     };
 
     /** Control thread. Builds the unit for an outgoing preset: keeps the

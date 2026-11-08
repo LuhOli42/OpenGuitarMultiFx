@@ -97,6 +97,11 @@ public:
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels);
 
+    /** Runs every lane for this block and leaves `buffer` untouched -- it
+        is only the device-input snapshot the lanes read. OutputMatrix reads
+        the resulting lane buffers through getLaneBuffer(). */
+    void processLanes (juce::AudioBuffer<float>& buffer);
+
     /** `buffer` holds the live device input on entry. If at least one lane
         writes to the device output, `buffer` is overwritten with the sum
         of those lanes' output; if NONE do (nothing configured at all, or
@@ -104,6 +109,12 @@ public:
         exactly as it was on entry -- the same "empty graph is a total
         passthrough" contract AudioEngine has always relied on. */
     void process (juce::AudioBuffer<float>& buffer);
+
+    /** Audio thread, after processLanes(). nullptr for an invalid lane. */
+    const juce::AudioBuffer<float>* getLaneBuffer (int lane) const noexcept
+    {
+        return lane >= 0 && lane < numLanes ? &lanes[(size_t) lane].buffer : nullptr;
+    }
 
     void reset();
 

@@ -1,7 +1,7 @@
 # Engine
 
 ## Purpose
-Owns: the realtime boundary itself — `AudioEngine` (device I/O callback), `SignalGraph` (ordered chain execution), `ParameterManager` (control→audio parameter delivery), `DeferredReclaimer` (the atomic-swap primitive everything else in the project builds on), `PitchDetector` (YIN pitch estimation for the tuner, audio→control telemetry).
+Owns: the realtime boundary itself — `AudioEngine` (device I/O callback), `SignalGraph` (ordered lane execution), `OutputMatrix` (lane → physical output-pair routing), `ParameterManager` (control→audio parameter delivery), `DeferredReclaimer` (the atomic-swap primitive everything else in the project builds on), `PitchDetector` (YIN pitch estimation for the tuner, audio→control telemetry).
 Does not own: what the chain contains (see `Source/Effects`) or who builds/owns processor instances (see `Source/UI/MainComponent`) — `SignalGraph` only holds non-owning pointers.
 
 ## Code Map
@@ -14,19 +14,20 @@ Does not own: what the chain contains (see `Source/Effects`) or who builds/owns 
 | The atomic-swap pattern used everywhere (graphs, NAM models, IRs) | `DeferredReclaimer.h` |
 | Control→audio parameter updates | `ParameterManager.h` (SPSC lock-free queue) |
 | Chain ordering/execution, real split/merge (parallel lanes summed) | `SignalGraph.h` — 4 lanes matching `MainComponent::numRows`, lanes always run 0→3 (see its class doc for why that's always a valid order, no topo-sort needed) |
+| Lane → physical output-pair routing | `OutputMatrix.{h,cpp}` — immutable route table published with the graph; empty/null keeps the legacy single-pair fallback |
 | Pitch detection (tuner) | `PitchDetector.h/.cpp` — YIN algorithm, fed raw input in `AudioEngine`'s callback |
 | Level metering (IN/OUT footer meters) | `AudioEngine.cpp::audioDeviceIOCallbackWithContext` — peak-per-block via `FloatVectorOperations::findMinAndMax`, published as `std::atomic<float>` |
 | Master volume + free-form master EQ on the output bus | `MasterEq.{h,cpp}`, `AudioEngine`'s `masterGainSmooth`/`setMasterGainDb`, `MasterBusSettings.h` — see "Master section" below |
 
 ### Key Relationships
-- `AudioEngine` owns one `DeferredReclaimer<SignalGraph>`; `SignalGraph` owns non-owning `EffectProcessor*` pointers into whatever the UI's `chain` (`std::vector<std::unique_ptr<EffectProcessor>>`) keeps alive.
+- `AudioEngine` owns one `DeferredReclaimer<SignalGraph>` and one `DeferredReclaimer<OutputMatrix>`; `SignalGraph` owns non-owning `EffectProcessor*` pointers into whatever the UI's `chain` (`std::vector<std::unique_ptr<EffectProcessor>>`) keeps alive.
 - `Effects/` → `Engine/`: effect processors depend on `DeferredReclaimer.h` for their own internal model/IR swaps (NAM models, IRs) — same primitive, different payload.
 - Never the reverse: `Engine/` must not depend on concrete `Effects/` types.
 
 ## Public API
 | Export | Used By | Change Impact |
 |--------|---------|---------------|
-| `AudioEngine::setSignalGraph()` | `MainComponent::rebuildSignalGraph()` | The only way to change what's playing; control thread only |
+| `AudioEngine::setSignalGraph()` | `MainComponent::rebuildSignalGraph()` | The only way to change what's playing; control thread only. Takes the graph plus its optional `OutputMatrix` route table |
 | `AudioEngine::getAvailable{Input,Output}...Names()` | UI I/O selectors | Must stay live-queried, never cached (see Contracts) |
 | `DeferredReclaimer<T>` | `Effects/NAMProcessor`, `Effects/IRLoaderProcessor`, `AudioEngine` | Template — any realtime-boundary swap should reuse this, not reinvent it |
 | `ParameterManager::push()`/`drain()` | Not yet wired into a processor (infra exists since Phase 0, consumers are Phase 2+) | |
@@ -46,6 +47,7 @@ Does not own: what the chain contains (see `Source/Effects`) or who builds/owns 
 | Old object freed later by a control-thread sweep (~500ms margin), never inline in `exchange()` | Audio thread may still be mid-`process()` holding the old pointer; deleting there is use-after-free | Deleting synchronously in `publish()` |
 | `SignalGraph` doesn't own processors | Lets the UI add/remove one block without resetting every other block's params/loaded model | `SignalGraph` owning `unique_ptr<EffectProcessor>` |
 | Output routing = real hardware channel pairs ("Out 1/2", "Out 3/4"), queried live from the device | An abstract stereo/L/R concept doesn't scale past 2 outputs (this project targets a 6-channel interface) | Fixed stereo/mono/left/right enum |
+| `OutputMatrix` renders lane buffers into per-lane output pairs after `SignalGraph::processLanes()`; `AudioEngine` publishes it through `DeferredReclaimer` beside the graph and falls back to `SignalGraph::process()` + the legacy single-pair silencer when it has no routes | Phase 1 of docs/SignalRoutingAndOutputSplitPlan.md: different rows can now feed different physical pairs at once without a preset schema change, while empty/old presets keep the exact passthrough/silencing contract | Mixing output pairs inside `SignalGraph` (it would break the lane merge/passthrough semantics and the spillover tail contract); per-route gain/pan/channel maps before the route table exists |
 | Level meters and detected pitch bridged via plain `std::atomic<float>` (one per value), not `ParameterManager`'s SPSC queue | Each is a single continuously-overwritten "freshest value" (like `lastCpuUsage`, already precedent), not a stream of discrete events the queue's `Change{id,value}` shape is built for; reusing the queue here would mean draining a backlog of stale readings instead of just reading the latest one | A new `ParameterManager` instance per telemetry value |
 | `PitchDetector` uses YIN (cumulative mean normalized difference), not plain autocorrelation | Plain autocorrelation on a guitar's harmonically-rich signal readily locks onto an overtone instead of the fundamental (octave error) — YIN's normalized difference function is the standard fix | Raw autocorrelation peak-picking |
 | YIN's full O(window × maxLag) analysis only runs once per ~1/15s of new audio, not every callback | A tuner doesn't need to update faster than ~15Hz, and re-running the full analysis on every (often 128-256 sample) callback would be needless CPU burn for no perceptible benefit | Running the analysis every audioDeviceIOCallbackWithContext() call |
@@ -74,7 +76,7 @@ Does not own: what the chain contains (see `Source/Effects`) or who builds/owns 
 - `getAvailableInputChannelNames()`/`getAvailableOutputPairNames()` must re-query the currently-open device every call, never return a cached/hardcoded list — PipeWire's generic ALSA passthrough device reported a placeholder 128/128 channel count that made I/O selectors look "infinite" until this was fixed live (commit `783588c`); actual routing was never affected.
 - `sweep()` must be called periodically from the *control* thread only (a `juce::Timer` at 10–20Hz is the existing pattern) with a safety margin generously larger than one audio block.
 - `PitchDetector::pushSamples()` never allocates -- every buffer (`ringBuffer`, `analysisBuffer`, `diffBuffer`, `cmndBuffer`) is sized once in `prepare()` (control thread, called from `audioDeviceAboutToStart()`) and only ever resized there, never from the audio thread.
-- `SignalGraph::process()` never allocates -- every lane's `juce::AudioBuffer` and the shared `deviceInputSnapshot` are `setSize()`'d once in `prepare()` (control thread), and `addLaneConnection()`/`setLaneProcessors()` must be called before `prepare()`, never from `process()`'s call path. Row-parallel adds: the worker pool is also created in `prepare()` (control thread), and the only blocking primitive `process()` may touch is the futex wait on an already-claimed lane job — never a mutex, condition_variable, or a job still `pending` (those the audio thread claims back and runs itself).
+- `SignalGraph::process()`/`processLanes()` and `OutputMatrix::render()` never allocate -- every lane's `juce::AudioBuffer`, the shared `deviceInputSnapshot`, and the fixed `OutputMatrix::routes` array are sized once in `prepare()`/on the control thread before publication, and `addLaneConnection()`/`setLaneProcessors()`/`addRoute()` must be called before publication, never from the audio path. Row-parallel adds: the worker pool is also created in `prepare()` (control thread), and the only blocking primitive `process()` may touch is the futex wait on an already-claimed lane job — never a mutex, condition_variable, or a job still `pending` (those the audio thread claims back and runs itself).
 
 ## Patterns
 
@@ -99,7 +101,7 @@ Does not own: what the chain contains (see `Source/Effects`) or who builds/owns 
 
 ## Master section (2026-10-11)
 
-Post-graph, pre-OUT-meter: input gain -> SignalGraph (its parallel spill already included) -> **`MasterEq` -> `masterGainSmooth` -> `lastOutputLevel` tap** -> stereo-pair silencing. The meter reads what actually reaches the device; the EQ goes first so a +12 dB peak can't be hidden by a low master fader.
+Post-graph, pre-OUT-meter: input gain -> `SignalGraph`/spills -> `OutputMatrix` lane→pair render when routes exist (otherwise legacy `SignalGraph::process()` + single-pair silencing) -> **`MasterEq` -> `masterGainSmooth` -> device soft ceiling -> `lastOutputLevel` tap** -> legacy stereo-pair silencing only when no `OutputMatrix` routes ran. The meter reads what actually reaches the device; the EQ goes first so a +12 dB peak can't be hidden by a low master fader.
 
 - `MasterEq` is the engine-side band cascade (`Source/Engine/MasterEq.{h,cpp}`): up to 16 `MasterEqBand`s (low/high cut up to 48 dB/oct as 4 cascaded Butterworth sections, low/high shelf, peak, notch). Edits land via `setBands()` on the control thread, which recomputes a plain-`float` `CoeffSet` and publishes it through `coeffSlot` — the same `DeferredReclaimer` swap as models/graphs; `sweep()` rides `timerCallback()`'s cadence like the other slots. `process()` detects a new pointer, **copies coefficients into the persistent `Biquad` array without resetting z1/z2** (state continuity across a mid-drag recompute — the anti-click trick `ParametricEQProcessor`'s ramped coefficients also aim at), then runs the whole cascade per sample. Because the swap preserves filter state rather than resetting it, the editor can publish on every drag move — no slew-limiting machinery needed.
 - `masterGainSmooth` (`SmoothedValue<float, Linear>`, 20 ms) ramps `setMasterGainDb()` changes; -60 dB on the UI is the floor, the engine accepts -70 dB as silence (the footer shows "-inf").

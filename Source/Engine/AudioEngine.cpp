@@ -362,7 +362,8 @@ void AudioEngine::stop()
     deviceManager.removeAudioCallback (this);
 }
 
-void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph)
+void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph,
+                                  std::unique_ptr<OutputMatrix> newOutputMatrix)
 {
     if (newGraph != nullptr)
     {
@@ -373,6 +374,9 @@ void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph)
             newGraph->prepare (sr, bs, 2);
     }
 
+    // Publish the routes first so the graph swap's fade is already looking
+    // at the same pair table the new lanes will render into.
+    outputMatrixSlot.publish (std::move (newOutputMatrix));
     graphSlot.publish (std::move (newGraph));
 }
 
@@ -387,7 +391,12 @@ void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
         return; // no device running -- nothing to spill onto
 
     unit->graph->setAudioCallerIsRealtime (callbackIsRealtime.load (std::memory_order_relaxed));
-    unit->prepare (sr, bs, 2); // prepareIfNeeded keeps every processor's tail state
+
+    int outputChannels = 2;
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        outputChannels = juce::jmax (1, juce::jmin (maxSaneChannelCount, device->getOutputChannelNames().size()));
+
+    unit->prepare (sr, bs, 2, outputChannels); // prepareIfNeeded keeps every processor's tail state
     spillover.add (std::move (unit));
 }
 
@@ -417,6 +426,7 @@ void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples
 void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples)
 {
     auto* graph = graphSlot.currentRaw();
+    auto* outputMatrix = outputMatrixSlot.currentRaw();
     const auto now = juce::Time::getHighResolutionTicks();
 
     if (graph != activeGraph)
@@ -445,9 +455,21 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
     lastCallbackTicks = now;
     swapFadeRanThisBlock = false;
     swapFadeSamplesThisBlock = 0;
+    outputMatrixActiveThisBlock = false;
 
     if (graph != nullptr)
-        graph->process (buffer);
+    {
+        if (outputMatrix != nullptr && outputMatrix->hasRoutes())
+        {
+            graph->processLanes (buffer);
+            outputMatrix->render (buffer, *graph);
+            outputMatrixActiveThisBlock = true;
+        }
+        else
+        {
+            graph->process (buffer);
+        }
+    }
 
     // Record this block's output before any fade mixing: the ring always holds the clean
     // single-graph signal a later swap replays. Frozen while a fade is active: when the ring is
@@ -682,7 +704,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     // clamped to what this device actually has, so a stale selection from a
     // previously-connected interface with more outputs can never reach past
     // the end of the current one's channel array.
-    if (numOutputChannels > 0)
+    if (! outputMatrixActiveThisBlock && numOutputChannels > 0)
     {
         const int pairStart = juce::jlimit (0, numOutputChannels - 1,
                                              selectedOutputPairStart.load (std::memory_order_relaxed));
@@ -712,6 +734,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 void AudioEngine::timerCallback()
 {
     graphSlot.sweep();
+    outputMatrixSlot.sweep();
     spillover.sweep();
     masterEq.sweep();
 
