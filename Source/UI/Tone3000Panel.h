@@ -19,14 +19,12 @@ namespace openguitarmultifx
 /**
     The app's one Settings screen (per AGENT.md's UI/UX Design Philosophy:
     a pedalboard has exactly one settings surface, reached through the "..."
-    button, not a scatter of separate dialogs). Right now it holds the
-    TONE3000 account section -- paste your publishable client_id, log in --
-    the rendering quality (Eco / Normal / High: how much the distortion
-    pedals oversample), the built-in cab voicing toggle, the sample rate
-    picker and the Software update section (check/download/apply a GitHub
-    release -- see Source/Updater/AppUpdater.h). Searching/downloading
-    models is NOT here: that stays contextual to whichever block is selected
-    (see ParameterPanel and GearRouting.h::gearFilterForProcessorName).
+    button, not a scatter of separate dialogs). A side navigation splits it
+    into Appearance (theme), Audio (interface/sample rate/buffer), Rendering
+    quality, TONE3000 account, MIDI notes, Software update and About.
+    Searching/downloading models is NOT here: that stays contextual to
+    whichever block is selected (see ParameterPanel and
+    GearRouting.h::gearFilterForProcessorName).
 
     Shown through OverlayHost, not a juce::DialogWindow -- there's no
     window manager to hand a second window to on the final touchscreen
@@ -41,6 +39,7 @@ public:
 
     void resized() override;
     void paint (juce::Graphics& g) override;
+    void lookAndFeelChanged() override;
     void timerCallback() override;
 
     /** Wired by whoever hosts this panel to OverlayHost::pushOverlay/popOverlay. */
@@ -90,12 +89,24 @@ private:
     // section lives in `content`, viewed through a Viewport.
     juce::Viewport viewport;
     juce::Component content;
-    int layoutSections (juce::Rectangle<int> bounds);
+
+    enum class Section { appearance, audio, quality, tone3000, midi, updates, about };
+    Section currentSection = Section::appearance;
+    juce::Component appearancePage, audioPage, qualityPage, tone3000Page, midiPage, updatesPage, aboutPage;
+    juce::OwnedArray<juce::Component> navButtons;
+    juce::OwnedArray<juce::Component> themeCards;
+    juce::Rectangle<int> navRailBounds;
+
+    void layoutContent();
+    int layoutActivePage (juce::Rectangle<int> bounds);
+    void selectSection (int index);
+    void refreshNavButtons();
+    void refreshThemeCards();
+    void applyLabelColours();
 
     juce::Label titleLabel { {}, "Settings" };
 
     juce::Label appearanceSectionLabel { {}, "Appearance" };
-    juce::OwnedArray<juce::TextButton> themeButtons;
     juce::Label themeHintLabel;
     void refreshThemeHint();
 
@@ -137,6 +148,12 @@ private:
     juce::Label updateStatusLabel;
     double updateProgressValue = 0.0;
     juce::ProgressBar updateProgressBar { updateProgressValue };
+
+    juce::Label midiIntroLabel;
+    juce::Label midiHintLabel;
+    juce::Label aboutIntroLabel;
+    juce::Label aboutDetailsLabel;
+
     void doCheckForUpdate();
     void doInstallUpdate();
     // Redraws the whole update section from AppUpdater::UiSnapshot, which

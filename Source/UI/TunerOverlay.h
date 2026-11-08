@@ -38,7 +38,7 @@ public:
 private:
     void timerCallback() override;
 
-    juce::Label titleLabel, hintLabel;
+    juce::Label titleLabel, hintLabel, referenceLabel;
     juce::TextButton closeButton { "Close" };
     juce::Rectangle<float> gaugeBounds, noteBounds, readoutBounds;
 

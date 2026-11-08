@@ -1,6 +1,7 @@
 #include "MasterEqDialog.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
+#include "Theme.h"
 #include "TouchSizing.h"
 
 #include <cmath>
@@ -33,7 +34,6 @@ MasterEqDialog::MasterEqDialog()
 
     addAndMakeVisible (hintLabel);
     hintLabel.setFont (juce::Font (13.0f));
-    hintLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     hintLabel.setText ("drag nodes - wheel trims Q - double-tap mutes a band", juce::dontSendNotification);
 
     addAndMakeVisible (closeButton);
@@ -76,12 +76,11 @@ MasterEqDialog::MasterEqDialog()
     {
         addAndMakeVisible (s);
         s.setSliderStyle (juce::Slider::LinearHorizontal);
-        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 86, 32);
+        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 100, 48);
         s.onValueChange = [this] { /* rebound per selection below */ };
         addAndMakeVisible (label);
         label.setText (name, juce::dontSendNotification);
         label.setFont (juce::Font (13.0f));
-        label.setColour (juce::Label::textColourId, juce::Colours::grey);
         label.setJustificationType (juce::Justification::centredLeft);
     };
     setupSlider (freqSlider, freqLabel, "Freq");
@@ -120,11 +119,10 @@ MasterEqDialog::MasterEqDialog()
     addAndMakeVisible (noSelectionLabel);
     noSelectionLabel.setText ("tap a node to edit it, or add a band below", juce::dontSendNotification);
     noSelectionLabel.setFont (juce::Font (16.0f));
-    noSelectionLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     noSelectionLabel.setJustificationType (juce::Justification::centred);
 
     // Big enough for a real curve to drag on -- OverlayHost clamps it to the window.
-    setSize (980, 640);
+    setSize (1040, 680);
 }
 
 MasterEqDialog::~MasterEqDialog() = default;
@@ -359,10 +357,11 @@ void MasterEqDialog::paint (juce::Graphics& g)
 
 void MasterEqDialog::paintGraph (juce::Graphics& g, juce::Rectangle<float> area)
 {
-    g.setColour (juce::Colour (0xff101418));
-    g.fillRoundedRectangle (area, 8.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.10f));
-    g.drawRoundedRectangle (area, 8.0f, 1.0f);
+    const auto& t = theme::current();
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (area, t.smallRadius);
+    g.setColour (t.lineStrong);
+    g.drawRoundedRectangle (area, t.smallRadius, 1.0f);
 
     // Frequency grid + labels.
     const double freqMarks[] = { 50, 100, 200, 500, 1000, 2000, 5000, 10000 };
@@ -370,9 +369,9 @@ void MasterEqDialog::paintGraph (juce::Graphics& g, juce::Rectangle<float> area)
     for (double f : freqMarks)
     {
         const float x = xAtFreq (f);
-        g.setColour (juce::Colours::white.withAlpha (0.08f));
+        g.setColour (t.line);
         g.drawLine (x, area.getY() + 4, x, area.getBottom() - 4, 1.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.35f));
+        g.setColour (t.textDim);
         g.drawText (f >= 1000 ? juce::String ((int) (f / 1000)) + "k" : juce::String ((int) f),
                     juce::Rectangle<float> (x - 18, area.getBottom() - 18, 36, 14), juce::Justification::centred);
     }
@@ -382,11 +381,11 @@ void MasterEqDialog::paintGraph (juce::Graphics& g, juce::Rectangle<float> area)
     {
         const float y = yAtDb (db);
         const bool zero = std::abs (db) < 0.01f;
-        g.setColour (juce::Colours::white.withAlpha (zero ? 0.35f : 0.08f));
+        g.setColour (zero ? t.lineStrong : t.line);
         g.drawLine (area.getX() + 4, y, area.getRight() - 4, y, zero ? 1.4f : 1.0f);
         if (! zero)
         {
-            g.setColour (juce::Colours::white.withAlpha (0.30f));
+            g.setColour (t.textDim);
             g.drawText ((db > 0 ? "+" : "") + juce::String ((int) db),
                         juce::Rectangle<float> (area.getX() + 6, y - 14, 32, 12), juce::Justification::centredLeft);
         }
@@ -394,7 +393,7 @@ void MasterEqDialog::paintGraph (juce::Graphics& g, juce::Rectangle<float> area)
 
     if (bands.empty())
     {
-        g.setColour (juce::Colours::white.withAlpha (0.25f));
+        g.setColour (t.textDim);
         g.setFont (juce::Font (18.0f));
         g.drawText ("add a band to shape the master bus", area, juce::Justification::centred);
     }
@@ -454,7 +453,7 @@ void MasterEqDialog::paintNode (juce::Graphics& g, int bandIndex)
 
     if (bandIndex == selectedBand)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.85f));
+        g.setColour (theme::current().text.withAlpha (0.85f));
         g.drawEllipse (pos.x - r - 3, pos.y - r - 3, (r + 3) * 2, (r + 3) * 2, 1.6f);
     }
 
