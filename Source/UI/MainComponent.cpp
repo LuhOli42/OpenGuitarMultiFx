@@ -176,6 +176,9 @@ MainComponent::MainComponent()
     addAndMakeVisible (settingsButton);
     settingsButton.onClick = [this] { showSettingsPanel(); };
 
+    addAndMakeVisible (liveButton);
+    liveButton.onClick = [this] { showLive(); };
+
     addChildComponent (retryAudioButton);
     retryAudioButton.onClick = [this]
     {
@@ -1133,6 +1136,41 @@ void MainComponent::showTuner()
     overlay->onDestroyed = [this] { audioEngine.setTunerActive (false); };
 
     overlayHost.pushOverlay (std::move (overlay));
+}
+
+void MainComponent::showLive()
+{
+    auto overlay = std::make_unique<LiveOverlay>();
+    overlay->onClose = [this] { overlayHost.popOverlay(); };
+    overlay->onTunerTapped = [this] { showTuner(); };
+    overlay->onSceneSelected = [this] (int index) { selectSnapshot (index); };
+    overlay->onDestroyed = [this] { if (liveOverlay != nullptr) liveOverlay = nullptr; };
+    liveOverlay = overlay.get();
+    refreshLiveOverlay();
+    overlayHost.pushOverlay (std::move (overlay));
+}
+
+void MainComponent::refreshLiveOverlay()
+{
+    if (liveOverlay == nullptr)
+        return;
+
+    const auto sceneLetter = snapshotxml::letterFor (currentSnapshot);
+    const auto& snapshotName = snapshots[(size_t) currentSnapshot].name;
+    liveOverlay->setPresetInfo (
+        currentPresetNumber > 0 ? juce::String (currentPresetNumber) + sceneLetter : sceneLetter,
+        currentPresetName.isNotEmpty() ? currentPresetName : juce::String ("No preset loaded"),
+        snapshotName.isNotEmpty() ? juce::String ("Scene ") + sceneLetter + " - " + snapshotName
+                                  : juce::String ("Scene ") + sceneLetter);
+
+    std::array<juce::String, 8> names;
+    std::array<juce::Colour, 8> colours;
+    for (int i = 0; i < snapshotxml::maxSnapshots; ++i)
+    {
+        names[(size_t) i] = snapshots[(size_t) i].name;
+        colours[(size_t) i] = colourOfSnapshot (i);
+    }
+    liveOverlay->setScenes (names, colours, snapshotCount, currentSnapshot);
 }
 
 void MainComponent::showMasterEq()
@@ -2093,6 +2131,7 @@ void MainComponent::updatePresetDisplay()
     quickSaveButton.setVisible (currentPresetName.isNotEmpty());
     applySnapshotAccent();
     resized(); // quickSaveButton's visibility changes how much room titleLabel gets
+    refreshLiveOverlay();
 }
 
 std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
@@ -2454,6 +2493,10 @@ void MainComponent::timerCallback()
 
     footerBar.setLevels (audioEngine.getInputLevel(), audioEngine.getOutputLevel());
 
+    // The Live card mirrors FooterBar's tap tempo (the only BPM owner) -- see LiveOverlay.h.
+    if (liveOverlay != nullptr)
+        liveOverlay->setBpm (footerBar.getBpm());
+
     // BPM-synced time parameters (ms/BPM-subdivision toggle -- see
     // EffectProcessor::updateTempoSyncedParams()) recomputed here, at the
     // same 50ms rate as everything else on this timer, whether or not
@@ -2557,6 +2600,10 @@ void MainComponent::resized()
     }
     redoButton.setBounds (top.removeFromRight (72).withSizeKeepingCentre (72, touch::minTapTarget));
     top.removeFromRight (6);
+    // LIVE opens the stage-mode card -- between Redo and Undo, where the
+    // transport cluster reads left-to-right (redesign card 6).
+    liveButton.setBounds (top.removeFromRight (88).withSizeKeepingCentre (88, touch::minTapTarget));
+    top.removeFromRight (8);
     undoButton.setBounds (top.removeFromRight (72).withSizeKeepingCentre (72, touch::minTapTarget));
     top.removeFromRight (8);
     titleLabel.setBounds (top);

@@ -381,6 +381,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/MasterEqDialog.cpp
   Source/UI/EffectBlockComponent.cpp
   Source/UI/FooterBar.cpp
+  Source/UI/LiveOverlay.cpp
   Source/UI/TunerOverlay.cpp
   Source/UI/RowEndpointBlock.cpp
   Source/UI/ModelListDialog.cpp
