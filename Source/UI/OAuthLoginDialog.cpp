@@ -1,4 +1,5 @@
 #include "OAuthLoginDialog.h"
+#include "Theme.h"
 
 #include "TouchSizing.h"
 
@@ -65,7 +66,7 @@ void OAuthLoginDialog::resized()
 
 void OAuthLoginDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1a1a1a));
+    g.fillAll (theme::current().surface);
 }
 
 } // namespace openguitarmultifx

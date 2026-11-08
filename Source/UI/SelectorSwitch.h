@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "Theme.h"
 
 #include <functional>
 
@@ -64,7 +65,7 @@ public:
         const auto lit = accent.getPerceivedBrightness() < 0.35f ? accent.brighter (0.9f) : accent;
         const bool litIsBright = lit.getPerceivedBrightness() > 0.55f;
 
-        g.setColour (juce::Colour (0xff232323));
+        g.setColour (theme::current().raised);
         g.fillRoundedRectangle (bounds, 8.0f);
 
         for (int i = 0; i < n; ++i)

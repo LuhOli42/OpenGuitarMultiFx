@@ -1,6 +1,7 @@
 #pragma once
 
 #include "OAuthLoginDialog.h"
+#include "Theme.h"
 #include "../Tone3000/LoopbackServer.h"
 #include "../EffectRegistry.h"
 #include "../Tone3000/Tone3000Manager.h"
@@ -49,6 +50,9 @@ public:
     /** The user picked a rendering quality: the host applies it (rebuilding the affected pedals) and saves it. */
     std::function<void (EffectRegistry::OversamplingQuality)> onQualityChanged;
 
+    /** The user picked a visual theme: the host applies it to the whole UI and saves it. */
+    std::function<void (theme::Id)> onThemeChanged;
+
     /** The rates the audio device offers and the one it runs at; the host calls this right after building the panel. */
     void showSampleRates (const juce::Array<double>& rates, double current);
 
@@ -89,6 +93,11 @@ private:
     int layoutSections (juce::Rectangle<int> bounds);
 
     juce::Label titleLabel { {}, "Settings" };
+
+    juce::Label appearanceSectionLabel { {}, "Appearance" };
+    juce::OwnedArray<juce::TextButton> themeButtons;
+    juce::Label themeHintLabel;
+    void refreshThemeHint();
 
     juce::Label qualitySectionLabel { {}, "Rendering quality" };
     juce::TextButton ecoButton { "Eco" }, normalButton { "Normal" }, highButton { "High" };

@@ -1,4 +1,5 @@
 #include "SnapshotBar.h"
+#include "Theme.h"
 
 #include "TouchSizing.h"
 
@@ -157,7 +158,7 @@ void SnapshotBar::paint (juce::Graphics& g)
         }
         else
         {
-            g.setColour (juce::Colour (0xff1c1c1c));
+            g.setColour (theme::current().raised);
             g.fillRoundedRectangle (cell, 8.0f);
             g.setColour (colour.withAlpha (0.8f)); // a hint of each slot's colour on the idle cells too
             g.drawRoundedRectangle (cell.reduced (0.5f), 8.0f, 1.0f);

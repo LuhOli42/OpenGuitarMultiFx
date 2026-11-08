@@ -19,6 +19,7 @@ This is explicitly a **dev-facing chain builder pulled forward from Phase 7**, n
 | A row's endpoint tile (input / output / "TO Line N") | `RowEndpointBlock.{h,cpp}` |
 | Per-block parameter drawer | `ParameterPanel.{h,cpp}` — also hosts contextual TONE3000 search, scoped to the selected block |
 | App font (Sora, embedded) | `OpenGuitarMultiFxLookAndFeel.{h,cpp}`, `Assets/Fonts/` |
+| Theme tokens (3 selectable themes) | `Theme.{h,cpp}`. Plan in `../../docs/ui/REDESIGN.md` |
 | Settings screen (despite the filename) | `Tone3000Panel.{h,cpp}` — general Settings, TONE3000 account is just its first section |
 | Effect icon reference (categories/colours/glyphs) | `../../docs/icons/AGENT-icon-notes.md` — read before adding any icon |
 | Bottom bar (tuner/BPM-tap/master volume+EQ/IN-OUT meters) | `FooterBar.{h,cpp}` — all real: tuner + IN/OUT meters fed from `AudioEngine` via `MainComponent::timerCallback()`; tap-tempo is self-contained wall-clock timing inside `FooterBar` itself, no audio thread involved; master knob + EQ button are plain callbacks into `AudioEngine` — see "Master section" below |
@@ -154,6 +155,10 @@ Block removed → moved into `graveyard` (NOT destroyed) until the old SignalGra
 - Introduce a second top-level settings surface — everything goes through `Tone3000Panel` (the app's one Settings screen despite its filename).
 - Destroy a processor synchronously on removal from the chain — always via `graveyard`.
 - Use a native `juce::DialogWindow`/`DocumentWindow` for anything but `Main.cpp`'s `MainWindow`.
+
+## Visual themes (2026-11-02)
+
+Three user-selectable themes (Stage Glass, Console, Bold Blocks), picked in Settings -> Appearance and saved in `<appdata>/OpenGuitarMultiFx/theme.txt`. Surfaces, lines and text come from `theme::current()` (`Theme.h`), never a literal. The snapshot accent and the per-effect accent stay separate layers. The full plan, the token table, the 6-card migration order and the acceptance rules (every visual PR shows all 3 themes) are in [`docs/ui/REDESIGN.md`](../../docs/ui/REDESIGN.md), with the clickable prototype next to it.
 
 ## Rendering quality (2026-09-20)
 The Settings screen ("..." button, `Tone3000Panel`) has a **Rendering quality** row: Eco / Normal / High radio buttons (touch-sized) with a one-line hint. Choosing one calls `MainComponent::applyRenderQuality()`: saves it (`EffectRegistry::saveOversamplingQuality`) and rebuilds the affected pedals in the chain through the graveyard (same discipline as `removeEffect()`), keeping position, grid cell, knob values and bypass. Close is on the title row because the selected block's parameter drawer is drawn over the bottom of the card. Checked in the running app: switching to High moved the CPU label from 3.2% to 10.7% with a DS-1 in the chain.

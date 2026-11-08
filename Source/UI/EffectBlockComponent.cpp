@@ -1,4 +1,5 @@
 #include "EffectBlockComponent.h"
+#include "Theme.h"
 
 #include "../Effects/IconKit.h"
 
@@ -108,7 +109,7 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     if (bypassed)
     {
         // Deactivated -- flat grey, no category colour at all.
-        g.setColour (juce::Colour (0xff2e2e2e));
+        g.setColour (theme::current().raisedHigh);
         g.fillRoundedRectangle (bounds, 8.0f);
         g.setColour (juce::Colours::grey.withAlpha (0.6f));
         g.drawRoundedRectangle (bounds, 8.0f, 1.5f);

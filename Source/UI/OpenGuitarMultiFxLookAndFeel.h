@@ -76,6 +76,12 @@ public:
         their normal findColour() path. Caller repaints. */
     void setAppAccentColour (juce::Colour colour);
 
+    /** Re-applies every theme-derived colour ID from theme::current() (see
+        Theme.h). Called by the constructor and after the user picks a theme
+        in Settings -> Appearance; the caller then sends a LookAndFeel change
+        down the component tree and repaints. */
+    void applyTheme();
+
     /** Per-button accent override -- ParameterPanel sets this to the
         selected processor's own getAccentColour() on its drawer buttons
         (Bypassed/Browse/Search/Remove) so they read as "this effect's

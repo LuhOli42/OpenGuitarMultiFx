@@ -1,4 +1,5 @@
 #include "AddEffectBrowserDialog.h"
+#include "Theme.h"
 
 #include "TouchSizing.h"
 #include "../Effects/IconKit.h"
@@ -10,7 +11,7 @@ namespace openguitarmultifx
 
 namespace
 {
-    const juce::Colour rowBackground { 0xff242424 };
+    juce::Colour rowBackground() { return theme::current().raised; }
     constexpr int rowGap = 6;
     constexpr int railWidth = 210;
 
@@ -39,7 +40,7 @@ void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
     auto bounds = getLocalBounds().toFloat().reduced (1.0f);
     const auto accent = probe != nullptr ? probe->getAccentColour() : juce::Colours::grey;
 
-    g.setColour (rowBackground);
+    g.setColour (rowBackground());
     g.fillRoundedRectangle (bounds, 8.0f);
 
     // Thin accent strip on the left edge + the effect's own glyph as a
@@ -445,7 +446,7 @@ void AddEffectBrowserDialog::resized()
 
 void AddEffectBrowserDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1a1a1a));
+    g.fillAll (theme::current().surface);
 }
 
 } // namespace openguitarmultifx

@@ -1,4 +1,5 @@
 #include "ParameterPanel.h"
+#include "Theme.h"
 
 #include "ModelListDialog.h"
 #include "PromptCards.h"
@@ -728,7 +729,7 @@ void ParameterPanel::resized()
 
 void ParameterPanel::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1e1e1e));
+    g.fillAll (theme::current().surface);
 
     // The band between the header and the knob grid reads as "this effect's
     // controls" -- see accentBandBounds's comment in the header. Everything

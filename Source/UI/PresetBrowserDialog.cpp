@@ -1,4 +1,5 @@
 #include "PresetBrowserDialog.h"
+#include "Theme.h"
 
 #include "TouchSizing.h"
 
@@ -7,8 +8,8 @@ namespace openguitarmultifx
 
 namespace
 {
-    const juce::Colour cardBackground { 0xff1a1a1a };
-    const juce::Colour tileBackground { 0xff242424 };
+    juce::Colour cardBackground() { return theme::current().surface; }
+    juce::Colour tileBackground() { return theme::current().raised; }
     const juce::Colour currentAccent { 0xff4db8a8 };
     constexpr int tileGap = 8;
     constexpr int longPressMs = 550; // same duration ParameterPanel's LongPressLabel uses for MIDI Learn
@@ -23,7 +24,7 @@ void PresetBrowserDialog::PresetTile::paint (juce::Graphics& g)
 
     if (isEmpty)
     {
-        g.setColour (juce::Colour (0xff181818));
+        g.setColour (theme::current().surface);
         g.fillRoundedRectangle (bounds, 8.0f);
         g.setColour (juce::Colours::grey.withAlpha (0.5f));
         g.drawRoundedRectangle (bounds, 8.0f, 1.5f);
@@ -40,7 +41,7 @@ void PresetBrowserDialog::PresetTile::paint (juce::Graphics& g)
         return;
     }
 
-    g.setColour (tileBackground);
+    g.setColour (tileBackground());
     g.fillRoundedRectangle (bounds, 8.0f);
 
     if (isCurrent)
@@ -726,7 +727,7 @@ void PresetBrowserDialog::resized()
 
 void PresetBrowserDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (cardBackground);
+    g.fillAll (cardBackground());
 }
 
 } // namespace openguitarmultifx

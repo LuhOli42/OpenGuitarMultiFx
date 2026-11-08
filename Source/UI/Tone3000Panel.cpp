@@ -1,4 +1,5 @@
 #include "Tone3000Panel.h"
+#include "Theme.h"
 
 #include "TouchSizing.h"
 
@@ -16,6 +17,32 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     viewport.setViewedComponent (&content, false);
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (10);
+
+    content.addAndMakeVisible (appearanceSectionLabel);
+    appearanceSectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
+    appearanceSectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    for (int i = 0; i < theme::count; ++i)
+    {
+        const auto id = (theme::Id) i;
+        auto* b = themeButtons.add (new juce::TextButton (theme::get (id).displayName));
+        content.addAndMakeVisible (b);
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (4714);
+        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5c56));
+        b->setToggleState (theme::currentId() == id, juce::dontSendNotification);
+        b->onClick = [this, id]
+        {
+            if (theme::currentId() == id)
+                return;
+            if (onThemeChanged)
+                onThemeChanged (id);
+            refreshThemeHint();
+        };
+    }
+    content.addAndMakeVisible (themeHintLabel);
+    themeHintLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    themeHintLabel.setFont (juce::Font (14.0f));
+    refreshThemeHint();
 
     content.addAndMakeVisible (qualitySectionLabel);
     qualitySectionLabel.setFont (juce::Font (16.0f, juce::Font::bold));
@@ -228,6 +255,22 @@ void Tone3000Panel::showBufferSizes (const juce::Array<int>& sizes, int current,
     resized();
 }
 
+void Tone3000Panel::refreshThemeHint()
+{
+    switch (theme::currentId())
+    {
+        case theme::Id::stageGlass:
+            themeHintLabel.setText ("Stage Glass: blue-black glass cards, category colours glow. Only the look changes, never the sound.", juce::dontSendNotification);
+            break;
+        case theme::Id::console:
+            themeHintLabel.setText ("Console: flat graphite, category colour as a stripe, small corners. Only the look changes, never the sound.", juce::dontSendNotification);
+            break;
+        case theme::Id::boldBlocks:
+            themeHintLabel.setText ("Bold Blocks: blocks filled with the category colour, readable from a distance. Only the look changes, never the sound.", juce::dontSendNotification);
+            break;
+    }
+}
+
 void Tone3000Panel::refreshQualityHint()
 {
     switch (EffectRegistry::getOversamplingQuality())
@@ -411,6 +454,23 @@ int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
     updateProgressBar.setBounds (area.removeFromTop (12));
     area.removeFromTop (14);
 
+    appearanceSectionLabel.setBounds (area.removeFromTop (20));
+    area.removeFromTop (6);
+    auto themeRow = area.removeFromTop (touch::minTapTarget);
+    // Equal thirds, not fixed 150px slots: OverlayHost clamps the card to 92%
+    // of the window and MainWindow has no minimum size, so fixed slots can
+    // squeeze the last button under touch::minTapTarget on a narrow window.
+    const int themeButtonWidth = juce::jmax (0, (themeRow.getWidth() - 8 * ((int) themeButtons.size() - 1))
+                                                   / (int) juce::jmax (1, themeButtons.size()));
+    for (auto* b : themeButtons)
+    {
+        b->setBounds (themeRow.removeFromLeft (themeButtonWidth));
+        themeRow.removeFromLeft (8);
+    }
+    area.removeFromTop (4);
+    themeHintLabel.setBounds (area.removeFromTop (22));
+    area.removeFromTop (14);
+
     qualitySectionLabel.setBounds (area.removeFromTop (20));
     area.removeFromTop (6);
     auto qualityRow = area.removeFromTop (touch::minTapTarget);
@@ -551,7 +611,7 @@ void Tone3000Panel::doInstallUpdate()
 
 void Tone3000Panel::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff141414));
+    g.fillAll (theme::current().background);
 }
 
 } // namespace openguitarmultifx

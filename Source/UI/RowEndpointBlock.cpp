@@ -1,4 +1,5 @@
 #include "RowEndpointBlock.h"
+#include "Theme.h"
 
 namespace openguitarmultifx
 {
@@ -39,7 +40,7 @@ void RowEndpointBlock::paint (juce::Graphics& g)
     // A plain, borderless pill -- same reference as the effect blocks
     // (Quad Cortex's "In 1" / "Out 1/2" tiles): no outline, no icon, just
     // the label on top and what it's routed to below it.
-    g.setColour (juce::Colour (0xff1c1c1c));
+    g.setColour (theme::current().raised);
     g.fillRoundedRectangle (bounds, 10.0f);
 
     g.setColour (juce::Colours::white);

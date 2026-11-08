@@ -307,6 +307,7 @@ set(OGMFX_CORE_SOURCES
   Source/Presets/PresetManager.cpp
   Source/Presets/PresetLibrary.cpp
   Source/UI/SnapshotPresetXml.cpp
+  Source/UI/Theme.cpp
   Source/Updater/UpdaterCore.cpp
 )
 

@@ -1,6 +1,7 @@
 #include "EffectRegistry.h"
 #include "UI/MainComponent.h"
 #include "UI/OpenGuitarMultiFxLookAndFeel.h"
+#include "UI/Theme.h"
 #include "UI/ParameterPanel.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -89,6 +90,7 @@ public:
         const auto args = juce::StringArray::fromTokens (commandLine, true);
         if (const int at = args.indexOf ("--panel-snapshot"); at >= 0 && at + 2 < args.size())
         {
+            theme::load();
             lookAndFeel = std::make_unique<OpenGuitarMultiFxLookAndFeel>();
             juce::LookAndFeel::setDefaultLookAndFeel (lookAndFeel.get());
             writePanelSnapshots (args[at + 1].unquoted(), juce::StringArray::fromTokens (args[at + 2].unquoted(), ",", ""));
@@ -121,6 +123,7 @@ public:
 
         // Set before MainWindow is constructed -- its own constructor reads
         // the default LookAndFeel's background colour immediately.
+        theme::load();
         lookAndFeel = std::make_unique<OpenGuitarMultiFxLookAndFeel>();
         juce::LookAndFeel::setDefaultLookAndFeel (lookAndFeel.get());
 
