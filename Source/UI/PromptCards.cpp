@@ -194,7 +194,7 @@ NumPadCard::NumPadCard (const juce::String& title, const juce::String& initialTe
     display.setInterceptsMouseClicks (false, false);
     display.setFont (juce::Font (26.0f, juce::Font::bold));
     display.setJustification (juce::Justification::centred);
-    display.setColour (juce::TextEditor::outlineColourId, juce::Colours::white.withAlpha (0.25f));
+    display.setColour (juce::TextEditor::outlineColourId, theme::current().lineStrong);
     display.setText (initialText);
     addAndMakeVisible (display);
 

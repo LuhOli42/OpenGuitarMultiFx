@@ -58,6 +58,13 @@ public:
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour& backgroundColour,
                                 bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
 
+    /** Knob rendering per theme (docs/ui/REDESIGN.md card 3): Stage Glass =
+        arc with glow, Console = flat arcs, Bold Blocks = solid disc with a
+        pointer. Arc geometry mirrors LookAndFeel_V4 so drag feel is
+        unchanged -- only the painting differs. */
+    void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height, float sliderPos,
+                           float rotaryStartAngle, float rotaryEndAngle, juce::Slider&) override;
+
     /** The app's CURRENT accent colour -- the knob fill/pointer colour
         (Slider::rotarySliderFillColourId, set in the .cpp) and the drawer's
         scrollbar thumb, and drawButtonBackground()'s fallback border when a

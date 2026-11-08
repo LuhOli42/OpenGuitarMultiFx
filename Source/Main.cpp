@@ -67,20 +67,20 @@ public:
                 out.deleteFile();
                 juce::FileOutputStream stream (out);
                 juce::PNGImageFormat().writeImageToStream (image, stream);
-                std::function<void (juce::Component&)> clickNext = [&] (juce::Component& root)
+                // Advance to the next knob page: the drawer's numbered page
+                // tabs (ParameterPanel::pageTabs, redesign card 3) are direct
+                // children of the panel -- no recursion needed, and matching
+                // the toggle state keeps value boxes / sync toggles from
+                // ever matching.
+                for (auto* child : panel.getChildren())
                 {
-                    for (auto* child : root.getChildren())
-                    {
-                        if (auto* b = dynamic_cast<juce::Button*> (child))
-                            if (b->isVisible() && b->getButtonText().startsWith ("Page " + juce::String (page + 2)) && b->onClick)
-                            {
-                                b->onClick();
-                                return;
-                            }
-                        clickNext (*child);
-                    }
-                };
-                clickNext (panel);
+                    if (auto* b = dynamic_cast<juce::TextButton*> (child))
+                        if (b->isVisible() && b->getButtonText() == juce::String (page + 2) && b->getClickingTogglesState() && b->onClick)
+                        {
+                            b->onClick();
+                            break;
+                        }
+                }
             }
         }
     }
