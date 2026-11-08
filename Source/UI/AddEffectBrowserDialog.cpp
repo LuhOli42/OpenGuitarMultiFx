@@ -1,4 +1,6 @@
 #include "AddEffectBrowserDialog.h"
+#include "EffectCpuCost.h"
+#include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 
 #include "TouchSizing.h"
@@ -11,8 +13,7 @@ namespace openguitarmultifx
 
 namespace
 {
-    juce::Colour rowBackground() { return theme::current().raised; }
-    constexpr int rowGap = 6;
+    constexpr int rowGap = 8;
     constexpr int railWidth = 210;
 
     /** True for the modelled amps that carry a page-2 Cab selector -- detected by
@@ -37,51 +38,93 @@ namespace
 //==============================================================================
 void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
 {
+    const auto& t = theme::current();
     auto bounds = getLocalBounds().toFloat().reduced (1.0f);
-    const auto accent = probe != nullptr ? probe->getAccentColour() : juce::Colours::grey;
 
-    g.setColour (rowBackground());
-    g.fillRoundedRectangle (bounds, 8.0f);
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
 
-    // Thin accent strip on the left edge + the effect's own glyph as a
-    // small ornament -- the name carries the row now, not the tile icon.
-    g.setColour (accent);
-    g.fillRect (bounds.getX(), bounds.getY() + 4.0f, 3.0f, bounds.getHeight() - 8.0f);
+    const auto accent = probe != nullptr ? probe->getAccentColour() : t.textMuted;
 
-    auto area = bounds.reduced (14.0f, 6.0f);
-    auto iconArea = area.removeFromLeft (area.getHeight());
-    area.removeFromLeft (6.0f);
+    // Right-hand columns first: the "+" affordance, the CPU-cost bars, and
+    // the search-only category tag. Everything left of them is icon + text.
+    auto rightArea = bounds;
+    const auto plusArea = rightArea.removeFromRight (58.0f).withSizeKeepingCentre (48.0f, 48.0f);
+    const auto cpuArea = rightArea.removeFromRight (44.0f);
+    const auto tagArea = rightArea.removeFromRight (tag.isNotEmpty() ? 112.0f : 0.0f);
+
+    // Icon tile: the effect's own glyph on an accent-tinted square.
+    auto area = rightArea.reduced (10.0f, 8.0f);
+    const auto iconArea = area.removeFromLeft (area.getHeight());
+    area.removeFromLeft (12.0f);
+
+    g.setColour (accent.withAlpha (0.16f));
+    g.fillRoundedRectangle (iconArea, t.smallRadius);
+
     if (headOnlyIcon)
     {
         // 'Amp' (cab off) rows get the head-only glyph; '+ Cab' rows keep the
         // probe's own icon, which for the modelled amps is already head+cabinet.
         static const std::unique_ptr<juce::Drawable> headIcon =
             icon::loadSvg (IconData::amp_head_svg, IconData::amp_head_svgSize);
-        const float glyph = iconArea.getWidth() * 0.92f;
+        const float glyph = iconArea.getWidth() * 0.86f;
         icon::drawSvg (g, iconArea.withSizeKeepingCentre (glyph, glyph), headIcon.get());
     }
     else if (probe != nullptr)
     {
-        const float glyph = iconArea.getWidth() * 0.92f;
+        const float glyph = iconArea.getWidth() * 0.86f;
         probe->drawIcon (g, iconArea.withSizeKeepingCentre (glyph, glyph));
     }
 
-    // The context line (category while searching, else the subcategory)
-    // gets a fixed right-hand column so it never crowds the name.
-    const float sublineWidth = subline.isNotEmpty() ? 150.0f : 0.0f;
-    auto nameArea = area;
-    auto subArea = nameArea.removeFromRight (sublineWidth);
+    // Name over its short description line.
+    const auto nameArea = area.removeFromTop (area.getHeight() * 0.56f);
+    const auto descArea = area;
 
-    g.setColour (juce::Colours::white);
-    g.setFont (16.0f);
+    g.setColour (t.text);
+    g.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
     g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::centredLeft, 1);
 
     if (subline.isNotEmpty())
     {
-        g.setColour (juce::Colours::grey);
-        g.setFont (12.5f);
-        g.drawFittedText (subline, subArea.toNearestInt(), juce::Justification::centredRight, 1);
+        g.setColour (t.textMuted);
+        g.setFont (juce::Font (juce::FontOptions (12.0f)));
+        g.drawFittedText (subline, descArea.toNearestInt(), juce::Justification::centredLeft, 1);
     }
+
+    // Category tag (search results only): which rail the row came from.
+    if (tag.isNotEmpty())
+    {
+        const auto tagFont = juce::Font (juce::FontOptions (11.0f));
+        const int tagTextWidth = tagFont.getStringWidth (tag);
+        const auto chip = tagArea.withSizeKeepingCentre (
+            juce::jmin (tagArea.getWidth(), (float) tagTextWidth + 18.0f), 24.0f);
+        g.setColour (t.raisedHigh);
+        g.fillRoundedRectangle (chip, t.smallRadius);
+        g.setColour (t.textMuted);
+        g.setFont (tagFont);
+        g.drawFittedText (tag, chip.toNearestInt(), juce::Justification::centred, 1);
+    }
+
+    // CPU-cost bars: four bars, filled up to cpuLevel (docs/CpuCostMap.md).
+    {
+        constexpr float barWidth = 5.0f, barGap = 3.0f, barHeight = 14.0f;
+        const float barsWidth = 4.0f * barWidth + 3.0f * barGap;
+        const auto barsArea = cpuArea.withSizeKeepingCentre (barsWidth, barHeight);
+        for (int i = 0; i < 4; ++i)
+        {
+            const auto bar = juce::Rectangle<float> (barsArea.getX() + i * (barWidth + barGap),
+                                                     barsArea.getY(), barWidth, barHeight);
+            g.setColour (i < cpuLevel ? t.textMuted : t.raisedHigh);
+            g.fillRoundedRectangle (bar, 2.0f);
+        }
+    }
+
+    // "+" affordance -- the whole row is the tap target, this is the cue.
+    g.setColour (t.raisedHigh);
+    g.fillRoundedRectangle (plusArea, t.smallRadius);
+    g.setColour (t.text);
+    g.setFont (juce::Font (juce::FontOptions (22.0f, juce::Font::bold)));
+    g.drawText ("+", plusArea.toNearestInt(), juce::Justification::centred);
 }
 
 void AddEffectBrowserDialog::EffectRow::mouseUp (const juce::MouseEvent& event)
@@ -112,7 +155,9 @@ AddEffectBrowserDialog::EffectRow& AddEffectBrowserDialog::RowList::addRow()
 
 int AddEffectBrowserDialog::RowList::layoutForWidth (int width)
 {
-    const int rowH = touch::minTapTarget;
+    // Card 4's list row: 64px tall (icon tile + name/description + tag +
+    // CPU bars + "+"), well above the 48px touch floor.
+    const int rowH = 64;
     for (int i = 0; i < rows.size(); ++i)
         rows[i]->setBounds (0, i * (rowH + rowGap), width, rowH);
 
@@ -157,7 +202,8 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     titleLabel.setFont (juce::Font (19.0f, juce::Font::bold));
 
     addAndMakeVisible (searchField);
-    searchField.setTextToShowWhenEmpty ("Search effects...", juce::Colours::grey);
+    searchField.setTextToShowWhenEmpty ("Search by name, type or original pedal...",
+                                        theme::current().textDim);
     searchField.onTextChange = [this] { rebuildRows(); };
 
     // One rail button per tab, each labelled with its row count.
@@ -169,6 +215,10 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
         auto* button = categoryButtons.add (new juce::TextButton (
             tab.label + "  (" + juce::String (tab.count) + ")"));
         rail.addAndMakeVisible (*button);
+        // The rail reads as the category palette: each entry's border/accent
+        // is its category colour (docs/ui/REDESIGN.md accent layer 3).
+        button->setColour (OpenGuitarMultiFxLookAndFeel::accentColourId,
+                           EffectRegistry::categoryColour (tab.category));
         button->setRadioGroupId (radioId, juce::dontSendNotification);
         button->setClickingTogglesState (true);
         button->setToggleState (i == selectedTab, juce::dontSendNotification);
@@ -204,7 +254,7 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
 
     addAndMakeVisible (emptyStateLabel);
     emptyStateLabel.setJustificationType (juce::Justification::centred);
-    emptyStateLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
+    emptyStateLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
     emptyStateLabel.setFont (16.0f);
 
     addAndMakeVisible (closeButton);
@@ -359,7 +409,11 @@ void AddEffectBrowserDialog::rebuildRows()
             auto& row = rowList.addRow();
             row.key = key;
             row.name = name;
-            row.subline = searching ? searchSubline (false) : subcategory;
+            row.subline = searching ? searchSubline (false)
+                                    : (subcategory.isNotEmpty() ? subcategory
+                                                                : EffectRegistry::categoryDisplayName (category));
+            row.tag = searching ? EffectRegistry::categoryDisplayName (category) : juce::String();
+            row.cpuLevel = effectcost::levelForKey (key);
             row.probe = probe;
             row.headOnlyIcon = cab; // the cab-off row draws the head-only glyph
         }
@@ -371,7 +425,11 @@ void AddEffectBrowserDialog::rebuildRows()
             // Inside the 'Amps + Cab' tab the group label already says it --
             // repeating '+ Cab' on every row name is noise there.
             row.name = searching || tab.rows == RailTab::Rows::both ? name + " + Cab" : name;
-            row.subline = searching ? searchSubline (true) : subcategory;
+            row.subline = searching ? searchSubline (true)
+                                    : (subcategory.isNotEmpty() ? subcategory
+                                                                : EffectRegistry::categoryDisplayName (category));
+            row.tag = searching ? EffectRegistry::categoryDisplayName (category) : juce::String();
+            row.cpuLevel = effectcost::levelForKey (key);
             row.probe = probe;
             row.cabOn = true;
         }

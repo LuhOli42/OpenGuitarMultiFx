@@ -11,6 +11,7 @@
 #include "../Engine/InputGainSettings.h"
 #include "../Engine/MasterBusSettings.h"
 #include "PresetBrowserDialog.h"
+#include "SnapshotEditorCard.h"
 #include "Tone3000Panel.h"
 #include "TouchSizing.h"
 
@@ -1554,117 +1555,85 @@ void MainComponent::selectSnapshot (int index)
 void MainComponent::showSnapshotMenu (int index)
 {
     index = juce::jlimit (0, snapshotCount - 1, index);
+    const auto letter = snapshotxml::letterFor (index);
     const auto label = [this] (int i)
     {
         const auto& name = snapshots[(size_t) i].name;
         return snapshotxml::letterFor (i) + (name.isNotEmpty() ? " - " + name : juce::String());
     };
 
-    juce::PopupMenu colours;
-    colours.addItem (100, "Default", true, snapshots[(size_t) index].colour.isEmpty());
-    static const char* colourNames[] = { "Green", "Blue", "Orange", "Purple", "Yellow", "Red", "Teal", "Magenta" }; // defaultColourFor()'s order
-    for (int c = 0; c < snapshotxml::maxSnapshots; ++c)
+    // Card 4 of docs/ui/REDESIGN.md: the snapshot editor is an OverlayHost
+    // card now, not a nested PopupMenu -- name, colour, footswitch CC and
+    // copy/remove all on one touch-sized surface.
+    SnapshotEditorCard::Actions actions;
+    actions.onClose = [this] { overlayHost.popOverlay(); };
+
+    actions.onNameChanged = [this, index] (juce::String newName)
     {
-        const auto colour = snapshotxml::defaultColourFor (c);
-        colours.addColouredItem (101 + c, colourNames[c], colour, true, snapshots[(size_t) index].colour == colour.toString());
-    }
-    // Any colour, not just the eight defaults ("seria legal dar pra
-    // personalizar qual cor de cada snapshot"): a ColourSelector card like
-    // every other popup in the app.
-    colours.addItem (150, "Custom colour...");
-
-    juce::PopupMenu copyTo, copyFrom;
-    for (int t = 0; t < snapshotCount; ++t)
-        if (t != index)
-        {
-            copyTo.addItem (200 + t, label (t));
-            copyFrom.addItem (400 + t, label (t));
-        }
-
-    juce::PopupMenu menu;
-    menu.addSectionHeader ("Snapshot " + label (index));
-    menu.addItem (1, "Rename...");
-    menu.addSubMenu ("Colour", colours);
-    menu.addSubMenu ("Copy to", copyTo, snapshotCount > 1);
-    menu.addSubMenu ("Copy from", copyFrom, snapshotCount > 1);
-    menu.addItem (2, "Remove scene", snapshotCount > 1);
-
-    // Footswitch -> scene. The pedal sends one fixed CC per switch, so each
-    // action learns its own (CC 69 with a value per scene still works for
-    // controllers that can send one).
-    const auto pedalItem = [this] (juce::PopupMenu& m, int id, int action, const juce::String& what)
-    {
-        const int cc = sceneMidi.ccFor (action);
-        m.addItem (id, cc >= 0 ? "Clear pedal: " + what + " (CC " + juce::String (cc) + ")"
-                               : "Learn pedal: " + what,
-                   true, sceneMidiArmed == action);
+        snapshots[(size_t) index].name = newName;
+        updatePresetDisplay();
     };
-    juce::PopupMenu pedal;
-    pedalItem (pedal, 300, index, "this scene (" + snapshotxml::letterFor (index) + ")");
-    pedalItem (pedal, 301, scenemidi::nextScene, "next scene");
-    pedalItem (pedal, 302, scenemidi::previousScene, "previous scene");
-    if (sceneMidiArmed != scenemidi::noAction)
-        pedal.addItem (303, "Cancel learning");
-    menu.addSubMenu ("Footswitch (MIDI)", pedal);
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapshotBar)
-                                                   .withStandardItemHeight (touch::minTapTarget),
-                        [this, index, alive = aliveFlag] (int result)
+    actions.onColourChosen = [this, index] (juce::Colour colour)
     {
-        if (! alive->load() || result == 0)
-            return;
+        // Picking the slot's own default hue keeps the "default" state (the
+        // empty string) instead of freezing the same colour in as an
+        // override that would no longer follow the palette.
+        snapshots[(size_t) index].colour = colour == snapshotxml::defaultColourFor (index)
+                                               ? juce::String()
+                                               : colour.toString();
+        updatePresetDisplay();
+    };
 
-        if (result == 1)
-        {
-            overlayHost.pushOverlay (std::make_unique<TextPromptCard> (
-                "Rename snapshot " + snapshotxml::letterFor (index), snapshots[(size_t) index].name,
-                [this, index] (juce::String newName)
-                {
-                    snapshots[(size_t) index].name = newName;
-                    overlayHost.popOverlay();
-                    updatePresetDisplay();
-                },
-                [this] { overlayHost.popOverlay(); }));
-        }
-        else if (result == 150)
-        {
-            overlayHost.pushOverlay (std::make_unique<ColourPickerCard> (
-                "Colour for snapshot " + snapshotxml::letterFor (index), colourOfSnapshot (index),
-                [this, index] (juce::Colour colour)
-                {
-                    snapshots[(size_t) index].colour = colour.toString();
-                    overlayHost.popOverlay();
-                    updatePresetDisplay();
-                },
-                [this] { overlayHost.popOverlay(); }));
-        }
-        else if (result >= 100 && result < 100 + 1 + snapshotxml::maxSnapshots)
-        {
-            snapshots[(size_t) index].colour = result == 100 ? juce::String()
-                                                             : snapshotxml::defaultColourFor (result - 101).toString();
-            updatePresetDisplay();
-        }
-        else if (result == 2)
-        {
-            removeSnapshot (index);
-        }
-        else if (result >= 200 && result < 200 + snapshotxml::maxSnapshots)
-        {
-            copySnapshot (index, result - 200);
-        }
-        else if (result >= 400 && result < 400 + snapshotxml::maxSnapshots)
-        {
-            copySnapshot (result - 400, index);
-        }
-        else if (result == 300)
-            toggleScenePedal (index);
-        else if (result == 301)
-            toggleScenePedal (scenemidi::nextScene);
-        else if (result == 302)
-            toggleScenePedal (scenemidi::previousScene);
-        else if (result == 303 && sceneMidiArmed != scenemidi::noAction)
-            toggleScenePedal (sceneMidiArmed);
-    });
+    actions.onCustomColour = [this, index, letter]
+    {
+        overlayHost.pushOverlay (std::make_unique<ColourPickerCard> (
+            "Colour for snapshot " + letter, colourOfSnapshot (index),
+            [this, index] (juce::Colour colour)
+            {
+                snapshots[(size_t) index].colour = colour.toString();
+                overlayHost.popOverlay();
+                updatePresetDisplay();
+            },
+            [this] { overlayHost.popOverlay(); }));
+    };
+
+    actions.ccFor = [this] (int action) { return sceneMidi.ccFor (action); };
+    actions.pedalArmed = [this] (int action) { return sceneMidiArmed == action; };
+    actions.onTogglePedal = [this] (int action) { toggleScenePedal (action); };
+
+    // Copy to / copy from pick the other scene in a small PopupMenu -- the
+    // same pattern the preset browser's setlist menu uses.
+    auto showCopyMenu = [this, index, label] (bool to)
+    {
+        juce::PopupMenu menu;
+        for (int t = 0; t < snapshotCount; ++t)
+            if (t != index)
+                menu.addItem (1 + t, label (t));
+        menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
+            [this, index, to] (int result)
+            {
+                if (result <= 0)
+                    return;
+                const int target = result - 1;
+                if (to)
+                    copySnapshot (index, target);
+                else
+                    copySnapshot (target, index);
+            });
+    };
+    actions.onCopyTo = [showCopyMenu] (int) { showCopyMenu (true); };
+    actions.onCopyFrom = [showCopyMenu] (int) { showCopyMenu (false); };
+
+    actions.onRemove = [this, index]
+    {
+        removeSnapshot (index);
+        overlayHost.popOverlay();
+    };
+
+    overlayHost.pushOverlay (std::make_unique<SnapshotEditorCard> (
+        index, letter, snapshots[(size_t) index].name, colourOfSnapshot (index),
+        snapshots[(size_t) index].colour.isEmpty(), std::move (actions)));
 }
 
 void MainComponent::addSnapshot (int source)

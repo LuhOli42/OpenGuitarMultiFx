@@ -1,4 +1,5 @@
 #include "PresetBrowserDialog.h"
+#include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 
 #include "TouchSizing.h"
@@ -10,7 +11,6 @@ namespace
 {
     juce::Colour cardBackground() { return theme::current().surface; }
     juce::Colour tileBackground() { return theme::current().raised; }
-    const juce::Colour currentAccent { 0xff4db8a8 };
     constexpr int tileGap = 8;
     constexpr int longPressMs = 550; // same duration ParameterPanel's LongPressLabel uses for MIDI Learn
 }
@@ -20,16 +20,18 @@ namespace
 //==============================================================================
 void PresetBrowserDialog::PresetTile::paint (juce::Graphics& g)
 {
+    const auto& t = theme::current();
+    const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
     auto bounds = getLocalBounds().toFloat().reduced (2.0f);
 
     if (isEmpty)
     {
-        g.setColour (theme::current().surface);
-        g.fillRoundedRectangle (bounds, 8.0f);
-        g.setColour (juce::Colours::grey.withAlpha (0.5f));
-        g.drawRoundedRectangle (bounds, 8.0f, 1.5f);
+        g.setColour (t.surface);
+        g.fillRoundedRectangle (bounds, t.radius);
+        g.setColour (t.lineStrong);
+        g.drawRoundedRectangle (bounds, t.radius, 1.5f);
 
-        g.setColour (juce::Colours::grey);
+        g.setColour (t.textDim);
         g.setFont (28.0f);
         g.drawText ("+", bounds.toNearestInt(), juce::Justification::centred);
 
@@ -42,22 +44,22 @@ void PresetBrowserDialog::PresetTile::paint (juce::Graphics& g)
     }
 
     g.setColour (tileBackground());
-    g.fillRoundedRectangle (bounds, 8.0f);
+    g.fillRoundedRectangle (bounds, t.radius);
 
     if (isCurrent)
     {
-        g.setColour (currentAccent.withAlpha (0.22f));
-        g.fillRoundedRectangle (bounds, 8.0f);
+        g.setColour (accent.withAlpha (0.22f));
+        g.fillRoundedRectangle (bounds, t.radius);
     }
 
-    g.setColour (isCurrent ? currentAccent : juce::Colours::grey.withAlpha (0.6f));
-    g.drawRoundedRectangle (bounds, 8.0f, isCurrent ? 3.0f : 1.5f);
+    g.setColour (isCurrent ? accent : t.lineStrong);
+    g.drawRoundedRectangle (bounds, t.radius, isCurrent ? 3.0f : 1.5f);
 
     auto area = bounds.toNearestInt().reduced (8, 4);
 
     if (heading.isNotEmpty())
     {
-        g.setColour (currentAccent.withAlpha (isCurrent ? 1.0f : 0.75f));
+        g.setColour (isCurrent ? accent : t.textMuted);
         g.setFont (juce::Font (15.0f, juce::Font::bold));
         g.drawText (heading, area.removeFromTop (20), juce::Justification::centredLeft);
     }
@@ -66,13 +68,13 @@ void PresetBrowserDialog::PresetTile::paint (juce::Graphics& g)
     if (subline.isNotEmpty())
         nameArea = area.removeFromTop (area.getHeight() - 16);
 
-    g.setColour (juce::Colours::white);
+    g.setColour (t.text);
     g.setFont (16.0f);
     g.drawFittedText (name, nameArea, juce::Justification::centred, 2);
 
     if (subline.isNotEmpty())
     {
-        g.setColour (juce::Colours::grey);
+        g.setColour (t.textMuted);
         g.setFont (12.0f);
         g.drawFittedText (subline, area, juce::Justification::centredLeft, 1);
     }
@@ -170,7 +172,7 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
     newPresetButton.onClick = [this] { if (onNewRequested) onNewRequested(); };
 
     addAndMakeVisible (searchField);
-    searchField.setTextToShowWhenEmpty ("Search presets...", juce::Colours::grey);
+    searchField.setTextToShowWhenEmpty ("Search presets...", theme::current().textDim);
     searchField.onTextChange = [this] { rebuildTiles(); };
 
     addAndMakeVisible (tagBox);
@@ -270,15 +272,15 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
 
     addAndMakeVisible (emptyStateLabel);
     emptyStateLabel.setJustificationType (juce::Justification::centred);
-    emptyStateLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
+    emptyStateLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
 
     addAndMakeVisible (hintLabel);
     hintLabel.setJustificationType (juce::Justification::centredLeft);
-    hintLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
+    hintLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
     hintLabel.setFont (13.0f);
 
     addAndMakeVisible (nameField);
-    nameField.setTextToShowWhenEmpty ("Preset name...", juce::Colours::grey);
+    nameField.setTextToShowWhenEmpty ("Preset name...", theme::current().textDim);
     nameField.onReturnKey = [this] { saveButton.triggerClick(); };
 
     addAndMakeVisible (saveButton);
