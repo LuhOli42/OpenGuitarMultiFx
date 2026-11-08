@@ -63,10 +63,10 @@ public:
         // can see against the #232323 stack -- lift dark accents to a readable
         // grey, and only keep the dark label when the fill stayed bright.
         const auto lit = accent.getPerceivedBrightness() < 0.35f ? accent.brighter (0.9f) : accent;
-        const bool litIsBright = lit.getPerceivedBrightness() > 0.55f;
 
-        g.setColour (theme::current().raised);
-        g.fillRoundedRectangle (bounds, 8.0f);
+        const auto& t = theme::current();
+        g.setColour (t.raised);
+        g.fillRoundedRectangle (bounds, t.smallRadius);
 
         for (int i = 0; i < n; ++i)
         {
@@ -76,24 +76,26 @@ public:
             if (isSelected)
             {
                 g.setColour (lit);
-                g.fillRoundedRectangle (segment.reduced (2.0f), 6.0f);
+                g.fillRoundedRectangle (segment.reduced (2.0f), juce::jmax (2.0f, t.smallRadius - 1.0f));
             }
 
             if (i > 0)
             {
-                g.setColour (juce::Colours::black.withAlpha (0.35f));
+                g.setColour (t.line);
                 g.drawLine (segment.getX() + 6.0f, segment.getY(), segment.getRight() - 6.0f, segment.getY(), 1.0f);
             }
 
-            g.setColour (isSelected ? (litIsBright ? juce::Colours::black.withAlpha (0.85f)
-                                                   : juce::Colours::white.withAlpha (0.9f))
-                                    : juce::Colours::white.withAlpha (0.75f));
+            g.setColour (isSelected ? lit.contrasting (t.background, t.text).withAlpha (0.9f)
+                                    : t.textMuted);
             g.setFont (juce::Font (segmentHeight > 30.0f ? 13.0f : 11.0f, juce::Font::bold));
-            g.drawText (options[i], segment.reduced (4.0f, 0.0f), juce::Justification::centred);
+            auto optionText = options[i];
+            if (t.uppercaseLabels)
+                optionText = optionText.toUpperCase();
+            g.drawText (optionText, segment.reduced (4.0f, 0.0f), juce::Justification::centred);
         }
 
-        g.setColour (juce::Colours::white.withAlpha (0.15f));
-        g.drawRoundedRectangle (bounds, 8.0f, 1.0f);
+        g.setColour (t.lineStrong.withAlpha (0.5f));
+        g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
     }
 
     void mouseDown (const juce::MouseEvent& event) override { select (event.position); }

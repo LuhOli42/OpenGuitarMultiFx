@@ -107,6 +107,85 @@ juce::Label* OpenGuitarMultiFxLookAndFeel::createSliderTextBox (juce::Slider& sl
     return label;
 }
 
+void OpenGuitarMultiFxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                                                       float sliderPos, const float rotaryStartAngle,
+                                                       const float rotaryEndAngle, juce::Slider& slider)
+{
+    const auto& t = theme::current();
+    const auto accent = slider.findColour (juce::Slider::rotarySliderFillColourId);
+
+    auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (8);
+    const auto centre = bounds.getCentre();
+    const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+    const float toAngle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
+
+    const bool glowStyle = t.blockStyle == theme::BlockStyle::glow;
+    const bool discStyle = t.blockStyle == theme::BlockStyle::filled;
+
+    // The arc ring sits near the edge; the Bold Blocks disc fills the area
+    // inside it. Geometry mirrors LookAndFeel_V4's drawRotarySlider.
+    const float lineW = discStyle ? 5.0f : 6.0f;
+    const float arcRadius = radius - lineW * 0.5f - (discStyle ? 4.0f : 8.0f);
+
+    auto strokeArc = [&g] (juce::Point<float> c, float r, float from, float to, float thickness, juce::Colour colour)
+    {
+        juce::Path arc;
+        arc.addCentredArc (c.x, c.y, r, r, 0.0f, from, to, true);
+        g.setColour (colour);
+        g.strokePath (arc, juce::PathStrokeType (thickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    };
+
+    strokeArc (centre, arcRadius, rotaryStartAngle, rotaryEndAngle, lineW, t.raisedHigh);
+
+    if (slider.isEnabled())
+    {
+        if (glowStyle)
+        {
+            // Stage Glass: the value arc glows -- a wide faint pass under a
+            // crisp core, like the block icons' drop-shadow in card 2.
+            strokeArc (centre, arcRadius, rotaryStartAngle, toAngle, lineW * 2.6f, accent.withAlpha (0.22f));
+            strokeArc (centre, arcRadius, rotaryStartAngle, toAngle, lineW, accent);
+        }
+        else
+        {
+            strokeArc (centre, arcRadius, rotaryStartAngle, toAngle, lineW, accent);
+        }
+    }
+
+    if (discStyle)
+    {
+        // Bold Blocks: a solid disc in the snapshot accent with a pointer --
+        // the knob IS the colour, like the chain blocks.
+        const float discRadius = arcRadius - lineW * 0.5f - 3.0f;
+        g.setColour (accent);
+        g.fillEllipse (centre.x - discRadius, centre.y - discRadius, discRadius * 2.0f, discRadius * 2.0f);
+
+        const auto tip = juce::Point<float> (centre.x + discRadius * 0.72f * std::cos (toAngle - juce::MathConstants<float>::halfPi),
+                                              centre.y + discRadius * 0.72f * std::sin (toAngle - juce::MathConstants<float>::halfPi));
+        juce::Path pointer;
+        pointer.startNewSubPath (centre.x, centre.y);
+        pointer.lineTo (tip.x, tip.y);
+        g.setColour (accent.contrasting (juce::Colours::black, juce::Colours::white).withAlpha (0.9f));
+        g.strokePath (pointer, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    else
+    {
+        // Stage Glass / Console: thumb dot at the arc's end (Stage Glass
+        // gets a halo, Console stays flat).
+        const float thumbRadius = glowStyle ? 6.5f : 5.0f;
+        const auto thumbPoint = juce::Point<float> (centre.x + arcRadius * std::cos (toAngle - juce::MathConstants<float>::halfPi),
+                                                     centre.y + arcRadius * std::sin (toAngle - juce::MathConstants<float>::halfPi));
+        if (glowStyle)
+        {
+            g.setColour (accent.withAlpha (0.28f));
+            g.fillEllipse (thumbPoint.x - thumbRadius * 1.9f, thumbPoint.y - thumbRadius * 1.9f,
+                           thumbRadius * 3.8f, thumbRadius * 3.8f);
+        }
+        g.setColour (slider.isEnabled() ? accent : t.textDim);
+        g.fillEllipse (thumbPoint.x - thumbRadius, thumbPoint.y - thumbRadius, thumbRadius * 2.0f, thumbRadius * 2.0f);
+    }
+}
+
 void OpenGuitarMultiFxLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
                                                   const juce::Colour& backgroundColour,
                                                   bool shouldDrawButtonAsHighlighted,

@@ -5,7 +5,7 @@ Prototype: [`prototype.html`](./prototype.html). It is one self-contained file w
 
 ## Goal
 
-Replace the current flat dark-grey look ("muito amador" feedback, 2026-09-10) with a modern, stage-readable visual system for the ~10" touchscreen. The user picks one of **three themes** in Settings → Appearance. All three share **one layout**, so a theme is only a table of tokens (colours, radii, block style, knob style). It never changes layout, behaviour, presets, or sound.
+Replace the current flat dark-grey look ("muito amador" feedback, 2026-09-10) with a modern, stage-readable visual system for the ~10" touchscreen. The user picks one of **three themes** in Settings → Appearance. All three share **one layout**, so a theme is only a table of tokens (colours, radii, block style -- which also fixes the knob style: glow arc / flat arcs / solid disc). It never changes layout, behaviour, presets, or sound.
 
 ## Market references (what each one contributes)
 

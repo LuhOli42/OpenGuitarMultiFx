@@ -49,7 +49,7 @@ ParameterPanel::ParameterPanel()
 
     addAndMakeVisible (statusLabel);
     statusLabel.setFont (juce::Font (15.0f));
-    statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    statusLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
 
     addAndMakeVisible (bypassToggle);
     bypassToggle.onClick = [this] { if (current != nullptr) current->setBypassed (bypassToggle.getToggleState()); };
@@ -60,9 +60,6 @@ ParameterPanel::ParameterPanel()
     addAndMakeVisible (searchTone3000Button);
     searchTone3000Button.onClick = [this] { openTone3000Search(); };
 
-    addChildComponent (pageButton);
-    pageButton.onClick = [this] { showPage ((currentPage + 1) % juce::jmax (1, pageCount)); };
-
     addAndMakeVisible (removeButton);
     removeButton.onClick = [this] { if (current != nullptr && onRemoveRequested) onRemoveRequested (current); };
 
@@ -71,6 +68,14 @@ ParameterPanel::ParameterPanel()
     knobViewport.setScrollBarsShown (true, false);
 
     rebuildForCurrentProcessor();
+}
+
+void ParameterPanel::lookAndFeelChanged()
+{
+    statusLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
+    if (current != nullptr)
+        titleLabel.setColour (juce::Label::textColourId, theme::current().text);
+    juce::Component::lookAndFeelChanged();
 }
 
 void ParameterPanel::setProcessor (EffectProcessor* processorToEdit)
@@ -147,6 +152,10 @@ void ParameterPanel::refresh()
 
 void ParameterPanel::rebuildForCurrentProcessor()
 {
+    for (auto& tab : pageTabs)
+        removeChildComponent (tab.get());
+    pageTabs.clear();
+
     for (auto& row : sliders)
     {
         knobGridHost.removeChildComponent (row.widget());
@@ -170,7 +179,6 @@ void ParameterPanel::rebuildForCurrentProcessor()
         browseInstalledButton.setVisible (false);
         searchTone3000Button.setVisible (false);
         removeButton.setVisible (false);
-        pageButton.setVisible (false);
         knobViewport.setVisible (false);
         resized();
         return;
@@ -201,7 +209,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
                             ? rawAccent.withBrightness (juce::jmax (0.8f, rawAccent.getBrightness()))
                                        .withSaturation (juce::jmin (0.6f, rawAccent.getSaturation()))
                             : rawAccent;
-    titleLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    titleLabel.setColour (juce::Label::textColourId, theme::current().text);
     bypassToggle.setColour (juce::ToggleButton::tickColourId, accent);
     for (auto* b : { &browseInstalledButton, &searchTone3000Button, &removeButton })
         b->setColour (OpenGuitarMultiFxLookAndFeel::accentColourId, accent);
@@ -209,9 +217,21 @@ void ParameterPanel::rebuildForCurrentProcessor()
     const auto pages = current->getParameterPages();
     pageCount = (int) pages.size();
     currentPage = 0;
-    pageButton.setVisible (pageCount > 1);
-    pageButton.setButtonText ("Page 2 >");
-    pageButton.setColour (OpenGuitarMultiFxLookAndFeel::accentColourId, accent);
+
+    // One numbered tab per knob page (redesign card 3) -- the pages are
+    // unnamed sub-groups (EffectProcessor::getParameterPages()), so the tabs
+    // read "1", "2", ... with the active one lit by the LookAndFeel's toggle
+    // colours. Same per-effect accent border as the rest of the drawer.
+    for (int pageIndex = 0; pageIndex < pageCount; ++pageIndex)
+    {
+        auto tab = std::make_unique<juce::TextButton> (juce::String (pageIndex + 1));
+        tab->setClickingTogglesState (true);
+        tab->setColour (OpenGuitarMultiFxLookAndFeel::accentColourId, accent);
+        tab->onClick = [this, pageIndex] { showPage (pageIndex); };
+        addChildComponent (*tab);
+        tab->setVisible (true);
+        pageTabs.push_back (std::move (tab));
+    }
 
     {
         for (int pageIndex = 0; pageIndex < pageCount; ++pageIndex)
@@ -589,7 +609,8 @@ void ParameterPanel::showPage (int page)
         if (row.syncToggle != nullptr)
             row.syncToggle->setVisible (shown);
     }
-    pageButton.setButtonText ("Page " + juce::String ((currentPage + 1) % juce::jmax (1, pageCount) + 1) + " >");
+    for (size_t i = 0; i < pageTabs.size(); ++i)
+        pageTabs[i]->setToggleState ((int) i == currentPage, juce::dontSendNotification);
     resized();
     if (onPreferredHeightChanged)
         onPreferredHeightChanged();
@@ -653,10 +674,16 @@ void ParameterPanel::resized()
     }
     top.removeFromRight (6);
     bypassToggle.setBounds (top.removeFromRight (110));
-    if (pageButton.isVisible())
+    if (! pageTabs.empty())
     {
+        // Numbered page tabs, right-aligned before the bypass toggle; the
+        // active one is lit by the LookAndFeel's buttonOn colour.
+        for (int i = (int) pageTabs.size() - 1; i >= 0; --i)
+        {
+            top.removeFromRight (4);
+            pageTabs[(size_t) i]->setBounds (top.removeFromRight (44));
+        }
         top.removeFromRight (6);
-        pageButton.setBounds (top.removeFromRight (120));
     }
     titleLabel.setBounds (top);
 

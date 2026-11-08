@@ -57,6 +57,8 @@ public:
 
     void resized() override;
     void paint (juce::Graphics& g) override;
+    /** Title/status colours cache theme tokens -- re-read them on a theme switch. */
+    void lookAndFeelChanged() override;
 
     std::function<void (EffectProcessor*)> onRemoveRequested;
 
@@ -103,8 +105,10 @@ private:
     juce::TextButton browseInstalledButton { "Browse installed..." };
     juce::TextButton searchTone3000Button { "Search TONE3000..." };
     juce::TextButton removeButton { "Remove" };
-    /** Only shown for an effect with more than one page of knobs (EffectProcessor::getParameterPages()). */
-    juce::TextButton pageButton { "Page 2 >" };
+    /** One tab per knob page, only for an effect with more than one page of
+        knobs (EffectProcessor::getParameterPages()) -- replaces the old
+        single cycling "Page 2 >" button (redesign card 3). */
+    std::vector<std::unique_ptr<juce::TextButton>> pageTabs;
     int currentPage = 0, pageCount = 1;
 
     /** A knob's parameter name label, long-pressable to reach MIDI Learn --
@@ -218,12 +222,13 @@ private:
 
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override
         {
+            const auto& t = theme::current();
             auto bounds = getLocalBounds().toFloat();
-            g.setColour (theme::current().background);
-            g.fillRoundedRectangle (bounds, 4.0f);
-            g.setColour (juce::Colours::white.withAlpha (down ? 0.45f : highlighted ? 0.35f : 0.22f));
-            g.drawRoundedRectangle (bounds.reduced (0.5f), 4.0f, 1.0f);
-            g.setColour (juce::Colours::white.withAlpha (down ? 1.0f : 0.9f));
+            g.setColour (t.raised);
+            g.fillRoundedRectangle (bounds, t.smallRadius);
+            g.setColour (t.lineStrong.withAlpha (down ? 0.9f : highlighted ? 0.6f : 0.35f));
+            g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
+            g.setColour (t.text.withAlpha (down ? 1.0f : 0.9f));
             g.setFont (juce::Font (15.0f));
             g.drawText (getButtonText(), bounds.toNearestInt(), juce::Justification::centred);
         }
