@@ -48,3 +48,13 @@ The user's saved chain (Teste.xml: gate, pitch shift, TS808, Klon, Neural Amp+Ca
 3. A real NAM model chosen for cost: a "standard" WaveNet is the heavy case; NAM's lighter architectures/`Feather`
    captures on TONE3000 run at a fraction of it. Nothing to fix in code; worth knowing when picking models.
 4. Lane-parallel `SignalGraph` (roadmap): does not reduce the total, only splits parallel lanes across cores.
+
+## Per-effect UI cost bars (card 4)
+
+The Add-effect list rows show 1-4 CPU-cost bars per model. The levels live in
+`Source/UI/EffectCpuCost.h` (`effectcost::levelForKey`), generated from a full
+`Tests/EffectCostBench` run (`EFFECT_BENCH=1 ./build/Tests/OpenGuitarMultiFx_Tests_artefacts/Release/OpenGuitarMultiFx_Tests EffectCostBench`,
+48 kHz / 128-sample blocks / eco quality): cost = max(playing, silent tail)
+% of one core; 4 bars >= 8%, 3 >= 4%, 2 >= 1.5%, else 1. NAM keys are pinned
+to 3 bars because the bench fixture is a tiny LSTM model, not the WaveNet
+captures measured above.

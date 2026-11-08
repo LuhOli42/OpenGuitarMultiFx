@@ -56,15 +56,19 @@ public:
     std::function<void()> onPopOverlay;
 
 private:
-    /** One list row: a small accent-tinted icon ornament, then the effect's
-        display name, then an optional context line (its category while
-        searching, else its subcategory). Tap = onTap. */
+    /** One list row (card 4 of docs/ui/REDESIGN.md): a 64px row with an
+        icon tile, the effect's display name, a short description line (its
+        subcategory, or category context while searching), a category tag
+        while searching, CPU-cost bars, and a "+" affordance. Tap anywhere
+        on the row = onTap. */
     class EffectRow : public juce::Component
     {
     public:
         juce::String key;
         juce::String name;
-        juce::String subline;
+        juce::String subline;   // short description line under the name
+        juce::String tag;       // right-hand chip; only set while searching
+        int cpuLevel = 1;       // 1..4 filled CPU-cost bars (effectcost::levelForKey)
         bool cabOn = false;        // '+ Cab' insertion variant -- see onEffectChosen
         bool headOnlyIcon = false; // the cab-off row draws the head-only glyph, not the probe's
         const EffectProcessor* probe = nullptr; // icon + accent; owned by the dialog's probe cache
