@@ -167,6 +167,14 @@ void FooterBar::paint (juce::Graphics& g)
         g.setColour (snapshotColour);
         g.fillRect (0.0f, 0.0f, (float) getWidth(), stripHeight);
 
+        // Stage Glass: the strip glows in the snapshot colour (prototype
+        // .ft:before box-shadow).
+        if (theme::current().blockStyle == theme::BlockStyle::glow)
+        {
+            g.setColour (snapshotColour.withAlpha (0.3f));
+            g.fillRect (0.0f, stripHeight, (float) getWidth(), 3.0f);
+        }
+
         const juce::Font tabFont (13.0f, juce::Font::bold);
         const float tabWidth = tabFont.getStringWidthFloat (snapshotLabel) + 22.0f;
         juce::Path tab;
@@ -193,14 +201,38 @@ void FooterBar::paint (juce::Graphics& g)
 
 void FooterBar::drawHorizontalMeter (juce::Graphics& g, juce::Rectangle<float> bounds, float level, const juce::String& label) const
 {
-    g.setColour (theme::current().raisedHigh);
+    const auto& t = theme::current();
+    g.setColour (t.raisedHigh);
     g.fillRoundedRectangle (bounds, 4.0f);
 
     const auto fill = bounds.withWidth (bounds.getWidth() * level);
-    g.setColour (level > 0.85f ? juce::Colours::orangered : OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
-    g.fillRoundedRectangle (fill, 4.0f);
+    const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+    const bool hot = level > 0.85f;
 
-    g.setColour (juce::Colours::white);
+    if (! hot && t.blockStyle == theme::BlockStyle::topStripe)
+    {
+        // Console: the fill reads as segmented stripes over the track.
+        juce::Path clip;
+        clip.addRoundedRectangle (fill, 4.0f);
+        g.saveState();
+        g.reduceClipRegion (clip);
+        g.setColour (accent.withAlpha (0.85f));
+        for (float x = fill.getX(); x < fill.getRight(); x += 7.0f)
+            g.fillRect (x, fill.getY(), juce::jmin (5.0f, fill.getRight() - x), fill.getHeight());
+        g.restoreState();
+    }
+    else
+    {
+        // Stage Glass / Bold Blocks: accent gradient lightening to the right.
+        juce::ColourGradient grad (hot ? juce::Colours::orangered : accent,
+                                  fill.getX(), fill.getY(),
+                                  (hot ? juce::Colours::orangered : accent).brighter (0.35f),
+                                  fill.getRight(), fill.getY(), false);
+        g.setGradientFill (grad);
+        g.fillRoundedRectangle (fill, 4.0f);
+    }
+
+    g.setColour (t.text);
     g.setFont (juce::Font (12.0f, juce::Font::bold));
     g.drawText (label, bounds.reduced (8.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft);
 }

@@ -1,6 +1,7 @@
 #include "ChainContainer.h"
 
 #include "OpenGuitarMultiFxLookAndFeel.h"
+#include "Theme.h"
 
 namespace openguitarmultifx
 {
@@ -77,7 +78,8 @@ void ChainContainer::paint (juce::Graphics& g)
     // MainComponent (see setUsedRows()'s comment) rather than being
     // derived from blockBounds.size() here, since a block's position can
     // now be sparse (any grid cell, not just the next sequential one).
-    g.setColour (juce::Colours::white.withAlpha (0.3f));
+    const auto& t = theme::current();
+    g.setColour (t.lineStrong);
     for (int row = 0; row < usedRows; ++row)
     {
         const float y = row * (float) (gridBlockHeight + gridRowGap) + (float) gridBlockHeight * 0.5f;
@@ -103,7 +105,7 @@ void ChainContainer::paint (juce::Graphics& g)
     // signal path that doesn't exist. Per user request 2026-09-10 (the
     // full row capacity should read as "configured" from the moment the
     // app opens).
-    g.setColour (juce::Colours::white.withAlpha (0.15f));
+    g.setColour (t.line.withAlpha (0.8f));
     for (int row = usedRows; row < maxVisibleRows; ++row)
     {
         const float y = row * (float) (gridBlockHeight + gridRowGap) + (float) gridBlockHeight * 0.5f;
@@ -116,7 +118,7 @@ void ChainContainer::paint (juce::Graphics& g)
     // how to start; it disappears as soon as the first block lands.
     if (blockBounds.empty() && usedRows > 0)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.5f));
+        g.setColour (t.textMuted);
         g.setFont (17.0f);
         g.drawText ("Tap a line to add an effect", 0, 0, getWidth(), gridBlockHeight,
                     juce::Justification::centred);
@@ -133,9 +135,9 @@ void ChainContainer::paint (juce::Graphics& g)
         const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
 
         g.setColour (accent.withAlpha (0.12f));
-        g.fillRoundedRectangle (bounds, 8.0f);
+        g.fillRoundedRectangle (bounds, t.smallRadius);
         g.setColour (accent.withAlpha (0.7f));
-        g.drawRoundedRectangle (bounds, 8.0f, 1.5f);
+        g.drawRoundedRectangle (bounds, t.smallRadius, 1.5f);
 
         g.setColour (juce::Colours::white);
         const float plusSize = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.3f;

@@ -906,6 +906,27 @@ juce::String EffectRegistry::categoryDisplayName (Category category)
     return {};
 }
 
+juce::Colour EffectRegistry::categoryColour (Category category) noexcept
+{
+    switch (category)
+    {
+        case Category::amps:            return juce::Colour (0xffff6a3d);
+        case Category::overdriveBoost:  return juce::Colour (0xfff6c343);
+        case Category::distortion:      return juce::Colour (0xffff9a2e);
+        case Category::fuzz:            return juce::Colour (0xffff7a59);
+        case Category::dynamics:        return juce::Colour (0xffff4d6a);
+        case Category::modulation:      return juce::Colour (0xffa77bff);
+        case Category::delay:           return juce::Colour (0xff4c8dff);
+        case Category::reverb:          return juce::Colour (0xff2cc6e3);
+        case Category::pitch:           return juce::Colour (0xff3bd68a);
+        case Category::pitchFilter:     return juce::Colour (0xff8bd93b);
+        case Category::neural:          return juce::Colour (0xffe35bff);
+        case Category::cabs:            return juce::Colour (0xffff8e5e);
+        case Category::utility:         return juce::Colour (0xff8d94a5);
+    }
+    return juce::Colour (0xff8d94a5);
+}
+
 EffectRegistry::Category EffectRegistry::categoryForKey (const juce::String& key) const
 {
     const auto it = categoriesByKey.find (key);

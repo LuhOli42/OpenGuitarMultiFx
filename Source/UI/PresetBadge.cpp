@@ -1,5 +1,6 @@
 #include "PresetBadge.h"
 #include "Theme.h"
+#include "OpenGuitarMultiFxLookAndFeel.h"
 
 namespace openguitarmultifx
 {
@@ -40,7 +41,9 @@ void PresetBadge::paint (juce::Graphics& g)
     auto bounds = getLocalBounds().toFloat();
 
     g.setColour (theme::current().raised);
-    g.fillRoundedRectangle (bounds, 10.0f);
+    g.fillRoundedRectangle (bounds, theme::current().smallRadius);
+    g.setColour (theme::current().line);
+    g.drawRoundedRectangle (bounds, theme::current().smallRadius, 1.0f);
 
     juce::String text;
     if (currentNumber > 0)
@@ -58,7 +61,8 @@ void PresetBadge::paint (juce::Graphics& g)
                     : juce::Font (juce::FontOptions (bounds.getHeight() * fontScale, juce::Font::bold));
     g.setFont (font);
 
-    g.setColour (currentNumber > 0 || snapshotIndex >= 0 ? juce::Colours::white : juce::Colours::grey);
+    g.setColour (currentNumber > 0 || snapshotIndex >= 0 ? OpenGuitarMultiFxLookAndFeel::getAppAccentColour()
+                                                        : theme::current().textDim);
     g.drawText (text, bounds, juce::Justification::centred);
 }
 

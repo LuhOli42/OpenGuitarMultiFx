@@ -51,15 +51,23 @@ Source of truth in code: `Source/UI/Theme.{h,cpp}` (`theme::Tokens`). This table
 
 ### Category palette (card 2)
 
-| Category | Colour | Category | Colour |
-|---|---|---|---|
-| Amp | `#FF6A3D` | Reverb | `#3DD6D0` |
-| Amp + Cab | `#FF8A4C` | Pitch | `#3BD68A` |
-| Drive/Boost | `#F6C343` | Filter/FX | `#9BE15D` |
-| Distortion | `#FF9F1C` | Neural | `#E85CF0` |
-| Fuzz | `#FF5C5C` | Cab | `#FFA45C` |
-| Dynamics | `#FF4D6D` | Utility | `#9AA3B2` |
-| Modulation | `#A77BFF` | Delay | `#4C8DFF` |
+| Category (`EffectRegistry::Category`) | Colour |
+|---|---|
+| amps | `#FF6A3D` |
+| overdriveBoost | `#F6C343` |
+| distortion | `#FF9A2E` |
+| fuzz | `#FF7A59` |
+| dynamics | `#FF4D6A` |
+| modulation | `#A77BFF` |
+| delay | `#4C8DFF` |
+| reverb | `#2CC6E3` |
+| pitch | `#3BD68A` |
+| pitchFilter | `#8BD93B` |
+| neural | `#E35BFF` |
+| cabs | `#FF8E5E` |
+| utility | `#8D94A5` |
+
+These are the prototype's `CAT` values, implemented as `EffectRegistry::categoryColour()`.
 
 The prototype's `CAT` table is the reference if this list drifts.
 
