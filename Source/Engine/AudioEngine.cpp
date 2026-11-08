@@ -162,11 +162,24 @@ juce::String AudioEngine::openDevice()
             // is exactly what a fresh initialiseWithDefaultDevices() would
             // pick for this device, computed by JUCE itself rather than
             // carried over from a different device.
+            // JUCE's "default channels" still means the count passed to
+            // initialiseWithDefaultDevices() (2 here), which would leave
+            // Out 3/4+ advertised by ALSA but never opened. Probe the USB
+            // device and open every sane output pair explicitly instead.
+            int outputChannelCount = 2;
+            if (auto* probe = type->createDevice (usbOutputName, usbInputName))
+            {
+                outputChannelCount = juce::jmin (maxSaneChannelCount, probe->getOutputChannelNames().size());
+                delete probe;
+            }
+
             juce::AudioDeviceManager::AudioDeviceSetup setup;
             setup.inputDeviceName = usbInputName;
             setup.outputDeviceName = usbOutputName;
             setup.useDefaultInputChannels = true;
-            setup.useDefaultOutputChannels = true;
+            setup.useDefaultOutputChannels = false;
+            setup.outputChannels.clear();
+            setup.outputChannels.setRange (0, juce::jmax (2, outputChannelCount), true);
 
             const auto switchErr = deviceManager.setAudioDeviceSetup (setup, true);
             if (switchErr.isNotEmpty())
