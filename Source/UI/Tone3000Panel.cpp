@@ -457,9 +457,14 @@ int Tone3000Panel::layoutSections (juce::Rectangle<int> bounds)
     appearanceSectionLabel.setBounds (area.removeFromTop (20));
     area.removeFromTop (6);
     auto themeRow = area.removeFromTop (touch::minTapTarget);
+    // Equal thirds, not fixed 150px slots: OverlayHost clamps the card to 92%
+    // of the window and MainWindow has no minimum size, so fixed slots can
+    // squeeze the last button under touch::minTapTarget on a narrow window.
+    const int themeButtonWidth = juce::jmax (0, (themeRow.getWidth() - 8 * ((int) themeButtons.size() - 1))
+                                                   / (int) juce::jmax (1, themeButtons.size()));
     for (auto* b : themeButtons)
     {
-        b->setBounds (themeRow.removeFromLeft (150));
+        b->setBounds (themeRow.removeFromLeft (themeButtonWidth));
         themeRow.removeFromLeft (8);
     }
     area.removeFromTop (4);
