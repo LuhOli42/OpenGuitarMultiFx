@@ -4,6 +4,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "TouchSizing.h"
+
 #include <array>
 #include <functional>
 
@@ -22,15 +24,12 @@ namespace openguitarmultifx
 
     Every cell is touch::minTapTarget wide -- the bar should be given
     8 * touch::minTapTarget of width by whoever lays it out, and
-    touch::minTapTarget + hintHeight of height (cells on the bottom, the
-    discoverability caption on top).
+    getPreferredHeight() of height.
 
-    The hint line (audit #93 item 3): the long-press-edit gesture used to
-    be entirely invisible -- same hidden-gesture pattern MIDI Learn and
-    the preset browser use, but those at least had nowhere else to
-    advertise it. A caption this small is read-once chrome, not a
-    persistent control, so it gets one line at the top rather than a
-    competing button row.
+    The permanent "tap -- hold" legend is gone with the visual redesign
+    (docs/ui/REDESIGN.md card 2: the snapshot name lives inside the cell);
+    the only caption left is the transient MIDI-learn override, which
+    appears above the cells while a footswitch is being learned.
 */
 class SnapshotBar : public juce::Component,
                     private juce::Timer
@@ -73,8 +72,10 @@ public:
 
     static constexpr int longPressMs = 550;
 
-    /** Height of the "tap -- hold" caption strip above the cells. */
-    static constexpr int hintHeight = 16;
+    /** Cells are touch::minTapTarget tall; while a pedal is being learned
+        (captionOverride) a caption strip appears above them. */
+    static constexpr int captionHeight = 16;
+    int getPreferredHeight() const noexcept { return touch::minTapTarget + (captionOverride.isNotEmpty() ? captionHeight : 0); }
 
 private:
     int cellIndexAt (juce::Point<int> position) const;

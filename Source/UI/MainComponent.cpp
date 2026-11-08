@@ -409,7 +409,7 @@ void MainComponent::addEffect (const juce::String& registryName, int targetGridS
     for (auto& snapshot : snapshots)
         snapshot.blocks.insert (snapshot.blocks.begin() + arrayIndex, snapshotxml::captureBlock (*raw));
 
-    auto block = std::make_unique<EffectBlockComponent> (*raw);
+    auto block = std::make_unique<EffectBlockComponent> (*raw, registry.categoryColour (registry.categoryForKey (registryName)));
     block->gridSlot = slot;
     // Tapping the already-open block closes the drawer instead of just
     // re-opening it on itself -- same block, second tap, gone.
@@ -1098,7 +1098,7 @@ void MainComponent::applyRenderQuality (EffectRegistry::OversamplingQuality qual
         graveyard.push_back ({ std::move (old), juce::Time::getMillisecondCounter() });
         chain[(size_t) i] = std::move (fresh);
 
-        auto block = std::make_unique<EffectBlockComponent> (*raw);
+        auto block = std::make_unique<EffectBlockComponent> (*raw, registry.categoryColour (registry.categoryForKey (key)));
         block->gridSlot = slot;
         block->onClicked = [this, raw] { selectBlock (selectedProcessor == raw ? nullptr : raw); };
         block->onDragEnded = [this] (EffectBlockComponent& b) { handleBlockDragEnded (b); };
@@ -2259,7 +2259,8 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         if (blockXml->getTagName() != "Block")
             continue;
 
-        auto processor = registry.create (blockXml->getStringAttribute ("key"));
+        const auto blockKey = blockXml->getStringAttribute ("key");
+        auto processor = registry.create (blockKey);
         loadedBlockGroups.push_back (processor != nullptr ? processor->getParameters() : nullptr);
         loadedBlocks.push_back (processor.get());
         if (processor == nullptr)
@@ -2272,7 +2273,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         auto* raw = processor.get();
         chain.push_back (std::move (processor));
 
-        auto block = std::make_unique<EffectBlockComponent> (*raw);
+        auto block = std::make_unique<EffectBlockComponent> (*raw, registry.categoryColour (registry.categoryForKey (blockKey)));
         // Falls back to `blocks.size()` (this block's about-to-be array
         // index) for presets saved before gridSlot existed -- same
         // contiguous layout they always had.
@@ -2468,7 +2469,7 @@ void MainComponent::timerCallback()
     if (deviceOk != audioDeviceOk)
     {
         audioDeviceOk = deviceOk;
-        cpuLabel.setColour (juce::Label::textColourId, audioDeviceOk ? juce::Colours::white : juce::Colours::orange);
+        cpuLabel.setColour (juce::Label::textColourId, audioDeviceOk ? theme::current().text : juce::Colours::orange);
         retryAudioButton.setVisible (! audioDeviceOk); // Retry only exists while there's nothing to retry against
         resized();
     }
@@ -2578,7 +2579,7 @@ void MainComponent::resized()
     // SnapshotBar::hintHeight -- audit #93 item 3).
     snapshotBar.setBounds (top.removeFromLeft (snapshotxml::maxSnapshots * touch::minTapTarget)
                              .withSizeKeepingCentre (snapshotxml::maxSnapshots * touch::minTapTarget,
-                                                     touch::minTapTarget + SnapshotBar::hintHeight));
+                                                     snapshotBar.getPreferredHeight()));
     top.removeFromLeft (8);
     if (quickSaveButton.isVisible())
     {
@@ -2773,7 +2774,7 @@ void MainComponent::paint (juce::Graphics& g)
     // 2026-09-11 ("falta fechar a linha, tamos com um gap ali... deixa
     // mais redondo"). Same white-at-30% line language as ChainContainer's
     // own lines throughout.
-    g.setColour (juce::Colours::white.withAlpha (0.3f));
+    g.setColour (theme::current().lineStrong);
 
     // No inset needed any more: the scrollbar lives at the window's right
     // edge (chainScrollBar), not on top of the viewport's own, so nothing

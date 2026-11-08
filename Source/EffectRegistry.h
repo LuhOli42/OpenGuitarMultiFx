@@ -69,6 +69,14 @@ public:
     /** User-facing tab label ("Amps", "Pitch/Filter", ...). */
     static juce::String categoryDisplayName (Category category);
 
+    /** The saturated palette the chain blocks use for their category colour
+        (docs/ui/REDESIGN.md, "Category palette"). One colour per Category --
+        the per-effect getAccentColour() hues stay for anything that needs a
+        per-model distinction, but the block chrome (stripe/fill/icon tint)
+        reads at category level so a board of 30 blocks stays scannable.
+        Values mirror the prototype's CAT table. */
+    static juce::Colour categoryColour (Category category) noexcept;
+
     /** Every category, in the order the browser's rail shows them. */
     static const std::vector<Category>& categoriesInDisplayOrder();
     std::unique_ptr<EffectProcessor> create (const juce::String& key) const;

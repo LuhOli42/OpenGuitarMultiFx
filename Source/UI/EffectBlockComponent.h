@@ -21,7 +21,10 @@ class EffectBlockComponent : public juce::Component,
                              private juce::Timer
 {
 public:
-    explicit EffectBlockComponent (EffectProcessor& processorToShow);
+    /** `categoryColourIn` is EffectRegistry::categoryColour() of the key this
+        block was created from -- the block chrome (icon tint, stripe, fill)
+        reads at category level, see docs/ui/REDESIGN.md. */
+    EffectBlockComponent (EffectProcessor& processorToShow, juce::Colour categoryColourIn);
 
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& event) override;
@@ -64,8 +67,23 @@ public:
     std::function<void (EffectBlockComponent&)> onDragEnded;
 
     EffectProcessor& processor;
+    juce::Colour categoryColour;
 
 private:
+    /** White-on-transparent render of the current icon variant, tinted per
+        paint into `tintedIcon`/`glowIcon`. drawIcon() only ever draws the
+        white SVG stroke, so tinting has to happen on the pixels -- the
+        images are tiny and only re-rendered when the tint colour or the
+        head/cab icon variant changes (both rare, UI thread only). */
+    juce::Image baseIcon, tintedIcon, glowIcon;
+    juce::Colour tintedFor;
+    bool iconCacheValid = false;
+    bool glowCacheValid = false;
+    int iconVariantCached = -1;
+
+    void ensureIconImages();
+    juce::Image renderBaseIcon() const;
+    static juce::Image tintIconImage (const juce::Image& base, juce::Colour tint, float alphaScale);
     void timerCallback() override;
     bool showsHeadOnlyIcon() const;
 
