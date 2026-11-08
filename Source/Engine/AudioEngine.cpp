@@ -387,10 +387,10 @@ void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph,
             newGraph->prepare (sr, bs, 2);
     }
 
-    // Publish the routes first so the graph swap's fade is already looking
-    // at the same pair table the new lanes will render into.
-    outputMatrixSlot.publish (std::move (newOutputMatrix));
-    graphSlot.publish (std::move (newGraph));
+    auto bundle = std::make_unique<SignalGraphBundle>();
+    bundle->graph = std::move (newGraph);
+    bundle->outputMatrix = std::move (newOutputMatrix);
+    graphSlot.publish (std::move (bundle));
 }
 
 void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
@@ -424,7 +424,9 @@ void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples
     // array, no allocation on the audio thread).
     if (! swapFadeRanThisBlock)
     {
-        spillover.process (buffer, sampleRate.load (std::memory_order_relaxed));
+        spillover.process (buffer, sampleRate.load (std::memory_order_relaxed),
+                           currentOutputMatrix, selectedOutputPairStart.load (std::memory_order_relaxed),
+                           buffer.getNumChannels());
     }
     else if (swapFadeSamplesThisBlock < numSamples)
     {
@@ -432,15 +434,19 @@ void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples
         for (int ch = 0; ch < chs; ++ch)
             spillSlicePtrs[ch] = buffer.getWritePointer (ch) + swapFadeSamplesThisBlock;
         juce::AudioBuffer<float> remainder (spillSlicePtrs, chs, numSamples - swapFadeSamplesThisBlock);
-        spillover.process (remainder, sampleRate.load (std::memory_order_relaxed));
+        spillover.process (remainder, sampleRate.load (std::memory_order_relaxed),
+                           currentOutputMatrix, selectedOutputPairStart.load (std::memory_order_relaxed),
+                           remainder.getNumChannels());
     }
 }
 
 void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples)
 {
-    auto* graph = graphSlot.currentRaw();
-    auto* outputMatrix = outputMatrixSlot.currentRaw();
+    auto* bundle = graphSlot.currentRaw();
+    auto* graph = bundle != nullptr ? bundle->graph.get() : nullptr;
+    auto* outputMatrix = bundle != nullptr ? bundle->outputMatrix.get() : nullptr;
     const auto now = juce::Time::getHighResolutionTicks();
+    currentOutputMatrix = (outputMatrix != nullptr && outputMatrix->hasRoutes()) ? outputMatrix : nullptr;
 
     if (graph != activeGraph)
     {
@@ -562,8 +568,9 @@ void AudioEngine::detectCallbackRealtime() noexcept
     // process this block: the published graph and every spill (active +
     // the pending hand-off). The swap fade's retired graph never runs --
     // its recorded tail is replayed instead -- so it needs no stamp.
-    if (auto* g = graphSlot.currentRaw())
-        g->setAudioCallerIsRealtime (realtime);
+    if (auto* bundle = graphSlot.currentRaw())
+        if (auto* g = bundle->graph.get())
+            g->setAudioCallerIsRealtime (realtime);
     spillover.setAudioCallerIsRealtime (realtime);
 }
 
@@ -596,8 +603,9 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 
     // The graph that is already published was prepared for whatever rate the device ran at before (a rate change, a re-opened device);
     // the callback is not running yet, so preparing it here is safe. A processor whose rate did not change ignores the call.
-    if (auto* graph = graphSlot.currentRaw())
-        graph->prepare (device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples(), 2);
+    if (auto* bundle = graphSlot.currentRaw())
+        if (auto* graph = bundle->graph.get())
+            graph->prepare (device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples(), 2);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -747,7 +755,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 void AudioEngine::timerCallback()
 {
     graphSlot.sweep();
-    outputMatrixSlot.sweep();
     spillover.sweep();
     masterEq.sweep();
 

@@ -47,9 +47,6 @@ public:
         /** Process-on-silence scratch, sized once on the control thread --
             the audio thread wraps a non-owning view of it, never resizes. */
         juce::AudioBuffer<float> scratch;
-        /** Lane -> pair table for this unit's own SignalGraph, built with it
-            on the control thread. */
-        OutputMatrix outputMatrix;
         /** Channels the unit's graph was prepared for (usually stereo); the
             scratch may be wider when it doubles as the device-output view. */
         int graphChannels = 0;
@@ -96,7 +93,6 @@ public:
     {
         std::vector<EffectProcessor*> processors;
         bool writesDeviceOutput = false;
-        int outputPairStart = 0; // first channel of the pair, like RowRouting::deviceOutputPair
     };
 
     /** Control thread. Builds the unit for an outgoing preset: keeps the
@@ -137,7 +133,9 @@ public:
         new chain's output. Never allocates, never blocks: the pending
         pick-up is a single atomic exchange, `active` is a fixed array, and
         `scratch` is pre-sized. */
-    void process (juce::AudioBuffer<float>& buffer, double sampleRate) noexcept;
+    void process (juce::AudioBuffer<float>& buffer, double sampleRate,
+                  const OutputMatrix* routes = nullptr, int legacyPairStart = 0,
+                  int deviceChannelCount = -1) noexcept;
 
     /** Audio thread only. Stamps the audio callback's realtime status
         onto every graph the callback can reach this block (active units

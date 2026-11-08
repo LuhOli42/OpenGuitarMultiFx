@@ -2206,7 +2206,6 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     for (int lane = 0; lane < numRows; ++lane)
     {
         spillLanes[(size_t) lane].writesDeviceOutput = outgoingRouting[(size_t) lane].toDevice;
-        spillLanes[(size_t) lane].outputPairStart = outgoingRouting[(size_t) lane].deviceOutputPair;
         for (int target = lane + 1; target < numRows; ++target)
             if (outgoingRouting[(size_t) lane].toRows[(size_t) target])
                 spillConnections.push_back ({ lane, target });

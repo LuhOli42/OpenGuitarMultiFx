@@ -99,11 +99,6 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
     unit->graph = std::move (graph);
     unit->owners = std::move (owners);
     unit->silenceWindowSeconds = EffectProcessor::trailsSilenceSeconds + longestWait;
-
-    for (int lane = 0; lane < SignalGraph::numLanes; ++lane)
-        if (lanes[(size_t) lane].writesDeviceOutput)
-            unit->outputMatrix.addRoute (lane, lanes[(size_t) lane].outputPairStart);
-
     return unit;
 }
 
@@ -138,10 +133,15 @@ void Spillover::setAudioCallerIsRealtime (bool isRealtime) noexcept
             g->setAudioCallerIsRealtime (isRealtime);
 }
 
-void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate) noexcept
+void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate,
+                         const OutputMatrix* routes, int legacyPairStart,
+                         int deviceChannelCount) noexcept
 {
     const int numSamples = buffer.getNumSamples();
-    const int numChannels = buffer.getNumChannels();
+    const int deviceChannels = deviceChannelCount >= 0
+                                   ? juce::jmin (deviceChannelCount, buffer.getNumChannels())
+                                   : buffer.getNumChannels();
+    const bool useRoutes = routes != nullptr && routes->hasRoutes();
 
     if (auto* unit = pending.exchange (nullptr, std::memory_order_acquire))
     {
@@ -161,8 +161,7 @@ void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate) no
     {
         auto* unit = active[(size_t) i];
         const int n = juce::jmin (numSamples, unit->scratch.getNumSamples());
-        const int ch = juce::jmin (numChannels, unit->scratch.getNumChannels());
-
+        const int ch = juce::jmin (deviceChannels, unit->scratch.getNumChannels());
         const int graphChannels = juce::jmin (unit->graphChannels, ch);
 
         if (n <= 0 || ch <= 0 || graphChannels <= 0 || unit->graph == nullptr)
@@ -171,19 +170,41 @@ void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate) no
             continue;
         }
 
-        // A non-owning view over the pre-sized scratch: the outgoing chain
-        // is fed silence -- the live input belongs to the new preset.
-        juce::AudioBuffer<float> input (unit->scratch.getArrayOfWritePointers(), graphChannels, n);
-        input.clear();
-        unit->graph->processLanes (input);
+        if (useRoutes)
+        {
+            // With an active matrix the tail joins the current preset's
+            // lane->pair table; lanes the new preset does not route stay silent.
+            juce::AudioBuffer<float> input (unit->scratch.getArrayOfWritePointers(), graphChannels, n);
+            input.clear();
+            unit->graph->processLanes (input);
 
-        juce::AudioBuffer<float> spillOut (unit->scratch.getArrayOfWritePointers(), ch, n);
-        unit->outputMatrix.render (spillOut, *unit->graph);
+            juce::AudioBuffer<float> spillOut (unit->scratch.getArrayOfWritePointers(), ch, n);
+            routes->render (spillOut, *unit->graph);
 
-        for (int c = 0; c < ch; ++c)
-            buffer.addFrom (c, 0, spillOut, c, 0, n);
+            for (int c = 0; c < ch; ++c)
+                buffer.addFrom (c, 0, spillOut, c, 0, n);
 
-        unit->updateFinished (peakMagnitude (spillOut, n), n, sampleRate);
+            unit->updateFinished (peakMagnitude (spillOut, n), n, sampleRate);
+        }
+        else
+        {
+            // Legacy single-pair fallback: keep the tail inside the same pair
+            // the silencer will keep, so it is not cut with the other channels.
+            const int tailChannels = juce::jmin (2, ch);
+            juce::AudioBuffer<float> tail (unit->scratch.getArrayOfWritePointers(), tailChannels, n);
+            tail.clear();
+            unit->graph->process (tail);
+
+            const int pairStart = juce::jlimit (0, ch - 1, legacyPairStart);
+            for (int c = 0; c < tailChannels; ++c)
+            {
+                const int dstChannel = pairStart + c;
+                if (dstChannel < ch)
+                    buffer.addFrom (dstChannel, 0, tail, c, 0, n);
+            }
+
+            unit->updateFinished (peakMagnitude (tail, n), n, sampleRate);
+        }
     }
 
     // Retire the finished. done is stored only when a unit drops out of
