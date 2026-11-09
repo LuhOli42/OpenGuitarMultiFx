@@ -72,10 +72,14 @@ public:
 
     static constexpr int longPressMs = 550;
 
-    /** Cells are touch::minTapTarget tall; while a pedal is being learned
-        (captionOverride) a caption strip appears above them. */
+    /** Cells are 62x56 like the prototype's .snap buttons; while a pedal is
+        being learned (captionOverride) a caption strip appears above them. */
     static constexpr int captionHeight = 16;
-    int getPreferredHeight() const noexcept { return touch::minTapTarget + (captionOverride.isNotEmpty() ? captionHeight : 0); }
+    static constexpr int cellWidth = 62;
+    static constexpr int cellGap = 6;
+    static constexpr int cellHeight = 56;
+    int getPreferredHeight() const noexcept { return cellHeight + (captionOverride.isNotEmpty() ? captionHeight : 0); }
+    int getPreferredWidth() const noexcept;
 
 private:
     int cellIndexAt (juce::Point<int> position) const;

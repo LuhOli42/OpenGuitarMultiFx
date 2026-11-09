@@ -116,15 +116,10 @@ void EffectBlockComponent::ensureIconImages()
 
 juce::Image EffectBlockComponent::renderBaseIcon() const
 {
-    // Rendered at 2x the largest on-screen size (~100px icon on a 122px
-    // block) so the tinted draw stays crisp on the 10" panel's DPI.
     constexpr int size = 128;
     juce::Image img (juce::Image::ARGB, size, size, true);
     juce::Graphics g (img);
 
-    // Every cab-capable amp draws amp.svg (head+cabinet); with its Cab
-    // selector Off it is just a head -- same rule the old direct-draw
-    // paint() used.
     if (showsHeadOnlyIcon())
     {
         static const std::unique_ptr<juce::Drawable> headIcon =
@@ -156,22 +151,17 @@ juce::Image EffectBlockComponent::tintIconImage (const juce::Image& base, juce::
 
 void EffectBlockComponent::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat().reduced (3.0f);
+    auto bounds = getLocalBounds().toFloat().reduced (2.0f);
     const bool bypassed = processor.isBypassed();
     const auto accent = categoryColour;
     const auto& t = theme::current();
-
     const bool filledStyle = t.blockStyle == theme::BlockStyle::filled;
     const bool stripeStyle = t.blockStyle == theme::BlockStyle::topStripe;
 
-    // --- Card body -------------------------------------------------------
     if (filledStyle)
     {
-        // Bold Blocks: the whole block IS the category colour while active;
-        // bypass drops back to a surface card with a coloured outline.
         g.setColour (bypassed ? t.surface : accent);
         g.fillRoundedRectangle (bounds, t.radius);
-
         if (bypassed)
         {
             g.setColour (accent);
@@ -180,14 +170,11 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     }
     else if (stripeStyle)
     {
-        // Console: flat graphite, small corners.
         g.setColour (bypassed ? t.surface : t.raised);
         g.fillRoundedRectangle (bounds, t.smallRadius);
         g.setColour (t.line);
         g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
 
-        // The 7px category stripe on top replaces the plain top border --
-        // clipped to the rounded card so its ends follow the corner radius.
         juce::Path clip;
         clip.addRoundedRectangle (bounds, t.smallRadius);
         g.saveState();
@@ -198,21 +185,20 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     }
     else
     {
-        // Stage Glass: dark glass card with a light vertical gradient.
         g.setGradientFill (juce::ColourGradient (t.raised, bounds.getX(), bounds.getY(),
-                                                 t.surface, bounds.getX(), bounds.getBottom(), false));
+                                                 t.surface, bounds.getRight(), bounds.getBottom(), false));
         g.fillRoundedRectangle (bounds, t.radius);
         g.setColour (t.line);
         g.drawRoundedRectangle (bounds, t.radius, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.04f));
+        g.drawLine (bounds.getX() + t.radius, bounds.getY() + 1.0f,
+                    bounds.getRight() - t.radius, bounds.getY() + 1.0f, 1.0f);
     }
 
-    // --- Selection -------------------------------------------------------
     if (selected)
     {
         if (filledStyle)
         {
-            // Double ring: a background-coloured gap, then the text ring --
-            // reads as a sticker outline on any category colour.
             g.setColour (t.background);
             g.drawRoundedRectangle (bounds.expanded (3.0f), t.radius + 3.0f, 3.0f);
             g.setColour (t.text);
@@ -220,21 +206,20 @@ void EffectBlockComponent::paint (juce::Graphics& g)
         }
         else if (stripeStyle)
         {
-            // White outline floating just off the card.
-            g.setColour (t.text.withAlpha (0.9f));
+            g.setColour (juce::Colours::white.withAlpha (0.9f));
             g.drawRoundedRectangle (bounds.expanded (2.0f), t.smallRadius + 2.0f, 2.0f);
         }
         else
         {
-            // Category-colour border plus a soft outer glow approximation.
-            g.setColour (accent.withAlpha (0.22f));
-            g.drawRoundedRectangle (bounds.expanded (4.0f), t.radius + 4.0f, 6.0f);
+            g.setColour (accent.withAlpha (0.30f));
+            g.drawRoundedRectangle (bounds.expanded (5.0f), t.radius + 5.0f, 7.0f);
+            g.setColour (accent.withAlpha (0.18f));
+            g.drawRoundedRectangle (bounds.expanded (9.0f), t.radius + 9.0f, 12.0f);
             g.setColour (accent);
-            g.drawRoundedRectangle (bounds, t.radius, 2.0f);
+            g.drawRoundedRectangle (bounds.expanded (1.0f), t.radius + 1.0f, 2.0f);
         }
     }
 
-    // --- Stage Glass LED (top-left) --------------------------------------
     if (t.blockStyle == theme::BlockStyle::glow)
     {
         const auto ledCentre = juce::Point<float> (bounds.getX() + 9.0f, bounds.getY() + 9.0f);
@@ -245,32 +230,28 @@ void EffectBlockComponent::paint (juce::Graphics& g)
         }
         else
         {
-            g.setColour (accent.withAlpha (0.28f));
-            g.fillEllipse (ledCentre.x - 7.0f, ledCentre.y - 7.0f, 14.0f, 14.0f);
+            g.setColour (accent.withAlpha (0.30f));
+            g.fillEllipse (ledCentre.x - 8.0f, ledCentre.y - 8.0f, 16.0f, 16.0f);
+            g.setColour (accent.withAlpha (0.45f));
+            g.fillEllipse (ledCentre.x - 5.0f, ledCentre.y - 5.0f, 10.0f, 10.0f);
             g.setColour (accent);
             g.fillEllipse (ledCentre.x - 3.5f, ledCentre.y - 3.5f, 7.0f, 7.0f);
         }
     }
 
-    // --- Icon + name -----------------------------------------------------
-    auto iconArea = bounds.reduced (6.0f);
-    // Keep clear of the LED dot on Stage Glass.
+    auto iconArea = bounds.reduced (7.0f);
     if (t.blockStyle == theme::BlockStyle::glow)
-        iconArea = iconArea.withTrimmedLeft (10.0f);
-    auto nameArea = iconArea.removeFromBottom (26.0f);
-    iconArea.removeFromBottom (2.0f);
+        iconArea = iconArea.withTrimmedLeft (8.0f);
+    auto nameArea = iconArea.removeFromBottom (24.0f);
+    iconArea.removeFromBottom (4.0f);
 
-    const float squareSize = juce::jmin (iconArea.getWidth(), iconArea.getHeight()) * 0.82f;
+    const float squareSize = juce::jmin (iconArea.getWidth(), iconArea.getHeight()) * 0.78f;
     const auto squareIconArea = iconArea.withSizeKeepingCentre (squareSize, squareSize);
 
-    // Icon tint per theme: Stage Glass tints with the category colour (dim
-    // when bypassed), Console keeps it in the text colour, Bold Blocks puts
-    // dark ink on the filled card and the category colour on the bypass
-    // outline.
     juce::Colour iconTint;
     bool wantGlowIcon = false;
     if (filledStyle)
-        iconTint = bypassed ? accent : accent.contrasting (juce::Colours::black, juce::Colours::white);
+        iconTint = bypassed ? accent : juce::Colour (0xff111111);
     else if (stripeStyle)
         iconTint = bypassed ? t.textDim : t.text;
     else
@@ -284,29 +265,36 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     {
         tintedIcon = tintIconImage (baseIcon, iconTint, 1.0f);
         tintedFor = iconTint;
-        glowIcon = wantGlowIcon ? tintIconImage (baseIcon, iconTint, 0.25f) : juce::Image();
+        glowIcon = wantGlowIcon ? tintIconImage (baseIcon, iconTint, 0.22f) : juce::Image();
     }
 
     if (glowIcon.isValid())
-        g.drawImage (glowIcon, squareIconArea.expanded (7.0f), juce::RectanglePlacement::centred, false);
+    {
+        g.drawImage (glowIcon, squareIconArea.expanded (10.0f), juce::RectanglePlacement::centred, false);
+        g.drawImage (glowIcon, squareIconArea.expanded (5.0f), juce::RectanglePlacement::centred, false);
+    }
     g.drawImage (tintedIcon, squareIconArea, juce::RectanglePlacement::centred, false);
 
-    // Name: Console and Bold Blocks set it in caps (theme token), Stage
-    // Glass keeps the processor's own casing. Bold Blocks reuses the icon
-    // tint (ink on the fill, category colour on the bypass outline).
     juce::String name = processor.getName();
     if (t.uppercaseLabels)
         name = name.toUpperCase();
 
     g.setColour (filledStyle ? iconTint : (bypassed ? t.textDim : t.text));
-    g.setFont (18.0f);
-    g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::centred, 2);
+    g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+    g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::centred, 2, 0.8f);
+
+    if (bypassed)
+    {
+        g.setColour (t.textMuted);
+        g.setFont (juce::FontOptions (8.5f, juce::Font::bold));
+        g.drawText ("OFF", bounds.reduced (5.0f, 3.0f).toNearestInt(), juce::Justification::bottomRight);
+    }
 
     if (pedalCc >= 0 || pedalArmed)
     {
         g.setColour (pedalArmed ? juce::Colours::orange
                                 : (filledStyle ? iconTint.withAlpha (0.8f) : juce::Colours::white.withAlpha (bypassed ? 0.5f : 0.8f)));
-        g.setFont (juce::FontOptions (10.0f));
+        g.setFont (juce::FontOptions (9.0f));
         g.drawText (pedalArmed ? juce::String ("...") : "CC" + juce::String (pedalCc),
                     bounds.reduced (5.0f, 3.0f).toNearestInt(), juce::Justification::topRight);
     }

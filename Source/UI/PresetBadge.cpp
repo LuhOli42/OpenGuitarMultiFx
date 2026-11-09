@@ -24,6 +24,16 @@ void PresetBadge::setSnapshotIndex (int index)
     }
 }
 
+void PresetBadge::setPresetText (juce::String name, juce::String subtitle)
+{
+    if (presetName != name || presetSubtitle != subtitle)
+    {
+        presetName = std::move (name);
+        presetSubtitle = std::move (subtitle);
+        repaint();
+    }
+}
+
 void PresetBadge::setDisplayTypeface (juce::Typeface::Ptr typeface)
 {
     displayTypeface = std::move (typeface);
@@ -38,32 +48,63 @@ void PresetBadge::mouseUp (const juce::MouseEvent& event)
 
 void PresetBadge::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat();
+    const bool console = t.blockStyle == theme::BlockStyle::topStripe;
 
-    g.setColour (theme::current().raised);
-    g.fillRoundedRectangle (bounds, theme::current().smallRadius);
-    g.setColour (theme::current().line);
-    g.drawRoundedRectangle (bounds, theme::current().smallRadius, 1.0f);
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
 
-    juce::String text;
+    juce::String numberText;
     if (currentNumber > 0)
-        text = juce::String (currentNumber);
+        numberText = juce::String (currentNumber);
     if (snapshotIndex >= 0)
-        text += juce::String::charToString ((juce::juce_wchar) ('A' + snapshotIndex));
-    if (text.isEmpty())
-        text = juce::String::fromUTF8 ("\xe2\x80\x94");
+        numberText += juce::String::charToString ((juce::juce_wchar) ('A' + snapshotIndex));
+    if (numberText.isEmpty())
+        numberText = "-";
 
-    // The number used to be a single glyph; two ("3B") or three ("12B")
-    // characters need progressively smaller type to fit the same slot.
-    const auto fontScale = text.length() <= 1 ? 0.6f : (text.length() == 2 ? 0.5f : 0.42f);
-    auto font = displayTypeface != nullptr
-                    ? juce::Font (juce::FontOptions (bounds.getHeight() * fontScale).withTypeface (displayTypeface))
-                    : juce::Font (juce::FontOptions (bounds.getHeight() * fontScale, juce::Font::bold));
-    g.setFont (font);
+    const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+    const float tileX = bounds.getX() + 6.0f;
+    const float tileY = bounds.getCentreY() - 22.0f;
+    auto tile = juce::Rectangle<float> (tileX, tileY, 58.0f, 44.0f);
 
-    g.setColour (currentNumber > 0 || snapshotIndex >= 0 ? OpenGuitarMultiFxLookAndFeel::getAppAccentColour()
-                                                        : theme::current().textDim);
-    g.drawText (text, bounds, juce::Justification::centred);
+    if (console)
+    {
+        g.setColour (t.raisedHigh);
+        g.fillRoundedRectangle (tile, 2.0f);
+        g.setColour (accent);
+        g.fillRect (tile.getX(), tile.getY() + 2.0f, 4.0f, tile.getHeight() - 4.0f);
+    }
+    else
+    {
+        g.setColour (accent);
+        g.fillRoundedRectangle (tile, juce::jmax (2.0f, t.smallRadius - 3.0f));
+    }
+
+    g.setFont (displayTypeface != nullptr
+                   ? juce::Font (juce::FontOptions (22.0f).withTypeface (displayTypeface))
+                   : juce::Font (juce::FontOptions (22.0f, juce::Font::bold)));
+    g.setColour (console ? t.text : juce::Colours::black);
+    g.drawText (numberText, tile.toNearestInt(), juce::Justification::centred);
+
+    auto textArea = bounds.withTrimmedLeft (tile.getRight() - bounds.getX() + 12.0f)
+                        .withTrimmedRight (14.0f)
+                        .reduced (0.0f, 4.0f);
+
+    const auto name = presetName.isNotEmpty() ? presetName : juce::String ("No preset loaded");
+    g.setColour (t.text);
+    g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
+    auto nameArea = textArea.removeFromTop (juce::jmin (24.0f, textArea.getHeight() * 0.58f));
+    g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::centredLeft, 1, 0.75f);
+
+    if (presetSubtitle.isNotEmpty())
+    {
+        g.setColour (t.textMuted);
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawFittedText (presetSubtitle, textArea.toNearestInt(), juce::Justification::centredLeft, 1, 0.8f);
+    }
 }
 
 } // namespace openguitarmultifx
