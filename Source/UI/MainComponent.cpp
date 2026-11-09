@@ -210,6 +210,19 @@ MainComponent::MainComponent()
     parameterPanel.onPreferredHeightChanged = [this] { resized(); };
     parameterPanel.setModelsDirectory (getModelsDirectory());
     parameterPanel.setTone3000Manager (tone3000);
+    parameterPanel.setEffectRegistry (registry);
+    parameterPanel.setBlockLocationProvider ([this] (EffectProcessor* processor)
+    {
+        for (auto* block : blocks)
+            if (&block->processor == processor)
+            {
+                const int row = block->gridSlot / juce::jmax (1, chainColumns);
+                const int col = block->gridSlot % juce::jmax (1, chainColumns);
+                return "Linha " + juce::String (row + 1) + ", slot " + juce::String (col + 1);
+            }
+        return juce::String();
+    });
+    parameterPanel.onCloseRequested = [this] { selectBlock (nullptr); };
     parameterPanel.onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     parameterPanel.onPopOverlay  = [this] { overlayHost.popOverlay(); };
 

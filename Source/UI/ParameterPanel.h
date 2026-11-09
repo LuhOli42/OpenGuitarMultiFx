@@ -18,6 +18,8 @@
 namespace openguitarmultifx
 {
 
+class EffectRegistry;
+
 /**
     Generic parameter editor: whatever processor is selected, this walks
     its getParameters() group and builds one knob per
@@ -47,6 +49,18 @@ public:
 
     void setTone3000Manager (Tone3000Manager& managerToUse) { tone3000 = &managerToUse; }
 
+    /** Registry metadata for the drawer subtitle (category/subcategory) and
+        the prototype's category-coloured drawer chrome. Optional: without
+        it the panel falls back to the processor's own accent colour. */
+    void setEffectRegistry (const EffectRegistry& registryToUse) noexcept { effectRegistry = &registryToUse; }
+
+    /** MainComponent supplies "Line x, slot y" for the selected block; the
+        drawer has no way to know grid placement on its own. */
+    void setBlockLocationProvider (std::function<juce::String (EffectProcessor*)> provider)
+    {
+        blockLocationProvider = std::move (provider);
+    }
+
     void setProcessor (EffectProcessor* processorToEdit);
     void refresh(); // call periodically -- picks up status text changes (e.g. after a model load)
 
@@ -60,10 +74,11 @@ public:
 
     void resized() override;
     void paint (juce::Graphics& g) override;
-    /** Title/status colours cache theme tokens -- re-read them on a theme switch. */
+    /** Title/subtitle colours cache theme tokens -- re-read them on a theme switch. */
     void lookAndFeelChanged() override;
 
     std::function<void (EffectProcessor*)> onRemoveRequested;
+    std::function<void()> onCloseRequested;
 
     /** The knob page changed, so the height the drawer wants may have changed with it. */
     std::function<void()> onPreferredHeightChanged;
@@ -75,9 +90,9 @@ public:
     std::function<void (std::unique_ptr<juce::Component>)> onPushOverlay;
     std::function<void()> onPopOverlay;
 
-    /** "Learn MIDI CC..." was chosen from a knob's long-press menu.
-        MainComponent owns what this actually means (arm/cancel/clear) --
-        see its wiring. */
+    /** "Learn MIDI CC..." was chosen from a knob's long-press menu or the
+        drawer's MIDI button. MainComponent owns what this actually means
+        (arm/cancel/clear) -- see its wiring. */
     std::function<void (juce::AudioParameterFloat*)> onMidiLearnRequested;
     /** -1 if unbound, else the bound CC number -- queried only when the
         long-press menu is about to open, to word its "Clear MIDI Mapping
@@ -94,21 +109,37 @@ private:
     void openTone3000Search();
     void openTone3000SearchForSlot (int slot);
     void showMidiLearnMenu (juce::AudioParameterFloat* param);
+    void showMidiLearnMenuForProcessor();
     void showPage (int page);
     void refreshLabelStyles();
+    void updateSubtitle();
+    struct SliderRow;
     std::vector<size_t> visibleSliders() const;
+    int contentHeightForRow (const SliderRow& row) const;
     void cycleTempoSync (juce::AudioParameterFloat* param);
     void showValueKeypadFor (juce::Slider* knob);
 
     EffectProcessor* current = nullptr;
     juce::File modelsDir;
     Tone3000Manager* tone3000 = nullptr;
+    const EffectRegistry* effectRegistry = nullptr;
+    std::function<juce::String (EffectProcessor*)> blockLocationProvider;
 
-    juce::Label titleLabel, statusLabel;
-    juce::ToggleButton bypassToggle { "Bypassed" };
-    juce::TextButton browseInstalledButton { "Browse installed..." };
-    juce::TextButton searchTone3000Button { "Search TONE3000..." };
-    juce::TextButton removeButton { "Remove" };
+    /** The prototype's 50px category-tinted icon tile in the drawer header. */
+    class HeaderIcon : public juce::Component
+    {
+    public:
+        void setProcessor (EffectProcessor* processorToUse) noexcept { processor = processorToUse; repaint(); }
+        void paint (juce::Graphics& g) override;
+    private:
+        EffectProcessor* processor = nullptr;
+        std::unique_ptr<juce::Drawable> ampHeadIcon;
+    };
+
+    HeaderIcon headerIcon;
+    juce::Label titleLabel, subtitleLabel;
+    juce::String subtitleBase;
+
     /** A knob's parameter name label, long-pressable to reach MIDI Learn --
         completely invisible until pressed and held, per explicit user
         request ("deixa escondido essa funcao"): no button, no persistent
@@ -141,50 +172,44 @@ private:
     {
     public:
         PageTabButton (const juce::String& name) : juce::TextButton (name) {}
-
-        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
-        {
-            const auto& t = theme::current();
-            const bool on = getToggleState();
-            const auto accent = findColour (OpenGuitarMultiFxLookAndFeel::accentColourId);
-            auto visual = getLocalBounds().toFloat().reduced (4.0f, 4.0f);
-            const float corner = juce::jmax (1.0f, t.smallRadius - 3.0f);
-
-            if (on)
-            {
-                if (t.blockStyle == theme::BlockStyle::filled)
-                {
-                    g.setColour (down ? accent.darker (0.15f) : accent);
-                    g.fillRoundedRectangle (visual, corner);
-                }
-                else
-                {
-                    g.setColour (down ? t.raisedHigh.brighter (0.08f) : t.raisedHigh);
-                    g.fillRoundedRectangle (visual, corner);
-                    g.setColour (accent);
-                    g.fillRect (visual.getX() + 3.0f, visual.getBottom() - 3.0f,
-                                visual.getWidth() - 6.0f, 3.0f);
-                }
-            }
-            else if (highlighted || down)
-            {
-                g.setColour (t.raisedHigh.withAlpha (down ? 0.55f : 0.3f));
-                g.fillRoundedRectangle (visual, corner);
-            }
-
-            const auto textColour = on
-                ? (t.blockStyle == theme::BlockStyle::filled ? accent.contrasting (t.background, t.text) : t.text)
-                : t.textMuted;
-            g.setColour (textColour.withAlpha (down && ! on ? 0.8f : 1.0f));
-            g.setFont (juce::Font (13.0f, on ? juce::Font::bold : juce::Font::plain));
-            g.drawText (getButtonText(), visual.toNearestInt(), juce::Justification::centred);
-        }
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
     };
 
+    /** The prototype's "Ligado" rocker: a 66x36 visual switch inside a
+        48px-high touch target (the visual is shorter than the hit area,
+        never the other way around). `on` means the effect is LIVE, so the
+        panel writes bypassed = !on. */
+    class BypassSwitch : public juce::Button
+    {
+    public:
+        BypassSwitch() : juce::Button ({}) {}
+        void setOn (bool shouldBeOn) { on = shouldBeOn; repaint(); }
+        bool isOn() const noexcept { return on; }
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
+        std::function<void()> onChange;
+    private:
+        bool on = true;
+    };
+
+    // Public only so the file-local glyph painter can name PillButton::Glyph.
+public:
+    class PillButton : public juce::Button
+    {
+    public:
+        enum class Glyph { none, switchModel, midi, cloud, trash, close };
+        PillButton (const juce::String& text, Glyph glyphIn) : juce::Button (text), glyph (glyphIn) {}
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
+        void setGlyph (Glyph glyphIn) { glyph = glyphIn; repaint(); }
+    private:
+        Glyph glyph;
+    };
+
+private:
     /** One tab per knob page, only for an effect with more than one page of
         knobs (EffectProcessor::getParameterPages()) -- replaces the old
         single cycling "Page 2 >" button (redesign card 3). */
     std::vector<std::unique_ptr<PageTabButton>> pageTabs;
+    std::vector<juce::String> pageLabels;
     int currentPage = 0, pageCount = 1;
 
     /** A rotary knob with a hidden fine-tune drag (audit #93 item 1): hold
@@ -220,6 +245,8 @@ private:
             juce::Slider::mouseUp (event);
         }
 
+        void paint (juce::Graphics& g) override;
+
     private:
         void timerCallback() override
         {
@@ -245,142 +272,6 @@ private:
             }
         }
 
-        void paint (juce::Graphics& g) override
-        {
-            if (! isRotary())
-            {
-                juce::Slider::paint (g);
-                if (fineDragArmed)
-                {
-                    g.setColour (findColour (juce::Slider::rotarySliderFillColourId).brighter (0.6f));
-                    g.drawEllipse (getLocalBounds().toFloat().reduced (1.5f), 2.0f);
-                }
-                return;
-            }
-
-            const auto& t = theme::current();
-            const auto accent = findColour (juce::Slider::rotarySliderFillColourId);
-            const bool glowStyle = t.blockStyle == theme::BlockStyle::glow;
-            const bool discStyle = t.blockStyle == theme::BlockStyle::filled;
-            const auto bounds = getLocalBounds().toFloat();
-            const auto centre = bounds.getCentre();
-            const float outerRadius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f - 2.0f;
-            const float lineW = discStyle ? 9.0f : (glowStyle ? 7.0f : 4.0f);
-            const float arcRadius = discStyle ? outerRadius - lineW * 0.5f + 1.0f
-                                              : (glowStyle ? outerRadius - lineW * 0.5f
-                                                           : outerRadius - 8.0f);
-
-            const auto rotary = getRotaryParameters();
-            const float startAngle = rotary.startAngleRadians;
-            const float endAngle = rotary.endAngleRadians;
-            const float value = (float) valueToProportionOfLength (getValue());
-            const float toAngle = startAngle + value * (endAngle - startAngle);
-            const auto pointAt = [&] (float angle, float radius)
-            {
-                const float a = angle - juce::MathConstants<float>::halfPi;
-                return juce::Point<float> (centre.x + radius * std::cos (a),
-                                           centre.y + radius * std::sin (a));
-            };
-            const auto strokeArc = [&g] (juce::Point<float> c, float radius, float from, float to,
-                                         float thickness, juce::Colour colour,
-                                         juce::PathStrokeType::EndCapStyle caps = juce::PathStrokeType::rounded)
-            {
-                juce::Path arc;
-                arc.addCentredArc (c.x, c.y, radius, radius, 0.0f, from, to, true);
-                g.setColour (colour);
-                g.strokePath (arc, juce::PathStrokeType (thickness, juce::PathStrokeType::curved, caps));
-            };
-
-            if (discStyle)
-            {
-                g.setColour (t.raised);
-                g.fillEllipse (centre.x - outerRadius, centre.y - outerRadius,
-                               outerRadius * 2.0f, outerRadius * 2.0f);
-                if (isEnabled())
-                    strokeArc (centre, arcRadius, startAngle, toAngle, lineW, accent,
-                               juce::PathStrokeType::butt);
-            }
-            else
-            {
-                if (! glowStyle)
-                {
-                    for (int i = 0; i <= 10; ++i)
-                    {
-                        const float a = startAngle + (endAngle - startAngle) * (float) i / 10.0f;
-                        const auto inner = pointAt (a, outerRadius - 5.0f);
-                        const auto outer = pointAt (a, outerRadius - 0.5f);
-                        g.setColour (t.textDim);
-                        g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.5f);
-                    }
-                }
-
-                strokeArc (centre, arcRadius, startAngle, endAngle, lineW, t.raisedHigh,
-                           glowStyle ? juce::PathStrokeType::rounded : juce::PathStrokeType::butt);
-                if (isEnabled())
-                {
-                    if (glowStyle)
-                        strokeArc (centre, arcRadius, startAngle, toAngle, lineW * 2.6f,
-                                   accent.withAlpha (0.22f));
-                    strokeArc (centre, arcRadius, startAngle, toAngle, lineW, accent,
-                               glowStyle ? juce::PathStrokeType::rounded : juce::PathStrokeType::butt);
-                }
-            }
-
-            if (discStyle)
-            {
-                const float discRadius = outerRadius * 0.66f;
-                g.setColour (isEnabled() ? accent : t.textDim);
-                g.fillEllipse (centre.x - discRadius, centre.y - discRadius,
-                               discRadius * 2.0f, discRadius * 2.0f);
-                const auto tip = pointAt (toAngle, discRadius * 0.85f);
-                juce::Path pointer;
-                pointer.startNewSubPath (centre.x, centre.y);
-                pointer.lineTo (tip.x, tip.y);
-                g.setColour ((isEnabled() ? accent : t.textDim).contrasting (juce::Colours::black, juce::Colours::white));
-                g.strokePath (pointer, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved,
-                                                              juce::PathStrokeType::rounded));
-            }
-            else
-            {
-                const float faceRadius = glowStyle ? arcRadius - lineW * 0.5f - 7.0f
-                                                   : arcRadius - 9.0f;
-                const auto face = juce::Rectangle<float> (centre.x - faceRadius, centre.y - faceRadius,
-                                                           faceRadius * 2.0f, faceRadius * 2.0f);
-                if (glowStyle)
-                {
-                    g.setGradientFill (juce::ColourGradient (t.raisedHigh.brighter (0.18f),
-                                                              centre.x, centre.y,
-                                                              t.surface.brighter (0.04f),
-                                                              centre.x + faceRadius, centre.y, true));
-                    g.fillEllipse (face);
-                    g.setColour (t.text.withAlpha (0.08f));
-                    g.drawEllipse (face, 1.0f);
-                }
-                else
-                {
-                    g.setColour (t.raised);
-                    g.fillEllipse (face);
-                    g.setColour (t.lineStrong);
-                    g.drawEllipse (face, 1.0f);
-                }
-
-                const auto tip = pointAt (toAngle, faceRadius * (glowStyle ? 0.88f : 0.95f));
-                juce::Path pointer;
-                pointer.startNewSubPath (centre.x, centre.y);
-                pointer.lineTo (tip.x, tip.y);
-                g.setColour (isEnabled() ? (glowStyle ? t.text : accent) : t.textDim);
-                g.strokePath (pointer, juce::PathStrokeType (glowStyle ? 3.5f : 2.5f,
-                                                              juce::PathStrokeType::curved,
-                                                              juce::PathStrokeType::rounded));
-            }
-
-            if (fineDragArmed)
-            {
-                g.setColour (accent.brighter (0.6f));
-                g.drawEllipse (bounds.reduced (1.5f), 2.0f);
-            }
-        }
-
         bool fineDragArmed = false;
         int coarseSensitivity = 250;
         std::optional<juce::MouseEvent> lastDrag;
@@ -388,29 +279,16 @@ private:
         static constexpr int fineFactor = 8;
     };
 
-    /** The value readout under a knob, drawn like the JUCE text box it
-        replaced (dark field + centred value) but tap-to-open the on-screen
-        keypad -- the target device has no OS keyboard for the original
-        editable box (audit #93 item 1). */
+    /** The value readout under a knob, drawn like the prototype's .kv
+        button (rounded field + centred value) but tap-to-open the
+        on-screen keypad -- the target device has no OS keyboard for the
+        original editable box (audit #93 item 1). The visual is 36px high
+        centred in a 48px touch target. */
     class ValueFieldButton : public juce::Button
     {
     public:
         ValueFieldButton() : juce::Button ({}) {}
-
-        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
-        {
-            const auto& t = theme::current();
-            auto bounds = getLocalBounds().toFloat();
-            const float corner = t.blockStyle == theme::BlockStyle::topStripe ? 3.0f
-                                                                              : juce::jmin (t.smallRadius, 9.0f);
-            g.setColour (t.raised);
-            g.fillRoundedRectangle (bounds, corner);
-            g.setColour ((down || highlighted ? t.lineStrong : t.line).withAlpha (down ? 0.9f : 1.0f));
-            g.drawRoundedRectangle (bounds.reduced (0.5f), corner, 1.0f);
-            g.setColour (t.text.withAlpha (down ? 1.0f : 0.95f));
-            g.setFont (juce::Font (15.0f, juce::Font::bold));
-            g.drawText (getButtonText(), bounds.toNearestInt(), juce::Justification::centred);
-        }
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
     };
 
     struct SliderRow
@@ -431,6 +309,7 @@ private:
         std::unique_ptr<ValueFieldButton> valueBox;
         juce::AudioParameterFloat* param = nullptr;
         int page = 0;
+        int selectorSteps = 0;
         bool active = true; // the processor's isParameterActive() at the last layout: false = hidden
         bool fader = false; // drawn as a vertical fader (prefersFader)
 
@@ -452,7 +331,7 @@ private:
     std::vector<SliderRow> sliders;
 
     // The knob grid scrolls instead of clipping -- this drawer is capped at
-    // 1/4 of the window (see MainComponent), which a processor with a lot
+    // 45% of the window (see MainComponent), which a processor with a lot
     // of parameters can easily be taller than. knobGridHost is sized to fit
     // every row of knobs and lives inside knobViewport, which is what's
     // actually capped to the drawer's bounds.
@@ -461,6 +340,12 @@ private:
 
     juce::Rectangle<int> pageTabsBounds;
     juce::Colour effectAccent = juce::Colours::transparentBlack;
+    BypassSwitch bypassSwitch;
+    PillButton modelButton { "Trocar modelo", PillButton::Glyph::switchModel };
+    PillButton midiButton { "MIDI", PillButton::Glyph::midi };
+    PillButton tone3000Button { "TONE3000", PillButton::Glyph::cloud };
+    PillButton removeButton { {}, PillButton::Glyph::trash };
+    PillButton closeButton { {}, PillButton::Glyph::close };
 };
 
 } // namespace openguitarmultifx
