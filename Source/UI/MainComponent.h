@@ -120,6 +120,8 @@ private:
         preset list dialog and an incoming MIDI Program Change call this,
         rather than each having its own copy of load->apply->update-display. */
     void loadPresetByName (const juce::String& name);
+    /** Previous/next preset for the top-bar chevrons -- wraps through the library by preset number. */
+    void stepPresetBy (int delta);
     void updatePresetDisplay();
     /** The loaded preset's state as it was right after loading/saving it -- what isPresetDirty() compares against.
         Taken from buildPresetXml(), not from the file, so it reflects exactly what this build would write. */
@@ -388,12 +390,11 @@ private:
     int ticksUntilDirtyCheck = 0;
     static constexpr int dirtyCheckIntervalTicks = 10; // x 50ms timer: rebuilding the preset XML twice a second is plenty
 
-    // presetBadge shows the preset NUMBER + snapshot letter, big (see
-    // PresetBadge.h -- this is a stage instrument, has to be readable from
-    // a few feet away, not just a toolbar). titleLabel shows its NAME,
-    // same size class. Tapping the badge opens the preset browser (see
-    // showPresetsPanel()).
+    // presetBadge shows the prototype's .preset chip (number + snapshot letter,
+    // name, bank/setlist subtitle). titleLabel is kept for the no-audio warning
+    // path but is no longer part of the prototype top bar.
     PresetBadge presetBadge;
+    juce::Label titleLabel { {}, "No preset loaded" };
     // Snapshots A-H of the live chain (docs/PresetsAndSnapshots.md, stage
     // 3): each stores every block's bypass + float params, kept in the same
     // chain order so `snapshots[i].blocks[j]` is chain[j]'s saved state in
@@ -410,21 +411,40 @@ private:
     // selectSnapshot(). This is the whole snapshot UI for stage 3; the
     // per-snapshot editor (names/colours/knob markers) is a later card.
     SnapshotBar snapshotBar;
-    // Saves the currently loaded preset in place, no dialog -- only visible
-    // once one is actually loaded (see updatePresetDisplay()).
-    juce::TextButton quickSaveButton { "Save" };
 
     // Undo / Redo (user request 2026-11-01) over whole-board snapshots -- see UndoHistory. Polled from timerCallback().
     UndoHistory undoHistory;
-    juce::TextButton undoButton { "Undo" }, redoButton { "Redo" };
+    /** Prototype .ib/.chev chrome: raised cell, hairline border, drawn glyph. */
+    class IconButton : public juce::Button
+    {
+    public:
+        enum class Glyph { chevronLeft, chevronRight, undo, redo, live };
+        explicit IconButton (Glyph glyphIn) : juce::Button ({}) , glyph (glyphIn) {}
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
+    private:
+        Glyph glyph;
+    };
+
+    /** Prototype .cpu pill: "CPU 23%" plus the 3px load bar. */
+    class CpuPill : public juce::Component
+    {
+    public:
+        void setCpu (float average01, bool deviceOk);
+        void paint (juce::Graphics& g) override;
+    private:
+        float cpu = 0.0f;
+        bool ok = true;
+    };
+
+    IconButton presetPrevButton { IconButton::Glyph::chevronLeft };
+    IconButton presetNextButton { IconButton::Glyph::chevronRight };
+    IconButton undoButton { IconButton::Glyph::undo };
+    IconButton redoButton { IconButton::Glyph::redo };
     int undoPollCounter = 0;
     void pollUndoHistory();
     void restoreUndoState (const juce::XmlElement& target);
-    juce::Label titleLabel { {}, "No preset loaded" };
-    juce::Label cpuLabel;
-    /** The retry action next to the cpuLabel's NO AUDIO DEVICE warning
-        (audit #93 item 2) -- hidden while a device is open, see
-        timerCallback()/resized(). */
+    CpuPill cpuPill;
+    /** The retry action shown while no audio device is open -- see timerCallback()/resized(). */
     juce::TextButton retryAudioButton { "Retry" };
 
     /** Settings gear button, drawn (audit #93 item 6): the "..." glyph it
@@ -441,7 +461,7 @@ private:
     GearButton settingsButton;
 
     /** Top-bar LIVE button: opens the stage-mode LiveOverlay card. */
-    juce::TextButton liveButton { "LIVE" };
+    IconButton liveButton { IconButton::Glyph::live };
     /** Non-owning: OverlayHost owns the card; nulled by its onDestroyed. */
     LiveOverlay* liveOverlay = nullptr;
 

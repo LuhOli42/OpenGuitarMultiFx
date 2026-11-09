@@ -26,28 +26,22 @@ namespace openguitarmultifx
 
 namespace
 {
-    constexpr int blockGap = 8; // fixed horizontal gap between columns -- see MainComponent::rowGap for the (dynamic) vertical one
+    constexpr int blockGap = 21; // prototype .slots space-between pitch minus the 108px block
 
-    // I/O selectors are a fraction of a block's footprint -- they hold two
-    // short lines of text, not an icon, and don't need a block-sized tile.
-    constexpr int ioWidth = 64;
-    constexpr int ioHeight = 58;
+    // Prototype .ep tiles are 96x96; cableLane is the 22px padding the
+    // prototype keeps between an endpoint and the first/last block.
+    constexpr int ioWidth = 96;
+    constexpr int ioHeight = 96;
+    constexpr int cableLane = 22;
 
-    // Extra width in each gutter, OUTSIDE the endpoint tile, purely for the
-    // vertical part of a row-to-row connector to run down. Without it a link
-    // that skips a row has nowhere to go but straight through that row's
-    // endpoint tile (per user report 2026-09-11, "ele fica sobreposto").
-    constexpr int cableLane = 20;
-
-    // Taller than touch::minTapTarget -- this is where the preset
-    // number/name live, and per the user's explicit ask they need to be
-    // readable from a few feet away on a stage, not just tappable.
-    constexpr int topBarHeight = 92;
-
-    // Tuner/BPM-tap/meters bar pinned at the bottom -- see FooterBar.h.
-    // Bumped alongside topBarHeight per user request 2026-09-10 ("a parte
-    // em vermelho maior e a parte em roxo tbm" -- top bar and footer).
-    constexpr int footerHeight = 92;
+    // Prototype frame: 1280x800 device, .tb 76px, .grid top:88 bottom:96,
+    // .ft 84px. The 12px gaps are what keep the three bands from touching.
+    constexpr int topBarHeight = 76;
+    constexpr int footerHeight = 84;
+    constexpr int gridTop = 88;
+    constexpr int gridBottom = 96;
+    constexpr int gridSide = 16;
+    constexpr int chainTopPadding = 24;
 
     /** <paramID>_ch<N>: ChannelKnobMemory's serialized per-channel slots.
         Derived mirror state -- the snapshot format deliberately stores
@@ -145,8 +139,11 @@ MainComponent::MainComponent()
     };
     presetBadge.setSnapshotIndex (currentSnapshot);
 
-    addChildComponent (quickSaveButton); // only shown once a preset is actually loaded -- see updatePresetDisplay()
-    quickSaveButton.onClick = [this] { if (currentPresetName.isNotEmpty()) savePresetAs (currentPresetName); };
+    presetPrevButton.onClick = [this] { stepPresetBy (-1); };
+    presetNextButton.onClick = [this] { stepPresetBy (1); };
+    addAndMakeVisible (presetPrevButton);
+    addAndMakeVisible (presetNextButton);
+
     for (auto* b : { &undoButton, &redoButton })
     {
         addAndMakeVisible (*b);
@@ -155,23 +152,14 @@ MainComponent::MainComponent()
     undoButton.onClick = [this] { if (auto* target = undoHistory.undo()) restoreUndoState (*target); };
     redoButton.onClick = [this] { if (auto* target = undoHistory.redo()) restoreUndoState (*target); };
 
-    addAndMakeVisible (titleLabel);
-    titleLabel.setFont (juce::Font (juce::FontOptions (42.0f, juce::Font::bold)));
-
     // The heavier display weight (Sora ExtraBold), not just "bold" --
     // readable from a few feet away is the actual requirement here (this
-    // is a stage instrument), see PresetBadge.h and AGENT.md's UI/UX
-    // Design Philosophy. Falls back to ordinary bold if the LookAndFeel
+    // is a stage instrument). Falls back to ordinary bold if the LookAndFeel
     // set up in Main.cpp somehow isn't a OpenGuitarMultiFxLookAndFeel.
     if (auto* laf = dynamic_cast<OpenGuitarMultiFxLookAndFeel*> (&juce::LookAndFeel::getDefaultLookAndFeel()))
-    {
         presetBadge.setDisplayTypeface (laf->getExtraBoldTypeface());
-        snapshotBar.setDisplayTypeface (laf->getExtraBoldTypeface());
-        titleLabel.setFont (juce::Font (juce::FontOptions (42.0f).withTypeface (laf->getExtraBoldTypeface())));
-    }
 
-    addAndMakeVisible (cpuLabel);
-    cpuLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (cpuPill);
 
     addAndMakeVisible (settingsButton);
     settingsButton.onClick = [this] { showSettingsPanel(); };
@@ -273,13 +261,6 @@ MainComponent::MainComponent()
     // its USB-switch path can fail on both legs and still return true. The only
     // honest liveness signal is whether a device is open right now.
     audioDeviceOk = audioEngine.getDeviceManager().getCurrentAudioDevice() != nullptr;
-    if (! audioDeviceOk)
-    {
-        titleLabel.setText ("Audio device failed to open", juce::dontSendNotification);
-        // cpuLabel carries the persistent warning (timerCallback rewrites it every tick anyway,
-        // and updatePresetDisplay() overwrites titleLabel on the first preset refresh).
-        cpuLabel.setColour (juce::Label::textColourId, juce::Colours::orange);
-    }
     // The warning used to be all it offered; now there's an action too
     // (audit #93 item 2). Set here, not only on timer transitions -- a
     // failed first open means the transition check never fires.
@@ -772,7 +753,7 @@ void MainComponent::layoutChain()
     {
         const int row = block->gridSlot / chainColumns;
         const int col = block->gridSlot % chainColumns;
-        block->setBounds (col * (blockWidth + blockGap), row * (blockHeight + rowGap), blockWidth, blockHeight);
+        block->setBounds (col * (blockWidth + blockGap), chainTopPadding + row * (blockHeight + rowGap), blockWidth, blockHeight);
         bounds.emplace_back (block->getBounds().toFloat());
         maxSlot = juce::jmax (maxSlot, block->gridSlot);
     }
@@ -787,8 +768,8 @@ void MainComponent::layoutChain()
     // + drawerScrollPadding: whatever the open drawer currently overlays
     // needs to stay reachable by scrolling -- see the member's comment for
     // why this has to be reapplied HERE rather than added on afterward.
-    chainContainer.setSize (viewportWidth, drawnRows * (blockHeight + rowGap) - rowGap + drawerScrollPadding);
-    chainContainer.setRowMetrics (chainColumns, blockWidth, blockHeight, blockGap, rowGap);
+    chainContainer.setSize (viewportWidth, chainTopPadding + drawnRows * (blockHeight + rowGap) - rowGap + drawerScrollPadding);
+    chainContainer.setRowMetrics (chainColumns, blockWidth, blockHeight, blockGap, rowGap, chainTopPadding);
     chainContainer.setBlockBounds (std::move (bounds));
 
     // IN always sits at row 0; OUT sits at whichever row is currently the
@@ -857,8 +838,8 @@ void MainComponent::layoutChain()
             if (! routing.toRows[(size_t) target])
                 continue;
 
-            const int fromY = row * (blockHeight + rowGap) + blockHeight / 2;
-            const int toY = target * (blockHeight + rowGap) + blockHeight / 2;
+            const int fromY = chainTopPadding + row * (blockHeight + rowGap) + blockHeight / 2;
+            const int toY = chainTopPadding + target * (blockHeight + rowGap) + blockHeight / 2;
             const int dir = toY > fromY ? 1 : -1;
             crossings.push_back (fromY + dir * (blockHeight / 2 + rowGap / 2)); // same gap paint() uses
         }
@@ -1522,6 +1503,34 @@ void MainComponent::loadPresetByName (const juce::String& name)
     }
 }
 
+void MainComponent::stepPresetBy (int delta)
+{
+    const auto entries = presetLibrary.entries();
+    if (entries.empty())
+        return;
+
+    int index = -1;
+    for (int i = 0; i < (int) entries.size(); ++i)
+        if (entries[(size_t) i].name == currentPresetName)
+        {
+            index = i;
+            break;
+        }
+
+    if (index < 0 && currentPresetNumber > 0)
+        for (int i = 0; i < (int) entries.size(); ++i)
+            if (entries[(size_t) i].number == currentPresetNumber)
+            {
+                index = i;
+                break;
+            }
+
+    const int size = (int) entries.size();
+    const int next = index < 0 ? (delta > 0 ? 0 : size - 1)
+                               : (index + delta % size + size) % size;
+    loadPresetAskingToSave (entries[(size_t) next].name);
+}
+
 void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
 {
     // Both branches below hop to the message thread via callAsync before
@@ -1889,7 +1898,7 @@ void MainComponent::applySnapshotAccent()
 
     const auto& name = snapshots[(size_t) currentSnapshot].name;
     footerBar.setActiveSnapshot (snapshotxml::letterFor (currentSnapshot)
-                                     + (name.isNotEmpty() ? juce::String (" ") + juce::String::fromUTF8 ("\xc2\xb7") + " " + name
+                                     + (name.isNotEmpty() ? juce::String (" - ") + name
                                                           : juce::String()),
                                  colour);
 
@@ -2121,16 +2130,31 @@ void MainComponent::updatePresetDisplay()
     }
     snapshotBar.setLabels (names, colours);
 
-    // "Lead Show · Solo": the live snapshot's name, when it has one, so the player can read which part is on.
-    const auto& snapshotName = snapshots[(size_t) currentSnapshot].name;
-    titleLabel.setText (currentPresetName.isNotEmpty()
-                            ? currentPresetName + (snapshotName.isNotEmpty() ? juce::String::fromUTF8 (" \xc2\xb7 ") + snapshotName : juce::String())
-                                  + (presetDirty ? " *" : "")
-                            : "No preset loaded",
-                         juce::dontSendNotification);
-    quickSaveButton.setVisible (currentPresetName.isNotEmpty());
+    juce::String subtitle;
+    if (currentPresetName.isNotEmpty())
+    {
+        for (const auto& entry : presetLibrary.entries())
+            if (entry.name == currentPresetName)
+            {
+                juce::StringArray parts;
+                if (entry.bankSlot.bank >= 0)
+                    parts.add ("Bank " + juce::String (entry.bankSlot.bank + 1));
+                juce::StringArray setlists;
+                for (const auto& member : entry.setlists)
+                    setlists.add ("'" + member.name + "'");
+                if (setlists.size() > 0)
+                    parts.add ("Setlist " + setlists.joinIntoString (", "));
+                subtitle = parts.joinIntoString (" - ");
+                break;
+            }
+    }
+
+    juce::String presetName = currentPresetName.isNotEmpty()
+                                  ? currentPresetName + (presetDirty ? " *" : juce::String())
+                                  : "No preset loaded";
+    presetBadge.setPresetText (presetName, subtitle);
     applySnapshotAccent();
-    resized(); // quickSaveButton's visibility changes how much room titleLabel gets
+    resized(); // snapshotCount can change the scene strip's width
     refreshLiveOverlay();
 }
 
@@ -2477,19 +2501,11 @@ void MainComponent::timerCallback()
     if (deviceOk != audioDeviceOk)
     {
         audioDeviceOk = deviceOk;
-        cpuLabel.setColour (juce::Label::textColourId, audioDeviceOk ? theme::current().text : juce::Colours::orange);
         retryAudioButton.setVisible (! audioDeviceOk); // Retry only exists while there's nothing to retry against
         resized();
     }
 
-    // Average and worst-block, not one number: see AudioEngine::getPeakCpuUsage().
-    // roundToInt, not String(double, 0): JUCE reads 0 decimal places as "shortest representation" and prints every digit.
-    if (audioDeviceOk)
-        cpuLabel.setText ("CPU " + juce::String (juce::roundToInt (audioEngine.getCurrentCpuUsage() * 100.0)) + "%  peak "
-                              + juce::String (juce::roundToInt (audioEngine.getPeakCpuUsage() * 100.0)) + "%",
-                          juce::dontSendNotification);
-    else
-        cpuLabel.setText ("NO AUDIO DEVICE", juce::dontSendNotification);
+    cpuPill.setCpu (audioDeviceOk ? (float) audioEngine.getCurrentCpuUsage() : 0.0f, audioDeviceOk);
 
     footerBar.setLevels (audioEngine.getInputLevel(), audioEngine.getOutputLevel());
 
@@ -2532,20 +2548,132 @@ void MainComponent::timerCallback()
     }
 }
 
+void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+
+    g.setColour (down ? t.raisedHigh : t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
+    if (highlighted && isEnabled())
+    {
+        g.setColour (t.lineStrong.withAlpha (0.6f));
+        g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 1.0f);
+    }
+
+    juce::Colour ink = (glyph == Glyph::chevronLeft || glyph == Glyph::chevronRight) ? t.textMuted : t.text;
+    if (! isEnabled())
+        ink = ink.withAlpha (0.45f);
+    g.setColour (ink);
+
+    const auto c = bounds.getCentre();
+    const float arm = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.22f;
+    const juce::PathStrokeType stroke (2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    juce::Path path;
+
+    switch (glyph)
+    {
+        case Glyph::chevronLeft:
+            path.startNewSubPath (c.x + arm * 0.55f, c.y - arm);
+            path.lineTo (c.x - arm * 0.55f, c.y);
+            path.lineTo (c.x + arm * 0.55f, c.y + arm);
+            break;
+        case Glyph::chevronRight:
+            path.startNewSubPath (c.x - arm * 0.55f, c.y - arm);
+            path.lineTo (c.x + arm * 0.55f, c.y);
+            path.lineTo (c.x - arm * 0.55f, c.y + arm);
+            break;
+        case Glyph::undo:
+            path.startNewSubPath (c.x + arm * 0.7f, c.y);
+            path.lineTo (c.x - arm * 0.7f, c.y);
+            path.startNewSubPath (c.x - arm * 0.2f, c.y - arm * 0.7f);
+            path.lineTo (c.x - arm * 0.7f, c.y);
+            path.lineTo (c.x - arm * 0.2f, c.y + arm * 0.7f);
+            break;
+        case Glyph::redo:
+            path.startNewSubPath (c.x - arm * 0.7f, c.y);
+            path.lineTo (c.x + arm * 0.7f, c.y);
+            path.startNewSubPath (c.x + arm * 0.2f, c.y - arm * 0.7f);
+            path.lineTo (c.x + arm * 0.7f, c.y);
+            path.lineTo (c.x + arm * 0.2f, c.y + arm * 0.7f);
+            break;
+        case Glyph::live:
+            for (int row = 0; row < 2; ++row)
+                for (int col = 0; col < 2; ++col)
+                {
+                    const float x = c.x - arm * 0.9f + (float) col * arm * 1.05f;
+                    const float y = c.y - arm * 0.9f + (float) row * arm * 1.05f;
+                    g.fillRoundedRectangle (juce::Rectangle<float> (x, y, arm * 0.85f, arm * 0.85f), 3.0f);
+                }
+            return;
+    }
+
+    g.strokePath (path, stroke);
+}
+
+void MainComponent::CpuPill::setCpu (float average01, bool deviceOk)
+{
+    cpu = juce::jlimit (0.0f, 1.0f, average01);
+    ok = deviceOk;
+    repaint();
+}
+
+void MainComponent::CpuPill::paint (juce::Graphics& g)
+{
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat();
+
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
+
+    if (! ok)
+    {
+        g.setColour (juce::Colours::orange);
+        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        g.drawText ("NO AUDIO DEVICE", bounds.toNearestInt(), juce::Justification::centred);
+        return;
+    }
+
+    auto textArea = bounds.reduced (12.0f, 10.0f);
+    g.setColour (t.textMuted);
+    g.setFont (juce::FontOptions (10.0f));
+    g.drawText ("CPU", textArea.removeFromLeft (28.0f).toNearestInt(), juce::Justification::centredLeft);
+    g.setColour (t.text);
+    g.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+    g.drawText (juce::String (juce::roundToInt (cpu * 100.0f)) + "%", textArea.toNearestInt(),
+                juce::Justification::centredLeft);
+
+    const auto bar = juce::Rectangle<float> (bounds.getX() + 12.0f, bounds.getBottom() - 11.0f,
+                                             bounds.getWidth() - 24.0f, 3.0f);
+    g.setColour (t.raisedHigh);
+    g.fillRoundedRectangle (bar, 1.5f);
+    g.setColour (juce::Colour (0xff3bd68a));
+    g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * cpu), 1.5f);
+}
+
 void MainComponent::GearButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
-    // Same chrome as every other button (fill + accent border), then the
-    // cog mark on top -- a ring, a hub, and 8 short teeth rotated around
-    // it. No font involved anywhere: the device build ships no system
-    // fonts (see OpenGuitarMultiFxLookAndFeel), which the "..." glyph this
-    // replaces silently needed.
-    getLookAndFeel().drawButtonBackground (g, *this, findColour (juce::TextButton::buttonColourId), highlighted, down);
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (down ? t.raisedHigh : t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
+    if (highlighted && isEnabled())
+    {
+        g.setColour (t.lineStrong.withAlpha (0.6f));
+        g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 1.0f);
+    }
 
-    const auto centre = getLocalBounds().toFloat().getCentre();
-    const float ringR = (float) getWidth() * 0.21f;
-    const float toothLen = (float) getWidth() * 0.13f;
-    const float stroke = (float) getWidth() * 0.055f;
-    g.setColour (findColour (juce::TextButton::textColourOffId).withAlpha (down ? 1.0f : 0.85f));
+    const auto centre = bounds.getCentre();
+    const float ringR = bounds.getWidth() * 0.21f;
+    const float toothLen = bounds.getWidth() * 0.13f;
+    const float stroke = bounds.getWidth() * 0.055f;
+    g.setColour ((down ? t.text : t.text.withAlpha (0.9f)));
 
     for (int i = 0; i < 8; ++i)
     {
@@ -2561,54 +2689,42 @@ void MainComponent::resized()
 {
     overlayHost.setBounds (getLocalBounds());
 
-    auto area = getLocalBounds().reduced (12);
+    auto area = getLocalBounds();
 
-    // Footer (tuner/BPM-tap/meters) is pinned at the very bottom, reserved
-    // BEFORE the drawer's cap math below so the drawer correctly sees less
-    // leftover space with it there -- see FooterBar.h.
-    footerBar.setBounds (area.removeFromBottom (footerHeight));
-    area.removeFromBottom (8);
+    // Prototype bands: .tb 76px, .grid top 88 / bottom 96, .ft 84px.
+    footerBar.setBounds (juce::Rectangle<int> (0, getHeight() - footerHeight, getWidth(), footerHeight));
 
-    // Tall enough for a stage-readable preset number/name (see
-    // topBarHeight's comment) -- cpuLabel/settingsButton/quickSaveButton
-    // don't need to be that tall themselves, just centred within it.
-    auto top = area.removeFromTop (topBarHeight);
-    // 150, not 70: it carries the average AND the worst-block peak now (see timerCallback()).
-    cpuLabel.setBounds (top.removeFromRight (150).withSizeKeepingCentre (150, 20));
-    // Sits between the CPU readout and Settings when the device is dead --
-    // the actionable half of the NO AUDIO DEVICE warning (audit #93).
-    if (retryAudioButton.isVisible())
-        retryAudioButton.setBounds (top.removeFromRight (80).withSizeKeepingCentre (80, touch::minTapTarget));
-    settingsButton.setBounds (top.removeFromRight (touch::minTapTarget)
-                                   .withSizeKeepingCentre (touch::minTapTarget, touch::minTapTarget));
-    top.removeFromRight (8);
-    // A little wider than it used to be -- the badge draws number+letter
-    // ("12B") now, not just a bare number.
-    presetBadge.setBounds (top.removeFromLeft (88));
-    top.removeFromLeft (8);
-    // The A-H snapshot strip, one minTapTarget cell per snapshot, plus
-    // the little "tap -- hold" caption the bar draws on top (see
-    // SnapshotBar::hintHeight -- audit #93 item 3).
-    snapshotBar.setBounds (top.removeFromLeft (snapshotxml::maxSnapshots * touch::minTapTarget)
-                             .withSizeKeepingCentre (snapshotxml::maxSnapshots * touch::minTapTarget,
-                                                     snapshotBar.getPreferredHeight()));
-    top.removeFromLeft (8);
-    if (quickSaveButton.isVisible())
+    const int topY = 10;
+    const int controlH = 56;
+    int x = gridSide;
+    presetPrevButton.setBounds (x, topY, 48, controlH);
+    x += 48 + 12;
+    presetBadge.setBounds (x, topY, 300, controlH);
+    x += 300 + 12;
+    presetNextButton.setBounds (x, topY, 48, controlH);
+    x += 48 + 12;
+    const int snapWidth = snapshotBar.getPreferredWidth();
+    const int snapY = juce::jmax (2, topY + (controlH - snapshotBar.getPreferredHeight()) / 2);
+    snapshotBar.setBounds (x + 6, snapY, snapWidth, snapshotBar.getPreferredHeight());
+    x += 6 + snapWidth + 12;
+
+    int rightX = getWidth() - gridSide;
+    auto placeRight = [&] (juce::Component& c, int w, int h)
     {
-        quickSaveButton.setBounds (top.removeFromRight (80).withSizeKeepingCentre (80, touch::minTapTarget));
-        top.removeFromRight (8);
-    }
-    redoButton.setBounds (top.removeFromRight (72).withSizeKeepingCentre (72, touch::minTapTarget));
-    top.removeFromRight (6);
-    // LIVE opens the stage-mode card -- between Redo and Undo, where the
-    // transport cluster reads left-to-right (redesign card 6).
-    liveButton.setBounds (top.removeFromRight (88).withSizeKeepingCentre (88, touch::minTapTarget));
-    top.removeFromRight (8);
-    undoButton.setBounds (top.removeFromRight (72).withSizeKeepingCentre (72, touch::minTapTarget));
-    top.removeFromRight (8);
-    titleLabel.setBounds (top);
+        rightX -= w;
+        c.setBounds (rightX, topY + (controlH - h) / 2, w, h);
+        rightX -= 12;
+    };
+    placeRight (settingsButton, touch::minTapTarget, touch::minTapTarget);
+    placeRight (cpuPill, 108, 52);
+    if (retryAudioButton.isVisible())
+        placeRight (retryAudioButton, 72, touch::minTapTarget);
+    placeRight (liveButton, touch::minTapTarget, touch::minTapTarget);
+    placeRight (redoButton, touch::minTapTarget, touch::minTapTarget);
+    placeRight (undoButton, touch::minTapTarget, touch::minTapTarget);
 
-    area.removeFromTop (8);
+    area = getLocalBounds().withTrimmedLeft (gridSide).withTrimmedRight (gridSide)
+              .withTrimmedTop (gridTop).withTrimmedBottom (gridBottom);
 
     // `area` now spans the FULL space between the top bar and the footer.
     // The chain always fills ALL of it -- the parameter drawer, when open,
@@ -2634,33 +2750,16 @@ void MainComponent::resized()
     // the way they did when this used to be a separate literal there --
     // that's the exact bug behind "o 8 bloco ta cortando".
     const int scrollBarWidth = 14;
-
-    // Every strip that comes out of `area` before the 8-column grid gets
-    // whatever's left: the scrollbar (+ its 6px gap), then the two gutters
-    // (each ioWidth + cableLane, the cable lane added to keep row-to-row
-    // connectors off the endpoint tiles -- see its member comment) plus
-    // their two 8px gaps. This has to stay in sync with every actual
-    // removeFrom*() below it.
-    const int chainContentWidth = area.getWidth() - (scrollBarWidth + 6) - 2 * (ioWidth + cableLane) - 16;
-    blockWidth = juce::jmax (60, (chainContentWidth - (chainColumns - 1) * blockGap) / chainColumns);
-    blockHeight = blockWidth;
-
-    const int rowsContentHeight = numRows * blockHeight;
-    const int leftoverHeight = area.getHeight() - 12 - rowsContentHeight; // the -12 mirrors the old fudge-padding
-    rowGap = leftoverHeight > (numRows - 1) * blockGap ? leftoverHeight / (numRows - 1) : blockGap;
+    blockWidth = 108;
+    blockHeight = 108;
+    rowGap = 42;
 
     auto chainRow = area;
-    chainRowTop = chainRow.getY();
+    chainRowTop = chainRow.getY() + chainTopPadding;
 
-    // Scrollbar first, off the far right of the window -- everything else
-    // (gutters, viewport) lays out inside what's left.
-    chainScrollBar.setBounds (chainRow.removeFromRight (scrollBarWidth));
-    chainRow.removeFromRight (6);
-
+    chainScrollBar.setBounds (juce::Rectangle<int> (getWidth() - scrollBarWidth, area.getY(), scrollBarWidth, area.getHeight()));
     leftGutterColumn = chainRow.removeFromLeft (ioWidth + cableLane);
-    chainRow.removeFromLeft (8);
     rightGutterColumn = chainRow.removeFromRight (ioWidth + cableLane);
-    chainRow.removeFromRight (8);
     chainViewport.setBounds (chainRow);
     layoutChain();
 
@@ -2773,7 +2872,24 @@ void MainComponent::scrollBarMoved (juce::ScrollBar* bar, double newRangeStart)
 
 void MainComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (theme::current().background);
+    const auto& t = theme::current();
+    g.fillAll (t.background);
+
+    const auto topBar = juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), (float) topBarHeight);
+    if (t.blockStyle == theme::BlockStyle::glow)
+    {
+        juce::ColourGradient topBarGradient (t.surface.darker (0.25f), 0.0f, 0.0f,
+                                              t.background, 0.0f, (float) topBarHeight, false);
+        g.setGradientFill (topBarGradient);
+        g.fillRect (topBar);
+    }
+    else if (t.blockStyle == theme::BlockStyle::topStripe)
+    {
+        g.setColour (t.surface);
+        g.fillRect (topBar);
+    }
+    g.setColour (t.line);
+    g.drawLine (0.0f, (float) topBarHeight - 0.5f, (float) getWidth(), (float) topBarHeight - 0.5f, 1.0f);
 
     // Inter-row connectors: every row before the last occupied one connects
     // to the start of the next with ONE continuous line -- down through the

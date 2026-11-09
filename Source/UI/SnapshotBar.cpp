@@ -71,13 +71,25 @@ void SnapshotBar::setDisplayTypeface (juce::Typeface::Ptr typeface)
     repaint();
 }
 
+int SnapshotBar::getPreferredWidth() const noexcept
+{
+    const int cells = count + (addCellIndex() >= 0 ? 1 : 0);
+    return cells * cellWidth + juce::jmax (0, cells - 1) * cellGap;
+}
+
 int SnapshotBar::cellIndexAt (juce::Point<int> position) const
 {
     const int top = captionOverride.isNotEmpty() ? captionHeight : 0;
     if (position.y < top)
         return -1; // the caption strip isn't a cell
-    const int index = position.x * snapshotxml::maxSnapshots / juce::jmax (1, getWidth());
-    return index >= 0 && (index < count || index == addCellIndex()) ? index : -1;
+
+    const int pitch = cellWidth + cellGap;
+    const int index = position.x / pitch;
+    if (index < 0 || index >= count + (addCellIndex() >= 0 ? 1 : 0))
+        return -1;
+    if (position.x - index * pitch >= cellWidth)
+        return -1;
+    return index < count || index == addCellIndex() ? index : -1;
 }
 
 void SnapshotBar::mouseDown (const juce::MouseEvent& event)
@@ -137,17 +149,18 @@ void SnapshotBar::paint (juce::Graphics& g)
     }
 
     const int cellsTop = learning ? captionHeight : 0;
-    const float cellWidth = (float) getWidth() / (float) snapshotxml::maxSnapshots;
-    const float cellHeight = (float) getHeight() - (float) cellsTop;
+    const float pitch = (float) (cellWidth + cellGap);
+    const float cellHeight = (float) SnapshotBar::cellHeight;
 
     const bool filledStyle = t.blockStyle == theme::BlockStyle::filled;
     const bool stripeStyle = t.blockStyle == theme::BlockStyle::topStripe;
 
     if (const int add = addCellIndex(); add >= 0)
     {
-        const auto cell = juce::Rectangle<float> ((float) add * cellWidth, (float) cellsTop, cellWidth, cellHeight)
-                              .reduced (2.0f);
-        g.setColour (t.textDim);
+        const auto cell = juce::Rectangle<float> ((float) add * pitch, (float) cellsTop, (float) cellWidth, cellHeight);
+        g.setColour (t.raised);
+        g.fillRoundedRectangle (cell, t.smallRadius);
+        g.setColour (t.line);
         const float dashes[] = { 4.0f, 3.0f };
         juce::Path outline;
         outline.addRoundedRectangle (cell.reduced (0.5f), t.smallRadius);
@@ -155,14 +168,14 @@ void SnapshotBar::paint (juce::Graphics& g)
         g.fillPath (outline);
         const auto c = cell.getCentre();
         const float arm = juce::jmin (cell.getWidth(), cell.getHeight()) * 0.2f;
+        g.setColour (t.textDim);
         g.drawLine (c.x - arm, c.y, c.x + arm, c.y, 2.0f);
         g.drawLine (c.x, c.y - arm, c.x, c.y + arm, 2.0f);
     }
 
     for (int i = 0; i < count; ++i)
     {
-        auto cell = juce::Rectangle<float> ((float) i * cellWidth, (float) cellsTop, cellWidth, cellHeight)
-                        .reduced (2.0f);
+        auto cell = juce::Rectangle<float> ((float) i * pitch, (float) cellsTop, (float) cellWidth, cellHeight);
 
         const auto colour = cellColours[(size_t) i].isTransparent() ? snapshotxml::defaultColourFor (i) : cellColours[(size_t) i];
         const bool on = i == current;
@@ -172,12 +185,12 @@ void SnapshotBar::paint (juce::Graphics& g)
         {
             // Bold Blocks: the cell IS the snapshot colour.
             g.setColour (colour);
-            g.fillRoundedRectangle (cell, t.radius);
+            g.fillRoundedRectangle (cell, t.smallRadius);
             ink = colour.contrasting (juce::Colours::black, juce::Colours::white);
             if (t.blockStyle == theme::BlockStyle::glow)
             {
                 g.setColour (colour.withAlpha (0.3f));
-                g.drawRoundedRectangle (cell.expanded (3.0f), t.radius + 3.0f, 5.0f);
+                g.drawRoundedRectangle (cell.expanded (3.0f), t.smallRadius + 3.0f, 5.0f);
             }
         }
         else if (on && stripeStyle)
@@ -193,17 +206,17 @@ void SnapshotBar::paint (juce::Graphics& g)
         {
             // Stage Glass: colour fill + glow, same as Bold's generic rule.
             g.setColour (colour);
-            g.fillRoundedRectangle (cell, t.radius);
+            g.fillRoundedRectangle (cell, t.smallRadius);
             ink = colour.contrasting (juce::Colours::black, juce::Colours::white);
             g.setColour (colour.withAlpha (0.3f));
-            g.drawRoundedRectangle (cell.expanded (3.0f), t.radius + 3.0f, 5.0f);
+            g.drawRoundedRectangle (cell.expanded (3.0f), t.smallRadius + 3.0f, 5.0f);
         }
         else
         {
             g.setColour (t.raised);
-            g.fillRoundedRectangle (cell, filledStyle ? t.radius : (stripeStyle ? t.smallRadius : t.radius));
+            g.fillRoundedRectangle (cell, t.smallRadius);
             g.setColour (t.line);
-            g.drawRoundedRectangle (cell.reduced (0.5f), filledStyle ? t.radius : (stripeStyle ? t.smallRadius : t.radius), 1.0f);
+            g.drawRoundedRectangle (cell.reduced (0.5f), t.smallRadius, 1.0f);
 
             if (stripeStyle)
             {

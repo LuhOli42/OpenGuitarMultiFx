@@ -1,15 +1,47 @@
 #include "ChainContainer.h"
-
-#include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 
 namespace openguitarmultifx
 {
+namespace
+{
+    void drawDashedRoundedRect (juce::Graphics& g, juce::Rectangle<float> bounds, float radius,
+                                juce::Colour colour, float thickness)
+    {
+        juce::Path outline;
+        outline.addRoundedRectangle (bounds.reduced (0.5f), radius);
+        const float dashes[] = { 5.0f, 4.0f };
+        juce::Path dashed;
+        juce::PathStrokeType (thickness).createDashedStroke (dashed, outline, dashes, 2);
+        g.setColour (colour);
+        g.fillPath (dashed);
+    }
+}
 
 void ChainContainer::setBlockBounds (std::vector<juce::Rectangle<float>> bounds)
 {
     blockBounds = std::move (bounds);
+    occupiedCells.assign ((size_t) columns * (size_t) maxVisibleRows, false);
+    for (const auto& b : blockBounds)
+    {
+        const float cx = b.getCentreX(), cy = b.getCentreY();
+        const int col = (int) (cx / (float) (gridBlockWidth + gridColGap));
+        const int row = (int) ((cy - (float) gridTopPadding) / (float) (gridBlockHeight + gridRowGap));
+        if (col >= 0 && col < columns && row >= 0 && row < maxVisibleRows)
+            occupiedCells[(size_t) row * (size_t) columns + (size_t) col] = true;
+    }
     repaint();
+}
+
+void ChainContainer::setRowMetrics (int columnsIn, int blockWidthIn, int blockHeightIn, int colGapIn, int rowGapIn, int topPaddingIn)
+{
+    columns = juce::jmax (1, columnsIn);
+    gridBlockWidth = juce::jmax (1, blockWidthIn);
+    gridBlockHeight = juce::jmax (1, blockHeightIn);
+    gridColGap = juce::jmax (0, colGapIn);
+    gridRowGap = juce::jmax (0, rowGapIn);
+    gridTopPadding = juce::jmax (0, topPaddingIn);
+    occupiedCells.assign ((size_t) columns * (size_t) maxVisibleRows, false);
 }
 
 void ChainContainer::setCrossings (std::vector<int> crossingYs)
@@ -18,36 +50,87 @@ void ChainContainer::setCrossings (std::vector<int> crossingYs)
     repaint();
 }
 
-void ChainContainer::setRowMetrics (int columnsIn, int blockWidthIn, int blockHeightIn, int colGapIn, int rowGapIn)
-{
-    columns = juce::jmax (1, columnsIn);
-    gridBlockWidth = juce::jmax (1, blockWidthIn);
-    gridBlockHeight = juce::jmax (1, blockHeightIn);
-    gridColGap = colGapIn;
-    gridRowGap = rowGapIn;
-}
-
-int ChainContainer::rawIndexForPosition (juce::Point<int> pos) const
-{
-    const int row = juce::jlimit (0, maxVisibleRows - 1, pos.y / (gridBlockHeight + gridRowGap));
-    const int col = juce::jlimit (0, columns - 1, pos.x / (gridBlockWidth + gridColGap));
-    return row * columns + col;
-}
-
 juce::Rectangle<float> ChainContainer::cellBounds (int index) const
 {
     const int row = index / columns;
     const int col = index % columns;
-    return { (float) (col * (gridBlockWidth + gridColGap)), (float) (row * (gridBlockHeight + gridRowGap)),
+    return { (float) col * (float) (gridBlockWidth + gridColGap),
+             (float) gridTopPadding + (float) row * (float) (gridBlockHeight + gridRowGap),
              (float) gridBlockWidth, (float) gridBlockHeight };
+}
+
+bool ChainContainer::cellOccupied (int index) const
+{
+    return index >= 0 && index < (int) occupiedCells.size() && occupiedCells[(size_t) index];
+}
+
+int ChainContainer::rawIndexForPosition (juce::Point<int> pos) const
+{
+    const float x = (float) pos.x, y = (float) pos.y;
+    const float colPitch = (float) (gridBlockWidth + gridColGap);
+    const float rowPitch = (float) (gridBlockHeight + gridRowGap);
+    const int col = (int) (x / colPitch);
+    const int row = (int) ((y - (float) gridTopPadding) / rowPitch);
+    if (col < 0 || col >= columns || row < 0 || row >= maxVisibleRows)
+        return -1;
+    const int index = row * columns + col;
+    const auto cell = cellBounds (index);
+    return cell.contains (x, y) ? index : -1;
+}
+
+void ChainContainer::paint (juce::Graphics& g)
+{
+    const auto& t = theme::current();
+
+    for (int row = 0; row < maxVisibleRows; ++row)
+    {
+        const float y = (float) gridTopPadding + (float) row * (float) (gridBlockHeight + gridRowGap)
+                        + (float) gridBlockHeight * 0.5f;
+        if (t.blockStyle == theme::BlockStyle::glow)
+        {
+            juce::ColourGradient gradient (t.lineStrong, 0.0f, y,
+                                           t.lineStrong.brighter (0.55f), (float) getWidth(), y, false);
+            g.setGradientFill (gradient);
+            g.fillRect (0.0f, y - 1.0f, (float) getWidth(), 2.0f);
+        }
+        else
+        {
+            g.setColour (t.lineStrong);
+            g.drawLine (0.0f, y, (float) getWidth(), y, 2.0f);
+        }
+    }
+
+    for (int row = 0; row < maxVisibleRows; ++row)
+        for (int col = 0; col < columns; ++col)
+        {
+            const int index = row * columns + col;
+            if (cellOccupied (index))
+                continue;
+
+            const auto cell = cellBounds (index);
+            const bool hover = hoveredIndex == index;
+            drawDashedRoundedRect (g, cell, t.radius, hover ? t.lineStrong : t.line.withAlpha (0.55f), 1.5f);
+
+            const auto c = cell.getCentre();
+            const float arm = juce::jmin (cell.getWidth(), cell.getHeight()) * 0.12f;
+            const auto ink = hover ? t.textDim : t.textDim.withAlpha (0.55f);
+            g.setColour (ink);
+            g.drawLine (c.x - arm, c.y, c.x + arm, c.y, 2.0f);
+            g.drawLine (c.x, c.y - arm, c.x, c.y + arm, 2.0f);
+        }
+
+    g.setColour (t.lineStrong);
+    for (const int y : crossings)
+        g.drawLine ((float) getWidth() - 18.0f, (float) y - 5.0f,
+                    (float) getWidth() - 2.0f, (float) y + 5.0f, 2.0f);
 }
 
 void ChainContainer::mouseMove (const juce::MouseEvent& event)
 {
-    const int newHover = rawIndexForPosition (event.getPosition());
-    if (newHover != hoveredIndex)
+    const int index = rawIndexForPosition (event.getPosition());
+    if (index != hoveredIndex)
     {
-        hoveredIndex = newHover;
+        hoveredIndex = index;
         repaint();
     }
 }
@@ -60,91 +143,11 @@ void ChainContainer::mouseExit (const juce::MouseEvent&)
 
 void ChainContainer::mouseUp (const juce::MouseEvent& event)
 {
-    // No clamping here any more -- an occupied cell is never reachable in
-    // the first place (the real block sitting on it intercepts the click
-    // before this container sees it), so whatever cell this resolves to is
-    // always a genuinely empty one. See the class doc comment.
-    if (onSlotClicked)
-        onSlotClicked (rawIndexForPosition (event.getPosition()));
-}
-
-void ChainContainer::paint (juce::Graphics& g)
-{
-    // The signal path, always on screen -- not just gaps between blocks.
-    // A plain Component's paint() runs before its children's, so this sits
-    // behind the blocks; they visually sit ON it, matching the reference
-    // UI's always-visible input-to-output line. One per row now that the
-    // chain wraps instead of scrolling sideways. usedRows comes from
-    // MainComponent (see setUsedRows()'s comment) rather than being
-    // derived from blockBounds.size() here, since a block's position can
-    // now be sparse (any grid cell, not just the next sequential one).
-    const auto& t = theme::current();
-    g.setColour (t.lineStrong);
-    for (int row = 0; row < usedRows; ++row)
-    {
-        const float y = row * (float) (gridBlockHeight + gridRowGap) + (float) gridBlockHeight * 0.5f;
-        g.drawLine (0.0f, y, (float) getWidth(), y, 2.0f);
-
-    }
-
-    // Row-to-row connector crossings. Spans this container's FULL width
-    // (edge to edge) so it lines up exactly with the two stubs
-    // MainComponent::paint() draws in the gutters just outside this
-    // container on either side -- the three segments together read as ONE
-    // continuous line from the end of one row to the start of another, per
-    // user correction 2026-09-10 ("as linhas se conectarem do final com o
-    // início da próxima"). Which rows are linked (if any) is the per-row
-    // routing's business, not something derivable here -- rows are
-    // independent until explicitly connected.
-    for (const int y : crossings)
-        g.drawLine (0.0f, (float) y, (float) getWidth(), (float) y, 2.0f);
-
-    // Rows past the real content: a plain grid guide line, same as above
-    // but with no connecting seam (nothing actually flows into unused
-    // capacity) -- reads as "the grid continues here" without claiming a
-    // signal path that doesn't exist. Per user request 2026-09-10 (the
-    // full row capacity should read as "configured" from the moment the
-    // app opens).
-    g.setColour (t.line.withAlpha (0.8f));
-    for (int row = usedRows; row < maxVisibleRows; ++row)
-    {
-        const float y = row * (float) (gridBlockHeight + gridRowGap) + (float) gridBlockHeight * 0.5f;
-        g.drawLine (0.0f, y, (float) getWidth(), y, 2.0f);
-    }
-
-    // Empty chain: on a touch device there is no hover, so the "+" affordance
-    // below never appears and a first-run screen reads as four lines and
-    // nothing to do. A one-line hint on row 0 (the only row that's wired) says
-    // how to start; it disappears as soon as the first block lands.
-    if (blockBounds.empty() && usedRows > 0)
-    {
-        g.setColour (t.textMuted);
-        g.setFont (17.0f);
-        g.drawText ("Tap a line to add an effect", 0, 0, getWidth(), gridBlockHeight,
-                    juce::Justification::centred);
-    }
-
-    // The ONE "+" -- exactly under the cursor's grid cell, only while
-    // hovering, instead of a permanent dashed-box tile at every open slot.
-    // Per user request 2026-09-10 ("tire todo esses + com caixinha
-    // quadrada... quando eu passar o mouse em cima da linha, vai aparecer
-    // esse +").
-    if (hoveredIndex >= 0)
-    {
-        const auto bounds = cellBounds (hoveredIndex).reduced (4.0f);
-        const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
-
-        g.setColour (accent.withAlpha (0.12f));
-        g.fillRoundedRectangle (bounds, t.smallRadius);
-        g.setColour (accent.withAlpha (0.7f));
-        g.drawRoundedRectangle (bounds, t.smallRadius, 1.5f);
-
-        g.setColour (juce::Colours::white);
-        const float plusSize = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.3f;
-        const auto c = bounds.getCentre();
-        g.drawLine (c.x - plusSize * 0.5f, c.y, c.x + plusSize * 0.5f, c.y, 2.5f);
-        g.drawLine (c.x, c.y - plusSize * 0.5f, c.x, c.y + plusSize * 0.5f, 2.5f);
-    }
+    if (! event.mouseWasClicked())
+        return;
+    const int index = rawIndexForPosition (event.getPosition());
+    if (index >= 0 && ! cellOccupied (index) && onSlotClicked)
+        onSlotClicked (index);
 }
 
 } // namespace openguitarmultifx
