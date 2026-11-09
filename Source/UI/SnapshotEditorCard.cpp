@@ -1,5 +1,6 @@
 #include "SnapshotEditorCard.h"
 
+#include "OverlayChrome.h"
 #include "SnapshotPresetXml.h"
 #include "Theme.h"
 #include "TouchSizing.h"
@@ -77,19 +78,20 @@ void SnapshotEditorCard::FootswitchRow::refresh()
     if (armed)
     {
         statusLabel.setText ("Move the pedal...", juce::dontSendNotification);
-        toggleButton.setButtonText ("Cancel");
+        toggleButton.text = "Cancel";
     }
     else if (cc >= 0)
     {
         statusLabel.setText ("CC " + juce::String (cc), juce::dontSendNotification);
-        toggleButton.setButtonText ("Clear");
+        toggleButton.text = "Clear";
     }
     else
     {
         statusLabel.setText ("Not learned", juce::dontSendNotification);
-        toggleButton.setButtonText ("Learn");
+        toggleButton.text = "Learn";
     }
 
+    toggleButton.repaint();
     repaint();
 }
 
@@ -117,7 +119,8 @@ SnapshotEditorCard::SnapshotEditorCard (int idx, juce::String l, juce::String n,
     setSize (cardWidth, cardHeight);
 
     styleLabel (titleLabel, "Snapshot " + letter + (n.isNotEmpty() ? "  -  " + n : ""),
-                22.0f, true, theme::current().text);
+                24.0f, true, theme::current().text);
+    titleLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (titleLabel);
 
     closeButton.onClick = [this] { if (actions.onClose) actions.onClose(); };
@@ -130,6 +133,7 @@ SnapshotEditorCard::SnapshotEditorCard (int idx, juce::String l, juce::String n,
     nameEditor.setFont (fontFor (17.0f));
     nameEditor.setColour (juce::TextEditor::textColourId, theme::current().text);
     nameEditor.setColour (juce::TextEditor::outlineColourId, theme::current().lineStrong);
+    overlaychrome::drawSearchFieldChrome (nameEditor);
     nameEditor.onReturnKey = [this] { commitName(); };
     nameEditor.onFocusLost = [this] { commitName(); };
     addAndMakeVisible (nameEditor);
@@ -196,52 +200,51 @@ void SnapshotEditorCard::rebuildPedalRows()
 
 void SnapshotEditorCard::paint (juce::Graphics& g)
 {
+    overlaychrome::paintCardBackground (g, getLocalBounds().toFloat());
+    overlaychrome::drawHeaderDivider (g, juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 76.0f));
+
     const auto& t = theme::current();
-    g.fillAll (t.surface);
+    g.setColour (t.line);
+    for (float y : { 152.0f, 236.0f, 316.0f, 396.0f })
+        g.drawHorizontalLine (y, margin, (float) getWidth() - margin);
 
     // Snapshot letter chip, tinted with the snapshot's own colour (layer 2).
-    g.setColour (currentColour.withAlpha (usingDefaultColour ? 0.25f : 0.55f));
-    g.fillRoundedRectangle (juce::Rectangle<int> (16, 14, 56, 56).toFloat(), t.smallRadius);
+    g.setColour (currentColour.withAlpha (usingDefaultColour ? 0.35f : 0.75f));
+    g.fillRoundedRectangle (juce::Rectangle<float> (20, 12, 56, 52), t.smallRadius);
     g.setColour (t.text);
-    g.setFont (fontFor (28.0f, true));
-    g.drawText (letter, 16, 14, 56, 56, juce::Justification::centred);
+    g.setFont (fontFor (26.0f, true));
+    g.drawText (letter, 20, 12, 56, 52, juce::Justification::centred);
 }
 
 void SnapshotEditorCard::resized()
 {
-    // Header: chip occupies (16,14,56,56); title and close sit beside it.
-    titleLabel.setBounds (88, 14, getWidth() - 88 - margin - touch::minTapTarget - 12, 56);
-    closeButton.setBounds (getWidth() - margin - touch::minTapTarget, 14,
-                           touch::minTapTarget, touch::minTapTarget);
+    titleLabel.setBounds (88, 0, getWidth() - 88 - margin - 52 - 12, 76);
+    closeButton.setBounds (getWidth() - margin - 52, 12, 52, 52);
 
-    // Name row.
-    nameLabel.setBounds (margin, 92, 60, 24);
-    nameEditor.setBounds (88, 116, getWidth() - 88 - margin - 108, 48);
-    nameOkButton.setBounds (getWidth() - margin - 96, 116, 96, touch::minTapTarget);
+    nameLabel.setBounds (margin, 88, 96, 24);
+    nameEditor.setBounds (120, 82, getWidth() - 120 - margin - 92, 48);
+    nameOkButton.setBounds (getWidth() - margin - 84, 82, 84, touch::minTapTarget);
 
-    // Colour row: label, then swatches + custom pill.
-    colourLabel.setBounds (margin, 188, 60, 24);
+    colourLabel.setBounds (margin, 164, 96, 24);
     int x = margin;
-    const int swatchY = 216;
+    const int swatchY = 196;
     for (auto* swatch : swatches)
     {
         swatch->setBounds (x, swatchY, swatchSize, swatchSize);
-        x += swatchSize + rowGap;
+        x += swatchSize + 8;
     }
     x += 8;
-    customButton.setBounds (x, swatchY + 4, 130, touch::minTapTarget);
+    customButton.setBounds (x, swatchY + 2, 130, touch::minTapTarget);
 
-    // Footswitch rows.
-    int y = 284;
+    int y = 268;
     for (auto* row : pedalRows)
     {
         row->setBounds (margin, y, getWidth() - 2 * margin, 56);
-        y += 56 + rowGap;
+        y += 56 + 8;
     }
 
-    // Actions.
-    const int actionY = y + 8;
-    const int btnW = 170;
+    const int actionY = 452;
+    const int btnW = 168;
     copyToButton.setBounds (margin, actionY, btnW, touch::minTapTarget);
     copyFromButton.setBounds (margin + btnW + 12, actionY, btnW, touch::minTapTarget);
     removeButton.setBounds (margin + 2 * (btnW + 12), actionY, btnW, touch::minTapTarget);

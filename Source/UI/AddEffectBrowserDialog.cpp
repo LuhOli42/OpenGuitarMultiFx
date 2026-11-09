@@ -1,5 +1,6 @@
 #include "AddEffectBrowserDialog.h"
 #include "EffectCpuCost.h"
+#include "OverlayChrome.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 
@@ -14,7 +15,7 @@ namespace openguitarmultifx
 namespace
 {
     constexpr int rowGap = 8;
-    constexpr int railWidth = 210;
+    constexpr int railWidth = 220;
 
     /** True for the modelled amps that carry a page-2 Cab selector -- detected by
         the `*_cab` parameter they all register now, so a new amp gets its two
@@ -43,8 +44,15 @@ void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
 
     g.setColour (t.raised);
     g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
 
     const auto accent = probe != nullptr ? probe->getAccentColour() : t.textMuted;
+    if (t.id == theme::Id::console)
+    {
+        g.setColour (accent);
+        g.fillRoundedRectangle (bounds.withWidth (5.0f), 2.0f);
+    }
 
     // Right-hand columns first: the "+" affordance, the CPU-cost bars, and
     // the search-only category tag. Everything left of them is icon + text.
@@ -55,10 +63,14 @@ void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
 
     // Icon tile: the effect's own glyph on an accent-tinted square.
     auto area = rightArea.reduced (10.0f, 8.0f);
-    const auto iconArea = area.removeFromLeft (area.getHeight());
+    auto iconArea = area.removeFromLeft (44.0f).withSizeKeepingCentre (44.0f, 44.0f);
+    iconArea = juce::Rectangle<float> (iconArea.getX(), area.getCentreY() - 22.0f, 44.0f, 44.0f);
     area.removeFromLeft (12.0f);
 
-    g.setColour (accent.withAlpha (0.16f));
+    if (t.id == theme::Id::boldBlocks)
+        g.setColour (accent);
+    else
+        g.setColour (accent.withAlpha (0.16f));
     g.fillRoundedRectangle (iconArea, t.smallRadius);
 
     if (headOnlyIcon)
@@ -107,7 +119,7 @@ void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
 
     // CPU-cost bars: four bars, filled up to cpuLevel (docs/CpuCostMap.md).
     {
-        constexpr float barWidth = 5.0f, barGap = 3.0f, barHeight = 14.0f;
+        constexpr float barWidth = 5.0f, barGap = 2.0f, barHeight = 14.0f;
         const float barsWidth = 4.0f * barWidth + 3.0f * barGap;
         const auto barsArea = cpuArea.withSizeKeepingCentre (barsWidth, barHeight);
         for (int i = 0; i < 4; ++i)
@@ -199,29 +211,28 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
 
     addAndMakeVisible (titleLabel);
     titleLabel.setText ("Add Effect", juce::dontSendNotification);
-    titleLabel.setFont (juce::Font (19.0f, juce::Font::bold));
+    titleLabel.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
+    titleLabel.setJustificationType (juce::Justification::centredLeft);
 
     addAndMakeVisible (searchField);
     searchField.setTextToShowWhenEmpty ("Search by name, type or original pedal...",
-                                        theme::current().textDim);
+                                        theme::current().textMuted);
+    overlaychrome::drawSearchFieldChrome (searchField);
     searchField.onTextChange = [this] { rebuildRows(); };
 
-    // One rail button per tab, each labelled with its row count.
-    // Radio-grouped so exactly one is lit.
-    int radioId = 1;
     for (int i = 0; i < (int) railTabs.size(); ++i)
     {
         auto& tab = railTabs[(size_t) i];
-        auto* button = categoryButtons.add (new juce::TextButton (
-            tab.label + "  (" + juce::String (tab.count) + ")"));
+        auto* button = categoryButtons.add (new overlaychrome::ActionButton());
         rail.addAndMakeVisible (*button);
-        // The rail reads as the category palette: each entry's border/accent
-        // is its category colour (docs/ui/REDESIGN.md accent layer 3).
-        button->setColour (OpenGuitarMultiFxLookAndFeel::accentColourId,
-                           EffectRegistry::categoryColour (tab.category));
-        button->setRadioGroupId (radioId, juce::dontSendNotification);
-        button->setClickingTogglesState (true);
-        button->setToggleState (i == selectedTab, juce::dontSendNotification);
+        button->text = tab.label;
+        button->showDot = true;
+        button->dotColour = EffectRegistry::categoryColour (tab.category);
+        button->trailingText = juce::String (tab.count);
+        button->selectedStyle = overlaychrome::SelectedStyle::tab;
+        button->leftAccent = true;
+        button->mutedIdle = true;
+        button->selected = i == selectedTab;
         button->onClick = [this, i] { selectTab (i); };
     }
 
@@ -266,12 +277,13 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
         if (registry.subcategoriesForCategory (railTabs[(size_t) selectedTab].category).contains (lastSubcategory))
             selectedSubcategory = lastSubcategory;
         for (int i = 0; i < categoryButtons.size(); ++i)
-            categoryButtons[i]->setToggleState (i == selectedTab, juce::dontSendNotification);
+            categoryButtons[i]->selected = i == selectedTab;
+        categoryButtons[selectedTab]->repaint();
     }
 
     rebuildChips();
     rebuildRows();
-    setSize (1040, 700);
+    setSize (1180, 780);
 }
 
 int AddEffectBrowserDialog::tabForRow (const EffectRow& row) const
@@ -301,6 +313,11 @@ void AddEffectBrowserDialog::selectTab (int tabIndex)
 {
     selectedTab = tabIndex;
     selectedSubcategory = {};
+    for (int i = 0; i < categoryButtons.size(); ++i)
+    {
+        categoryButtons[i]->selected = i == tabIndex;
+        categoryButtons[i]->repaint();
+    }
     rebuildChips();
     rebuildRows();
 }
@@ -324,19 +341,19 @@ void AddEffectBrowserDialog::rebuildChips()
     for (const auto& s : subcategories)
         labels.add (s);
 
-    constexpr int chipRadioId = 2;
     for (const auto& label : labels)
     {
-        auto* chip = chipButtons.add (new juce::TextButton (label));
+        auto* chip = chipButtons.add (new overlaychrome::ActionButton());
         chipsBar.addAndMakeVisible (*chip);
-        chip->setRadioGroupId (chipRadioId, juce::dontSendNotification);
-        chip->setClickingTogglesState (true);
-        chip->setToggleState ((label == "All" && selectedSubcategory.isEmpty())
-                              || label == selectedSubcategory,
-                              juce::dontSendNotification);
+        chip->text = label;
+        chip->selectedStyle = overlaychrome::SelectedStyle::chip;
+        chip->mutedIdle = true;
+        chip->selected = (label == "All" && selectedSubcategory.isEmpty())
+                         || label == selectedSubcategory;
         chip->onClick = [this, label]
         {
             selectedSubcategory = label == "All" ? juce::String() : label;
+            rebuildChips();
             rebuildRows();
         };
     }
@@ -401,7 +418,7 @@ void AddEffectBrowserDialog::rebuildRows()
             auto groupLabel = EffectRegistry::categoryDisplayName (category);
             if (forCabRow)
                 groupLabel += " + Cab";
-            return groupLabel + (subcategory.isNotEmpty() ? " · " + subcategory : juce::String());
+            return groupLabel + (subcategory.isNotEmpty() ? " - " + subcategory : juce::String());
         };
 
         if (plainRow)
@@ -454,49 +471,49 @@ void AddEffectBrowserDialog::rebuildRows()
 
 void AddEffectBrowserDialog::resized()
 {
-    auto area = getLocalBounds().reduced (16);
+    auto area = getLocalBounds();
 
-    auto header = area.removeFromTop (touch::minTapTarget);
-    titleLabel.setBounds (header.removeFromLeft (240));
-    searchField.setBounds (header.removeFromRight (320).withSizeKeepingCentre (320, touch::minTapTarget));
-
-    area.removeFromTop (10);
-    auto footer = area.removeFromBottom (touch::minTapTarget);
-    closeButton.setBounds (footer.removeFromRight (120).withSizeKeepingCentre (120, touch::minTapTarget));
-    area.removeFromBottom (8);
+    auto header = area.removeFromTop (76).reduced (20, 0);
+    closeButton.setBounds (header.removeFromRight (52).withSizeKeepingCentre (52, 52));
+    titleLabel.setBounds (header.removeFromLeft (220));
+    if (header.getWidth() > 24)
+    {
+        const int searchWidth = juce::jmin (420, header.getWidth() - 12);
+        searchField.setBounds (header.removeFromLeft (searchWidth).withSizeKeepingCentre (searchWidth, 52));
+    }
+    else
+    {
+        searchField.setBounds (header.withSizeKeepingCentre (0, 52));
+    }
 
     railViewport.setBounds (area.removeFromLeft (railWidth));
-    area.removeFromLeft (10);
-
+    auto content = area.reduced (20, 16);
     if (chipsViewport.isVisible())
     {
-        chipsViewport.setBounds (area.removeFromTop (touch::minTapTarget));
-        area.removeFromTop (8);
+        chipsViewport.setBounds (content.removeFromTop (48));
+        content.removeFromTop (12);
 
-        // Chips size to their labels (48px tall, like every tap target).
-        // The bar's width is the full chip run -- the viewport scrolls
-        // sideways when that run outgrows the card's width.
-        const juce::Font chipFont (15.0f);
+        const juce::Font chipFont (13.0f);
         int x = 0;
         for (auto* chip : chipButtons)
         {
-            const int w = juce::jmax (64, chipFont.getStringWidth (chip->getButtonText()) + 32);
-            chip->setBounds (x, 0, w, touch::minTapTarget);
+            const int w = juce::jmax (64, chipFont.getStringWidth (chip->text) + 32);
+            chip->setBounds (x, 0, w, 48);
             x += w + 8;
         }
         chipsBar.setSize (x, chipsViewport.getMaximumVisibleHeight());
     }
 
-    gridViewport.setBounds (area);
-    emptyStateLabel.setBounds (area);
+    gridViewport.setBounds (content);
+    emptyStateLabel.setBounds (content);
 
-    // Rail buttons: full-width rows at the tap-target floor, in a viewport
-    // in case 13 categories ever outgrow the card.
     const int railContentWidth = railViewport.getMaximumVisibleWidth();
-    const int buttonStep = touch::minTapTarget + 6;
-    rail.setSize (railContentWidth, categoryButtons.size() * buttonStep);
+    rail.setSize (railContentWidth, juce::jmax (0, railViewport.getMaximumVisibleHeight()));
+    const int buttonStep = 52;
     for (int i = 0; i < categoryButtons.size(); ++i)
-        categoryButtons[i]->setBounds (0, i * buttonStep, railContentWidth, touch::minTapTarget);
+    {
+        categoryButtons[i]->setBounds (12, 12 + i * buttonStep, juce::jmax (48, railContentWidth - 24), 48);
+    }
 
     const int gridContentWidth = gridViewport.getMaximumVisibleWidth();
     rowList.setSize (gridContentWidth, rowList.layoutForWidth (gridContentWidth));
@@ -504,7 +521,12 @@ void AddEffectBrowserDialog::resized()
 
 void AddEffectBrowserDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (theme::current().surface);
+    overlaychrome::paintCardBackground (g, getLocalBounds().toFloat());
+    overlaychrome::drawHeaderDivider (g, juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 76.0f));
+
+    const auto& t = theme::current();
+    g.setColour (t.line);
+    g.drawVerticalLine (railWidth, 76.0f, (float) getHeight());
 }
 
 } // namespace openguitarmultifx

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "OverlayChrome.h"
 #include "OverlayHost.h"
 
 namespace openguitarmultifx
@@ -65,7 +66,7 @@ public:
         int action;
         Actions& actions;
         juce::Label statusLabel;
-        juce::TextButton toggleButton { "" };
+        overlaychrome::ActionButton toggleButton;
     };
 
 private:
@@ -76,21 +77,21 @@ private:
     bool usingDefaultColour = true;
 
     juce::Label titleLabel;
-    juce::TextButton closeButton { "X" };
+    overlaychrome::CloseButton closeButton;
 
     juce::Label nameLabel;
     juce::TextEditor nameEditor;
-    juce::TextButton nameOkButton { "Set" };
+    overlaychrome::ActionButton nameOkButton { "Set" };
 
     juce::Label colourLabel;
     juce::OwnedArray<ColourSwatch> swatches;
-    juce::TextButton customButton { "Custom..." };
+    overlaychrome::ActionButton customButton { "Custom..." };
 
     juce::OwnedArray<FootswitchRow> pedalRows;
 
-    juce::TextButton copyToButton { "Copy to..." };
-    juce::TextButton copyFromButton { "Copy from..." };
-    juce::TextButton removeButton { "Remove scene" };
+    overlaychrome::ActionButton copyToButton { "Copy to..." };
+    overlaychrome::ActionButton copyFromButton { "Copy from..." };
+    overlaychrome::ActionButton removeButton { "Remove scene", overlaychrome::ButtonKind::danger };
 
     void commitName();
     void rebuildSwatches();

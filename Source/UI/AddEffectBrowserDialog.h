@@ -2,6 +2,8 @@
 
 #include "../EffectRegistry.h"
 
+#include "OverlayChrome.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
@@ -133,18 +135,18 @@ private:
 
     juce::Viewport railViewport;
     juce::Component rail;
-    juce::OwnedArray<juce::TextButton> categoryButtons;
+    juce::OwnedArray<overlaychrome::ActionButton> categoryButtons;
 
     // Chips live in a horizontal Viewport: wide chip sets (Reverb has six)
     // would otherwise clip the rightmost filters on a narrow window.
     juce::Viewport chipsViewport;
     juce::Component chipsBar;
-    juce::OwnedArray<juce::TextButton> chipButtons;
+    juce::OwnedArray<overlaychrome::ActionButton> chipButtons;
 
     juce::Viewport gridViewport;
     RowList rowList;
     juce::Label emptyStateLabel;
-    juce::TextButton closeButton { "Close" };
+    overlaychrome::CloseButton closeButton;
 };
 
 } // namespace openguitarmultifx

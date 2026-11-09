@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Theme.h"
+#include "OverlayChrome.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -74,8 +75,8 @@ private:
 
     juce::Typeface::Ptr displayTypeface; // Sora ExtraBold, captured from the app LookAndFeel
 
-    juce::TextButton closeButton { "X" };
-    juce::TextButton tunerButton { "TUNER" };
+    overlaychrome::CloseButton closeButton;
+    overlaychrome::ActionButton tunerButton;
     juce::Label bpmValueLabel, bpmUnitLabel, captionLabel;
 
     juce::Rectangle<float> presetArea; // computed in resized(), painted in paint()

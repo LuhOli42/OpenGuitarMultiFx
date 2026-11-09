@@ -1,5 +1,7 @@
 #pragma once
 
+#include "OverlayChrome.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
@@ -39,7 +41,7 @@ private:
     void timerCallback() override;
 
     juce::Label titleLabel, hintLabel, referenceLabel;
-    juce::TextButton closeButton { "Close" };
+    overlaychrome::CloseButton closeButton;
     juce::Rectangle<float> gaugeBounds, noteBounds, readoutBounds;
 
     bool active = false;

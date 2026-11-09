@@ -1,5 +1,6 @@
 #include "LiveOverlay.h"
 
+#include "OverlayChrome.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "TouchSizing.h"
 
@@ -24,11 +25,10 @@ LiveOverlay::LiveOverlay()
         displayTypeface = laf->getExtraBoldTypeface();
 
     addAndMakeVisible (closeButton);
-    closeButton.setTooltip ("Back to the grid");
     closeButton.onClick = [this] { if (onClose) onClose(); };
 
     addAndMakeVisible (tunerButton);
-    tunerButton.setTooltip ("Open the tuner");
+    tunerButton.text = "TUNER";
     tunerButton.onClick = [this] { if (onTunerTapped) onTunerTapped(); };
 
     addAndMakeVisible (bpmValueLabel);
@@ -40,6 +40,7 @@ LiveOverlay::LiveOverlay()
     bpmUnitLabel.setFont (juce::Font (15.0f));
 
     addAndMakeVisible (captionLabel);
+    captionLabel.setVisible (false);
     captionLabel.setText ("A-H are the preset's scenes - tap one to switch. Learned footswitch CCs (scene pedals) recall the same scenes.",
                           juce::dontSendNotification);
     captionLabel.setJustificationType (juce::Justification::centred);
@@ -117,45 +118,31 @@ void LiveOverlay::refreshTiles()
 
 void LiveOverlay::resized()
 {
-    // Vertically centred block: header, scene row, caption -- the stage
-    // screen breathes instead of stretching its tiles across the panel.
-    const int headerHeight = 128;
-    const int tileHeight = juce::jmin (220, juce::jmax (140, getHeight() - 40 - headerHeight - 14 - 12 - 24));
-    const int contentHeight = headerHeight + 14 + tileHeight + 12 + 24;
-    const int top = juce::jmax (20, (getHeight() - contentHeight) / 2);
+    auto area = getLocalBounds().reduced (28, 28);
 
-    auto area = getLocalBounds().withY (top).withHeight (contentHeight).reduced (28, 0);
+    auto top = area.removeFromTop (84);
+    closeButton.setBounds (top.removeFromRight (84).withSizeKeepingCentre (64, 64));
+    tunerButton.setBounds (top.removeFromRight (188).withSizeKeepingCentre (188, 64));
 
-    // ---- header: preset tile (painted) + TUNER + BPM + close ----
-    auto header = area.removeFromTop (headerHeight);
-
-    auto closeArea = header.removeFromRight (64);
-    closeButton.setBounds (closeArea.withSizeKeepingCentre (64, touch::minTapTarget));
-    header.removeFromRight (10);
-
-    auto tunerArea = header.removeFromRight (170);
-    tunerButton.setBounds (tunerArea.withSizeKeepingCentre (170, touch::minTapTarget));
-    header.removeFromRight (10);
-
-    auto bpmArea = header.removeFromRight (150);
+    auto bpmArea = top.removeFromRight (150);
     auto bpmValueBox = bpmArea.removeFromTop (bpmArea.getHeight() * 3 / 5).toNearestInt();
     bpmValueLabel.setBounds (bpmValueBox);
     bpmUnitLabel.setBounds (bpmArea);
-    header.removeFromRight (10);
 
-    presetArea = header.toFloat();
+    presetArea = top.toFloat();
 
-    // ---- scene tiles ----
-    area.removeFromTop (14);
-    const int gap = 10;
-    const int tileWidth = (area.getWidth() - gap * (sceneSlots - 1)) / sceneSlots;
+    area.removeFromTop (24);
+    const int gap = 14;
+    const int tileWidth = (area.getWidth() - gap * 3) / 4;
+    const int tileHeight = (area.getHeight() - gap) / 2;
     for (int i = 0; i < sceneSlots; ++i)
-        tiles[(size_t) i]->setBounds (area.getX() + i * (tileWidth + gap), area.getY(), tileWidth, tileHeight);
-
-    // ---- caption ----
-    area.removeFromTop (tileHeight + 12);
-    captionLabel.setBounds (area.removeFromTop (24));
-    captionLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
+    {
+        const int col = i % 4;
+        const int row = i / 4;
+        tiles[(size_t) i]->setBounds (area.getX() + col * (tileWidth + gap),
+                                      area.getY() + row * (tileHeight + gap),
+                                      tileWidth, tileHeight);
+    }
 }
 
 void LiveOverlay::paint (juce::Graphics& g)
@@ -171,8 +158,7 @@ void LiveOverlay::paint (juce::Graphics& g)
     g.drawRoundedRectangle (area.reduced (0.5f), t.radius, 1.0f);
 
     const float pad = 14.0f;
-    const auto chip = area.withSizeKeepingCentre (juce::jmin (96.0f, area.getHeight() - 2 * pad),
-                                                  juce::jmin (96.0f, area.getHeight() - 2 * pad));
+    const auto chip = area.withSizeKeepingCentre (64.0f, juce::jmin (64.0f, area.getHeight() - 2 * pad));
 
     // The chip carries the preset number + live scene letter, in the live
     // scene's colour -- the same accent the rest of the app wears.
@@ -180,7 +166,7 @@ void LiveOverlay::paint (juce::Graphics& g)
     g.setColour (accent);
     g.fillRoundedRectangle (chip, t.smallRadius);
     g.setColour (inkOn (accent));
-    g.setFont (displayFont (juce::jmin (34.0f, chip.getHeight() * 0.4f)));
+    g.setFont (displayFont (juce::jmin (30.0f, chip.getHeight() * 0.42f)));
     g.drawText (presetBadge, chip.toNearestInt(), juce::Justification::centred);
 
     auto textArea = area.withTrimmedLeft (chip.getRight() - area.getX() + 18.0f)
@@ -191,74 +177,69 @@ void LiveOverlay::paint (juce::Graphics& g)
     // Title takes the upper ~60%, subtitle the lower 40% -- big type first.
     auto titleBox = textArea.removeFromTop (textArea.getHeight() * 0.6f).reduced (0.0f, 2.0f);
     g.setColour (t.text);
-    g.setFont (displayFont (juce::jmin (44.0f, titleBox.getHeight() * 0.78f)));
+    g.setFont (displayFont (juce::jmin (28.0f, titleBox.getHeight() * 0.62f)));
     g.drawText (presetTitle, titleBox.toNearestInt(), juce::Justification::centredLeft);
 
     g.setColour (t.textMuted);
-    g.setFont (juce::Font (juce::jmin (20.0f, textArea.getHeight() * 0.8f)));
+    g.setFont (juce::Font (juce::jmin (15.0f, textArea.getHeight() * 0.55f)));
     g.drawText (presetSubtitle, textArea.toNearestInt(), juce::Justification::centredLeft);
 }
 
 void LiveOverlay::SceneTile::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     const auto& t = theme::current();
-    const auto bounds = getLocalBounds().toFloat();
+    auto bounds = getLocalBounds().toFloat();
     const bool enabled = isEnabled();
+    const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+    const bool boldActive = active && t.id == theme::Id::boldBlocks;
 
-    const auto borderColour = enabled ? colour.withAlpha (active ? 1.0f : 0.55f) : t.lineStrong.withAlpha (0.5f);
+    auto fill = active ? (boldActive ? accent : t.raisedHigh) : t.raised;
+    auto border = active ? accent : (enabled ? colour.withAlpha (0.55f) : t.lineStrong.withAlpha (0.45f));
+    auto labelColour = active ? (boldActive ? juce::Colours::black : accent) : (enabled ? t.textMuted : t.textDim);
+    auto nameColour = active ? (boldActive ? juce::Colours::black : t.text) : (enabled ? t.text : t.textDim);
+    const float alpha = enabled ? 1.0f : 0.42f;
 
-    g.setColour (active ? colour.withAlpha (0.22f) : t.raised);
+    g.setColour (fill.withAlpha (alpha));
     g.fillRoundedRectangle (bounds, t.radius);
 
-    // LED, top-right corner: lit in the scene's colour on the live scene.
-    const auto ledCentre = juce::Point<float> (bounds.getRight() - 16.0f, bounds.getY() + 16.0f);
+    if (t.id == theme::Id::console && active)
+    {
+        g.setColour (accent.withAlpha (0.9f * alpha));
+        g.fillRoundedRectangle (bounds.removeFromTop (5.0f), t.smallRadius);
+    }
+
+    const auto ledCentre = juce::Point<float> (bounds.getRight() - 18.0f, bounds.getY() + 18.0f);
     if (active)
     {
-        g.setColour (colour.withAlpha (0.35f));
-        g.fillEllipse (ledCentre.x - 9.0f, ledCentre.y - 9.0f, 18.0f, 18.0f);
-        g.setColour (colour.brighter (0.4f));
+        g.setColour (accent.withAlpha (0.32f * alpha));
+        g.fillEllipse (ledCentre.x - 10.0f, ledCentre.y - 10.0f, 20.0f, 20.0f);
+        g.setColour (accent.brighter (0.35f).withAlpha (alpha));
         g.fillEllipse (ledCentre.x - 5.0f, ledCentre.y - 5.0f, 10.0f, 10.0f);
     }
     else
     {
-        g.setColour (enabled ? t.lineStrong : t.line);
+        g.setColour ((enabled ? t.lineStrong : t.line).withAlpha (alpha));
         g.fillEllipse (ledCentre.x - 5.0f, ledCentre.y - 5.0f, 10.0f, 10.0f);
     }
 
-    g.setColour (borderColour);
+    g.setColour (border.withAlpha (alpha));
     g.drawRoundedRectangle (bounds.reduced (1.0f), t.radius, active ? 3.0f : 1.5f);
 
-    // Letter chip, top-left.
-    const float chipSize = juce::jmin (44.0f, bounds.getHeight() * 0.28f);
-    const auto chip = juce::Rectangle<float> (bounds.getX() + 14.0f,
-                                              bounds.getCentreY() - chipSize * 0.5f,
-                                              chipSize, chipSize);
-    if (enabled)
-    {
-        g.setColour (colour.withAlpha (active ? 1.0f : 0.8f));
-        g.fillRoundedRectangle (chip, t.smallRadius);
-        g.setColour (inkOn (colour));
-        g.setFont (juce::Font (juce::FontOptions (chipSize * 0.5f).withStyle ("Bold")));
-        g.drawText (letter, chip.toNearestInt(), juce::Justification::centred);
-    }
-    else
-    {
-        g.setColour (t.raisedHigh);
-        g.fillRoundedRectangle (chip, t.smallRadius);
-        g.setColour (t.textDim);
-        g.setFont (juce::Font (juce::FontOptions (chipSize * 0.5f).withStyle ("Bold")));
-        g.drawText (letter, chip.toNearestInt(), juce::Justification::centred);
-    }
+    g.setColour (labelColour.withAlpha (alpha));
+    g.setFont (juce::FontOptions (15.0f).withStyle ("Bold"));
+    g.drawText (letter, bounds.withTrimmedLeft (16.0f).withTrimmedRight (bounds.getWidth() - 34.0f)
+                         .withTrimmedTop (12.0f).withHeight (22.0f).toNearestInt(),
+                juce::Justification::centredLeft);
 
-    // Scene name under the chip, uppercase in Console/Bold Blocks.
     auto name = juce::String (getButtonText());
-    if (t.uppercaseLabels)
+    if (name.isEmpty())
+        name = letter;
+    if (t.uppercaseLabels && ! active)
         name = name.toUpperCase();
-    g.setColour (enabled ? (active ? t.text : t.textMuted) : t.textDim);
-    g.setFont (juce::Font (juce::FontOptions (juce::jmin (24.0f, bounds.getHeight() * 0.16f)).withStyle ("Bold")));
-    g.drawText (name, bounds.withTrimmedTop (chip.getBottom() - bounds.getY() + 12.0f)
-                         .withTrimmedLeft (10.0f)
-                         .withTrimmedRight (10.0f),
+    g.setColour (nameColour.withAlpha (alpha));
+    g.setFont (juce::FontOptions ((int) juce::jmin (34.0f, bounds.getHeight() * 0.22f)).withStyle ("Bold"));
+    g.drawText (name, bounds.withTrimmedTop (bounds.getHeight() * 0.38f).withTrimmedLeft (16.0f)
+                         .withTrimmedRight (16.0f).withTrimmedBottom (16.0f).toNearestInt(),
                 juce::Justification::centred);
 
     if ((highlighted || down) && enabled)
