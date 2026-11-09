@@ -31,6 +31,8 @@ namespace
     constexpr int knobCellWidth = 118;
     constexpr int knobCellHeight = 140;
     constexpr int knobDiameter = 90;
+    constexpr int knobLabelHeight = 20;
+    constexpr int knobValueHeight = 26;
 
     // Extra row height ONLY for a knob whose param registered for tempo
     // sync (see EffectProcessor::registerTempoSyncParam()) -- most knobs
@@ -44,6 +46,10 @@ namespace
 
 ParameterPanel::ParameterPanel()
 {
+    // The stage drawer's drop shadow projects above the panel's bounds;
+    // paint() must be allowed to draw that sliver over the chain.
+    setPaintingIsUnclipped (true);
+
     addAndMakeVisible (titleLabel);
     titleLabel.setFont (juce::Font (22.0f, juce::Font::bold));
 
@@ -75,7 +81,25 @@ void ParameterPanel::lookAndFeelChanged()
     statusLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
     if (current != nullptr)
         titleLabel.setColour (juce::Label::textColourId, theme::current().text);
+    refreshLabelStyles();
     juce::Component::lookAndFeelChanged();
+}
+
+void ParameterPanel::refreshLabelStyles()
+{
+    const auto& t = theme::current();
+    for (auto& row : sliders)
+    {
+        if (row.label == nullptr || row.param == nullptr)
+            continue;
+
+        auto text = juce::String (row.param->getName (64));
+        if (t.uppercaseLabels)
+            text = text.toUpperCase();
+        row.label->setText (text, juce::dontSendNotification);
+        row.label->setFont (juce::Font (12.0f, juce::Font::bold));
+        row.label->setColour (juce::Label::textColourId, t.textMuted);
+    }
 }
 
 void ParameterPanel::setProcessor (EffectProcessor* processorToEdit)
@@ -106,7 +130,7 @@ void ParameterPanel::refresh()
             if (row.param != nullptr && row.label != nullptr && getSnapshotMarkerColour)
             {
                 const auto marker = getSnapshotMarkerColour (current, row.param);
-                const auto colour = marker.isTransparent() ? juce::Colours::white : marker;
+                const auto colour = marker.isTransparent() ? theme::current().textMuted : marker;
                 if (row.label->findColour (juce::Label::textColourId) != colour)
                     row.label->setColour (juce::Label::textColourId, colour);
             }
@@ -192,15 +216,10 @@ void ParameterPanel::rebuildForCurrentProcessor()
     searchTone3000Button.setVisible (current->wantsModelFile() && tone3000 != nullptr);
     removeButton.setVisible (true);
 
-    // The drawer's buttons, knobs, and the band below the header all pick up
+    // The drawer's buttons, knobs, tabs and Bold Blocks' top edge pick up
     // the selected effect's own accent colour (EffectBlockComponent already
     // outlines the block itself in this colour) so the whole drawer reads
-    // as "this effect's controls" rather than generic chrome -- per user
-    // request 2026-09-10. The title stays plain white (an earlier version
-    // coloured the title text instead of the band -- corrected per
-    // follow-up feedback the same day: the band reads better than coloured
-    // text at this size, and the knob-area background behind the knobs
-    // stays the ordinary panel grey, only the header/knob strip is tinted).
+    // as "this effect's controls" rather than generic chrome.
     // Knobs, selectors and toggles draw in the effect's accent colour on a near-black panel; an amp whose accent is
     // itself near black (the 5150's dark grey, the Rectifier's navy) left its knob arcs and switches unreadable.
     // Keep the hue, lift the brightness until it reads.
@@ -210,6 +229,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
                                        .withSaturation (juce::jmin (0.6f, rawAccent.getSaturation()))
                             : rawAccent;
     titleLabel.setColour (juce::Label::textColourId, theme::current().text);
+    effectAccent = accent;
     bypassToggle.setColour (juce::ToggleButton::tickColourId, accent);
     for (auto* b : { &browseInstalledButton, &searchTone3000Button, &removeButton })
         b->setColour (OpenGuitarMultiFxLookAndFeel::accentColourId, accent);
@@ -220,11 +240,10 @@ void ParameterPanel::rebuildForCurrentProcessor()
 
     // One numbered tab per knob page (redesign card 3) -- the pages are
     // unnamed sub-groups (EffectProcessor::getParameterPages()), so the tabs
-    // read "1", "2", ... with the active one lit by the LookAndFeel's toggle
-    // colours. Same per-effect accent border as the rest of the drawer.
+    // read "1", "2", ... with PageTabButton painting the active state.
     for (int pageIndex = 0; pageIndex < pageCount; ++pageIndex)
     {
-        auto tab = std::make_unique<juce::TextButton> (juce::String (pageIndex + 1));
+        auto tab = std::make_unique<PageTabButton> (juce::String (pageIndex + 1));
         tab->setClickingTogglesState (true);
         tab->setColour (OpenGuitarMultiFxLookAndFeel::accentColourId, accent);
         tab->onClick = [this, pageIndex] { showPage (pageIndex); };
@@ -243,6 +262,8 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 row.page = pageIndex;
                 row.slider = std::make_unique<FineTuneSlider> (juce::Slider::RotaryHorizontalVerticalDrag,
                                                                juce::Slider::NoTextBox);
+                row.slider->setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
+                                                 juce::MathConstants<float>::pi * 2.75f, true);
                 // No editable text box: on the device it would summon an OS
                 // keyboard that doesn't exist -- the tap-to-open keypad
                 // (valueBox below) replaces it entirely.
@@ -250,9 +271,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 row.slider->setColour (juce::Slider::thumbColourId, accent);
 
                 row.label = std::make_unique<LongPressLabel>();
-                row.label->setText (floatParam->getName (64), juce::dontSendNotification);
                 row.label->setJustificationType (juce::Justification::centred);
-                row.label->setFont (14.0f);
                 row.label->onLongPress = [this, floatParam] { showMidiLearnMenu (floatParam); };
 
                 const auto range = floatParam->getNormalisableRange();
@@ -349,6 +368,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
         }
     }
 
+    refreshLabelStyles();
     showPage (0);
     refresh();
     resized();
@@ -676,30 +696,30 @@ void ParameterPanel::resized()
     bypassToggle.setBounds (top.removeFromRight (110));
     if (! pageTabs.empty())
     {
-        // Numbered page tabs, right-aligned before the bypass toggle; the
-        // active one is lit by the LookAndFeel's buttonOn colour.
+        // Numbered page tabs, right-aligned before the bypass toggle;
+        // PageTabButton paints the active state itself.
         for (int i = (int) pageTabs.size() - 1; i >= 0; --i)
         {
             top.removeFromRight (4);
-            pageTabs[(size_t) i]->setBounds (top.removeFromRight (44));
+            pageTabs[(size_t) i]->setBounds (top.removeFromRight (touch::minTapTarget));
         }
         top.removeFromRight (6);
     }
     titleLabel.setBounds (top);
 
-    // Gap before the accent band -- without it the header buttons sat flush
-    // against the band's top edge, per user feedback 2026-09-10.
+    pageTabsBounds = juce::Rectangle<int>();
+    if (! pageTabs.empty())
+    {
+        juce::Rectangle<int> tabs;
+        for (auto& tab : pageTabs)
+            tabs = tabs.isEmpty() ? tab->getBounds() : tabs.getUnion (tab->getBounds());
+        pageTabsBounds = tabs.withSizeKeepingCentre (tabs.getWidth() + 8, tabs.getHeight());
+    }
+
     area.removeFromTop (8);
     statusLabel.setBounds (area.removeFromTop (24));
     area.removeFromTop (8);
     knobViewport.setBounds (area);
-
-    // Full-width band covering the status-label strip and the gap after
-    // it -- everything between the header row and where the knob grid
-    // starts -- painted in the effect's accent colour by paint(). Not
-    // inset to the panel's 10px margin (unlike everything above), so it
-    // reads as a solid banner edge-to-edge rather than an inset chip.
-    accentBandBounds = { 0, statusLabel.getY(), getWidth(), knobViewport.getY() - statusLabel.getY() };
 
     // A pedal-panel-style row of knobs, wrapping to a new row if the panel
     // is narrow. Laid out inside knobGridHost (not this panel directly) so
@@ -727,24 +747,25 @@ void ParameterPanel::resized()
         for (size_t k = start; k < end; ++k)
         {
             auto& row = sliders[shown[k]];
-            row.label->setBounds (x, y, knobCellWidth, 22);
+            const int labelY = row.valueBox != nullptr ? y + knobDiameter + 2
+                                                       : y + knobCellHeight - knobLabelHeight;
+            row.label->setBounds (x, labelY, knobCellWidth, knobLabelHeight);
             if (row.valueBox != nullptr)
             {
-                // The knob and its value field split the old 90x118 slider cell:
-                // 90px of rotary + a 26px tap-to-type box, exactly where the
-                // (keyboard-bound) text box used to sit.
                 if (row.fader) // a vertical fader keeps the knob's height, at the 48px touch width
-                    row.widget()->setBounds (x + (knobCellWidth - touch::minTapTarget) / 2, y + 22, touch::minTapTarget, knobDiameter);
+                    row.widget()->setBounds (x + (knobCellWidth - touch::minTapTarget) / 2, y, touch::minTapTarget, knobDiameter);
                 else
-                    row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter);
-                row.valueBox->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22 + knobDiameter + 2, knobDiameter, 26);
+                    row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y, knobDiameter, knobDiameter);
+                row.valueBox->setBounds (x + (knobCellWidth - knobDiameter) / 2,
+                                         y + knobDiameter + 2 + knobLabelHeight + 2, knobDiameter, knobValueHeight);
             }
             else
             {
-                row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y + 22, knobDiameter, knobDiameter + 28);
+                row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2, y, knobDiameter,
+                                         knobCellHeight - knobLabelHeight - 2);
             }
             if (row.syncToggle != nullptr)
-                row.syncToggle->setBounds (x + (knobCellWidth - 90) / 2, y + 22 + knobDiameter + 28, 90, syncToggleHeight);
+                row.syncToggle->setBounds (x + (knobCellWidth - 90) / 2, y + knobCellHeight, 90, syncToggleHeight);
             x += knobCellWidth;
         }
 
@@ -756,20 +777,70 @@ void ParameterPanel::resized()
 
 void ParameterPanel::paint (juce::Graphics& g)
 {
-    g.fillAll (theme::current().surface);
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat();
+    const bool stageStyle = t.blockStyle == theme::BlockStyle::glow;
+    const bool boldStyle = t.blockStyle == theme::BlockStyle::filled;
 
-    // The band between the header and the knob grid reads as "this effect's
-    // controls" -- see accentBandBounds's comment in the header. Everything
-    // below it (the knob area itself) stays the plain panel grey above, per
-    // user request 2026-09-10: colouring the band, not the knob background.
-    if (current != nullptr)
+    if (stageStyle)
     {
-        // More saturated/vivid than the raw accent (which is tuned to read
-        // well as a thin block OUTLINE against black, not as a fill this
-        // large) -- per user feedback 2026-09-10 ("mais acentuado").
-        g.setColour (current->getAccentColour().withMultipliedSaturation (1.5f).withMultipliedBrightness (1.1f));
-        g.fillRect (accentBandBounds);
+        const float w = bounds.getWidth(), h = bounds.getHeight();
+        const float radius = 24.0f, k = 0.552284f * radius;
+        auto makePath = [&] (bool closed)
+        {
+            juce::Path path;
+            path.startNewSubPath (0.0f, h);
+            path.lineTo (0.0f, radius);
+            path.cubicTo (0.0f, radius - k, radius - k, 0.0f, radius, 0.0f);
+            path.lineTo (w - radius, 0.0f);
+            path.cubicTo (w - radius + k, 0.0f, w, radius - k, w, radius);
+            path.lineTo (w, h);
+            if (closed)
+            {
+                path.lineTo (0.0f, h);
+                path.closeSubPath();
+            }
+            return path;
+        };
+
+        const auto fillPath = makePath (true);
+        const auto borderPath = makePath (false);
+        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.55f), 30, { 0, -15 });
+        shadow.drawForPath (g, fillPath);
+        g.setGradientFill (juce::ColourGradient (t.raised.withMultipliedBrightness (0.92f), 0.0f, 0.0f,
+                                                 t.surface.withMultipliedBrightness (0.95f), 0.0f, h, false));
+        g.fillPath (fillPath);
+        g.setColour (t.lineStrong);
+        g.strokePath (borderPath, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                                        juce::PathStrokeType::butt));
     }
+    else
+    {
+        g.fillRect (bounds.toNearestInt());
+        if (boldStyle)
+        {
+            g.setColour (effectAccent.isTransparent() ? t.raisedHigh : effectAccent);
+            g.fillRect (0.0f, 0.0f, bounds.getWidth(), 4.0f);
+        }
+        else
+        {
+            g.setColour (t.lineStrong);
+            g.fillRect (0.0f, 0.0f, bounds.getWidth(), 1.0f);
+        }
+    }
+
+    if (! pageTabsBounds.isEmpty())
+    {
+        const auto tabs = pageTabsBounds.toFloat();
+        g.setColour (t.raised);
+        g.fillRoundedRectangle (tabs, t.smallRadius);
+        g.setColour (t.line);
+        g.drawRoundedRectangle (tabs, t.smallRadius, 1.0f);
+    }
+
+    const auto handle = juce::Rectangle<float> (bounds.getCentreX() - 27.0f, 8.0f, 54.0f, 5.0f);
+    g.setColour (t.lineStrong);
+    g.fillRoundedRectangle (handle, 3.0f);
 }
 
 } // namespace openguitarmultifx

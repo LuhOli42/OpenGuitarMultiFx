@@ -3,6 +3,7 @@
 #include "../Effects/EffectProcessor.h"
 #include "Theme.h"
 #include "SelectorSwitch.h"
+#include "OpenGuitarMultiFxLookAndFeel.h"
 #include "../Tone3000/Tone3000Manager.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -11,6 +12,8 @@
 #include <memory>
 #include <optional>
 #include <vector>
+
+#include <cmath>
 
 namespace openguitarmultifx
 {
@@ -92,6 +95,7 @@ private:
     void openTone3000SearchForSlot (int slot);
     void showMidiLearnMenu (juce::AudioParameterFloat* param);
     void showPage (int page);
+    void refreshLabelStyles();
     std::vector<size_t> visibleSliders() const;
     void cycleTempoSync (juce::AudioParameterFloat* param);
     void showValueKeypadFor (juce::Slider* knob);
@@ -105,12 +109,6 @@ private:
     juce::TextButton browseInstalledButton { "Browse installed..." };
     juce::TextButton searchTone3000Button { "Search TONE3000..." };
     juce::TextButton removeButton { "Remove" };
-    /** One tab per knob page, only for an effect with more than one page of
-        knobs (EffectProcessor::getParameterPages()) -- replaces the old
-        single cycling "Page 2 >" button (redesign card 3). */
-    std::vector<std::unique_ptr<juce::TextButton>> pageTabs;
-    int currentPage = 0, pageCount = 1;
-
     /** A knob's parameter name label, long-pressable to reach MIDI Learn --
         completely invisible until pressed and held, per explicit user
         request ("deixa escondido essa funcao"): no button, no persistent
@@ -135,6 +133,59 @@ private:
                 onLongPress();
         }
     };
+
+    /** One numbered page tab, painted as the prototype's segmented control:
+        raised container, lit active tab, accent underline (or solid accent
+        fill in Bold Blocks). */
+    class PageTabButton : public juce::TextButton
+    {
+    public:
+        PageTabButton (const juce::String& name) : juce::TextButton (name) {}
+
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+        {
+            const auto& t = theme::current();
+            const bool on = getToggleState();
+            const auto accent = findColour (OpenGuitarMultiFxLookAndFeel::accentColourId);
+            auto visual = getLocalBounds().toFloat().reduced (4.0f, 4.0f);
+            const float corner = juce::jmax (1.0f, t.smallRadius - 3.0f);
+
+            if (on)
+            {
+                if (t.blockStyle == theme::BlockStyle::filled)
+                {
+                    g.setColour (down ? accent.darker (0.15f) : accent);
+                    g.fillRoundedRectangle (visual, corner);
+                }
+                else
+                {
+                    g.setColour (down ? t.raisedHigh.brighter (0.08f) : t.raisedHigh);
+                    g.fillRoundedRectangle (visual, corner);
+                    g.setColour (accent);
+                    g.fillRect (visual.getX() + 3.0f, visual.getBottom() - 3.0f,
+                                visual.getWidth() - 6.0f, 3.0f);
+                }
+            }
+            else if (highlighted || down)
+            {
+                g.setColour (t.raisedHigh.withAlpha (down ? 0.55f : 0.3f));
+                g.fillRoundedRectangle (visual, corner);
+            }
+
+            const auto textColour = on
+                ? (t.blockStyle == theme::BlockStyle::filled ? accent.contrasting (t.background, t.text) : t.text)
+                : t.textMuted;
+            g.setColour (textColour.withAlpha (down && ! on ? 0.8f : 1.0f));
+            g.setFont (juce::Font (13.0f, on ? juce::Font::bold : juce::Font::plain));
+            g.drawText (getButtonText(), visual.toNearestInt(), juce::Justification::centred);
+        }
+    };
+
+    /** One tab per knob page, only for an effect with more than one page of
+        knobs (EffectProcessor::getParameterPages()) -- replaces the old
+        single cycling "Page 2 >" button (redesign card 3). */
+    std::vector<std::unique_ptr<PageTabButton>> pageTabs;
+    int currentPage = 0, pageCount = 1;
 
     /** A rotary knob with a hidden fine-tune drag (audit #93 item 1): hold
         it for the app's usual 550 ms and the drag drops to ~1/8 speed for
@@ -196,11 +247,137 @@ private:
 
         void paint (juce::Graphics& g) override
         {
-            juce::Slider::paint (g);
+            if (! isRotary())
+            {
+                juce::Slider::paint (g);
+                if (fineDragArmed)
+                {
+                    g.setColour (findColour (juce::Slider::rotarySliderFillColourId).brighter (0.6f));
+                    g.drawEllipse (getLocalBounds().toFloat().reduced (1.5f), 2.0f);
+                }
+                return;
+            }
+
+            const auto& t = theme::current();
+            const auto accent = findColour (juce::Slider::rotarySliderFillColourId);
+            const bool glowStyle = t.blockStyle == theme::BlockStyle::glow;
+            const bool discStyle = t.blockStyle == theme::BlockStyle::filled;
+            const auto bounds = getLocalBounds().toFloat();
+            const auto centre = bounds.getCentre();
+            const float outerRadius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f - 2.0f;
+            const float lineW = discStyle ? 9.0f : (glowStyle ? 7.0f : 4.0f);
+            const float arcRadius = discStyle ? outerRadius - lineW * 0.5f + 1.0f
+                                              : (glowStyle ? outerRadius - lineW * 0.5f
+                                                           : outerRadius - 8.0f);
+
+            const auto rotary = getRotaryParameters();
+            const float startAngle = rotary.startAngleRadians;
+            const float endAngle = rotary.endAngleRadians;
+            const float value = (float) valueToProportionOfLength (getValue());
+            const float toAngle = startAngle + value * (endAngle - startAngle);
+            const auto pointAt = [&] (float angle, float radius)
+            {
+                const float a = angle - juce::MathConstants<float>::halfPi;
+                return juce::Point<float> (centre.x + radius * std::cos (a),
+                                           centre.y + radius * std::sin (a));
+            };
+            const auto strokeArc = [&g] (juce::Point<float> c, float radius, float from, float to,
+                                         float thickness, juce::Colour colour,
+                                         juce::PathStrokeType::EndCapStyle caps = juce::PathStrokeType::rounded)
+            {
+                juce::Path arc;
+                arc.addCentredArc (c.x, c.y, radius, radius, 0.0f, from, to, true);
+                g.setColour (colour);
+                g.strokePath (arc, juce::PathStrokeType (thickness, juce::PathStrokeType::curved, caps));
+            };
+
+            if (discStyle)
+            {
+                g.setColour (t.raised);
+                g.fillEllipse (centre.x - outerRadius, centre.y - outerRadius,
+                               outerRadius * 2.0f, outerRadius * 2.0f);
+                if (isEnabled())
+                    strokeArc (centre, arcRadius, startAngle, toAngle, lineW, accent,
+                               juce::PathStrokeType::butt);
+            }
+            else
+            {
+                if (! glowStyle)
+                {
+                    for (int i = 0; i <= 10; ++i)
+                    {
+                        const float a = startAngle + (endAngle - startAngle) * (float) i / 10.0f;
+                        const auto inner = pointAt (a, outerRadius - 5.0f);
+                        const auto outer = pointAt (a, outerRadius - 0.5f);
+                        g.setColour (t.textDim);
+                        g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.5f);
+                    }
+                }
+
+                strokeArc (centre, arcRadius, startAngle, endAngle, lineW, t.raisedHigh,
+                           glowStyle ? juce::PathStrokeType::rounded : juce::PathStrokeType::butt);
+                if (isEnabled())
+                {
+                    if (glowStyle)
+                        strokeArc (centre, arcRadius, startAngle, toAngle, lineW * 2.6f,
+                                   accent.withAlpha (0.22f));
+                    strokeArc (centre, arcRadius, startAngle, toAngle, lineW, accent,
+                               glowStyle ? juce::PathStrokeType::rounded : juce::PathStrokeType::butt);
+                }
+            }
+
+            if (discStyle)
+            {
+                const float discRadius = outerRadius * 0.66f;
+                g.setColour (isEnabled() ? accent : t.textDim);
+                g.fillEllipse (centre.x - discRadius, centre.y - discRadius,
+                               discRadius * 2.0f, discRadius * 2.0f);
+                const auto tip = pointAt (toAngle, discRadius * 0.85f);
+                juce::Path pointer;
+                pointer.startNewSubPath (centre.x, centre.y);
+                pointer.lineTo (tip.x, tip.y);
+                g.setColour ((isEnabled() ? accent : t.textDim).contrasting (juce::Colours::black, juce::Colours::white));
+                g.strokePath (pointer, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved,
+                                                              juce::PathStrokeType::rounded));
+            }
+            else
+            {
+                const float faceRadius = glowStyle ? arcRadius - lineW * 0.5f - 7.0f
+                                                   : arcRadius - 9.0f;
+                const auto face = juce::Rectangle<float> (centre.x - faceRadius, centre.y - faceRadius,
+                                                           faceRadius * 2.0f, faceRadius * 2.0f);
+                if (glowStyle)
+                {
+                    g.setGradientFill (juce::ColourGradient (t.raisedHigh.brighter (0.18f),
+                                                              centre.x, centre.y,
+                                                              t.surface.brighter (0.04f),
+                                                              centre.x + faceRadius, centre.y, true));
+                    g.fillEllipse (face);
+                    g.setColour (t.text.withAlpha (0.08f));
+                    g.drawEllipse (face, 1.0f);
+                }
+                else
+                {
+                    g.setColour (t.raised);
+                    g.fillEllipse (face);
+                    g.setColour (t.lineStrong);
+                    g.drawEllipse (face, 1.0f);
+                }
+
+                const auto tip = pointAt (toAngle, faceRadius * (glowStyle ? 0.88f : 0.95f));
+                juce::Path pointer;
+                pointer.startNewSubPath (centre.x, centre.y);
+                pointer.lineTo (tip.x, tip.y);
+                g.setColour (isEnabled() ? (glowStyle ? t.text : accent) : t.textDim);
+                g.strokePath (pointer, juce::PathStrokeType (glowStyle ? 3.5f : 2.5f,
+                                                              juce::PathStrokeType::curved,
+                                                              juce::PathStrokeType::rounded));
+            }
+
             if (fineDragArmed)
             {
-                g.setColour (findColour (juce::Slider::rotarySliderFillColourId).brighter (0.6f));
-                g.drawEllipse (getLocalBounds().toFloat().reduced (1.5f), 2.0f);
+                g.setColour (accent.brighter (0.6f));
+                g.drawEllipse (bounds.reduced (1.5f), 2.0f);
             }
         }
 
@@ -224,12 +401,14 @@ private:
         {
             const auto& t = theme::current();
             auto bounds = getLocalBounds().toFloat();
+            const float corner = t.blockStyle == theme::BlockStyle::topStripe ? 3.0f
+                                                                              : juce::jmin (t.smallRadius, 9.0f);
             g.setColour (t.raised);
-            g.fillRoundedRectangle (bounds, t.smallRadius);
-            g.setColour (t.lineStrong.withAlpha (down ? 0.9f : highlighted ? 0.6f : 0.35f));
-            g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
-            g.setColour (t.text.withAlpha (down ? 1.0f : 0.9f));
-            g.setFont (juce::Font (15.0f));
+            g.fillRoundedRectangle (bounds, corner);
+            g.setColour ((down || highlighted ? t.lineStrong : t.line).withAlpha (down ? 0.9f : 1.0f));
+            g.drawRoundedRectangle (bounds.reduced (0.5f), corner, 1.0f);
+            g.setColour (t.text.withAlpha (down ? 1.0f : 0.95f));
+            g.setFont (juce::Font (15.0f, juce::Font::bold));
             g.drawText (getButtonText(), bounds.toNearestInt(), juce::Justification::centred);
         }
     };
@@ -280,14 +459,8 @@ private:
     juce::Viewport knobViewport;
     juce::Component knobGridHost;
 
-    // The strip between the header row and the knob grid (where statusLabel
-    // sits) is filled in the selected effect's accent colour in paint() --
-    // per user request 2026-09-10, the background BEHIND the knobs stays
-    // the plain panel grey; only this one band reads as "belongs to this
-    // effect". Full width (not inset to the 10px margin the rest of the
-    // panel uses) so it reads as a solid banner. Computed in resized(),
-    // consumed in paint().
-    juce::Rectangle<int> accentBandBounds;
+    juce::Rectangle<int> pageTabsBounds;
+    juce::Colour effectAccent = juce::Colours::transparentBlack;
 };
 
 } // namespace openguitarmultifx
