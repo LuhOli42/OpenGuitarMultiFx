@@ -1,6 +1,7 @@
 #pragma once
 
 #include "OAuthLoginDialog.h"
+#include "OverlayChrome.h"
 #include "Theme.h"
 #include "../Tone3000/LoopbackServer.h"
 #include "../EffectRegistry.h"
@@ -163,7 +164,7 @@ private:
     // operation it didn't start is still in flight.
     void applyUpdateUiState();
 
-    juce::TextButton closeButton { "Close" };
+    overlaychrome::CloseButton closeButton;
 };
 
 } // namespace openguitarmultifx

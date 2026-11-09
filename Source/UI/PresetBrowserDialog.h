@@ -2,6 +2,8 @@
 
 #include "../Presets/PresetLibrary.h"
 
+#include "OverlayChrome.h"
+
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
@@ -99,6 +101,7 @@ private:
     {
     public:
         juce::OwnedArray<PresetTile> tiles;
+        int preferredColumns = 5;
         std::function<void (PresetTile&)> onTileTap;
         std::function<void (PresetTile&)> onTileMenu;
 
@@ -140,27 +143,29 @@ private:
     juce::String currentPresetName() const;
 
     juce::Label titleLabel;
-    juce::TextButton allModeButton { "All" }, bankModeButton { "Banks" }, setlistModeButton { "Setlists" };
-    juce::TextButton newPresetButton { "New" };
+    overlaychrome::ActionButton allModeButton { "All" };
+    overlaychrome::ActionButton bankModeButton { "Banks" };
+    overlaychrome::ActionButton setlistModeButton { "Setlists" };
+    overlaychrome::ActionButton newPresetButton { "New", overlaychrome::ButtonKind::primary };
 
     // All-mode filter row
     juce::TextEditor searchField;
     juce::ComboBox tagBox;
 
     // Bank-mode selector row
-    juce::TextButton bankPrevButton { juce::CharPointer_UTF8 ("\xe2\x97\x80") }; // "◀"
-    juce::TextButton bankNextButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6") }; // "▶"
+    overlaychrome::ActionButton bankPrevButton { "<" }; // "<"
+    overlaychrome::ActionButton bankNextButton { ">" }; // ">"
     juce::Label bankLabel;
-    juce::TextButton bankSize4Button { "4" }, bankSize8Button { "8" };
+    overlaychrome::ActionButton bankSize4Button { "4" }, bankSize8Button { "8" };
     juce::OwnedArray<PresetTile> bankTiles;
 
     // Setlist-mode selector row
-    juce::TextButton setlistPrevButton { juce::CharPointer_UTF8 ("\xe2\x97\x80") };
-    juce::TextButton setlistNextButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6") };
+    overlaychrome::ActionButton setlistPrevButton { "<" };
+    overlaychrome::ActionButton setlistNextButton { ">" };
     juce::Label setlistLabel;
-    juce::TextButton setlistMenuButton { juce::String::fromUTF8 ("\xe2\x8b\xae") }; // "⋮"
-    juce::TextButton stepPrevButton { juce::CharPointer_UTF8 ("\xe2\x97\x80 Prev") };
-    juce::TextButton stepNextButton { juce::CharPointer_UTF8 ("Next \xe2\x96\xb6") };
+    overlaychrome::ActionButton setlistMenuButton { "..." }; // "..."
+    overlaychrome::ActionButton stepPrevButton { "Prev" };
+    overlaychrome::ActionButton stepNextButton { "Next" };
 
     juce::Viewport gridViewport;
     TileGrid tileGrid;
@@ -168,8 +173,8 @@ private:
     juce::Label hintLabel;
 
     juce::TextEditor nameField;
-    juce::TextButton saveButton { "Save current" };
-    juce::TextButton closeButton { "Close" };
+    overlaychrome::ActionButton saveButton { "Save current", overlaychrome::ButtonKind::primary };
+    overlaychrome::CloseButton closeButton;
 };
 
 } // namespace openguitarmultifx

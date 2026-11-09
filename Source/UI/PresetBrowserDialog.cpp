@@ -11,7 +11,7 @@ namespace
 {
     juce::Colour cardBackground() { return theme::current().surface; }
     juce::Colour tileBackground() { return theme::current().raised; }
-    constexpr int tileGap = 8;
+    constexpr int tileGap = 12;
     constexpr int longPressMs = 550; // same duration ParameterPanel's LongPressLabel uses for MIDI Learn
 }
 
@@ -22,61 +22,55 @@ void PresetBrowserDialog::PresetTile::paint (juce::Graphics& g)
 {
     const auto& t = theme::current();
     const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
-    auto bounds = getLocalBounds().toFloat().reduced (2.0f);
+    const auto bounds = getLocalBounds().toFloat();
+    const bool boldCurrent = isCurrent && t.id == theme::Id::boldBlocks && ! isEmpty;
 
     if (isEmpty)
     {
         g.setColour (t.surface);
         g.fillRoundedRectangle (bounds, t.radius);
         g.setColour (t.lineStrong);
-        g.drawRoundedRectangle (bounds, t.radius, 1.5f);
-
+        g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, 1.0f);
+        if (heading.isNotEmpty())
+        {
+            g.setColour (t.textMuted);
+            g.setFont (overlaychrome::font (12.0f, true));
+            g.drawFittedText (heading, bounds.toNearestInt().removeFromTop (24), juce::Justification::centred, 1);
+        }
         g.setColour (t.textDim);
         g.setFont (28.0f);
         g.drawText ("+", bounds.toNearestInt(), juce::Justification::centred);
-
-        if (heading.isNotEmpty())
-        {
-            g.setFont (13.0f);
-            g.drawText (heading, bounds.toNearestInt().removeFromTop (22), juce::Justification::centred);
-        }
         return;
     }
 
-    g.setColour (tileBackground());
+    g.setColour (boldCurrent ? accent : t.raised);
     g.fillRoundedRectangle (bounds, t.radius);
 
-    if (isCurrent)
+    if (isCurrent && ! boldCurrent)
     {
-        g.setColour (accent.withAlpha (0.22f));
-        g.fillRoundedRectangle (bounds, t.radius);
+        g.setColour (accent.withAlpha (0.18f));
+        g.drawRoundedRectangle (bounds.expanded (2.0f).reduced (1.0f), t.radius + 2.0f, 2.0f);
     }
+    g.setColour (isCurrent ? accent : t.line);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, isCurrent ? 2.0f : 1.0f);
 
-    g.setColour (isCurrent ? accent : t.lineStrong);
-    g.drawRoundedRectangle (bounds, t.radius, isCurrent ? 3.0f : 1.5f);
+    auto area = bounds.reduced (14.0f, 12.0f);
+    const auto bottomArea = area.removeFromBottom (16.0f);
+    const auto headingArea = area.removeFromTop (18.0f);
 
-    auto area = bounds.toNearestInt().reduced (8, 4);
+    g.setColour (boldCurrent ? juce::Colours::black.withAlpha (0.62f) : t.textMuted);
+    g.setFont (overlaychrome::font (12.0f, true));
+    g.drawFittedText (heading, headingArea.toNearestInt(), juce::Justification::centredLeft, 1);
 
-    if (heading.isNotEmpty())
-    {
-        g.setColour (isCurrent ? accent : t.textMuted);
-        g.setFont (juce::Font (15.0f, juce::Font::bold));
-        g.drawText (heading, area.removeFromTop (20), juce::Justification::centredLeft);
-    }
-
-    auto nameArea = area;
-    if (subline.isNotEmpty())
-        nameArea = area.removeFromTop (area.getHeight() - 16);
-
-    g.setColour (t.text);
-    g.setFont (16.0f);
-    g.drawFittedText (name, nameArea, juce::Justification::centred, 2);
+    g.setColour (boldCurrent ? juce::Colours::black : t.text);
+    g.setFont (overlaychrome::font (17.0f, true));
+    g.drawFittedText (name, area.toNearestInt(), juce::Justification::centredLeft, 2);
 
     if (subline.isNotEmpty())
     {
-        g.setColour (t.textMuted);
-        g.setFont (12.0f);
-        g.drawFittedText (subline, area, juce::Justification::centredLeft, 1);
+        g.setColour (boldCurrent ? juce::Colours::black.withAlpha (0.68f) : t.textMuted);
+        g.setFont (overlaychrome::font (11.0f));
+        g.drawFittedText (subline, bottomArea.toNearestInt(), juce::Justification::centredLeft, 1);
     }
 }
 
@@ -135,9 +129,11 @@ PresetBrowserDialog::PresetTile& PresetBrowserDialog::TileGrid::addTile()
 
 int PresetBrowserDialog::TileGrid::layoutForWidth (int width)
 {
-    constexpr int tileW = 168, tileH = 116;
-    const int cols = juce::jmax (1, (width + tileGap) / (tileW + tileGap));
+    constexpr int tileH = 118;
+    const int cols = juce::jmin (preferredColumns,
+                                 juce::jmax (1, (width + tileGap) / (180 + tileGap)));
     const int rows = (tiles.size() + cols - 1) / cols;
+    const int tileW = (width - tileGap * (cols - 1)) / cols;
 
     for (int i = 0; i < tiles.size(); ++i)
     {
@@ -156,12 +152,15 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
 {
     addAndMakeVisible (titleLabel);
     titleLabel.setText ("Presets", juce::dontSendNotification);
-    titleLabel.setFont (juce::Font (19.0f, juce::Font::bold));
+    titleLabel.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
+    titleLabel.setJustificationType (juce::Justification::centredLeft);
 
-    auto setupModeButton = [this] (juce::TextButton& button, Mode buttonMode)
+    auto setupModeButton = [this] (overlaychrome::ActionButton& button, Mode buttonMode)
     {
         addAndMakeVisible (button);
-        button.setClickingTogglesState (false);
+        button.selectedStyle = overlaychrome::SelectedStyle::tab;
+        button.mutedIdle = true;
+        button.selected = mode == buttonMode;
         button.onClick = [this, buttonMode] { setMode (buttonMode); };
     };
     setupModeButton (allModeButton, Mode::all);
@@ -172,7 +171,8 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
     newPresetButton.onClick = [this] { if (onNewRequested) onNewRequested(); };
 
     addAndMakeVisible (searchField);
-    searchField.setTextToShowWhenEmpty ("Search presets...", theme::current().textDim);
+    searchField.setTextToShowWhenEmpty ("Search presets...", theme::current().textMuted);
+    overlaychrome::drawSearchFieldChrome (searchField);
     searchField.onTextChange = [this] { rebuildTiles(); };
 
     addAndMakeVisible (tagBox);
@@ -186,7 +186,7 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
     bankLabel.setJustificationType (juce::Justification::centred);
     bankLabel.setFont (juce::Font (17.0f, juce::Font::bold));
 
-    auto setupSizeButton = [this] (juce::TextButton& button, int size)
+    auto setupSizeButton = [this] (overlaychrome::ActionButton& button, int size)
     {
         addAndMakeVisible (button);
         button.onClick = [this, size] { bankSize = size; rebuildTiles(); };
@@ -296,7 +296,7 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
 
     refreshTagFilter();
     refresh();
-    setSize (980, 640);
+    setSize (1180, 780);
 }
 
 juce::String PresetBrowserDialog::currentPresetName() const
@@ -307,6 +307,12 @@ juce::String PresetBrowserDialog::currentPresetName() const
 void PresetBrowserDialog::setMode (Mode newMode)
 {
     mode = newMode;
+    allModeButton.selected = mode == Mode::all;
+    bankModeButton.selected = mode == Mode::bank;
+    setlistModeButton.selected = mode == Mode::setlist;
+    allModeButton.repaint();
+    bankModeButton.repaint();
+    setlistModeButton.repaint();
     rebuildTiles();
 }
 
@@ -343,6 +349,11 @@ void PresetBrowserDialog::configureTile (PresetTile& tile, const PresetLibrary::
 
 void PresetBrowserDialog::rebuildTiles()
 {
+    bankSize4Button.kind = bankSize == 4 ? overlaychrome::ButtonKind::primary : overlaychrome::ButtonKind::normal;
+    bankSize8Button.kind = bankSize == 8 ? overlaychrome::ButtonKind::primary : overlaychrome::ButtonKind::normal;
+    bankSize4Button.repaint();
+    bankSize8Button.repaint();
+
     const bool allVisible = (mode == Mode::all);
     const bool bankVisible = (mode == Mode::bank);
     const bool setlistVisible = (mode == Mode::setlist);
@@ -641,75 +652,87 @@ void PresetBrowserDialog::showTileMenu (const PresetLibrary::Entry& entry)
 
 void PresetBrowserDialog::resized()
 {
-    auto area = getLocalBounds().reduced (14);
+    auto area = getLocalBounds();
+    auto header = area.removeFromTop (76).reduced (20, 0);
 
-    auto titleRow = area.removeFromTop (touch::minTapTarget);
-    titleLabel.setBounds (titleRow.removeFromLeft (140));
-    setlistModeButton.setBounds (titleRow.removeFromRight (116));
-    titleRow.removeFromRight (6);
-    bankModeButton.setBounds (titleRow.removeFromRight (104));
-    titleRow.removeFromRight (6);
-    allModeButton.setBounds (titleRow.removeFromRight (88));
-    titleRow.removeFromRight (6);
-    // 'New' lives next to 'All' in the tab row -- see onNewRequested.
-    newPresetButton.setBounds (titleRow.removeFromRight (72));
+    closeButton.setBounds (header.removeFromRight (52).withSizeKeepingCentre (52, 52));
+    titleLabel.setBounds (header.removeFromLeft (150));
 
-    area.removeFromTop (6);
+    auto placeTab = [&header] (overlaychrome::ActionButton& button, int width)
+    {
+        button.setBounds (header.removeFromLeft (width).withSizeKeepingCentre (width, 48));
+        header.removeFromLeft (8);
+    };
+    placeTab (newPresetButton, 88);
+    placeTab (allModeButton, 84);
+    placeTab (bankModeButton, 102);
+    placeTab (setlistModeButton, 118);
 
-    auto selectorRow = area.removeFromTop (touch::minTapTarget);
+    if (searchField.isVisible())
+    {
+        header.removeFromLeft (juce::jmax (0, header.getWidth() - 300));
+        searchField.setBounds (header.removeFromRight (300).withSizeKeepingCentre (300, 52));
+    }
+
+    auto body = area;
+    auto selectorRow = body.removeFromTop (56);
+
     if (mode == Mode::all)
     {
-        tagBox.setBounds (selectorRow.removeFromRight (190));
-        selectorRow.removeFromRight (8);
-        searchField.setBounds (selectorRow);
+        tagBox.setBounds (selectorRow);
     }
     else if (mode == Mode::bank)
     {
-        bankSize8Button.setBounds (selectorRow.removeFromRight (touch::minTapTarget));
+        bankSize8Button.setBounds (selectorRow.removeFromRight (56).withSizeKeepingCentre (56, 48));
         selectorRow.removeFromRight (6);
-        bankSize4Button.setBounds (selectorRow.removeFromRight (touch::minTapTarget));
+        bankSize4Button.setBounds (selectorRow.removeFromRight (56).withSizeKeepingCentre (56, 48));
+        selectorRow.removeFromRight (16);
 
-        bankPrevButton.setBounds (selectorRow.removeFromLeft (touch::minTapTarget));
-        bankLabel.setBounds (selectorRow.removeFromLeft (160));
-        bankNextButton.setBounds (selectorRow.removeFromLeft (touch::minTapTarget));
+        bankPrevButton.setBounds (selectorRow.removeFromLeft (48).withSizeKeepingCentre (48, 48));
+        bankLabel.setBounds (selectorRow.removeFromLeft (180));
+        bankNextButton.setBounds (selectorRow.removeFromLeft (48).withSizeKeepingCentre (48, 48));
     }
     else
     {
-        stepNextButton.setBounds (selectorRow.removeFromRight (120));
-        selectorRow.removeFromRight (6);
-        stepPrevButton.setBounds (selectorRow.removeFromRight (120));
+        stepNextButton.setBounds (selectorRow.removeFromRight (132).withSizeKeepingCentre (132, 48));
+        selectorRow.removeFromRight (8);
+        stepPrevButton.setBounds (selectorRow.removeFromRight (132).withSizeKeepingCentre (132, 48));
+        selectorRow.removeFromRight (16);
 
-        setlistMenuButton.setBounds (selectorRow.removeFromRight (touch::minTapTarget));
+        setlistMenuButton.setBounds (selectorRow.removeFromRight (48).withSizeKeepingCentre (48, 48));
+        selectorRow.removeFromRight (8);
 
-        setlistPrevButton.setBounds (selectorRow.removeFromLeft (touch::minTapTarget));
-        setlistNextButton.setBounds (selectorRow.removeFromLeft (touch::minTapTarget));
-        selectorRow.removeFromLeft (4);
+        setlistPrevButton.setBounds (selectorRow.removeFromLeft (48).withSizeKeepingCentre (48, 48));
+        setlistNextButton.setBounds (selectorRow.removeFromLeft (48).withSizeKeepingCentre (48, 48));
+        selectorRow.removeFromLeft (8);
         setlistLabel.setBounds (selectorRow);
     }
 
-    area.removeFromTop (4);
-    hintLabel.setBounds (area.removeFromTop (22));
-    area.removeFromTop (4);
+    body.removeFromTop (8);
 
-    auto bottomRow = area.removeFromBottom (touch::minTapTarget);
-    closeButton.setBounds (bottomRow.removeFromRight (90));
-    bottomRow.removeFromRight (8);
-    saveButton.setBounds (bottomRow.removeFromRight (120));
-    bottomRow.removeFromRight (8);
-    nameField.setBounds (bottomRow);
-
-    area.removeFromBottom (8);
+    auto bottomRow = body.removeFromBottom (76);
+    saveButton.setBounds (bottomRow.removeFromRight (150).withSizeKeepingCentre (150, 52));
+    bottomRow.removeFromRight (10);
+    hintLabel.setBounds (bottomRow.removeFromRight (juce::jmin (360, bottomRow.getWidth() / 3)).withSizeKeepingCentre (juce::jmin (360, bottomRow.getWidth() / 3), 24));
+    nameField.setBounds (bottomRow.withSizeKeepingCentre (bottomRow.getWidth(), 52));
+    overlaychrome::drawSearchFieldChrome (nameField);
+    body.removeFromBottom (10);
 
     if (mode == Mode::bank)
     {
-        // The bank is the one place the grid is NOT free-flowing: exactly
-        // bankSize tiles in a single row, one per foot-switch position.
         gridViewport.setVisible (false);
         const int n = juce::jmax (1, bankTiles.size());
-        const int tileW = (area.getWidth() - tileGap * (n - 1)) / n;
-        const int tileH = juce::jmin (180, area.getHeight() / 2);
+        const int cols = 4;
+        const int rows = (n + cols - 1) / cols;
+        const int gap = 16;
+        const int tileW = (body.getWidth() - gap * (cols - 1)) / cols;
+        const int tileH = (body.getHeight() - gap * (rows - 1)) / rows;
         for (int i = 0; i < n; ++i)
-            bankTiles[i]->setBounds (area.getX() + i * (tileW + tileGap), area.getY(), tileW, tileH);
+        {
+            const int row = i / cols, col = i % cols;
+            bankTiles[i]->setBounds (body.getX() + col * (tileW + gap),
+                                     body.getY() + row * (tileH + gap), tileW, tileH);
+        }
     }
     else
     {
@@ -717,10 +740,10 @@ void PresetBrowserDialog::resized()
             tile->setVisible (false);
 
         gridViewport.setVisible (true);
-        gridViewport.setBounds (area);
-        emptyStateLabel.setBounds (area);
+        gridViewport.setBounds (body);
+        emptyStateLabel.setBounds (body);
 
-        const int contentWidth = juce::jmax (1, area.getWidth() - gridViewport.getScrollBarThickness());
+        const int contentWidth = juce::jmax (1, body.getWidth() - gridViewport.getScrollBarThickness());
         tileGrid.setSize (contentWidth, tileGrid.layoutForWidth (contentWidth));
     }
 
@@ -729,7 +752,8 @@ void PresetBrowserDialog::resized()
 
 void PresetBrowserDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (cardBackground());
+    overlaychrome::paintCardBackground (g, getLocalBounds().toFloat());
+    overlaychrome::drawHeaderDivider (g, juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 76.0f));
 }
 
 } // namespace openguitarmultifx

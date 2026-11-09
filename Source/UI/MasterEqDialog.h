@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Engine/MasterEq.h"
+#include "OverlayChrome.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -88,7 +89,7 @@ private:
 
     juce::Label titleLabel;
     juce::Label hintLabel;
-    juce::TextButton closeButton { "Close" };
+    overlaychrome::CloseButton closeButton;
     juce::TextButton clearButton { "Clear" };
 
     // "+ band" row, one per type, in typeForIndex() order.

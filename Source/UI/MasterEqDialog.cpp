@@ -1,5 +1,6 @@
 #include "MasterEqDialog.h"
 
+#include "OverlayChrome.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 #include "TouchSizing.h"
@@ -30,7 +31,8 @@ MasterEqDialog::MasterEqDialog()
 {
     addAndMakeVisible (titleLabel);
     titleLabel.setText ("Master EQ", juce::dontSendNotification);
-    titleLabel.setFont (juce::Font (22.0f, juce::Font::bold));
+    titleLabel.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
+    titleLabel.setJustificationType (juce::Justification::centredLeft);
 
     addAndMakeVisible (hintLabel);
     hintLabel.setFont (juce::Font (13.0f));
@@ -122,7 +124,7 @@ MasterEqDialog::MasterEqDialog()
     noSelectionLabel.setJustificationType (juce::Justification::centred);
 
     // Big enough for a real curve to drag on -- OverlayHost clamps it to the window.
-    setSize (1040, 680);
+    setSize (1180, 780);
 }
 
 MasterEqDialog::~MasterEqDialog() = default;
@@ -305,16 +307,16 @@ void MasterEqDialog::refreshSelectedStrip()
 
 void MasterEqDialog::resized()
 {
-    auto area = getLocalBounds().reduced (24, 20);
+    auto area = getLocalBounds().reduced (22, 22);
 
-    auto top = area.removeFromTop (touch::minTapTarget);
-    closeButton.setBounds (top.removeFromRight (110).withSizeKeepingCentre (110, touch::minTapTarget));
-    clearButton.setBounds (top.removeFromRight (90).withSizeKeepingCentre (90, touch::minTapTarget));
-    titleLabel.setBounds (top.removeFromLeft (160));
-    hintLabel.setBounds (top);
+    auto top = area.removeFromTop (76);
+    closeButton.setBounds (top.removeFromRight (52).withSizeKeepingCentre (52, 52));
+    clearButton.setBounds (top.removeFromRight (12 + 96).withSizeKeepingCentre (96, 48));
+    titleLabel.setBounds (top.removeFromLeft (260));
+    hintLabel.setBounds (top.removeFromLeft (top.getWidth()).withTrimmedTop (28).withHeight (20));
 
     area.removeFromTop (10);
-    graphArea = area.removeFromTop (juce::jmax (240, area.getHeight() - 220)).toFloat();
+    graphArea = area.removeFromTop (juce::jmax (300, area.getHeight() - 240)).toFloat();
 
     area.removeFromTop (10);
 
@@ -352,6 +354,8 @@ void MasterEqDialog::resized()
 
 void MasterEqDialog::paint (juce::Graphics& g)
 {
+    overlaychrome::paintCardBackground (g, getLocalBounds().toFloat());
+    overlaychrome::drawHeaderDivider (g, juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 76.0f));
     paintGraph (g, graphArea);
 }
 

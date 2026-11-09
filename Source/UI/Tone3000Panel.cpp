@@ -1,4 +1,5 @@
 #include "Tone3000Panel.h"
+#include "OverlayChrome.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 
@@ -94,7 +95,8 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
       updater (updaterToUse)
 {
     addAndMakeVisible (titleLabel);
-    titleLabel.setFont (juce::Font (23.0f, juce::Font::bold));
+    titleLabel.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
+    titleLabel.setJustificationType (juce::Justification::centredLeft);
 
     addAndMakeVisible (viewport);
     viewport.setViewedComponent (&content, false);
@@ -280,7 +282,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     applyLabelColours();
     refreshLoginState();
     applyUpdateUiState();
-    setSize (980, 720);
+    setSize (1180, 780);
 }
 
 void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double current)
@@ -561,23 +563,21 @@ void Tone3000Panel::doLoginEmbedded (const juce::String& authorizeUrl)
 
 void Tone3000Panel::resized()
 {
-    auto area = getLocalBounds().reduced (16);
+    auto area = getLocalBounds().reduced (22);
 
-    auto titleRow = area.removeFromTop (touch::minTapTarget + 8);
-    closeButton.setBounds (titleRow.removeFromRight (110).withSizeKeepingCentre (110, touch::minTapTarget));
-    titleLabel.setBounds (titleRow);
-    area.removeFromTop (12);
+    auto header = area.removeFromTop (76);
+    closeButton.setBounds (header.removeFromRight (52).withSizeKeepingCentre (52, 52));
+    titleLabel.setBounds (header.removeFromLeft (280));
 
     auto body = area;
-    navRailBounds = body.removeFromLeft (220);
-    body.removeFromLeft (12);
-    viewport.setBounds (body);
+    navRailBounds = body.removeFromLeft (240);
+    viewport.setBounds (body.reduced (12, 0));
 
-    auto rail = navRailBounds.reduced (10, 8);
+    auto rail = navRailBounds.reduced (12, 10);
     for (auto* component : navButtons)
     {
         component->setBounds (rail.removeFromTop (touch::minTapTarget));
-        rail.removeFromTop (6);
+        rail.removeFromTop (8);
     }
 
     layoutContent();
@@ -808,12 +808,13 @@ void Tone3000Panel::doInstallUpdate()
 
 void Tone3000Panel::paint (juce::Graphics& g)
 {
-    g.fillAll (theme::current().background);
+    overlaychrome::paintCardBackground (g, getLocalBounds().toFloat());
+    overlaychrome::drawHeaderDivider (g, juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 76.0f));
+
     if (navRailBounds.getWidth() > 0)
     {
         g.setColour (theme::current().line);
-        const float x = (float) navRailBounds.getRight() + 6.0f;
-        g.drawVerticalLine (x, (float) getLocalBounds().getY() + 16.0f, (float) getLocalBounds().getBottom() - 16.0f);
+        g.drawVerticalLine (navRailBounds.getRight() + 6, 76.0f, (float) getHeight() - 22.0f);
     }
 }
 
