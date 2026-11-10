@@ -56,6 +56,15 @@ namespace
                     .withSaturation (juce::jmin (0.6f, accent.getSaturation()));
     }
 
+    int pillWidthFor (const juce::String& text, bool hasGlyph)
+    {
+        if (text.isEmpty())
+            return 50; // prototype icon-only pill: 16px padding + 18px glyph + 16px padding
+
+        const float textWidth = juce::GlyphArrangement::getStringWidth (juce::Font (13.0f), text);
+        return (int) std::ceil (textWidth + (hasGlyph ? 26.0f : 0.0f) + 32.0f);
+    }
+
     juce::Point<float> knobPoint (juce::Point<float> centre, float radius, float angle)
     {
         const float a = angle - juce::MathConstants<float>::halfPi;
@@ -868,10 +877,10 @@ void ParameterPanel::resized()
         cursor -= drawerGap;
     };
 
-    placeRight (closeButton, 52);
-    placeRight (removeButton, 56);
-    placeRight (tone3000Button, 142);
-    placeRight (midiButton, 112);
+    placeRight (closeButton, pillWidthFor (closeButton.getButtonText(), true));
+    placeRight (removeButton, pillWidthFor (removeButton.getButtonText(), true));
+    placeRight (tone3000Button, pillWidthFor (tone3000Button.getButtonText(), true));
+    placeRight (midiButton, pillWidthFor (midiButton.getButtonText(), true));
     placeRight (bypassSwitch, 104);
 
     if (! pageTabs.empty())
@@ -887,7 +896,7 @@ void ParameterPanel::resized()
     }
 
     const int rightContentLeft = juce::jmax (drawerSidePadding + 62, cursor);
-    const int modelWidth = modelButton.isVisible() ? 150 : 0;
+    const int modelWidth = modelButton.isVisible() ? pillWidthFor (modelButton.getButtonText(), true) : 0;
     const int left = drawerSidePadding;
     headerIcon.setBounds (left, 21, drawerIconSize, drawerIconSize);
 
