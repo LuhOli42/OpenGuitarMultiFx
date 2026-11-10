@@ -337,7 +337,7 @@ void SignalGraph::stopWorkers()
     workersShouldStop.store (false, std::memory_order_relaxed);
 }
 
-void SignalGraph::process (juce::AudioBuffer<float>& buffer)
+void SignalGraph::processLanes (juce::AudioBuffer<float>& buffer)
 {
     const int numSamples = buffer.getNumSamples();
 
@@ -379,6 +379,13 @@ void SignalGraph::process (juce::AudioBuffer<float>& buffer)
                 runLane (stage.laneIndices[(size_t) i], numSamples);
         }
     }
+}
+
+void SignalGraph::process (juce::AudioBuffer<float>& buffer)
+{
+    const int numSamples = buffer.getNumSamples();
+
+    processLanes (buffer);
 
     if (! anyLaneWritesOutput)
         return; // leave `buffer` exactly as it came in -- the passthrough contract

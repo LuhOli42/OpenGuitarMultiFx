@@ -43,8 +43,8 @@ This is explicitly a **dev-facing chain builder pulled forward from Phase 7**, n
 ```
 MainComponent::addEffect() → registry.create() → chain.push_back() → blocks.add(EffectBlockComponent)
                                                           ↓
-                                              rebuildSignalGraph() → AudioEngine::setSignalGraph()
-                                                          (atomic swap, see Source/Engine/AGENTS.md)
+                                              rebuildSignalGraph() → AudioEngine::setSignalGraph(graph, outputMatrix)
+                                                          (atomic swaps, see Source/Engine/AGENTS.md)
 
 Block tapped → selectBlock() → ParameterPanel shows that processor's knobs
 Block dragged → handleBlockDragEnded() → chainColumns maps drop x/y → flat index →

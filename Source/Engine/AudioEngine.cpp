@@ -162,11 +162,24 @@ juce::String AudioEngine::openDevice()
             // is exactly what a fresh initialiseWithDefaultDevices() would
             // pick for this device, computed by JUCE itself rather than
             // carried over from a different device.
+            // JUCE's "default channels" still means the count passed to
+            // initialiseWithDefaultDevices() (2 here), which would leave
+            // Out 3/4+ advertised by ALSA but never opened. Probe the USB
+            // device and open every sane output pair explicitly instead.
+            int outputChannelCount = 2;
+            if (auto* probe = type->createDevice (usbOutputName, usbInputName))
+            {
+                outputChannelCount = juce::jmin (maxSaneChannelCount, probe->getOutputChannelNames().size());
+                delete probe;
+            }
+
             juce::AudioDeviceManager::AudioDeviceSetup setup;
             setup.inputDeviceName = usbInputName;
             setup.outputDeviceName = usbOutputName;
             setup.useDefaultInputChannels = true;
-            setup.useDefaultOutputChannels = true;
+            setup.useDefaultOutputChannels = false;
+            setup.outputChannels.clear();
+            setup.outputChannels.setRange (0, juce::jmax (2, outputChannelCount), true);
 
             const auto switchErr = deviceManager.setAudioDeviceSetup (setup, true);
             if (switchErr.isNotEmpty())
@@ -362,7 +375,8 @@ void AudioEngine::stop()
     deviceManager.removeAudioCallback (this);
 }
 
-void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph)
+void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph,
+                                  std::unique_ptr<OutputMatrix> newOutputMatrix)
 {
     if (newGraph != nullptr)
     {
@@ -373,7 +387,10 @@ void AudioEngine::setSignalGraph (std::unique_ptr<SignalGraph> newGraph)
             newGraph->prepare (sr, bs, 2);
     }
 
-    graphSlot.publish (std::move (newGraph));
+    auto bundle = std::make_unique<SignalGraphBundle>();
+    bundle->graph = std::move (newGraph);
+    bundle->outputMatrix = std::move (newOutputMatrix);
+    graphSlot.publish (std::move (bundle));
 }
 
 void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
@@ -387,7 +404,12 @@ void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
         return; // no device running -- nothing to spill onto
 
     unit->graph->setAudioCallerIsRealtime (callbackIsRealtime.load (std::memory_order_relaxed));
-    unit->prepare (sr, bs, 2); // prepareIfNeeded keeps every processor's tail state
+
+    int outputChannels = 2;
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        outputChannels = juce::jmax (1, juce::jmin (maxSaneChannelCount, device->getOutputChannelNames().size()));
+
+    unit->prepare (sr, bs, 2, outputChannels); // prepareIfNeeded keeps every processor's tail state
     spillover.add (std::move (unit));
 }
 
@@ -402,7 +424,9 @@ void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples
     // array, no allocation on the audio thread).
     if (! swapFadeRanThisBlock)
     {
-        spillover.process (buffer, sampleRate.load (std::memory_order_relaxed));
+        spillover.process (buffer, sampleRate.load (std::memory_order_relaxed),
+                           currentOutputMatrix, selectedOutputPairStart.load (std::memory_order_relaxed),
+                           buffer.getNumChannels());
     }
     else if (swapFadeSamplesThisBlock < numSamples)
     {
@@ -410,14 +434,19 @@ void AudioEngine::processGraph (juce::AudioBuffer<float>& buffer, int numSamples
         for (int ch = 0; ch < chs; ++ch)
             spillSlicePtrs[ch] = buffer.getWritePointer (ch) + swapFadeSamplesThisBlock;
         juce::AudioBuffer<float> remainder (spillSlicePtrs, chs, numSamples - swapFadeSamplesThisBlock);
-        spillover.process (remainder, sampleRate.load (std::memory_order_relaxed));
+        spillover.process (remainder, sampleRate.load (std::memory_order_relaxed),
+                           currentOutputMatrix, selectedOutputPairStart.load (std::memory_order_relaxed),
+                           remainder.getNumChannels());
     }
 }
 
 void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int numSamples)
 {
-    auto* graph = graphSlot.currentRaw();
+    auto* bundle = graphSlot.currentRaw();
+    auto* graph = bundle != nullptr ? bundle->graph.get() : nullptr;
+    auto* outputMatrix = bundle != nullptr ? bundle->outputMatrix.get() : nullptr;
     const auto now = juce::Time::getHighResolutionTicks();
+    currentOutputMatrix = (outputMatrix != nullptr && outputMatrix->hasRoutes()) ? outputMatrix : nullptr;
 
     if (graph != activeGraph)
     {
@@ -445,9 +474,21 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
     lastCallbackTicks = now;
     swapFadeRanThisBlock = false;
     swapFadeSamplesThisBlock = 0;
+    outputMatrixActiveThisBlock = false;
 
     if (graph != nullptr)
-        graph->process (buffer);
+    {
+        if (outputMatrix != nullptr && outputMatrix->hasRoutes())
+        {
+            graph->processLanes (buffer);
+            outputMatrix->render (buffer, *graph);
+            outputMatrixActiveThisBlock = true;
+        }
+        else
+        {
+            graph->process (buffer);
+        }
+    }
 
     // Record this block's output before any fade mixing: the ring always holds the clean
     // single-graph signal a later swap replays. Frozen while a fade is active: when the ring is
@@ -527,8 +568,9 @@ void AudioEngine::detectCallbackRealtime() noexcept
     // process this block: the published graph and every spill (active +
     // the pending hand-off). The swap fade's retired graph never runs --
     // its recorded tail is replayed instead -- so it needs no stamp.
-    if (auto* g = graphSlot.currentRaw())
-        g->setAudioCallerIsRealtime (realtime);
+    if (auto* bundle = graphSlot.currentRaw())
+        if (auto* g = bundle->graph.get())
+            g->setAudioCallerIsRealtime (realtime);
     spillover.setAudioCallerIsRealtime (realtime);
 }
 
@@ -561,8 +603,9 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 
     // The graph that is already published was prepared for whatever rate the device ran at before (a rate change, a re-opened device);
     // the callback is not running yet, so preparing it here is safe. A processor whose rate did not change ignores the call.
-    if (auto* graph = graphSlot.currentRaw())
-        graph->prepare (device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples(), 2);
+    if (auto* bundle = graphSlot.currentRaw())
+        if (auto* graph = bundle->graph.get())
+            graph->prepare (device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples(), 2);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -682,7 +725,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     // clamped to what this device actually has, so a stale selection from a
     // previously-connected interface with more outputs can never reach past
     // the end of the current one's channel array.
-    if (numOutputChannels > 0)
+    if (! outputMatrixActiveThisBlock && numOutputChannels > 0)
     {
         const int pairStart = juce::jlimit (0, numOutputChannels - 1,
                                              selectedOutputPairStart.load (std::memory_order_relaxed));

@@ -738,7 +738,12 @@ void MainComponent::rebuildSignalGraph()
                 signalGraph->addLaneConnection (row, target); // target > row always -- forward-only, enforced in showRowOutputMenu()
     }
 
-    audioEngine.setSignalGraph (std::move (signalGraph));
+    auto outputMatrix = std::make_unique<OutputMatrix>();
+    for (int row = 0; row < numRows; ++row)
+        if (rowRouting[(size_t) row].toDevice)
+            outputMatrix->addRoute (row, rowRouting[(size_t) row].deviceOutputPair);
+
+    audioEngine.setSignalGraph (std::move (signalGraph), std::move (outputMatrix));
 }
 
 void MainComponent::layoutChain()

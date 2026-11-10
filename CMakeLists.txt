@@ -156,6 +156,7 @@ set(OGMFX_CORE_SOURCES
   Source/EffectRegistry.cpp
   Source/Engine/MasterEq.cpp
   Source/Engine/PitchDetector.cpp
+  Source/Engine/OutputMatrix.cpp
   Source/Engine/SignalGraph.cpp
   Source/Engine/Spillover.cpp
   Source/Engine/ParameterManager.cpp
