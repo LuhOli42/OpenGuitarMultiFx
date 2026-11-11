@@ -186,7 +186,7 @@ void SnapshotBar::paint (juce::Graphics& g)
             // Bold Blocks: the cell IS the snapshot colour.
             g.setColour (colour);
             g.fillRoundedRectangle (cell, t.smallRadius);
-            ink = colour.contrasting (juce::Colours::black, juce::Colours::white);
+            ink = theme::inkOn (colour, juce::Colours::black, juce::Colours::white);
             if (t.blockStyle == theme::BlockStyle::glow)
             {
                 g.setColour (colour.withAlpha (0.3f));
@@ -207,7 +207,7 @@ void SnapshotBar::paint (juce::Graphics& g)
             // Stage Glass: colour fill + glow, same as Bold's generic rule.
             g.setColour (colour);
             g.fillRoundedRectangle (cell, t.smallRadius);
-            ink = colour.contrasting (juce::Colours::black, juce::Colours::white);
+            ink = theme::inkOn (colour, juce::Colours::black, juce::Colours::white);
             g.setColour (colour.withAlpha (0.3f));
             g.drawRoundedRectangle (cell.expanded (3.0f), t.smallRadius + 3.0f, 5.0f);
         }

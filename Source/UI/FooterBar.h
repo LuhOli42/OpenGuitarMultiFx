@@ -29,6 +29,8 @@ public:
 
     void resized() override;
     void paint (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
+    void lookAndFeelChanged() override;
 
     void setLevels (float inLevel, float outLevel);
     double getBpm() const noexcept { return bpm; }
@@ -57,6 +59,7 @@ private:
     juce::String snapshotLabel;
     juce::Colour snapshotColour;
     juce::Rectangle<float> inMeterBounds, outMeterBounds;
+    juce::Rectangle<float> masterCardBounds; // prototype: Master is an .fbtn card like Tuner / Master EQ
 
     void drawHorizontalMeter (juce::Graphics& g, juce::Rectangle<float> bounds, float level,
                               const juce::String& label) const;

@@ -56,6 +56,15 @@ struct Tokens
 
 const Tokens& get (Id id) noexcept;
 const Tokens& current() noexcept;
+
+/** Text/glyph colour for something drawn ON `fill`: `dark` on a light fill, `light` on a dark one. The prototype puts
+    #000 on every accent/snapshot fill, so the cut-off is low. (Not `fill.contrasting (a, b)`: that two-argument form is
+    a STATIC JUCE function that ignores `fill` and returns a grey contrasting with both a and b.) */
+inline juce::Colour inkOn (juce::Colour fill, juce::Colour dark = juce::Colours::black,
+                          juce::Colour light = juce::Colours::white) noexcept
+{
+    return fill.getPerceivedBrightness() > 0.4f ? dark : light;
+}
 Id currentId() noexcept;
 
 /** UI thread only. Does not repaint or save -- see applyTheme() on the LookAndFeel and save(). */

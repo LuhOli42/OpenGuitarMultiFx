@@ -18,7 +18,7 @@ inline juce::Font font (float size, bool bold = false)
 
 inline juce::Colour inkOn (juce::Colour colour)
 {
-    return colour.contrasting (juce::Colours::black, juce::Colours::white);
+    return theme::inkOn (colour, juce::Colours::black, juce::Colours::white);
 }
 
 inline void paintCardBackground (juce::Graphics& g, juce::Rectangle<float> bounds)

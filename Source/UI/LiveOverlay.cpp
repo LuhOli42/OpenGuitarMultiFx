@@ -15,7 +15,7 @@ namespace
 
     juce::Colour inkOn (juce::Colour fill)
     {
-        return fill.contrasting (juce::Colours::black, juce::Colours::white);
+        return theme::inkOn (fill, juce::Colours::black, juce::Colours::white);
     }
 }
 

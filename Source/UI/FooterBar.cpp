@@ -101,6 +101,7 @@ FooterBar::FooterBar()
     masterSlider.setRange (-60.0, 12.0, 0.1);
     masterSlider.setSkewFactor (0.4);
     masterSlider.setDoubleClickReturnValue (true, 0.0);
+    masterSlider.getProperties().set ("compactRing", true); // prototype's 44 px ring, see drawRotarySlider()
     masterSlider.onValueChange = [this]
     {
         masterDb = (float) masterSlider.getValue();
@@ -111,6 +112,8 @@ FooterBar::FooterBar()
 
     addAndMakeVisible (masterTitleLabel);
     masterTitleLabel.setFont (juce::Font (12.0f));
+    masterTitleLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
+    masterTitleLabel.setText (caps ("Master"), juce::dontSendNotification);
     masterTitleLabel.setJustificationType (juce::Justification::centredLeft);
 
     addAndMakeVisible (masterValueLabel);
@@ -186,9 +189,11 @@ void FooterBar::resized()
     eqButton.setBounds (area.removeFromLeft (190));
     area.removeFromLeft (14);
 
-    auto masterZone = area.removeFromLeft (170);
+    auto masterZone = area.removeFromLeft (188);
+    masterCardBounds = masterZone.toFloat();
+    masterZone = masterZone.reduced (14, 0);
     masterTitleLabel.setBounds (masterZone.removeFromLeft (54));
-    masterValueLabel.setBounds (masterZone.removeFromRight (72));
+    masterValueLabel.setBounds (masterZone.removeFromRight (70));
     masterSlider.setBounds (masterZone.withSizeKeepingCentre (48, 48));
 
     auto meterZone = area.removeFromRight (220);
@@ -216,22 +221,46 @@ void FooterBar::paint (juce::Graphics& g)
         g.fillRect (0.0f, 8.0f, (float) getWidth(), 3.0f);
     }
 
+    // Master card (prototype .fbtn) -- the slider and labels sit on it.
+    if (! masterCardBounds.isEmpty())
+    {
+        g.setColour (t.raised);
+        g.fillRoundedRectangle (masterCardBounds.reduced (0.5f), t.smallRadius);
+        g.setColour (t.line);
+        g.drawRoundedRectangle (masterCardBounds.reduced (0.5f), t.smallRadius, 1.0f);
+    }
+
+    drawHorizontalMeter (g, inMeterBounds, inLevel, "IN");
+    drawHorizontalMeter (g, outMeterBounds, outLevel, "OUT");
+}
+
+void FooterBar::paintOverChildren (juce::Graphics& g)
+{
+    // Over the children: the prototype's snapshot tab hangs off the accent stripe and overlaps the Tuner card's top
+    // edge -- painted in paint() it sat UNDER that card and only a sliver showed.
+    const auto accent = snapshotColour.isTransparent() ? OpenGuitarMultiFxLookAndFeel::getAppAccentColour()
+                                                       : snapshotColour;
     if (snapshotLabel.isNotEmpty())
     {
         const juce::Font tabFont (10.5f, juce::Font::bold);
         const float tabWidth = tabFont.getStringWidthFloat (snapshotLabel) + 20.0f;
         juce::Path tab;
-        tab.addRoundedRectangle (16.0f, 3.0f, tabWidth, 20.0f, 8.0f, 8.0f, false, false, true, true);
+        tab.addRoundedRectangle (16.0f, 3.0f, tabWidth, 17.0f, 6.0f, 6.0f, false, false, true, true);
         g.setColour (accent);
         g.fillPath (tab);
-        g.setColour (accent.contrasting (juce::Colours::black, juce::Colours::white));
+        g.setColour (theme::inkOn (accent, juce::Colours::black, juce::Colours::white));
         g.setFont (tabFont);
-        g.drawText (snapshotLabel, juce::Rectangle<int> (16, 3, (int) tabWidth, 20),
+        g.drawText (snapshotLabel, juce::Rectangle<int> (16, 3, (int) tabWidth, 17),
                     juce::Justification::centred);
     }
 
-    drawHorizontalMeter (g, inMeterBounds, inLevel, "IN");
-    drawHorizontalMeter (g, outMeterBounds, outLevel, "OUT");
+}
+
+void FooterBar::lookAndFeelChanged()
+{
+    masterTitleLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
+    masterTitleLabel.setText (caps ("Master"), juce::dontSendNotification);
+    juce::Component::lookAndFeelChanged();
 }
 
 void FooterBar::drawHorizontalMeter (juce::Graphics& g, juce::Rectangle<float> bounds, float level,

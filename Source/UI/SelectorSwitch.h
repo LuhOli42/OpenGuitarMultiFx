@@ -76,7 +76,7 @@ public:
             g.setColour (isSelected ? accentLifted : t.line);
             g.drawRoundedRectangle (button, t.smallRadius, 1.0f);
 
-            g.setColour (isSelected ? accentLifted.contrasting (t.background, t.text)
+            g.setColour (isSelected ? theme::inkOn (accentLifted, t.background, t.text)
                                     : t.textMuted);
             g.setFont (juce::Font (13.0f, isSelected ? juce::Font::bold : juce::Font::plain));
             auto optionText = options[i];
