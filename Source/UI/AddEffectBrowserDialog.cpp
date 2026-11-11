@@ -352,9 +352,13 @@ void AddEffectBrowserDialog::rebuildChips()
                          || label == selectedSubcategory;
         chip->onClick = [this, label]
         {
-            selectedSubcategory = label == "All" ? juce::String() : label;
-            rebuildChips();
-            rebuildRows();
+            // rebuildChips() deletes THIS chip, and with it the lambda's captured `this` -- keep our own copy on
+            // the stack for the call after it (using the capture there was a use-after-free: clicking a
+            // subcategory chip such as Bass crashed in rebuildRows()).
+            auto* const self = this;
+            self->selectedSubcategory = label == "All" ? juce::String() : label;
+            self->rebuildChips();
+            self->rebuildRows();
         };
     }
 }

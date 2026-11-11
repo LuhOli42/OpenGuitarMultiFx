@@ -392,14 +392,14 @@ void ParameterPanel::rebuildForCurrentProcessor()
     bypassSwitch.setVisible (true);
     bypassSwitch.setOn (! current->isBypassed());
 
-    const auto pages = current->getParameterPages();
-    pageCount = (int) pages.size();
-    currentPage = 0;
+    const auto sourcePages = current->getParameterPages();
+    const int sourceCount = (int) sourcePages.size();
 
-    for (int pageIndex = 0; pageIndex < pageCount; ++pageIndex)
-        pageLabels.push_back ([&]
+    std::vector<juce::String> sourceLabels;
+    for (int pageIndex = 0; pageIndex < sourceCount; ++pageIndex)
+        sourceLabels.push_back ([&]
         {
-            if (pageCount <= 1)
+            if (sourceCount <= 1)
                 return juce::String ("Main");
             if (haveRegistryCategory && category == EffectRegistry::Category::amps)
             {
@@ -408,13 +408,39 @@ void ParameterPanel::rebuildForCurrentProcessor()
                 if (pageIndex == 1)
                     return juce::String ("Power");
                 bool hasCab = false;
-                for (auto* p : pages[(size_t) pageIndex])
+                for (auto* p : sourcePages[(size_t) pageIndex])
                     if (juce::String (p->paramID).endsWith ("_cab"))
                         hasCab = true;
                 return hasCab ? juce::String ("Cab") : juce::String ("Page ") + juce::String (pageIndex + 1);
             }
             return pageIndex == 0 ? juce::String ("Main") : juce::String ("Page ") + juce::String (pageIndex + 1);
         }());
+
+    // One screen never holds more than maxControlsPerScreen controls (one row at the drawer's width -- user request
+    // 2026-11-10: models with lots of controls get split across screens). A long page splits into EVEN chunks
+    // (10 -> 5+5, not 8+2), labelled "Amp", "Amp 2", ... so the grouping the processor declared is kept.
+    constexpr int maxControlsPerScreen = 8;
+    std::vector<std::vector<juce::AudioParameterFloat*>> pages;
+    for (int pageIndex = 0; pageIndex < sourceCount; ++pageIndex)
+    {
+        const auto& src = sourcePages[(size_t) pageIndex];
+        const int n = (int) src.size();
+        const int chunks = juce::jmax (1, (n + maxControlsPerScreen - 1) / maxControlsPerScreen);
+        const int perChunk = juce::jmax (1, (n + chunks - 1) / chunks);
+        for (int c = 0; c < chunks; ++c)
+        {
+            const int begin = juce::jmin (n, c * perChunk), end = juce::jmin (n, begin + perChunk);
+            pages.emplace_back (src.begin() + begin, src.begin() + end);
+            auto label = sourceLabels[(size_t) pageIndex];
+            if (c > 0)
+                label = (sourceCount <= 1 && label == "Main" ? juce::String ("Page") : label) + " " + juce::String (c + 1);
+            pageLabels.push_back (label);
+        }
+    }
+    pageCount = (int) pages.size();
+    currentPage = 0;
+    if (pageCount == 1)
+        pageLabels.front() = "Main";
 
     if (pageCount > 1)
     {
@@ -1030,8 +1056,20 @@ void ParameterPanel::paint (juce::Graphics& g)
 
         const auto fillPath = makePath (true);
         const auto borderPath = makePath (false);
-        juce::DropShadow shadow (juce::Colours::black.withAlpha (0.55f), 30, { 0, -30 });
-        shadow.drawForPath (g, fillPath);
+        // The blur is the expensive part (DropShadow blurs the whole path every call, regardless of the clip), and
+        // the panel is repainted for every knob/switch change inside it -- render it once per size and blit it.
+        // Margins: radius 30 + offset -30 spills up to 60 px above and 30 px to each side (painting is unclipped).
+        constexpr int shadowSide = 30, shadowTop = 60;
+        const juce::Point<int> wantedSize (getWidth(), getHeight());
+        if (shadowCache.isNull() || shadowCacheSize != wantedSize)
+        {
+            shadowCacheSize = wantedSize;
+            shadowCache = juce::Image (juce::Image::ARGB, wantedSize.x + 2 * shadowSide, wantedSize.y + shadowTop, true);
+            juce::Graphics sg (shadowCache);
+            sg.addTransform (juce::AffineTransform::translation ((float) shadowSide, (float) shadowTop));
+            juce::DropShadow (juce::Colours::black.withAlpha (0.55f), 30, { 0, -30 }).drawForPath (sg, fillPath);
+        }
+        g.drawImageAt (shadowCache, -shadowSide, -shadowTop);
         g.setGradientFill (juce::ColourGradient (t.raised.withMultipliedBrightness (0.92f), 0.0f, 0.0f,
                                                  t.surface.withMultipliedBrightness (0.95f), 0.0f, h, false));
         g.fillPath (fillPath);
@@ -1121,7 +1159,7 @@ void ParameterPanel::HeaderIcon::paint (juce::Graphics& g)
         }
     }
 
-    const auto tint = boldStyle ? accent.contrasting (t.background, t.text) : accent;
+    const auto tint = boldStyle ? theme::inkOn (accent, t.background, t.text) : accent;
     for (int y = 0; y < renderSize; ++y)
         for (int x = 0; x < renderSize; ++x)
         {
@@ -1151,7 +1189,7 @@ void ParameterPanel::PageTabButton::paintButton (juce::Graphics& g, bool highlig
         if (boldStyle)
         {
             fill = accent.isTransparent() ? t.raisedHigh : accent;
-            textColour = fill.contrasting (t.background, t.text);
+            textColour = theme::inkOn (fill, t.background, t.text);
         }
         else
         {
@@ -1193,9 +1231,10 @@ void ParameterPanel::BypassSwitch::paintButton (juce::Graphics& g, bool highligh
     const auto bounds = getLocalBounds().toFloat();
 
     // Prototype order is label then switch; the whole 104px component is the tap target.
-    g.setColour (on ? t.text : t.textMuted);
-    g.setFont (juce::Font (12.0f, juce::Font::bold));
-    g.drawText ("Ligado", juce::Rectangle<float> (bounds.getX(), bounds.getY(), 44.0f, bounds.getHeight()),
+    // Prototype: a quiet 12 px caption in the muted colour whatever the state -- the switch itself carries on/off.
+    g.setColour (t.textMuted);
+    g.setFont (juce::Font (12.0f, juce::Font::plain));
+    g.drawText (t.uppercaseLabels ? "LIGADO" : "Ligado", juce::Rectangle<float> (bounds.getX(), bounds.getY(), 44.0f, bounds.getHeight()),
                 juce::Justification::centredLeft);
 
     const auto track = juce::Rectangle<float> (bounds.getRight() - 66.0f, bounds.getCentreY() - 18.0f, 66.0f, 36.0f);
