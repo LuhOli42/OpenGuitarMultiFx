@@ -57,30 +57,17 @@ public:
             if (fx == nullptr)
                 continue;
             ParameterPanel panel;
+            panel.setEffectRegistry (registry); // category accent, subtitle and page names, as in the app
             panel.setProcessor (fx.get());
-            const int pages = (int) fx->getParameterPages().size();
-            for (int page = 0; page < pages; ++page)
+            for (int page = 0; page < panel.getPageCount(); ++page)
             {
+                panel.selectPage (page);
                 panel.setBounds (0, 0, 1280, juce::jmax (240, panel.getPreferredContentHeight (1280)));
                 const auto image = panel.createComponentSnapshot (panel.getLocalBounds(), true, 1.0f);
                 juce::File out (dir + "/" + key + "-page" + juce::String (page + 1) + ".png");
                 out.deleteFile();
                 juce::FileOutputStream stream (out);
                 juce::PNGImageFormat().writeImageToStream (image, stream);
-                // Advance to the next knob page: the drawer's numbered page
-                // tabs (ParameterPanel::pageTabs, redesign card 3) are direct
-                // children of the panel -- no recursion needed, and matching
-                // the toggle state keeps value boxes / sync toggles from
-                // ever matching.
-                for (auto* child : panel.getChildren())
-                {
-                    if (auto* b = dynamic_cast<juce::TextButton*> (child))
-                        if (b->isVisible() && b->getButtonText() == juce::String (page + 2) && b->getClickingTogglesState() && b->onClick)
-                        {
-                            b->onClick();
-                            break;
-                        }
-                }
             }
         }
     }
@@ -128,6 +115,27 @@ public:
         juce::LookAndFeel::setDefaultLookAndFeel (lookAndFeel.get());
 
         juce::Logger::writeToLog ("initialise() -- creating MainWindow");
+        // `--window-snapshot <file.png>`: build the main screen OFF-screen (no window), give its async start-up ~3 s,
+        // render it at the target's 1280x800 to <file> and quit -- for comparing against docs/ui/prototype.html
+        // without grabbing the desktop.
+        if (const int at = args.indexOf ("--window-snapshot"); at >= 0 && at + 1 < args.size())
+        {
+            const juce::File out (args[at + 1].unquoted());
+            snapshotComponent = std::make_unique<MainComponent>();
+            snapshotComponent->setSize (1280, 800);
+            juce::Timer::callAfterDelay (3000, [this, out]
+            {
+                const auto image = snapshotComponent->createComponentSnapshot (snapshotComponent->getLocalBounds(), true, 1.0f);
+                out.deleteFile();
+                juce::FileOutputStream stream (out);
+                juce::PNGImageFormat().writeImageToStream (image, stream);
+                stream.flush();
+                snapshotComponent = nullptr;
+                quit();
+            });
+            return;
+        }
+
         mainWindow = std::make_unique<MainWindow> (getApplicationName() + " -- cheapCortex");
         juce::Logger::writeToLog ("initialise() -- MainWindow created and visible");
     }
@@ -150,6 +158,7 @@ public:
 
 private:
     std::unique_ptr<MainWindow> mainWindow;
+    std::unique_ptr<juce::Component> snapshotComponent; // --window-snapshot only
     std::unique_ptr<OpenGuitarMultiFxLookAndFeel> lookAndFeel;
     std::unique_ptr<juce::FileLogger> fileLogger;
 };

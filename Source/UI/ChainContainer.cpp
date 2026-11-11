@@ -109,10 +109,12 @@ void ChainContainer::paint (juce::Graphics& g)
 
             const auto cell = cellBounds (index);
             const bool hover = hoveredIndex == index;
-            drawDashedRoundedRect (g, cell, t.radius, hover ? t.lineStrong : t.line.withAlpha (0.55f), 1.5f);
+            // Prototype: dashed var(--ln) at opacity .55 -- MULTIPLY the token's own alpha (line is ~7% white in
+            // Stage Glass); withAlpha() replaced it and drew the empty grid at 55% white, the loudest thing on screen.
+            drawDashedRoundedRect (g, cell, t.radius, hover ? t.lineStrong : t.line.withMultipliedAlpha (0.55f), 1.5f);
 
             const auto c = cell.getCentre();
-            const float arm = juce::jmin (cell.getWidth(), cell.getHeight()) * 0.12f;
+            const float arm = 7.0f; // the prototype's 14 px "+" glyph
             const auto ink = hover ? t.textDim : t.textDim.withAlpha (0.55f);
             g.setColour (ink);
             g.drawLine (c.x - arm, c.y, c.x + arm, c.y, 2.0f);

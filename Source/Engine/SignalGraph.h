@@ -84,6 +84,12 @@ public:
         anything -- both can be true at once, they just sum). */
     void setLaneReadsDeviceInput (int lane, bool readsInput);
 
+    /** Pins this lane's device input to one specific physical input channel
+        (per-row inputs, e.g. guitar on input 1 and bass on input 3). -1 (the
+        default) means "the shared buffer handed to process()". Only used
+        when process() is given the per-channel device inputs. */
+    void setLaneDeviceInputChannel (int lane, int deviceChannel);
+
     /** Whether this lane's processed output is mixed into the buffer
         process() hands back to the device. */
     void setLaneWritesDeviceOutput (int lane, bool writesOutput);
@@ -104,6 +110,11 @@ public:
         exactly as it was on entry -- the same "empty graph is a total
         passthrough" contract AudioEngine has always relied on. */
     void process (juce::AudioBuffer<float>& buffer);
+
+    /** Same, but also given every physical input channel so lanes pinned
+        with setLaneDeviceInputChannel() read their own channel (times
+        `inputGain`). The pointers must stay valid for the call. */
+    void process (juce::AudioBuffer<float>& buffer, const float* const* deviceInputs, int numDeviceInputs, float inputGain);
 
     void reset();
 
@@ -126,6 +137,7 @@ private:
     {
         std::vector<EffectProcessor*> processors;
         bool readsDeviceInput = false;
+        int deviceInputChannel = -1;   // -1 = shared buffer
         bool writesDeviceOutput = false;
         juce::AudioBuffer<float> buffer;
     };
@@ -176,6 +188,7 @@ private:
         SignalGraph& graph;
     };
 
+    void processImpl (juce::AudioBuffer<float>& buffer);
     void runLane (int laneIndex, int numSamples);
     void runStage (const Stage&, int numSamples);
     void collectJobs (int numJobs, int numSamples);
@@ -185,6 +198,9 @@ private:
     std::array<Lane, numLanes> lanes;
     std::vector<std::pair<int, int>> connections;
     juce::AudioBuffer<float> deviceInputSnapshot;
+    const float* const* perChannelInputs = nullptr;   // set by process(), read by lanes in the same call
+    int numPerChannelInputs = 0;
+    float perChannelGain = 1.0f;
     int preparedNumChannels = 0;
 
     // Everything below is prepared on the control thread, read on the

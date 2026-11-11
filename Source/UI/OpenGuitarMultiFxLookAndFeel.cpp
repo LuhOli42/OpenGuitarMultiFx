@@ -122,6 +122,27 @@ void OpenGuitarMultiFxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, i
     const bool glowStyle = t.blockStyle == theme::BlockStyle::glow;
     const bool discStyle = t.blockStyle == theme::BlockStyle::filled;
 
+    // Small footer knobs (Master): the prototype's 44 px ring -- a 5 px track and a round-capped value arc, nothing
+    // inside. The full knob recipe below assumes a ~110 px cell and collapses into a blob at this size.
+    if (slider.getProperties().getWithDefault ("compactRing", false))
+    {
+        const auto box = juce::Rectangle<int> (x, y, width, height).toFloat();
+        const float ringW = 5.0f;
+        const float r = juce::jmin (box.getWidth(), box.getHeight()) * 0.5f - ringW * 0.5f - 2.0f;
+        const auto c = box.getCentre();
+        auto ring = [&] (float from, float to, juce::Colour colour)
+        {
+            juce::Path p;
+            p.addCentredArc (c.x, c.y, r, r, 0.0f, from, to, true);
+            g.setColour (colour);
+            g.strokePath (p, juce::PathStrokeType (ringW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        };
+        ring (0.0f, juce::MathConstants<float>::twoPi, t.raisedHigh);
+        if (slider.isEnabled() && toAngle > rotaryStartAngle + 0.001f)
+            ring (rotaryStartAngle, toAngle, accent);
+        return;
+    }
+
     // The arc ring sits near the edge; the Bold Blocks disc fills the area
     // inside it. Geometry mirrors LookAndFeel_V4's drawRotarySlider.
     const float lineW = discStyle ? 5.0f : 6.0f;
@@ -143,7 +164,11 @@ void OpenGuitarMultiFxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, i
         {
             // Stage Glass: the value arc glows -- a wide faint pass under a
             // crisp core, like the block icons' drop-shadow in card 2.
-            strokeArc (centre, arcRadius, rotaryStartAngle, toAngle, lineW * 2.6f, accent.withAlpha (0.22f));
+            // Prototype: drop-shadow(0 0 6px accent). Approximated with stacked translucent strokes (no blur pass,
+            // which would cost a box blur per knob per repaint).
+            strokeArc (centre, arcRadius, rotaryStartAngle, toAngle, lineW * 3.4f, accent.withAlpha (0.10f));
+            strokeArc (centre, arcRadius, rotaryStartAngle, toAngle, lineW * 2.4f, accent.withAlpha (0.18f));
+            strokeArc (centre, arcRadius, rotaryStartAngle, toAngle, lineW * 1.6f, accent.withAlpha (0.30f));
             strokeArc (centre, arcRadius, rotaryStartAngle, toAngle, lineW, accent);
         }
         else
@@ -165,7 +190,7 @@ void OpenGuitarMultiFxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, i
         juce::Path pointer;
         pointer.startNewSubPath (centre.x, centre.y);
         pointer.lineTo (tip.x, tip.y);
-        g.setColour (accent.contrasting (juce::Colours::black, juce::Colours::white).withAlpha (0.9f));
+        g.setColour (theme::inkOn (accent, juce::Colours::black, juce::Colours::white).withAlpha (0.9f));
         g.strokePath (pointer, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
     else

@@ -239,6 +239,8 @@ private:
     // Audio thread only: ramps masterGainLinear's target over ~20 ms so a footer-knob drag can't zipper.
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> masterGainSmooth;
     std::atomic<int> selectedInputChannel { 0 };
+    const float* const* callbackInputs = nullptr; // audio thread only, valid during one callback
+    int callbackNumInputs = 0;
     std::atomic<int> selectedOutputPairStart { 0 };
 };
 

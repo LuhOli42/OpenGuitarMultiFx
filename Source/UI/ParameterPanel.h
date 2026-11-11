@@ -54,6 +54,10 @@ public:
         it the panel falls back to the processor's own accent colour. */
     void setEffectRegistry (const EffectRegistry& registryToUse) noexcept { effectRegistry = &registryToUse; }
 
+    /** Knob screens for the current effect (after splitting long pages, see rebuildForCurrentProcessor()). */
+    int getPageCount() const noexcept { return pageCount; }
+    void selectPage (int page) { showPage (page); }
+
     /** MainComponent supplies "Line x, slot y" for the selected block; the
         drawer has no way to know grid placement on its own. */
     void setBlockLocationProvider (std::function<juce::String (EffectProcessor*)> provider)
@@ -183,7 +187,7 @@ private:
     {
     public:
         BypassSwitch() : juce::Button ({}) {}
-        void setOn (bool shouldBeOn) { on = shouldBeOn; repaint(); }
+        void setOn (bool shouldBeOn) { if (on != shouldBeOn) { on = shouldBeOn; repaint(); } } // refresh() calls this every 50 ms
         bool isOn() const noexcept { return on; }
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
         std::function<void()> onChange;
@@ -340,6 +344,8 @@ private:
 
     juce::Rectangle<int> pageTabsBounds;
     juce::Colour effectAccent = juce::Colours::transparentBlack;
+    juce::Image shadowCache;               // stage-style panel shadow, see paint()
+    juce::Point<int> shadowCacheSize;
     BypassSwitch bypassSwitch;
     PillButton modelButton { "Trocar modelo", PillButton::Glyph::switchModel };
     PillButton midiButton { "MIDI", PillButton::Glyph::midi };

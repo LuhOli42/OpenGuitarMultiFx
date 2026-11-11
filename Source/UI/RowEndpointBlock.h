@@ -31,6 +31,9 @@ public:
 
     std::function<void()> onClicked;
 
+    /** Second line under the "--" of an unrouted tile: "Livre" on a row's input, nothing on its output (prototype). */
+    juce::String unroutedDetail { "Livre" };
+
 private:
     juce::String label, detail;
 };

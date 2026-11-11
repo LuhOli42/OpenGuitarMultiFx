@@ -482,15 +482,27 @@ juce::String MainComponent::describeRowDestinations (int row) const
     juce::StringArray parts;
 
     if (routing.toDevice)
-    {
-        const auto outputNames = audioEngine.getAvailableOutputPairNames();
-        const int pairIndex = routing.deviceOutputPair / 2;
-        parts.add (pairIndex < outputNames.size() ? outputNames[pairIndex] : juce::String ("Out"));
-    }
+        parts.add ("OUT");
 
     for (int target = 0; target < numRows; ++target)
         if (routing.toRows[(size_t) target])
-            parts.add ("Line " + juce::String (target + 1));
+            parts.add (juce::String (juce::CharPointer_UTF8 ("\xe2\x86\x92 L")) + juce::String (target + 1));
+
+    return parts.joinIntoString (" + ");
+}
+
+juce::String MainComponent::describeRowDestinationDetail (int row) const
+{
+    const auto& routing = rowRouting[(size_t) row];
+    juce::StringArray parts;
+
+    // Prototype: OUT over "1 / 2" (the physical pair), "-> L2" over "Linha 2".
+    if (routing.toDevice)
+        parts.add (juce::String (routing.deviceOutputPair + 1) + " / " + juce::String (routing.deviceOutputPair + 2));
+
+    for (int target = 0; target < numRows; ++target)
+        if (routing.toRows[(size_t) target])
+            parts.add ("Linha " + juce::String (target + 1));
 
     return parts.joinIntoString (" + ");
 }
@@ -499,7 +511,15 @@ juce::String MainComponent::describeRowFeeders (const std::vector<int>& feeders)
 {
     juce::StringArray parts;
     for (int feeder : feeders)
-        parts.add ("Line " + juce::String (feeder + 1));
+        parts.add ("L" + juce::String (feeder + 1));
+    return parts.joinIntoString (" + ") + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92"));
+}
+
+juce::String MainComponent::describeRowFeedersDetail (const std::vector<int>& feeders) const
+{
+    juce::StringArray parts;
+    for (int feeder : feeders)
+        parts.add ("Linha " + juce::String (feeder + 1));
     return parts.joinIntoString (" + ");
 }
 
@@ -517,21 +537,22 @@ void MainComponent::refreshRowEndpoints()
         // top of the incoming row(s) would be exactly the contradiction the
         // routing model avoids (per user request 2026-09-11: "quando a
         // linha tiver sendo usada por um output ela pode sumir o input +").
+        // Wording follows the prototype: "IN 1" / channel name, "L1 ->" / "Linha 1".
         const auto feeders = feedersFor (row);
         if (! feeders.empty())
-            rowInputBlocks[(size_t) row].setDisplay ("FROM", describeRowFeeders (feeders));
+            rowInputBlocks[(size_t) row].setDisplay (describeRowFeeders (feeders), describeRowFeedersDetail (feeders));
         else if (routing.inputChannel < 0)
             rowInputBlocks[(size_t) row].setDisplay ({}, {});
         else
-            rowInputBlocks[(size_t) row].setDisplay ("IN",
+            rowInputBlocks[(size_t) row].setDisplay ("IN " + juce::String (routing.inputChannel + 1),
                 routing.inputChannel < inputNames.size() ? inputNames[routing.inputChannel] : juce::String ("Default"));
 
-        // Right: everything this row feeds -- possibly several at once, so
-        // this summarises rather than naming one destination.
+        // Right: everything this row feeds -- possibly several at once.
+        rowOutputBlocks[(size_t) row].unroutedDetail = {};
         if (! routing.feedsAnything())
             rowOutputBlocks[(size_t) row].setDisplay ({}, {});
         else
-            rowOutputBlocks[(size_t) row].setDisplay ("TO", describeRowDestinations (row));
+            rowOutputBlocks[(size_t) row].setDisplay (describeRowDestinations (row), describeRowDestinationDetail (row));
     }
 }
 
@@ -610,10 +631,9 @@ void MainComponent::showRowInputMenu (int row)
 
                 rowRouting[(size_t) row].inputChannel = result == 1 ? -1 : result - 2;
 
-                // Row 0's input is also the device's -- the engine only opens one
-                // input channel today, so a second fed row shares it. Selecting
-                // per-row physical inputs properly is an engine change (multiple
-                // input channels), not a UI one; see AGENTS.md.
+                // Every row reads its own physical input now (rebuildSignalGraph
+                // pins it per lane); the engine-wide channel just follows the
+                // latest pick and keeps driving the IN meter and the tuner.
                 if (rowRouting[(size_t) row].inputChannel >= 0)
                     audioEngine.setInputChannel (rowRouting[(size_t) row].inputChannel);
             }
@@ -727,10 +747,8 @@ void MainComponent::rebuildSignalGraph()
                 rowProcessors.push_back (&block->processor);
         signalGraph->setLaneProcessors (row, std::move (rowProcessors));
 
-        // Every row with a device input reads the SAME live input -- the
-        // engine only opens one input channel today (see showRowInputMenu()'s
-        // comment), so several fed rows just share it.
         signalGraph->setLaneReadsDeviceInput (row, routing.inputChannel >= 0);
+        signalGraph->setLaneDeviceInputChannel (row, routing.inputChannel); // each row reads its own physical input
         signalGraph->setLaneWritesDeviceOutput (row, routing.toDevice);
 
         for (int target = 0; target < numRows; ++target)
@@ -1911,7 +1929,7 @@ void MainComponent::applySnapshotAccent()
 
     const auto& name = snapshots[(size_t) currentSnapshot].name;
     footerBar.setActiveSnapshot (snapshotxml::letterFor (currentSnapshot)
-                                     + (name.isNotEmpty() ? juce::String (" - ") + name
+                                     + (name.isNotEmpty() ? juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) + name
                                                           : juce::String()),
                                  colour);
 
@@ -2903,6 +2921,23 @@ void MainComponent::paint (juce::Graphics& g)
     }
     g.setColour (t.line);
     g.drawLine (0.0f, (float) topBarHeight - 0.5f, (float) getWidth(), (float) topBarHeight - 0.5f, 1.0f);
+
+    // Prototype .lane .lab: "LINHA n" in 10 px dim caps, letter-spaced, just above each row's input tile.
+    {
+        g.setColour (t.textDim);
+        g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)).withExtraKerningFactor (0.1f));
+        for (int row = 0; row < numRows; ++row)
+        {
+            const auto& tile = rowInputBlocks[(size_t) row];
+            if (! tile.isVisible())
+                continue;
+            const int rowTop = tile.getBounds().getCentreY() - blockHeight / 2;
+            const int labelY = juce::jmin (tile.getY() - 14, rowTop - 2);
+            if (labelY < topBarHeight + 2)
+                continue;
+            g.drawText ("LINHA " + juce::String (row + 1), tile.getX(), labelY, 120, 12, juce::Justification::centredLeft);
+        }
+    }
 
     // Inter-row connectors: every row before the last occupied one connects
     // to the start of the next with ONE continuous line -- down through the

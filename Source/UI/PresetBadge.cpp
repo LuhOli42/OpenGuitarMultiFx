@@ -89,21 +89,25 @@ void PresetBadge::paint (juce::Graphics& g)
     g.setColour (console ? t.text : juce::Colours::black);
     g.drawText (numberText, tile.toNearestInt(), juce::Justification::centred);
 
-    auto textArea = bounds.withTrimmedLeft (tile.getRight() - bounds.getX() + 12.0f)
-                        .withTrimmedRight (14.0f)
-                        .reduced (0.0f, 4.0f);
+    // Prototype .preset: name (20 px bold, line-height 1.1) and sub (11 px, 2 px gap) centred together as one block;
+    // with no subtitle the name alone sits on the centre line instead of hugging the top.
+    const auto textArea = bounds.withTrimmedLeft (tile.getRight() - bounds.getX() + 12.0f).withTrimmedRight (14.0f);
+    constexpr float nameH = 22.0f, subGap = 2.0f, subH = 14.0f;
+    const bool hasSub = presetSubtitle.isNotEmpty();
+    const float blockH = nameH + (hasSub ? subGap + subH : 0.0f);
+    const float top = textArea.getCentreY() - blockH * 0.5f;
 
     const auto name = presetName.isNotEmpty() ? presetName : juce::String ("No preset loaded");
     g.setColour (t.text);
     g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
-    auto nameArea = textArea.removeFromTop (juce::jmin (24.0f, textArea.getHeight() * 0.58f));
-    g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::centredLeft, 1, 0.75f);
+    g.drawFittedText (name, textArea.withY (top).withHeight (nameH).toNearestInt(), juce::Justification::centredLeft, 1, 0.75f);
 
-    if (presetSubtitle.isNotEmpty())
+    if (hasSub)
     {
         g.setColour (t.textMuted);
         g.setFont (juce::FontOptions (11.0f));
-        g.drawFittedText (presetSubtitle, textArea.toNearestInt(), juce::Justification::centredLeft, 1, 0.8f);
+        g.drawFittedText (presetSubtitle, textArea.withY (top + nameH + subGap).withHeight (subH).toNearestInt(),
+                          juce::Justification::centredLeft, 1, 0.8f);
     }
 }
 

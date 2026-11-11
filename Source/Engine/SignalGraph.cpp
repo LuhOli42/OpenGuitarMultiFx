@@ -50,6 +50,11 @@ void SignalGraph::setLaneReadsDeviceInput (int lane, bool readsInput)
     lanes[(size_t) lane].readsDeviceInput = readsInput;
 }
 
+void SignalGraph::setLaneDeviceInputChannel (int lane, int deviceChannel)
+{
+    lanes[(size_t) lane].deviceInputChannel = deviceChannel;
+}
+
 void SignalGraph::setLaneWritesDeviceOutput (int lane, bool writesOutput)
 {
     lanes[(size_t) lane].writesDeviceOutput = writesOutput;
@@ -175,7 +180,17 @@ void SignalGraph::runLane (int laneIndex, int numSamples)
     lane.buffer.clear();
 
     if (lane.readsDeviceInput)
-        addClamped (lane.buffer, deviceInputSnapshot, numSamples);
+    {
+        if (lane.deviceInputChannel >= 0 && perChannelInputs != nullptr && lane.deviceInputChannel < numPerChannelInputs)
+        {
+            // Own physical input, mono duplicated across the lane's channels (same as the shared path does).
+            const float* src = perChannelInputs[lane.deviceInputChannel];
+            for (int ch = 0; ch < lane.buffer.getNumChannels(); ++ch)
+                juce::FloatVectorOperations::addWithMultiply (lane.buffer.getWritePointer (ch), src, perChannelGain, numSamples);
+        }
+        else
+            addClamped (lane.buffer, deviceInputSnapshot, numSamples);
+    }
 
     for (int s = 0; s < laneSourceCounts[(size_t) laneIndex]; ++s)
         addClamped (lane.buffer, lanes[(size_t) laneSources[(size_t) laneIndex][(size_t) s]].buffer, numSamples);
@@ -338,6 +353,22 @@ void SignalGraph::stopWorkers()
 }
 
 void SignalGraph::process (juce::AudioBuffer<float>& buffer)
+{
+    perChannelInputs = nullptr;
+    numPerChannelInputs = 0;
+    perChannelGain = 1.0f;
+    processImpl (buffer);
+}
+
+void SignalGraph::process (juce::AudioBuffer<float>& buffer, const float* const* deviceInputs, int numDeviceInputs, float inputGain)
+{
+    perChannelInputs = deviceInputs;
+    numPerChannelInputs = numDeviceInputs;
+    perChannelGain = inputGain;
+    processImpl (buffer);
+}
+
+void SignalGraph::processImpl (juce::AudioBuffer<float>& buffer)
 {
     const int numSamples = buffer.getNumSamples();
 

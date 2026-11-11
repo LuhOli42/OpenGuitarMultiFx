@@ -254,6 +254,8 @@ private:
     /** "Line 1 + Line 2" -- what a row's input tile shows when fed by more
         than one other row (a merge). */
     juce::String describeRowFeeders (const std::vector<int>& feeders) const;
+    juce::String describeRowFeedersDetail (const std::vector<int>& feeders) const;
+    juce::String describeRowDestinationDetail (int row) const;
     void refreshRowEndpoints();
 
     void scrollBarMoved (juce::ScrollBar* bar, double newRangeStart) override;
