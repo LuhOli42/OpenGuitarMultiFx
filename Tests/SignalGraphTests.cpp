@@ -102,6 +102,42 @@ public:
             expectWithinAbsoluteError (buffer.getSample (0, 0), 0.25f, 1.0e-6f);
         }
 
+        beginTest ("each lane reads its own physical input channel (guitar on 1, bass on 3), times the input gain");
+        {
+            EntrySamplerProcessor guitar, bass;
+            SignalGraph graph;
+            graph.setLaneProcessors (0, { &guitar });
+            graph.setLaneProcessors (2, { &bass });
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneReadsDeviceInput (2, true);
+            graph.setLaneDeviceInputChannel (0, 0);
+            graph.setLaneDeviceInputChannel (2, 2);
+            graph.setLaneWritesDeviceOutput (0, true);
+            graph.setLaneWritesDeviceOutput (2, true);
+            graph.prepare (48000.0, 4, 2);
+
+            float in0[4] = { 0.1f, 0, 0, 0 }, in1[4] = { 0.7f, 0, 0, 0 }, in2[4] = { 0.3f, 0, 0, 0 };
+            const float* inputs[3] = { in0, in1, in2 };
+
+            juce::AudioBuffer<float> buffer (2, 4);
+            buffer.clear();
+            graph.process (buffer, inputs, 3, 2.0f);
+
+            expect (guitar.seen.size() == 1 && bass.seen.size() == 1);
+            expectWithinAbsoluteError (guitar.seen.front(), 0.2f, 1.0e-6f); // channel 0 x gain 2, not channel 1's 0.7
+            expectWithinAbsoluteError (bass.seen.front(), 0.6f, 1.0e-6f);   // channel 2 x gain 2
+            expectWithinAbsoluteError (buffer.getSample (0, 0), 0.8f, 1.0e-6f); // both lanes summed to the shared out
+            expectWithinAbsoluteError (buffer.getSample (1, 0), 0.8f, 1.0e-6f);
+
+            // A pinned channel the device doesn't have falls back to the shared buffer instead of reading past the array.
+            juce::AudioBuffer<float> shared (2, 4);
+            shared.clear();
+            shared.setSample (0, 0, 0.5f);
+            shared.setSample (1, 0, 0.5f);
+            graph.process (shared, inputs, 1, 1.0f);
+            expectWithinAbsoluteError (bass.seen.back(), 0.5f, 1.0e-6f);
+        }
+
         beginTest ("a bypassed processor does not run process()");
         {
             TestGainProcessor p (0.0f);

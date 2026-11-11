@@ -447,7 +447,7 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
     swapFadeSamplesThisBlock = 0;
 
     if (graph != nullptr)
-        graph->process (buffer);
+        graph->process (buffer, callbackInputs, callbackNumInputs, inputGainLinear.load (std::memory_order_relaxed));
 
     // Record this block's output before any fade mixing: the ring always holds the clean
     // single-graph signal a later swap replays. Frozen while a fade is active: when the ring is
@@ -625,6 +625,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     }
 
     juce::AudioBuffer<float> buffer (outputChannelData, numOutputChannels, numSamples);
+    callbackInputs = inputChannelData;       // rows pinned to their own physical input read these (see SignalGraph)
+    callbackNumInputs = numInputChannels;
 
     // Input sensitivity (see setInputGainDb()): applied to what the chain sees, not to the dry passthrough path -- the
     // buffer IS the chain's input at this point.
