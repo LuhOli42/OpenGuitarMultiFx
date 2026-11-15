@@ -88,11 +88,12 @@ MasterEqDialog::MasterEqDialog()
     {
         addAndMakeVisible (s);
         s.setSliderStyle (juce::Slider::LinearHorizontal);
-        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 100, 48);
+        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 90, touch::minTapTarget);
         s.onValueChange = [this] { /* rebound per selection below */ };
         addAndMakeVisible (label);
-        label.setText (name, juce::dontSendNotification);
-        label.setFont (juce::Font (13.0f));
+        label.setText (juce::String (name).toUpperCase(), juce::dontSendNotification);
+        label.setFont (juce::Font (12.0f, juce::Font::bold));
+        label.setColour (juce::Label::textColourId, theme::current().textMuted);
         label.setJustificationType (juce::Justification::centredLeft);
     };
     setupSlider (freqSlider, freqLabel, "Freq");
@@ -135,6 +136,7 @@ MasterEqDialog::MasterEqDialog()
 
     // Big enough for a real curve to drag on -- OverlayHost clamps it to the window.
     setSize (1180, 780);
+    lookAndFeelChanged();
 }
 
 MasterEqDialog::~MasterEqDialog() = default;
@@ -270,9 +272,8 @@ void MasterEqDialog::refreshSelectedStrip()
         return;
 
     const auto& band = bands[(size_t) selectedBand];
-    selectedLabel.setText ("Band " + juce::String (selectedBand + 1) + "  " + MasterEq::displayName (band.type),
+    selectedLabel.setText ("Band " + juce::String (selectedBand + 1) + " - " + MasterEq::displayName (band.type),
                            juce::dontSendNotification);
-    selectedLabel.setColour (juce::Label::textColourId, bandColour (selectedBand));
 
     bandEnabledButton.setButtonText (band.enabled ? "On" : "Off");
     bandEnabledButton.setToggleState (band.enabled, juce::dontSendNotification);
@@ -337,21 +338,28 @@ void MasterEqDialog::resized()
 
     area.removeFromTop (10);
 
-    // Selected-band strip: label+buttons column then three sliders.
-    auto strip = area.removeFromTop (112);
-    auto meta = strip.removeFromLeft (170);
-    selectedLabel.setBounds (meta.removeFromTop (36));
-    auto stripButtons = meta.removeFromTop (touch::minTapTarget);
-    bandEnabledButton.setBounds (stripButtons.removeFromLeft (80));
-    stripButtons.removeFromLeft (8);
-    bandDeleteButton.setBounds (stripButtons);
+    auto strip = area.removeFromTop (96);
+    selectedStripBounds = strip;
     noSelectionLabel.setBounds (strip);
+
+    auto deleteArea = strip.removeFromRight (56);
+    bandDeleteButton.setBounds (deleteArea.withSizeKeepingCentre (56, touch::minTapTarget));
+    strip.removeFromRight (8);
+    auto onArea = strip.removeFromRight (80);
+    bandEnabledButton.setBounds (onArea.withSizeKeepingCentre (80, touch::minTapTarget));
+    strip.removeFromRight (12);
+
+    auto meta = strip.removeFromLeft (200);
+    selectedLabel.setBounds (meta.withX (meta.getX() + 26).withWidth (meta.getWidth() - 26)
+                                  .withY (meta.getCentreY() - 12).withHeight (24));
 
     auto sliderCol = [] (juce::Rectangle<int>& zone, juce::Label& label, juce::Slider& slider)
     {
-        auto cell = zone.removeFromLeft (zone.getWidth() / 3 + 40);
-        label.setBounds (cell.removeFromTop (24));
-        slider.setBounds (cell.reduced (0, 6));
+        auto cell = zone.removeFromLeft ((zone.getWidth() - 16) / 3);
+        label.setBounds (cell.removeFromTop (18));
+        cell.removeFromTop (2);
+        slider.setBounds (cell.withHeight (72));
+        zone.removeFromLeft (8);
     };
     sliderCol (strip, freqLabel, freqSlider);
     sliderCol (strip, gainLabel, gainSlider);
@@ -374,6 +382,23 @@ void MasterEqDialog::paint (juce::Graphics& g)
     overlaychrome::paintCardBackground (g, getLocalBounds().toFloat());
     overlaychrome::drawHeaderDivider (g, juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 76.0f));
     paintGraph (g, graphArea);
+    if (selectedBand >= 0 && selectedBand < (int) bands.size())
+    {
+        const auto dot = juce::Rectangle<float> ((float) selectedStripBounds.getX() + 2.0f,
+                                                   (float) selectedStripBounds.getCentreY() - 8.0f,
+                                                   16.0f, 16.0f);
+        g.setColour (bandColour (selectedBand));
+        g.fillEllipse (dot);
+    }
+}
+
+void MasterEqDialog::lookAndFeelChanged()
+{
+    juce::Component::lookAndFeelChanged();
+    const auto& t = theme::current();
+    for (auto* label : { &freqLabel, &gainLabel, &qLabel })
+        label->setColour (juce::Label::textColourId, t.textMuted);
+    selectedLabel.setColour (juce::Label::textColourId, t.text);
 }
 
 void MasterEqDialog::paintGraph (juce::Graphics& g, juce::Rectangle<float> area)

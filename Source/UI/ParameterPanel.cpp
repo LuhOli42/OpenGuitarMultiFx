@@ -37,12 +37,12 @@ namespace
     constexpr int knobDiameter = 110;
     constexpr int knobLabelHeight = 18;
     constexpr int knobValueHitHeight = 48;  // .kv is 36px visually, centred in the 48px target
-    constexpr int knobLabelGap = 6;
+    constexpr int knobLabelGap = 8;
     constexpr int knobContentHeight = knobDiameter + knobLabelGap + knobLabelHeight
                                    + knobLabelGap + knobValueHitHeight; // 188
-    constexpr int selectorLabelGap = 6;
+    constexpr int selectorLabelGap = 8;
     constexpr int syncToggleHeight = 48; // touch::minTapTarget
-    constexpr int syncToggleGap = 6;
+    constexpr int syncToggleGap = 8;
     constexpr int knobRowGap = 26;
     constexpr int minDrawerHeight = 330; // prototype .drw height
 
@@ -255,12 +255,16 @@ void ParameterPanel::refresh()
         updateSubtitle();
         bypassSwitch.setOn (! current->isBypassed());
 
-        for (const auto& row : sliders)
-            if (row.param != nullptr && current->isParameterActive (*row.param) != row.active)
-            {
-                showPage (currentPage);
-                break;
-            }
+        std::vector<juce::AudioParameterFloat*> activeNow;
+        for (const auto& sourcePage : current->getParameterPages())
+            for (auto* param : sourcePage)
+                if (param != nullptr && current->isParameterActive (*param))
+                    activeNow.push_back (param);
+        if (activeNow != activeParameters)
+        {
+            rebuildForCurrentProcessor (currentPage);
+            return;
+        }
 
         for (auto& row : sliders)
         {
@@ -307,7 +311,7 @@ void ParameterPanel::refresh()
     }
 }
 
-void ParameterPanel::rebuildForCurrentProcessor()
+void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
 {
     for (auto& tab : pageTabs)
         removeChildComponent (tab.get());
@@ -327,6 +331,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
 
     if (current == nullptr)
     {
+        activeParameters.clear();
         titleLabel.setText ({}, juce::dontSendNotification);
         subtitleLabel.setText ({}, juce::dontSendNotification);
         subtitleBase.clear();
@@ -395,6 +400,11 @@ void ParameterPanel::rebuildForCurrentProcessor()
 
     const auto sourcePages = current->getParameterPages();
     const int sourceCount = (int) sourcePages.size();
+    activeParameters.clear();
+    for (const auto& sourcePage : sourcePages)
+        for (auto* param : sourcePage)
+            if (param != nullptr && current->isParameterActive (*param))
+                activeParameters.push_back (param);
 
     std::vector<juce::String> sourceLabels;
     for (int pageIndex = 0; pageIndex < sourceCount; ++pageIndex)
@@ -417,29 +427,125 @@ void ParameterPanel::rebuildForCurrentProcessor()
             return pageIndex == 0 ? juce::String ("Main") : juce::String ("Page ") + juce::String (pageIndex + 1);
         }());
 
-    // One screen never holds more than maxControlsPerScreen controls (one row at the drawer's width -- user request
-    // 2026-11-10: models with lots of controls get split across screens). A long page splits into EVEN chunks
-    // (10 -> 5+5, not 8+2), labelled "Amp", "Amp 2", ... so the grouping the processor declared is kept.
     constexpr int maxControlsPerScreen = 8;
     std::vector<std::vector<juce::AudioParameterFloat*>> pages;
     for (int pageIndex = 0; pageIndex < sourceCount; ++pageIndex)
     {
         const auto& src = sourcePages[(size_t) pageIndex];
-        const int n = (int) src.size();
-        const int chunks = juce::jmax (1, (n + maxControlsPerScreen - 1) / maxControlsPerScreen);
-        const int perChunk = juce::jmax (1, (n + chunks - 1) / chunks);
-        for (int c = 0; c < chunks; ++c)
+        const int activeCount = (int) std::count_if (src.begin(), src.end(),
+            [this] (auto* param) { return param != nullptr && current->isParameterActive (*param); });
+        auto appendPage = [&] (std::vector<juce::AudioParameterFloat*> controls, int localPage)
         {
-            const int begin = juce::jmin (n, c * perChunk), end = juce::jmin (n, begin + perChunk);
-            pages.emplace_back (src.begin() + begin, src.begin() + end);
             auto label = sourceLabels[(size_t) pageIndex];
-            if (c > 0)
-                label = (sourceCount <= 1 && label == "Main" ? juce::String ("Page") : label) + " " + juce::String (c + 1);
+            if (localPage > 0)
+                label = (sourceCount <= 1 && label == "Main" ? juce::String ("Page") : label)
+                      + " " + juce::String (localPage + 1);
+            pages.push_back (std::move (controls));
             pageLabels.push_back (label);
+        };
+
+        if (activeCount <= maxControlsPerScreen)
+        {
+            appendPage (src, 0);
+            continue;
         }
+
+        std::vector<juce::AudioParameterFloat*> core, other, graphicEq;
+        for (auto* param : src)
+        {
+            if (param == nullptr || ! current->isParameterActive (*param))
+                continue;
+
+            const auto name = param->getName (64).toLowerCase();
+            const auto range = param->getNormalisableRange();
+            const bool isSelector = range.interval >= 1.0f
+                                 && (range.end - range.start) / range.interval <= 8.0f
+                                 && ! current->prefersSteppedKnob (*param);
+            if ((isSelector && name.contains ("eq")) || name.endsWithIgnoreCase ("Hz"))
+            {
+                graphicEq.push_back (param);
+                continue;
+            }
+
+            const bool isCoreKnob = ! isSelector
+                && (name.contains ("gain") || name.contains ("drive") || name.contains ("volume")
+                    || name.contains ("master") || name.contains ("bass") || name.contains ("middle")
+                    || name.contains ("mid") || name.contains ("treble") || name.contains ("presence")
+                    || name.contains ("resonance") || name.contains ("depth") || name.contains ("contour")
+                    || name.contains ("tone"));
+            (isCoreKnob ? core : other).push_back (param);
+        }
+
+        std::vector<juce::AudioParameterFloat*> firstCore, overflowCore;
+        if ((int) core.size() <= maxControlsPerScreen)
+        {
+            firstCore = core;
+        }
+        else
+        {
+            std::vector<juce::AudioParameterFloat*> priority, toneStack;
+            auto isToneStackControl = [] (const juce::String& name)
+            {
+                return name.contains ("bass") || name.contains ("mid") || name.contains ("middle")
+                    || name.contains ("treble") || name.contains ("presence");
+            };
+            for (auto* param : core)
+            {
+                const auto name = param->getName (64).toLowerCase();
+                if (isToneStackControl (name)
+                    || name.contains ("gain") || name.contains ("drive")
+                    || name.contains ("volume") || name.contains ("master"))
+                    priority.push_back (param);
+                if (isToneStackControl (name))
+                    toneStack.push_back (param);
+            }
+
+            std::vector<juce::AudioParameterFloat*> chosen = toneStack;
+            for (auto* param : priority)
+            {
+                if (std::find (chosen.begin(), chosen.end(), param) != chosen.end())
+                    continue;
+                if ((int) chosen.size() < maxControlsPerScreen)
+                    chosen.push_back (param);
+            }
+            for (auto* param : core)
+            {
+                if ((int) chosen.size() >= maxControlsPerScreen)
+                    break;
+                if (std::find (chosen.begin(), chosen.end(), param) == chosen.end())
+                    chosen.push_back (param);
+            }
+
+            for (auto* param : core)
+                (std::find (chosen.begin(), chosen.end(), param) != chosen.end() ? firstCore : overflowCore)
+                    .push_back (param);
+        }
+
+        int localPage = 0;
+        if (! firstCore.empty())
+            appendPage (std::move (firstCore), localPage++);
+        std::vector<juce::AudioParameterFloat*> afterCore (overflowCore);
+        afterCore.insert (afterCore.end(), other.begin(), other.end());
+        if (! afterCore.empty())
+        {
+            const size_t chunks = (afterCore.size() + (size_t) maxControlsPerScreen - 1)
+                                / (size_t) maxControlsPerScreen;
+            const size_t perChunk = (afterCore.size() + chunks - 1) / chunks;
+            for (size_t start = 0; start < afterCore.size(); start += perChunk)
+            {
+                const size_t end = juce::jmin (afterCore.size(), start + perChunk);
+                appendPage (std::vector<juce::AudioParameterFloat*> (
+                                afterCore.begin() + (std::ptrdiff_t) start,
+                                afterCore.begin() + (std::ptrdiff_t) end),
+                            localPage++);
+            }
+        }
+
+        if (! graphicEq.empty())
+            appendPage (std::move (graphicEq), localPage);
     }
     pageCount = (int) pages.size();
-    currentPage = 0;
+    currentPage = juce::jlimit (0, juce::jmax (0, pageCount - 1), pageToPreserve);
     if (pageCount == 1)
         pageLabels.front() = "Main";
 
@@ -449,7 +555,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
         {
             auto tab = std::make_unique<PageTabButton> (pageLabels[(size_t) pageIndex]);
             tab->setClickingTogglesState (true);
-            tab->setToggleState (pageIndex == 0, juce::dontSendNotification);
+            tab->setToggleState (pageIndex == currentPage, juce::dontSendNotification);
             tab->setColour (accentColourId, effectAccent);
             tab->onClick = [this, pageIndex] { showPage (pageIndex); };
             addChildComponent (*tab);
@@ -566,7 +672,7 @@ void ParameterPanel::rebuildForCurrentProcessor()
     }
 
     refreshLabelStyles();
-    showPage (0);
+    showPage (currentPage);
     refresh();
     resized();
     repaint();
@@ -888,7 +994,7 @@ void ParameterPanel::resized()
         tabsWidth += width;
     }
     if (! tabWidths.empty())
-        tabsWidth += 4 * ((int) tabWidths.size() - 1);
+        tabsWidth += 8 * ((int) tabWidths.size() - 1);
 
     const int headerHeight = juce::jmin (drawerHeaderHeight, area.getHeight());
     auto header = area.removeFromTop (headerHeight);
@@ -908,7 +1014,7 @@ void ParameterPanel::resized()
     placeRight (removeButton, pillWidthFor (removeButton.getButtonText(), true));
     placeRight (tone3000Button, pillWidthFor (tone3000Button.getButtonText(), true));
     placeRight (midiButton, pillWidthFor (midiButton.getButtonText(), true));
-    placeRight (bypassSwitch, 104);
+    placeRight (bypassSwitch, 118);
 
     if (! pageTabs.empty())
     {
@@ -917,7 +1023,7 @@ void ParameterPanel::resized()
         for (size_t i = 0; i < pageTabs.size(); ++i)
         {
             pageTabs[i]->setBounds (tabX, controlY, tabWidths[i], drawerControlHeight);
-            tabX += tabWidths[i] + 4;
+            tabX += tabWidths[i] + 8;
         }
         cursor -= drawerGap;
     }
@@ -929,8 +1035,8 @@ void ParameterPanel::resized()
 
     const int textX = left + drawerIconSize + drawerGap;
     const int textWidth = juce::jmax (80, rightContentLeft - textX - (modelWidth > 0 ? modelWidth + drawerGap : 0) - drawerGap);
-    titleLabel.setBounds (textX, 24, textWidth, 26);
-    subtitleLabel.setBounds (textX, 50, textWidth, 18);
+    titleLabel.setBounds (textX, 18, textWidth, 24);
+    subtitleLabel.setBounds (textX, 50, textWidth, 16);
 
     if (modelButton.isVisible())
     {
@@ -997,8 +1103,7 @@ void ParameterPanel::resized()
             if (row.selector != nullptr)
             {
                 const int selectorHeight = row.selector->getPreferredHeight();
-                row.widget()->setBounds (x + (knobCellWidth - SelectorSwitch::optionWidth) / 2,
-                                         y, SelectorSwitch::optionWidth, selectorHeight);
+                row.widget()->setBounds (x, y, knobCellWidth, selectorHeight);
                 row.label->setBounds (x, y + selectorHeight + selectorLabelGap, knobCellWidth, knobLabelHeight);
             }
             else
@@ -1170,8 +1275,9 @@ void ParameterPanel::HeaderIcon::paint (juce::Graphics& g)
                 img.setPixelAt (x, y, tint.withMultipliedAlpha ((float) alpha / 255.0f));
         }
 
-    g.drawImageWithin (img, (int) bounds.getX(), (int) bounds.getY(),
-                       (int) bounds.getWidth(), (int) bounds.getHeight(),
+    const auto paddedBounds = bounds.reduced (8.0f);
+    g.drawImageWithin (img, (int) paddedBounds.getX(), (int) paddedBounds.getY(),
+                       (int) paddedBounds.getWidth(), (int) paddedBounds.getHeight(),
                        juce::RectanglePlacement::stretchToFit);
 }
 
@@ -1238,7 +1344,7 @@ void ParameterPanel::BypassSwitch::paintButton (juce::Graphics& g, bool highligh
     g.drawText (t.uppercaseLabels ? "LIGADO" : "Ligado", juce::Rectangle<float> (bounds.getX(), bounds.getY(), 44.0f, bounds.getHeight()),
                 juce::Justification::centredLeft);
 
-    const auto track = juce::Rectangle<float> (bounds.getRight() - 66.0f, bounds.getCentreY() - 18.0f, 66.0f, 36.0f);
+    const auto track = juce::Rectangle<float> (bounds.getX() + 52.0f, bounds.getCentreY() - 18.0f, 66.0f, 36.0f);
     const float trackRadius = consoleStyle ? 4.0f : 18.0f;
     const float knobSize = 28.0f;
     const float knobY = track.getCentreY() - knobSize * 0.5f;
@@ -1316,7 +1422,7 @@ void ParameterPanel::ValueFieldButton::paintButton (juce::Graphics& g, bool high
 
     g.setColour (t.text.withAlpha (isEnabled() ? 1.0f : 0.4f));
     g.setFont (juce::Font (15.0f, juce::Font::bold));
-    g.drawText (getButtonText(), visual.reduced (6.0f, 0.0f), juce::Justification::centred);
+    g.drawText (getButtonText(), visual.reduced (8.0f, 0.0f), juce::Justification::centred);
 }
 
 void ParameterPanel::FineTuneSlider::paint (juce::Graphics& g)

@@ -107,7 +107,7 @@ public:
     std::function<juce::Colour (EffectProcessor*, juce::AudioParameterFloat*)> getSnapshotMarkerColour;
 
 private:
-    void rebuildForCurrentProcessor();
+    void rebuildForCurrentProcessor (int pageToPreserve = 0);
     void browseInstalledModels();
     void browseInstalledModelsForSlot (int slot);
     void openTone3000Search();
@@ -128,6 +128,7 @@ private:
     Tone3000Manager* tone3000 = nullptr;
     const EffectRegistry* effectRegistry = nullptr;
     std::function<juce::String (EffectProcessor*)> blockLocationProvider;
+    std::vector<juce::AudioParameterFloat*> activeParameters;
 
     /** The prototype's 50px category-tinted icon tile in the drawer header. */
     class HeaderIcon : public juce::Component
