@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "CpuAffinity.h"
 #include "SoftCeiling.h"
 
 #include <cmath>
@@ -507,6 +508,8 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
 
 void AudioEngine::detectCallbackRealtime() noexcept
 {
+    cpuaffinity::pinThisThreadToAudio(); // device build: the fast cores only (CpuAffinity.h); no-op without OGMFX_AUDIO_CPUS
+
     bool realtime = false;
     if (const auto* t = juce::Thread::getCurrentThread())
         realtime = t->isRealtime();

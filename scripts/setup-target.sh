@@ -332,6 +332,17 @@ apply_irq_affinity() {
             fi
         fi
     done < <(awk 'NR>1 && $1 ~ /^[0-9]+:$/ { sub(":","",$1); print $1, $NF }' /proc/interrupts | grep -E " ($pattern)" || true)
+
+    # Every OTHER USB host controller (the touchscreen's, a MIDI controller's...) goes to the slow cores, so a finger on the
+    # glass never interrupts the fast core the audio runs on. Only when the audio controller was singled out above.
+    if [[ -n "$buses" ]]; then
+        while read -r irq name; do
+            [[ -w "/proc/irq/$irq/smp_affinity_list" ]] || continue
+            echo "${OGMFX_UI_CPUS:-0-5}" > "/proc/irq/$irq/smp_affinity_list" 2>/dev/null \
+                && log "IRQ $irq ($name) -> slow cores ${OGMFX_UI_CPUS:-0-5}"
+        done < <(awk 'NR>1 && $1 ~ /^[0-9]+:$/ { sub(":","",$1); print $1, $NF }' /proc/interrupts \
+                     | grep -E ' (xhci|ehci|ohci)' | grep -vE "$pattern" || true)
+    fi
 }
 
 do_runtime() {

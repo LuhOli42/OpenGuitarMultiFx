@@ -2,6 +2,7 @@
 #include "UI/MainComponent.h"
 #include "UI/OpenGuitarMultiFxLookAndFeel.h"
 #include "UI/Theme.h"
+#include "Engine/CpuAffinity.h"
 #include "UI/OnScreenKeyboard.h"
 #include "UI/ParameterPanel.h"
 #include "UI/TouchSizing.h"
@@ -97,6 +98,8 @@ public:
 
     void initialise (const juce::String& commandLine) override
     {
+        cpuaffinity::init(); // device build: UI/message thread on the slow cores, audio on the fast ones
+
         const auto args = juce::StringArray::fromTokens (commandLine, true);
         if (const int at = args.indexOf ("--panel-snapshot"); at >= 0 && at + 2 < args.size())
         {
