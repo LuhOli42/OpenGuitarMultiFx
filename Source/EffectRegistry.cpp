@@ -20,6 +20,7 @@
 #include "Effects/TS9BStyleOverdriveProcessor.h"
 #include "Effects/ODB3StyleOverdriveProcessor.h"
 #include "Effects/MuTronIIIStyleFilterProcessor.h"
+#include "Effects/EnvelopeAutoWahProcessor.h"
 #include "Effects/TraceElliotGP12StyleAmplifierProcessor.h"
 #include "Effects/CentaurStyleOverdriveProcessor.h"
 #include "Effects/BD2StyleOverdriveProcessor.h"
@@ -424,6 +425,12 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // Envelope-followed resonant filter (docs/circuits/MuTronIIIStyleFilter.md); the only nonlinearity is the summer's soft rail.
     registry.markQualityDependent ("MuTronIIIStyleFilter");
     registry.registerType ("MuTronIIIStyleFilter", EffectRegistry::Category::pitchFilter, [] { return trimmed (pickupLoaded (oversampled<MuTronIIIStyleFilterProcessor> (Orders { 0, 1, 1 }), 500000.0), -10.0f); }, "Filter");
+    // Auto-wahs (docs/circuits/EnvelopeAutoWah.md): one class, three circuits. Linear filters with a soft rail, so no
+    // oversampling. Trims from PedalUnityLevelTests' printout; input impedances from the schematics.
+    using AutoWahModel = EnvelopeAutoWahProcessor::Model;
+    registry.registerType ("MXREnvelopeFilterStyleAutoWah", EffectRegistry::Category::pitchFilter, [] { return trimmed (pickupLoaded (std::make_unique<EnvelopeAutoWahProcessor> (AutoWahModel::mxrEnvelopeFilter), 200000.0), 16.13f); }, "Filter");
+    registry.registerType ("MXRBassEnvelopeFilterStyleAutoWah", EffectRegistry::Category::pitchFilter, [] { return trimmed (pickupLoaded (std::make_unique<EnvelopeAutoWahProcessor> (AutoWahModel::mxrBassEnvelopeFilter), 200000.0), 3.22f); }, "Filter");
+    registry.registerType ("DoctorQStyleAutoWah", EffectRegistry::Category::pitchFilter, [] { return trimmed (pickupLoaded (std::make_unique<EnvelopeAutoWahProcessor> (AutoWahModel::doctorQ), 32000.0), -8.78f); }, "Filter");
     // Solid-state bass preamp: dual-band compressor + 12-band gyrator graphic EQ (docs/circuits/TraceElliotGP12StyleAmplifier.md).
     registry.registerType ("TraceElliotGP12StyleAmplifier", EffectRegistry::Category::amps, [] { return trimmedLimited (pickupLoaded (std::make_unique<TraceElliotGP12StyleAmplifierProcessor>(), 500000.0), 2.5f); }, "Bass");
     registry.registerType ("ParametricEQ", EffectRegistry::Category::pitchFilter, [] { return std::make_unique<ParametricEQProcessor>(); }, "EQ");
