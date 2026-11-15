@@ -149,8 +149,9 @@ private:
 
     int segmentWidth (int index) const
     {
-        return (int) std::ceil (juce::GlyphArrangement::getStringWidth (
-            fontFor (11.0f, true), optionText (index))) + 16;
+        return juce::jmax (touch::minTapTarget,
+                           (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                               fontFor (11.0f, true), optionText (index))) + 16);
     }
 
     juce::Rectangle<float> trackBounds() const
@@ -165,7 +166,8 @@ private:
             return options.size() >= 3 ? Gesture::segments : Gesture::none;
 
         const auto track = trackBounds();
-        if (track.contains (position))
+        const auto trackHitArea = track.withY (0.0f).withHeight ((float) getHeight());
+        if (trackHitArea.contains (position))
             return Gesture::track;
         return position.x < track.getX() ? Gesture::leftLabel
                                          : position.x > track.getRight() ? Gesture::rightLabel
