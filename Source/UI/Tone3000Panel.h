@@ -67,6 +67,9 @@ public:
 
     /** The user picked a buffer size: the host restarts the device with it and returns an error message (empty on success). */
     std::function<juce::String (int)> onBufferSizeChanged;
+    /** Performance mode toggle (Audio page): MainComponent applies it to the engine, saves it and rebuilds the graph. */
+    std::function<void (bool)> onPerformanceModeChanged;
+    void setPerformanceMode (bool enabled);
 
     /** The user tapped "Retry audio device" while no device is open (the NO
         AUDIO DEVICE state's recovery action -- audit #93 item 2): the host
@@ -126,6 +129,9 @@ private:
         failed device open leaves this section in. */
     juce::TextButton retryDeviceButton { "Retry audio device" };
     juce::Label bufferSectionLabel { {}, "Buffer (latency)" };
+    juce::Label perfSectionLabel { {}, "Performance mode" };
+    juce::Label perfHintLabel;
+    juce::TextButton perfButton { "Off" };
     juce::OwnedArray<juce::TextButton> bufferButtons;
     juce::Array<int> bufferValues;
     int currentBuffer = 0;
