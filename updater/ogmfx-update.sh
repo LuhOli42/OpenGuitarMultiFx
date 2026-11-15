@@ -184,7 +184,11 @@ gh_api() {  # gh_api <url> <out-file>
     if [[ -n "$github_token" ]]; then
         hdr+=(-H "Authorization: Bearer $github_token")
     fi
-    curl "${hdr[@]}" -o "$2" "$1"
+    curl "${hdr[@]}" -o "$2" "$1" || return
+    # GitHub serves compact one-line JSON and the sed/awk parsers here are line based:
+    # put every key on its own line. (Found on the first real device: "no non-draft
+    # prerelease with a latest.json asset found" although the release existed.)
+    sed -i -e 's/,"/,\n"/g' -e 's/{"/{\n"/g' "$2"
 }
 
 download() {  # download <url> <out-file>
