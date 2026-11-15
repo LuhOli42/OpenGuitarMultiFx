@@ -15,8 +15,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
   GIT_TAG 8.0.9
   GIT_SHALLOW TRUE
+  PATCH_COMMAND ${CMAKE_COMMAND} -DJUCE_DIR=<SOURCE_DIR> -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/JuceEglPatch.cmake
 )
 FetchContent_MakeAvailable(JUCE)
+# Also for a _deps tree populated before the patch existed (the PATCH_COMMAND only runs on a fresh download).
+execute_process(COMMAND ${CMAKE_COMMAND} -DJUCE_DIR=${juce_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/JuceEglPatch.cmake
+                COMMAND_ERROR_IS_FATAL ANY)
 
 include(cmake/NAMCore.cmake)
 include(cmake/ChowdspWDF.cmake)
@@ -444,6 +448,7 @@ target_link_libraries(OpenGuitarMultiFx PRIVATE
   juce::juce_events
   juce::juce_gui_basics
   juce::juce_gui_extra
+  juce::juce_opengl
   juce::juce_recommended_config_flags
   juce::juce_recommended_warning_flags
   nam_core
@@ -454,7 +459,11 @@ target_link_libraries(OpenGuitarMultiFx PRIVATE
   CURL::libcurl
   PkgConfig::GTK3
   PkgConfig::WEBKIT2GTK
+  EGL
+  GLESv2
 )
+# The UI draws through the GPU: EGL + OpenGL ES (see cmake/JuceEglPatch.cmake and Source/UI/GpuRendering.h).
+target_compile_definitions(OpenGuitarMultiFx PRIVATE JUCE_OPENGL_LINUX_EGL=1)
 
 enable_testing()
 add_subdirectory(Tests)

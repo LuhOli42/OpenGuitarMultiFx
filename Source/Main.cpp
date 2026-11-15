@@ -4,6 +4,7 @@
 #include "UI/Theme.h"
 #include "Engine/CpuAffinity.h"
 #include "UI/OnScreenKeyboard.h"
+#include "UI/GpuRendering.h"
 #include "UI/ParameterPanel.h"
 #include "UI/TouchSizing.h"
 
@@ -50,7 +51,11 @@ public:
         setTitleBarButtonsRequired (0, false); // no minimise/maximise/close buttons on the panel
         setResizable (false, false);
         desktop.setKioskModeComponent (this, false);
+        if (auto* content = getContentComponent())
+            gpu.attachTo (*content);
     }
+
+    GpuRendering gpu;
 
     void closeButtonPressed() override
     {

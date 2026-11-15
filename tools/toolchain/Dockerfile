@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file \
     ca-certificates \
     libasound2-dev \
+    libgl-dev libegl-dev libgles-dev \
     libx11-dev \
     libxext-dev \
     libxinerama-dev \
@@ -101,6 +102,7 @@ RUN if [ "$TARGET" = "aarch64" ]; then \
         libgcc-13-dev:arm64 \
         libstdc++-13-dev:arm64 \
         libasound2-dev:arm64 \
+        libgl-dev:arm64 libegl-dev:arm64 libgles-dev:arm64 \
         libx11-dev:arm64 \
         libxext-dev:arm64 \
         libxinerama-dev:arm64 \
