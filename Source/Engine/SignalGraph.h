@@ -112,7 +112,15 @@ public:
         long when a graph starts (a chain edit). Where the cut sits is rebalanced from measured per-processor times,
         only at moments the worker is idle. Any other graph shape runs exactly as before (isPipelineActive() false). */
     void setPipelineEnabled (bool enabled) { pipelineRequested = enabled; }
-    bool isPipelineActive() const noexcept { return pipeLane >= 0; }
+    bool isPipelineActive() const noexcept { return pipeLane >= 0 && ! pipeSendMode; }
+
+    /** PARALLEL SEND (control thread, before prepare()), for the same single-lane graph: the trailing delays/reverbs
+        (processors with trails and the Wet-over-dry law, see EffectProcessor::isWetOverDryEffect) are moved to the worker
+        as a send. The dry signal never waits: the audio thread plays it at once and adds the wet part the worker computed
+        pipelineLatencyBlocks blocks ago -- an echo or a reverb tail that starts 5 ms later is not audible, and the cost of
+        the effects leaves the audio thread. Ignored when setPipelineEnabled() is on (the whole chain already is split). */
+    void setSendEnabled (bool enabled) { sendRequested = enabled; }
+    bool isSendActive() const noexcept { return pipeLane >= 0 && pipeSendMode; }
     static constexpr int pipelineLatencyBlocks = 2;
     /** Blocks the worker had not finished in time since the last call (each repeats the previous output). */
     int takePipelineLateBlocks() noexcept { return pipeLateBlocks.exchange (0, std::memory_order_relaxed); }
@@ -206,6 +214,7 @@ private:
 
     void processImpl (juce::AudioBuffer<float>& buffer);
     void processPipelined (juce::AudioBuffer<float>& buffer);
+    void processSend (juce::AudioBuffer<float>& buffer);
     void rebalancePipeline();
     void stopPipelineWorker();
     void runLane (int laneIndex, int numSamples);
@@ -250,8 +259,11 @@ private:
         enum State : int { free = 0, ready = 1, done = 2 };
         juce::AudioBuffer<float> buffer;
         int numSamples = 0;
-        int split = 0;                    // processors [0, split) ran on the audio thread, [split, n) are the worker's
+        int split = 0;                    // processors [0, split) ran on the audio thread, [split, end) are the worker's
+        int end = 1 << 30;                // clamped to the chain length
+        float dryGain = 1.0f;             // send mode: share of the input the worker's chain passes through untouched
         std::atomic<int> state { free };
+        juce::AudioBuffer<float> dry;     // send mode: the dry signal the worker's input was copied from
     };
 
     class PipeWorker final : public juce::Thread
@@ -265,12 +277,15 @@ private:
     };
 
     bool pipelineRequested = false;
+    bool sendRequested = false;
+    bool pipeSendMode = false;            // the worker computes a delayed wet-only send instead of the chain's second half
     int pipeLane = -1;                    // the one pipelined lane, -1 = off
     std::array<PipeSlot, pipeDepth> pipeSlots;
     std::unique_ptr<PipeWorker> pipeWorker;
     std::atomic<uint32_t> pipeEpoch { 0 };       // futex the worker sleeps on; bumped after a slot turns ready
     std::atomic<bool> pipeShouldStop { false };
     std::atomic<int> pipeLateBlocks { 0 };
+    bool pipeSendHead = false;            // send mode: the worker runs the LEADING synths instead of the trailing delays/reverbs
     int pipeSplit = 1;                    // audio thread only (the worker reads the split stored in each slot)
     int pipeWriteSlot = 0, pipeReadSlot = 0, pipeInFlight = 0;   // audio thread only
     int pipeBlocksSinceRebalance = 0;

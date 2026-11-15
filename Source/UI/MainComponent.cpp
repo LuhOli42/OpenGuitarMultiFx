@@ -32,6 +32,11 @@ namespace
                    .getChildFile ("OpenGuitarMultiFx")
                    .getChildFile ("performance_mode.txt");
     }
+
+    juce::File sendModeFile()
+    {
+        return performanceModeFile().getSiblingFile ("send_mode.txt");
+    }
 }
 
 
@@ -319,6 +324,7 @@ MainComponent::MainComponent()
         audioEngine.setMasterEqBands (master.bands);
         audioEngine.setOutputLimiterEnabled (master.limiter);
     }
+    audioEngine.setSendMode (sendModeFile().existsAsFile() && sendModeFile().loadFileAsString().trim() == "on");
     audioEngine.setPerformanceMode (performanceModeFile().existsAsFile()
                                     && performanceModeFile().loadFileAsString().trim() == "on");
 
@@ -773,6 +779,7 @@ void MainComponent::rebuildSignalGraph()
     // not something this function has to fake by reordering blocks.
     auto signalGraph = std::make_unique<SignalGraph>();
     signalGraph->setPipelineEnabled (audioEngine.isPerformanceMode());
+    signalGraph->setSendEnabled (audioEngine.isSendMode());
 
     for (int row = 0; row < numRows; ++row)
     {
@@ -1106,6 +1113,14 @@ void MainComponent::showSettingsPanel()
         performanceModeFile().getParentDirectory().createDirectory();
         performanceModeFile().replaceWithText (enabled ? "on" : "off");
         rebuildSignalGraph(); // the new graph picks the mode up
+    };
+    panel->setSendMode (audioEngine.isSendMode());
+    panel->onSendModeChanged = [this] (bool enabled)
+    {
+        audioEngine.setSendMode (enabled);
+        sendModeFile().getParentDirectory().createDirectory();
+        sendModeFile().replaceWithText (enabled ? "on" : "off");
+        rebuildSignalGraph();
     };
     panel->onRetryDevice = [this, rawPanel]
     {
@@ -2810,9 +2825,29 @@ void MainComponent::timerCallback()
     // Dropout counter: a block that took longer than its audio is an audible pop. Logged every ~10 s, only when there
     // was one, with the peak-hold CPU reading -- the number to look at when "an effect makes it crackle".
     overBudgetAccum += audioEngine.takeOverBudgetBlocks();
+    {
+        const auto c = audioEngine.takeClickStats();
+        clickInAccum += c.inClicks;
+        clickOutAccum += c.outClicks;
+        clickLateAccum += c.outClicksInLateBlocks;
+        clickBiggest = juce::jmax (clickBiggest, c.outBiggest);
+    }
     if (++audioStatTicks >= 200)
     {
         audioStatTicks = 0;
+        // Where a pop is born: in the input (cable, interface), in a late block (dropout), or in the processing itself
+        // (output clicks with a clean input and no late block -- a model/solver jump), with the chain playing at the time.
+        if (clickOutAccum > 0 || clickInAccum > 0)
+        {
+            juce::StringArray names;
+            for (auto* block : blocks)
+                names.add (block->processor.getName());
+            juce::Logger::writeToLog ("Clicks: out " + juce::String (clickOutAccum) + " (" + juce::String (clickLateAccum)
+                                      + " in late blocks, biggest jump " + juce::String (clickBiggest, 3) + "), in "
+                                      + juce::String (clickInAccum) + "; chain: " + names.joinIntoString (" > "));
+        }
+        clickInAccum = clickOutAccum = clickLateAccum = 0;
+        clickBiggest = 0.0f;
         if (overBudgetAccum > 0)
             juce::Logger::writeToLog ("AudioStats: " + juce::String (overBudgetAccum) + " block(s) over budget in ~10 s; "
                                       "avg " + juce::String (audioEngine.getCurrentCpuUsage() * 100.0, 0) + "%, peak "

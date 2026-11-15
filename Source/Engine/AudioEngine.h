@@ -1,6 +1,7 @@
 #pragma once
 
 #include "OutputLimiter.h"
+#include "ClickDetector.h"
 
 #include "DeferredReclaimer.h"
 #include "MasterEq.h"
@@ -116,11 +117,25 @@ public:
         cost of SignalGraph::pipelineLatencyBlocks blocks of latency. Applies to the NEXT graph MainComponent builds. */
     void setPerformanceMode (bool enabled) noexcept { performanceMode.store (enabled, std::memory_order_relaxed); }
     bool isPerformanceMode() const noexcept { return performanceMode.load (std::memory_order_relaxed); }
+    void setSendMode (bool enabled) noexcept { sendMode.store (enabled, std::memory_order_relaxed); }
+    bool isSendMode() const noexcept { return sendMode.load (std::memory_order_relaxed); }
     /** True if the limiter pulled the gain down since the last call (the meter's "LIM" indicator); clears the flag. */
     bool takeLimiterActive() noexcept { return limiterActive.exchange (false, std::memory_order_relaxed); }
 
     /** Callbacks that took longer than the audio they produced since the last call -- each one is an audible dropout
         (this kernel has no ALSA xrun log). MainComponent writes the count to the log every few seconds. */
+    /** Clicks seen since the last call, on the device input and on the device output (see ClickDetector), plus how many of
+        the output ones happened in a block that also ran over budget. Logged by MainComponent every ~10 s. */
+    struct ClickStats { juce::uint32 inClicks = 0, outClicks = 0, outClicksInLateBlocks = 0; float outBiggest = 0.0f; };
+    ClickStats takeClickStats() noexcept
+    {
+        ClickStats s;
+        s.inClicks = inClicks.exchange (0, std::memory_order_relaxed);
+        s.outClicks = outClicks.exchange (0, std::memory_order_relaxed);
+        s.outClicksInLateBlocks = outClicksLate.exchange (0, std::memory_order_relaxed);
+        s.outBiggest = outBiggest.exchange (0.0f, std::memory_order_relaxed);
+        return s;
+    }
     juce::uint32 takeOverBudgetBlocks() noexcept { return overBudgetBlocks.exchange (0, std::memory_order_relaxed); }
 
     /** Control thread. Replaces the master-bus EQ band list (see MasterEq.h -- free-form parametric bands
@@ -256,8 +271,12 @@ private:
     OutputLimiter outputLimiter;                  // audio thread only
     std::atomic<bool> limiterEnabled { true };
     std::atomic<bool> performanceMode { false };
+    std::atomic<bool> sendMode { false };
     std::atomic<bool> limiterActive { false };
     std::atomic<juce::uint32> overBudgetBlocks { 0 };
+    ClickDetector inDetector, outDetector;        // audio thread only
+    std::atomic<juce::uint32> inClicks { 0 }, outClicks { 0 }, outClicksLate { 0 };
+    std::atomic<float> outBiggest { 0.0f };
     // Audio thread only: ramps masterGainLinear's target over ~20 ms so a footer-knob drag can't zipper.
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> masterGainSmooth;
     std::atomic<int> selectedInputChannel { 0 };

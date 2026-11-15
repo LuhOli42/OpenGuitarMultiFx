@@ -178,7 +178,9 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
     // ---- Performance mode: only a lone serial lane (input -> chain -> output, no edges) can be cut in two ----
     stopPipelineWorker();
     pipeLane = -1;
-    if (pipelineRequested && connections.empty())
+    pipeSendMode = false;
+    pipeSendHead = false;
+    if ((pipelineRequested || sendRequested) && connections.empty())
     {
         int bearing = -1, count = 0;
         for (int l = 0; l < numLanes; ++l)
@@ -188,9 +190,37 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
                 ++count;
             }
 
-        if (count == 1 && lanes[(size_t) bearing].processors.size() >= 2 && lanes[(size_t) bearing].readsDeviceInput
-            && lanes[(size_t) bearing].writesDeviceOutput && ! legacySerialOrder)
-            pipeLane = bearing;
+        if (count == 1 && lanes[(size_t) bearing].readsDeviceInput && lanes[(size_t) bearing].writesDeviceOutput
+            && ! legacySerialOrder)
+        {
+            const auto& chain = lanes[(size_t) bearing].processors;
+            if (pipelineRequested && chain.size() >= 2)
+                pipeLane = bearing;
+            else if (sendRequested)
+            {
+                // The trailing delays/reverbs that use the Wet-over-dry law are the send; everything before them stays here.
+                size_t headEnd = 0;
+                while (headEnd < chain.size() && chain[headEnd]->isParallelSynth())
+                    ++headEnd;
+                size_t tailStart = chain.size();
+                while (tailStart > 0 && chain[tailStart - 1]->hasTrails() && chain[tailStart - 1]->isWetOverDryEffect())
+                    --tailStart;
+                if (headEnd > 0)
+                {
+                    // Synths track the clean guitar, so they lead the chain: they go to the worker, the rest stays here.
+                    pipeLane = bearing;
+                    pipeSendMode = true;
+                    pipeSendHead = true;
+                    pipeSplit = (int) headEnd;
+                }
+                else if (tailStart < chain.size())
+                {
+                    pipeLane = bearing;
+                    pipeSendMode = true;
+                    pipeSplit = (int) tailStart;
+                }
+            }
+        }
     }
 
     if (pipeLane >= 0)
@@ -206,7 +236,11 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
         pipeProcessorCost = std::vector<std::atomic<float>> (n);
         for (auto& c : pipeProcessorCost)
             c.store (0.0f, std::memory_order_relaxed);
-        pipeSplit = (int) juce::jmax<size_t> (1, n / 2);
+        if (! pipeSendMode)
+            pipeSplit = (int) juce::jmax<size_t> (1, n / 2);
+        else
+            for (auto& slot : pipeSlots)
+                slot.dry.setSize (numChannels, maxBlockSize, false, true, true);
         pipeWriteSlot = pipeReadSlot = pipeInFlight = pipeBlocksSinceRebalance = 0;
         pipeShouldStop.store (false, std::memory_order_relaxed);
 
@@ -522,7 +556,7 @@ void SignalGraph::PipeWorker::run()
 
         // A view over the slot's memory, sized to this block (the slot itself is allocated for the largest block).
         juce::AudioBuffer<float> view (slot.buffer.getArrayOfWritePointers(), slot.buffer.getNumChannels(), slot.numSamples);
-        for (size_t i = (size_t) slot.split; i < processors.size(); ++i)
+        for (size_t i = (size_t) slot.split; i < processors.size() && (int) i < slot.end; ++i)
         {
             const auto start = juce::Time::getHighResolutionTicks();
             processors[i]->processWithBypass (view);
@@ -572,8 +606,100 @@ void SignalGraph::rebalancePipeline()
     pipeSplit = (int) best;
 }
 
+void SignalGraph::processSend (juce::AudioBuffer<float>& buffer)
+{
+    const int numSamples = buffer.getNumSamples();
+    auto& lane = lanes[(size_t) pipeLane];
+    auto& processors = lane.processors;
+    const size_t workerFirst = pipeSendHead ? 0 : (size_t) pipeSplit;
+    const size_t workerEnd = pipeSendHead ? (size_t) pipeSplit : processors.size();
+
+    loadLaneInput (pipeLane, numSamples);
+
+    // Tail send: the dry part of the chain runs here first, with no delay. Head send: the synths see the clean input.
+    if (! pipeSendHead)
+        for (size_t i = 0; i < workerFirst; ++i)
+            processors[i]->processWithBypass (lane.buffer);
+
+    // What the worker's blocks pass through untouched right now; the rest of their output is the wet part that arrives
+    // two callbacks late: y = g*x + wet, so wet = y - g*x (with g read when the block was handed over).
+    float dryGain = 1.0f;
+    for (size_t i = workerFirst; i < workerEnd; ++i)
+        dryGain *= processors[i]->parallelDryGain();
+
+    const int channels = pipeLastOutput.getNumChannels();
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        pipeLastOutput.copyFrom (ch, 0, lane.buffer, ch, 0, numSamples);
+        pipeLastOutput.applyGain (ch, 0, numSamples, dryGain);
+    }
+
+    if (pipeInFlight >= pipeDepth - 1)
+    {
+        auto& oldest = pipeSlots[(size_t) pipeReadSlot];
+        if (oldest.state.load (std::memory_order_acquire) == PipeSlot::done)
+        {
+            if (oldest.numSamples == numSamples)
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    auto* out = pipeLastOutput.getWritePointer (ch);
+                    juce::FloatVectorOperations::add (out, oldest.buffer.getReadPointer (ch), numSamples);
+                    juce::FloatVectorOperations::addWithMultiply (out, oldest.dry.getReadPointer (ch), -oldest.dryGain, numSamples);
+                }
+            oldest.state.store (PipeSlot::free, std::memory_order_release);
+            pipeReadSlot = (pipeReadSlot + 1) % pipeDepth;
+            --pipeInFlight;
+        }
+        else
+            pipeLateBlocks.fetch_add (1, std::memory_order_relaxed); // no wet this block; the dry part is untouched
+    }
+
+    // Hand this block's input to the worker (it runs its range in place on `buffer`; `dry` keeps the original).
+    if (pipeInFlight < pipeDepth)
+    {
+        auto& slot = pipeSlots[(size_t) pipeWriteSlot];
+        for (int ch = 0; ch < slot.buffer.getNumChannels(); ++ch)
+        {
+            slot.buffer.copyFrom (ch, 0, lane.buffer, ch, 0, numSamples);
+            slot.dry.copyFrom (ch, 0, lane.buffer, ch, 0, numSamples);
+        }
+        slot.numSamples = numSamples;
+        slot.split = (int) workerFirst;
+        slot.end = (int) workerEnd;
+        slot.dryGain = dryGain;
+        slot.state.store (PipeSlot::ready, std::memory_order_release);
+        pipeWriteSlot = (pipeWriteSlot + 1) % pipeDepth;
+        ++pipeInFlight;
+        pipeEpoch.fetch_add (1, std::memory_order_release);
+        pipeEpoch.notify_one();
+    }
+    else
+        pipeLateBlocks.fetch_add (1, std::memory_order_relaxed);
+
+    // Head send: the rest of the chain runs here on dry + the synths' wet part.
+    if (pipeSendHead)
+    {
+        for (int ch = 0; ch < channels; ++ch)
+            lane.buffer.copyFrom (ch, 0, pipeLastOutput, ch, 0, numSamples);
+        for (size_t i = workerEnd; i < processors.size(); ++i)
+            processors[i]->processWithBypass (lane.buffer);
+        for (int ch = 0; ch < channels; ++ch)
+            pipeLastOutput.copyFrom (ch, 0, lane.buffer, ch, 0, numSamples);
+    }
+
+    deviceInputSnapshot.clear();
+    addClamped (deviceInputSnapshot, pipeLastOutput, numSamples);
+    spreadInto (buffer, deviceInputSnapshot, numSamples);
+}
+
 void SignalGraph::processPipelined (juce::AudioBuffer<float>& buffer)
 {
+    if (pipeSendMode)
+    {
+        processSend (buffer);
+        return;
+    }
+
     const int numSamples = buffer.getNumSamples();
     auto& lane = lanes[(size_t) pipeLane];
     auto& processors = lane.processors;
@@ -633,6 +759,7 @@ void SignalGraph::processPipelined (juce::AudioBuffer<float>& buffer)
             slot.buffer.copyFrom (ch, 0, lane.buffer, ch, 0, numSamples);
         slot.numSamples = numSamples;
         slot.split = split;
+        slot.end = 1 << 30;
         slot.state.store (PipeSlot::ready, std::memory_order_release);
         pipeWriteSlot = (pipeWriteSlot + 1) % pipeDepth;
         ++pipeInFlight;

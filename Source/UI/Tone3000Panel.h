@@ -69,6 +69,8 @@ public:
     std::function<juce::String (int)> onBufferSizeChanged;
     /** Performance mode toggle (Audio page): MainComponent applies it to the engine, saves it and rebuilds the graph. */
     std::function<void (bool)> onPerformanceModeChanged;
+    std::function<void (bool)> onSendModeChanged;
+    void setSendMode (bool enabled);
     void setPerformanceMode (bool enabled);
 
     /** The user tapped "Retry audio device" while no device is open (the NO
@@ -132,6 +134,9 @@ private:
     juce::Label perfSectionLabel { {}, "Performance mode" };
     juce::Label perfHintLabel;
     juce::TextButton perfButton { "Off" };
+    juce::Label sendSectionLabel { {}, "Parallel delay/reverb send" };
+    juce::Label sendHintLabel;
+    juce::TextButton sendButton { "Off" };
     juce::OwnedArray<juce::TextButton> bufferButtons;
     juce::Array<int> bufferValues;
     int currentBuffer = 0;
