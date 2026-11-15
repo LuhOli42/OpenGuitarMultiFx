@@ -34,6 +34,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   TS9BStyleOverdriveProcessorTests.cpp
   ODB3StyleOverdriveProcessorTests.cpp
   MuTronIIIStyleFilterProcessorTests.cpp
+  EnvelopeAutoWahProcessorTests.cpp
   TraceElliotGP12StyleAmplifierProcessorTests.cpp
   NodalCircuitTests.cpp
   TubeCircuitTests.cpp

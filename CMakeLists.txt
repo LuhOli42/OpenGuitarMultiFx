@@ -181,6 +181,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/TS9BStyleOverdriveProcessor.cpp
   Source/Effects/ODB3StyleOverdriveProcessor.cpp
   Source/Effects/MuTronIIIStyleFilterProcessor.cpp
+  Source/Effects/EnvelopeAutoWahProcessor.cpp
   Source/Effects/CentaurStyleOverdriveProcessor.cpp
   Source/Effects/BD2StyleOverdriveProcessor.cpp
   Source/Effects/BigMuffStyleFuzzProcessor.cpp

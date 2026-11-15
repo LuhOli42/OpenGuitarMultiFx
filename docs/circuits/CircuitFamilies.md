@@ -364,3 +364,17 @@ deciding its factor.
 Every registered pedal is trimmed so that all knobs at noon = bypass loudness for a reference
 guitar-like signal -- see [UnityLevel.md](UnityLevel.md). A new pedal needs its trim measured and
 added in `EffectRegistry.cpp` (`PedalUnityLevelTests` fails until it is).
+
+## Envelope auto-wahs (closed-form solves, no clipper)
+
+Resonant band-pass filters tuned by an envelope follower on the guitar (or an LFO): played-by-dynamics wahs. All linear
+apart from a soft rail, so no oversampling; one class, three circuits.
+
+| Pedal | Doc | Tuning element / topology |
+|---|---|---|
+| MXR Envelope Filter | [EnvelopeAutoWah.md](EnvelopeAutoWah.md) | 3-inverter SVF, CD4016 switches chopped at 37 kHz (R/duty), band-pass tap |
+| MXR Bass Envelope Filter (M82-style) | [EnvelopeAutoWah.md](EnvelopeAutoWah.md) | same SVF, caps x3.3, Dry/FX blend (re-voiced, not from its own schematic) |
+| EHX Doctor Q | [EnvelopeAutoWah.md](EnvelopeAutoWah.md) | multiple-feedback band-pass, BC239C as base-current-controlled resistor, Norm/Bass switch |
+
+The Mu-Tron III ([MuTronIIIStyleFilter.md](MuTronIIIStyleFilter.md)) is the LDR-tuned SVF cousin of the MXR.
+
