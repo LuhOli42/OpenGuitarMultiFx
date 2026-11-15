@@ -273,6 +273,10 @@ cat > "$WWW/beta-api/releases" <<EOF
   }
 ]
 EOF
+# What api.github.com really sends: one line, no whitespace between tokens (the pretty
+# form above made this test pass while the first real device could not find its release).
+tr -d '\n' < "$WWW/beta-api/releases" | sed -e 's/  */ /g' -e 's/\([,:[{]\) /\1/g' -e 's/ \([]}]\)/\1/g' > "$WWW/beta-api/releases.min"
+mv "$WWW/beta-api/releases.min" "$WWW/beta-api/releases"
 sed -i 's/^channel="stable"$/channel="beta"/' "$ETC/updater.conf"
 sed -i "s|^api_base=.*|api_base=\"http://127.0.0.1:$PORT/beta-api\"|" "$ETC/updater.conf"
 run_updater --force
