@@ -963,6 +963,7 @@ void MainComponent::showScreenForSnapshot (const juce::String& screen)
         for (auto* key : { "Compressor", "OD1StyleOverdrive", "AC30StyleAmplifier", "Chorus", "AnalogDelay", "Hall" })
             addEffect (key);
 
+    selectBlock (nullptr);
     if (screen == "drawer" && ! chain.empty())
         selectBlock (chain[juce::jmin ((size_t) 2, chain.size() - 1)].get());
     else if (screen == "add")
@@ -2614,7 +2615,7 @@ void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted
     g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
     if (highlighted && isEnabled())
     {
-        g.setColour (t.lineStrong.withAlpha (0.6f));
+        g.setColour (t.lineStrong.withMultipliedAlpha (0.6f));
         g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 1.0f);
     }
 
@@ -2720,7 +2721,7 @@ void MainComponent::GearButton::paintButton (juce::Graphics& g, bool highlighted
     g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
     if (highlighted && isEnabled())
     {
-        g.setColour (t.lineStrong.withAlpha (0.6f));
+        g.setColour (t.lineStrong.withMultipliedAlpha (0.6f));
         g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 1.0f);
     }
 

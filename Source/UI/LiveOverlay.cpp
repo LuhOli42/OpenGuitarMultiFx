@@ -34,6 +34,8 @@ LiveOverlay::LiveOverlay()
     addAndMakeVisible (bpmValueLabel);
     bpmValueLabel.setJustificationType (juce::Justification::centred);
     bpmValueLabel.setFont (juce::Font (44.0f, juce::Font::bold));
+    // setBpm() skips an unchanged tempo, so the default has to be on screen from the start.
+    bpmValueLabel.setText (juce::String (bpm, 0), juce::dontSendNotification);
     addAndMakeVisible (bpmUnitLabel);
     bpmUnitLabel.setText ("BPM", juce::dontSendNotification);
     bpmUnitLabel.setJustificationType (juce::Justification::centred);
@@ -56,10 +58,8 @@ LiveOverlay::LiveOverlay()
         tiles[(size_t) i] = std::move (tile);
     }
 
-    // Big on purpose: this is the stage screen. OverlayHost clamps it to
-    // 92% x 90% of the window, which on the target 10" display is nearly
-    // the whole screen.
-    setSize (1180, 720);
+    // The stage screen: a FullScreenOverlay, so OverlayHost stretches it over the whole window.
+    setSize (1280, 800);
 }
 
 LiveOverlay::~LiveOverlay()
@@ -118,9 +118,9 @@ void LiveOverlay::refreshTiles()
 
 void LiveOverlay::resized()
 {
-    auto area = getLocalBounds().reduced (28, 28);
+    auto area = getLocalBounds().reduced (20, 20);
 
-    auto top = area.removeFromTop (84);
+    auto top = area.removeFromTop (104);
     closeButton.setBounds (top.removeFromRight (84).withSizeKeepingCentre (64, 64));
     tunerButton.setBounds (top.removeFromRight (188).withSizeKeepingCentre (188, 64));
 
@@ -131,7 +131,7 @@ void LiveOverlay::resized()
 
     presetArea = top.toFloat();
 
-    area.removeFromTop (24);
+    area.removeFromTop (16);
     const int gap = 14;
     const int tileWidth = (area.getWidth() - gap * 3) / 4;
     const int tileHeight = (area.getHeight() - gap) / 2;
@@ -154,11 +154,12 @@ void LiveOverlay::paint (juce::Graphics& g)
     const auto area = presetArea;
     g.setColour (t.raised);
     g.fillRoundedRectangle (area, t.radius);
-    g.setColour (t.lineStrong.withAlpha (0.6f));
+    g.setColour (t.lineStrong.withMultipliedAlpha (0.6f));
     g.drawRoundedRectangle (area.reduced (0.5f), t.radius, 1.0f);
 
     const float pad = 14.0f;
-    const auto chip = area.withSizeKeepingCentre (64.0f, juce::jmin (64.0f, area.getHeight() - 2 * pad));
+    const float chipSide = juce::jmin (76.0f, area.getHeight() - 2 * pad);
+    const auto chip = juce::Rectangle<float> (area.getX() + pad, area.getCentreY() - chipSide * 0.5f, chipSide, chipSide);
 
     // The chip carries the preset number + live scene letter, in the live
     // scene's colour -- the same accent the rest of the app wears.
@@ -177,11 +178,11 @@ void LiveOverlay::paint (juce::Graphics& g)
     // Title takes the upper ~60%, subtitle the lower 40% -- big type first.
     auto titleBox = textArea.removeFromTop (textArea.getHeight() * 0.6f).reduced (0.0f, 2.0f);
     g.setColour (t.text);
-    g.setFont (displayFont (juce::jmin (28.0f, titleBox.getHeight() * 0.62f)));
+    g.setFont (displayFont (juce::jmin (46.0f, titleBox.getHeight() * 0.9f)));
     g.drawText (presetTitle, titleBox.toNearestInt(), juce::Justification::centredLeft);
 
     g.setColour (t.textMuted);
-    g.setFont (juce::Font (juce::jmin (15.0f, textArea.getHeight() * 0.55f)));
+    g.setFont (juce::Font (juce::jmin (16.0f, textArea.getHeight() * 0.6f)));
     g.drawText (presetSubtitle, textArea.toNearestInt(), juce::Justification::centredLeft);
 }
 
@@ -194,7 +195,7 @@ void LiveOverlay::SceneTile::paintButton (juce::Graphics& g, bool highlighted, b
     const bool boldActive = active && t.id == theme::Id::boldBlocks;
 
     auto fill = active ? (boldActive ? accent : t.raisedHigh) : t.raised;
-    auto border = active ? accent : (enabled ? colour.withAlpha (0.55f) : t.lineStrong.withAlpha (0.45f));
+    auto border = active ? accent : (enabled ? colour.withAlpha (0.55f) : t.lineStrong.withMultipliedAlpha (0.45f));
     auto labelColour = active ? (boldActive ? juce::Colours::black : accent) : (enabled ? t.textMuted : t.textDim);
     auto nameColour = active ? (boldActive ? juce::Colours::black : t.text) : (enabled ? t.text : t.textDim);
     const float alpha = enabled ? 1.0f : 0.42f;
@@ -218,11 +219,11 @@ void LiveOverlay::SceneTile::paintButton (juce::Graphics& g, bool highlighted, b
     }
     else
     {
-        g.setColour ((enabled ? t.lineStrong : t.line).withAlpha (alpha));
+        g.setColour ((enabled ? t.lineStrong : t.line).withMultipliedAlpha (alpha));
         g.fillEllipse (ledCentre.x - 5.0f, ledCentre.y - 5.0f, 10.0f, 10.0f);
     }
 
-    g.setColour (border.withAlpha (alpha));
+    g.setColour (border.withMultipliedAlpha (alpha));
     g.drawRoundedRectangle (bounds.reduced (1.0f), t.radius, active ? 3.0f : 1.5f);
 
     g.setColour (labelColour.withAlpha (alpha));
@@ -244,7 +245,7 @@ void LiveOverlay::SceneTile::paintButton (juce::Graphics& g, bool highlighted, b
 
     if ((highlighted || down) && enabled)
     {
-        g.setColour (t.lineStrong.withAlpha (down ? 0.8f : 0.45f));
+        g.setColour (t.lineStrong.withMultipliedAlpha (down ? 0.8f : 0.45f));
         g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, 2.0f);
     }
 }

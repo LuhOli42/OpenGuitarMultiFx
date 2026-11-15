@@ -2,6 +2,7 @@
 
 #include "Theme.h"
 #include "OverlayChrome.h"
+#include "OverlayHost.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -26,7 +27,8 @@ namespace openguitarmultifx
     pushed in by MainComponent's timer; the TUNER tile opens the existing
     tuner overlay rather than running a second pitch analysis here.
 */
-class LiveOverlay : public juce::Component
+class LiveOverlay : public juce::Component,
+                    public FullScreenOverlay
 {
 public:
     LiveOverlay();

@@ -199,30 +199,32 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     {
         if (filledStyle)
         {
-            g.setColour (t.background);
-            g.drawRoundedRectangle (bounds.expanded (3.0f), t.radius + 3.0f, 3.0f);
             g.setColour (t.text);
-            g.drawRoundedRectangle (bounds.expanded (6.0f), t.radius + 6.0f, 3.0f);
+            g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, 3.0f);
+            g.setColour (t.background);
+            g.drawRoundedRectangle (bounds.reduced (3.5f), t.radius - 3.0f, 2.0f);
         }
         else if (stripeStyle)
         {
             g.setColour (juce::Colours::white.withAlpha (0.9f));
-            g.drawRoundedRectangle (bounds.expanded (2.0f), t.smallRadius + 2.0f, 2.0f);
+            g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 2.0f);
         }
         else
         {
-            g.setColour (accent.withAlpha (0.30f));
-            g.drawRoundedRectangle (bounds.expanded (5.0f), t.radius + 5.0f, 7.0f);
-            g.setColour (accent.withAlpha (0.18f));
-            g.drawRoundedRectangle (bounds.expanded (9.0f), t.radius + 9.0f, 12.0f);
+            // Everything stays inside the component: rings drawn past the bounds are clipped into a square
+            // behind the rounded card (seen as coloured corners on the selected block).
+            g.setColour (accent.withAlpha (0.07f));
+            g.fillRoundedRectangle (bounds, t.radius);
+            g.setColour (accent.withAlpha (0.28f));
+            g.drawRoundedRectangle (bounds.reduced (2.0f), t.radius - 2.0f, 3.0f);
             g.setColour (accent);
-            g.drawRoundedRectangle (bounds.expanded (1.0f), t.radius + 1.0f, 2.0f);
+            g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, 2.0f);
         }
     }
 
     if (t.blockStyle == theme::BlockStyle::glow)
     {
-        const auto ledCentre = juce::Point<float> (bounds.getX() + 9.0f, bounds.getY() + 9.0f);
+        const auto ledCentre = juce::Point<float> (bounds.getX() + 13.0f, bounds.getY() + 13.0f);
         if (bypassed)
         {
             g.setColour (t.textDim);
@@ -230,22 +232,18 @@ void EffectBlockComponent::paint (juce::Graphics& g)
         }
         else
         {
-            g.setColour (accent.withAlpha (0.30f));
-            g.fillEllipse (ledCentre.x - 8.0f, ledCentre.y - 8.0f, 16.0f, 16.0f);
-            g.setColour (accent.withAlpha (0.45f));
-            g.fillEllipse (ledCentre.x - 5.0f, ledCentre.y - 5.0f, 10.0f, 10.0f);
+            g.setColour (accent.withAlpha (0.22f));
+            g.fillEllipse (ledCentre.x - 6.5f, ledCentre.y - 6.5f, 13.0f, 13.0f);
             g.setColour (accent);
             g.fillEllipse (ledCentre.x - 3.5f, ledCentre.y - 3.5f, 7.0f, 7.0f);
         }
     }
 
     auto iconArea = bounds.reduced (7.0f);
-    if (t.blockStyle == theme::BlockStyle::glow)
-        iconArea = iconArea.withTrimmedLeft (8.0f);
     auto nameArea = iconArea.removeFromBottom (24.0f);
     iconArea.removeFromBottom (4.0f);
 
-    const float squareSize = juce::jmin (iconArea.getWidth(), iconArea.getHeight()) * 0.78f;
+    const float squareSize = juce::jmin (iconArea.getWidth(), iconArea.getHeight()) * 0.66f;
     const auto squareIconArea = iconArea.withSizeKeepingCentre (squareSize, squareSize);
 
     juce::Colour iconTint;
@@ -265,13 +263,20 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     {
         tintedIcon = tintIconImage (baseIcon, iconTint, 1.0f);
         tintedFor = iconTint;
-        glowIcon = wantGlowIcon ? tintIconImage (baseIcon, iconTint, 0.22f) : juce::Image();
+        glowIcon = juce::Image();
+        if (wantGlowIcon)
+        {
+            // A real blur of the icon, not enlarged copies of it: those read as ghost outlines, not light.
+            glowIcon = tintIconImage (baseIcon, iconTint, 0.55f);
+            juce::ImageConvolutionKernel blur (15);
+            blur.createGaussianBlur (5.0f);
+            blur.applyToImage (glowIcon, glowIcon, glowIcon.getBounds());
+        }
     }
 
     if (glowIcon.isValid())
     {
-        g.drawImage (glowIcon, squareIconArea.expanded (10.0f), juce::RectanglePlacement::centred, false);
-        g.drawImage (glowIcon, squareIconArea.expanded (5.0f), juce::RectanglePlacement::centred, false);
+        g.drawImage (glowIcon, squareIconArea, juce::RectanglePlacement::centred, false);
     }
     g.drawImage (tintedIcon, squareIconArea, juce::RectanglePlacement::centred, false);
 
@@ -280,7 +285,7 @@ void EffectBlockComponent::paint (juce::Graphics& g)
         name = name.toUpperCase();
 
     g.setColour (filledStyle ? iconTint : (bypassed ? t.textDim : t.text));
-    g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::centred, 2, 0.8f);
 
     if (bypassed)

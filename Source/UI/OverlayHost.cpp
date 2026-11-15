@@ -48,6 +48,12 @@ void OverlayHost::layOutTop()
 
     auto* top = layers.back().get();
 
+    if (dynamic_cast<FullScreenOverlay*> (top) != nullptr)
+    {
+        top->setBounds (getLocalBounds());
+        return;
+    }
+
     // The content already picked its own preferred size via setSize() in
     // its constructor -- clamp that to fit this host rather than trusting
     // it blindly (a search dialog built for a wide desktop window would
@@ -73,6 +79,8 @@ void OverlayHost::paint (juce::Graphics& g)
     // Card background behind the top layer, so its content doesn't have to
     // paint its own edges/shadow to read as a sheet floating over the app.
     auto* top = layers.back().get();
+    if (dynamic_cast<FullScreenOverlay*> (top) != nullptr)
+        return;
     g.setColour (theme::current().surface);
     g.fillRoundedRectangle (top->getBounds().toFloat().expanded (1.0f), 14.0f);
     g.setColour (juce::Colours::black.withAlpha (0.5f));

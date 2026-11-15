@@ -11,7 +11,7 @@ namespace openguitarmultifx
 namespace
 {
 constexpr int cardWidth = 640;
-constexpr int cardHeight = 560;
+constexpr int cardHeight = 548;
 constexpr int swatchSize = 48;
 constexpr int rowGap = 8;
 constexpr int margin = 20;
@@ -162,6 +162,10 @@ SnapshotEditorCard::SnapshotEditorCard (int idx, juce::String l, juce::String n,
 
     removeButton.onClick = [this] { if (actions.onRemove) actions.onRemove(); };
     addAndMakeVisible (removeButton);
+
+    // setSize() above ran resized() before the swatches and pedal rows existed, and OverlayHost only moves a card
+    // that already fits -- without this they stay stacked at the card's top-left corner.
+    resized();
 }
 
 void SnapshotEditorCard::commitName()
@@ -205,7 +209,7 @@ void SnapshotEditorCard::paint (juce::Graphics& g)
 
     const auto& t = theme::current();
     g.setColour (t.line);
-    for (float y : { 152.0f, 236.0f, 316.0f, 396.0f })
+    for (float y : { 152.0f, 260.0f, 464.0f })
         g.drawHorizontalLine (y, margin, (float) getWidth() - margin);
 
     // Snapshot letter chip, tinted with the snapshot's own colour (layer 2).
@@ -221,13 +225,13 @@ void SnapshotEditorCard::resized()
     titleLabel.setBounds (88, 0, getWidth() - 88 - margin - 52 - 12, 76);
     closeButton.setBounds (getWidth() - margin - 52, 12, 52, 52);
 
-    nameLabel.setBounds (margin, 88, 96, 24);
+    nameLabel.setBounds (margin, 82, 96, 48);
     nameEditor.setBounds (120, 82, getWidth() - 120 - margin - 92, 48);
     nameOkButton.setBounds (getWidth() - margin - 84, 82, 84, touch::minTapTarget);
 
-    colourLabel.setBounds (margin, 164, 96, 24);
+    colourLabel.setBounds (margin, 160, 96, 24);
     int x = margin;
-    const int swatchY = 196;
+    const int swatchY = 194;
     for (auto* swatch : swatches)
     {
         swatch->setBounds (x, swatchY, swatchSize, swatchSize);
@@ -236,14 +240,14 @@ void SnapshotEditorCard::resized()
     x += 8;
     customButton.setBounds (x, swatchY + 2, 130, touch::minTapTarget);
 
-    int y = 268;
+    int y = 270;
     for (auto* row : pedalRows)
     {
         row->setBounds (margin, y, getWidth() - 2 * margin, 56);
         y += 56 + 8;
     }
 
-    const int actionY = 452;
+    const int actionY = 480;
     const int btnW = 168;
     copyToButton.setBounds (margin, actionY, btnW, touch::minTapTarget);
     copyFromButton.setBounds (margin + btnW + 12, actionY, btnW, touch::minTapTarget);

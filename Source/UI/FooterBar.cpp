@@ -33,7 +33,7 @@ void FooterButton::paintButton (juce::Graphics& g, bool, bool down)
 
     if (isMouseOverOrDragging() && isEnabled())
     {
-        g.setColour (t.lineStrong.withAlpha (0.6f));
+        g.setColour (t.lineStrong.withMultipliedAlpha (0.6f));
         g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 1.0f);
     }
 

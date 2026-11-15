@@ -47,7 +47,7 @@ void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
     g.setColour (t.line);
     g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
 
-    const auto accent = probe != nullptr ? probe->getAccentColour() : t.textMuted;
+    const auto accent = categoryColour.isTransparent() ? t.textMuted : categoryColour;
     if (t.id == theme::Id::console)
     {
         g.setColour (accent);
@@ -73,20 +73,40 @@ void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
         g.setColour (accent.withAlpha (0.16f));
     g.fillRoundedRectangle (iconArea, t.smallRadius);
 
-    if (headOnlyIcon)
+    // The glyphs draw in their own fixed colour, so they are rendered once and re-coloured: category colour on
+    // the tinted tile, near-black on Bold Blocks' solid tile -- the same rule the chain blocks follow.
+    const auto glyphColour = t.id == theme::Id::boldBlocks ? juce::Colour (0xff111111)
+                           : t.id == theme::Id::console    ? t.text
+                                                           : accent;
+    if (! tintedIcon.isValid() || tintedFor != glyphColour)
     {
-        // 'Amp' (cab off) rows get the head-only glyph; '+ Cab' rows keep the
-        // probe's own icon, which for the modelled amps is already head+cabinet.
-        static const std::unique_ptr<juce::Drawable> headIcon =
-            icon::loadSvg (IconData::amp_head_svg, IconData::amp_head_svgSize);
-        const float glyph = iconArea.getWidth() * 0.86f;
-        icon::drawSvg (g, iconArea.withSizeKeepingCentre (glyph, glyph), headIcon.get());
+        constexpr int size = 96;
+        tintedIcon = juce::Image (juce::Image::ARGB, size, size, true);
+        {
+            juce::Graphics ig (tintedIcon);
+            const juce::Rectangle<float> whole (0.0f, 0.0f, (float) size, (float) size);
+            if (headOnlyIcon)
+            {
+                // 'Amp' (cab off) rows get the head-only glyph; '+ Cab' rows keep the
+                // probe's own icon, which for the modelled amps is already head+cabinet.
+                static const std::unique_ptr<juce::Drawable> headIcon =
+                    icon::loadSvg (IconData::amp_head_svg, IconData::amp_head_svgSize);
+                icon::drawSvg (ig, whole, headIcon.get());
+            }
+            else if (probe != nullptr)
+            {
+                probe->drawIcon (ig, whole);
+            }
+        }
+        juce::Image::BitmapData pixels (tintedIcon, juce::Image::BitmapData::readWrite);
+        for (int y = 0; y < size; ++y)
+            for (int x = 0; x < size; ++x)
+                if (const auto alpha = pixels.getPixelColour (x, y).getFloatAlpha(); alpha > 0.0f)
+                    pixels.setPixelColour (x, y, glyphColour.withMultipliedAlpha (alpha));
+        tintedFor = glyphColour;
     }
-    else if (probe != nullptr)
-    {
-        const float glyph = iconArea.getWidth() * 0.86f;
-        probe->drawIcon (g, iconArea.withSizeKeepingCentre (glyph, glyph));
-    }
+    const float glyph = iconArea.getWidth() * 0.66f;
+    g.drawImage (tintedIcon, iconArea.withSizeKeepingCentre (glyph, glyph), juce::RectanglePlacement::centred, false);
 
     // Name over its short description line.
     const auto nameArea = area.removeFromTop (area.getHeight() * 0.56f);
@@ -436,6 +456,7 @@ void AddEffectBrowserDialog::rebuildRows()
             row.tag = searching ? EffectRegistry::categoryDisplayName (category) : juce::String();
             row.cpuLevel = effectcost::levelForKey (key);
             row.probe = probe;
+            row.categoryColour = EffectRegistry::categoryColour (category);
             row.headOnlyIcon = cab; // the cab-off row draws the head-only glyph
         }
 
@@ -452,6 +473,7 @@ void AddEffectBrowserDialog::rebuildRows()
             row.tag = searching ? EffectRegistry::categoryDisplayName (category) : juce::String();
             row.cpuLevel = effectcost::levelForKey (key);
             row.probe = probe;
+            row.categoryColour = EffectRegistry::categoryColour (category);
             row.cabOn = true;
         }
     }

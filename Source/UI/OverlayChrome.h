@@ -42,7 +42,7 @@ inline void paintCardBackground (juce::Graphics& g, juce::Rectangle<float> bound
         g.fillRoundedRectangle (bounds, radius);
     }
 
-    g.setColour (t.lineStrong.withAlpha (t.id == theme::Id::stageGlass ? 0.85f : 1.0f));
+    g.setColour (t.lineStrong.withMultipliedAlpha (t.id == theme::Id::stageGlass ? 0.85f : 1.0f));
     g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
 }
 
@@ -128,9 +128,13 @@ public:
                 fill = fill.brighter (0.08f);
         }
 
-        g.setColour (fill);
-        if (ghost) g.fillRoundedRectangle (bounds, radius);
-        else       g.fillRoundedRectangle (bounds, radius);
+        // A rail entry (leftAccent) is plain text until it is selected or hovered, as in the prototype's list.
+        const bool bareIdle = leftAccent && ! selected && ! isMouseOverOrDragging();
+        if (! bareIdle)
+        {
+            g.setColour (fill);
+            g.fillRoundedRectangle (bounds, radius);
+        }
 
         if (selected && selectedStyle == SelectedStyle::tab && ! primary)
         {
@@ -152,8 +156,11 @@ public:
             }
         }
 
-        g.setColour (border.withAlpha (ghost ? 0.8f : 1.0f));
-        g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
+        if (! leftAccent)
+        {
+            g.setColour (border.withMultipliedAlpha (ghost ? 0.8f : 1.0f));
+            g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
+        }
 
         auto textArea = bounds.reduced (10.0f, 0.0f);
         if (showDot)
@@ -168,12 +175,15 @@ public:
 
         g.setColour (textColour);
         g.setFont (font (14.0f, primary || selected));
-        g.drawFittedText (text, textArea.toNearestInt(), juce::Justification::centredLeft, 1);
+        // List-like entries (dot, trailing count, rail accent) read left to right; a plain button centres its label.
+        const bool listLike = showDot || leftAccent || trailingText.isNotEmpty();
+        g.drawFittedText (text, textArea.toNearestInt(),
+                          listLike ? juce::Justification::centredLeft : juce::Justification::centred, 1);
 
         if (trailingText.isNotEmpty())
         {
-            auto tail = bounds.withSizeKeepingCentre (juce::jmin (48.0f, bounds.getWidth() * 0.4f), bounds.getHeight());
-            tail = bounds.withX (bounds.getRight() - tail.getWidth());
+            const auto tail = bounds.reduced (10.0f, 0.0f)
+                                    .removeFromRight (juce::jmin (48.0f, bounds.getWidth() * 0.4f));
             g.setColour (textColour.withAlpha (0.72f));
             g.setFont (font (11.0f));
             g.drawFittedText (trailingText, tail.toNearestInt(), juce::Justification::centredRight, 1);
@@ -259,6 +269,9 @@ inline void drawSearchFieldChrome (juce::TextEditor& editor)
     editor.setColour (juce::TextEditor::highlightedTextColourId, theme::current().text);
     editor.setColour (juce::TextEditor::highlightColourId, OpenGuitarMultiFxLookAndFeel::getAppAccentColour().withAlpha (0.3f));
     editor.setFont (font (14.0f));
+    // Text sits on the field's vertical centre with a real left inset, not in its top-left corner.
+    editor.setJustification (juce::Justification::centredLeft);
+    editor.setIndents (14, 0);
 }
 
 } // namespace openguitarmultifx::overlaychrome

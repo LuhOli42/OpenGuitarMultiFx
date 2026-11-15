@@ -197,3 +197,16 @@ Settings' audio part now starts with an **Audio interface** line ("In: XTONE - O
 
 ## Page switching and dark accents (2026-10-27)
 `showPage()` hides each row's value box with its knob (it used to leave the previous page's boxes on screen, unlabelled -- reported as "valores invisíveis" on the amps' Bias/Cab page). Knobs/selectors use the effect's accent lifted to a readable brightness when it is near black (5150, Dual Rectifier). `OpenGuitarMultiFx --panel-snapshot <dir> <key,key>` renders each effect's drawer, every page, off-screen to PNGs and quits -- look at the drawer without a desktop screenshot.
+
+## Checking screens against the prototype
+
+`OpenGuitarMultiFx --window-snapshot <file.png> [--screen grid|drawer|add|presets|snap|tuner|eq|settings|live] [--theme 0|1|2]` renders one screen off-screen at 1280x800 and quits (under `xvfb-run` on a machine with no display). `--theme` is not saved. An empty chain gets a small demo chain first. Compare the result with the same page of `docs/ui/prototype.html`.
+
+Pitfalls found this way (2026-11-15):
+
+- **A theme line token can be translucent** (Stage Glass `line`/`lineStrong` are white at 7 % / 13 %). `colour.withAlpha (x)` replaces that alpha, so `lineStrong.withAlpha (1.0f)` is solid white. Scale a token with `withMultipliedAlpha()`.
+- **Nothing may be painted past a component's bounds.** A selection ring drawn on `bounds.expanded()` is clipped to a square behind the rounded card. `EffectBlockComponent` keeps its ring inside.
+- **`setSize()` in a card's constructor runs `resized()` before later children exist**, and `OverlayHost` only moves a card that already fits, so no second `resized()` comes. A card that builds children after `setSize()` must call `resized()` at the end of its constructor (`SnapshotEditorCard`).
+- **Stage screens are full-window**: a card that also derives from `FullScreenOverlay` (`OverlayHost.h`) gets the host's whole bounds and no sheet behind it. `LiveOverlay` and `TunerOverlay` use it; they close by their own button, not by a tap outside.
+- Effect glyphs draw in a fixed colour. To colour one, render it to an image and re-colour the pixels (chain block, Add-effect row), and blur that image for a glow. Enlarged translucent copies read as ghost outlines.
+

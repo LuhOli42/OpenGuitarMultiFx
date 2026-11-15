@@ -1,6 +1,7 @@
 #pragma once
 
 #include "OverlayChrome.h"
+#include "OverlayHost.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -18,6 +19,7 @@ namespace openguitarmultifx
     low strings the old one could not reach at all (its analysis floor was 70 Hz, above B0/E1/F#1/A1/B1).
 */
 class TunerOverlay : public juce::Component,
+                     public FullScreenOverlay,
                      private juce::Timer
 {
 public:

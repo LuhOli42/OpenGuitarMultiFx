@@ -74,6 +74,9 @@ private:
         bool cabOn = false;        // '+ Cab' insertion variant -- see onEffectChosen
         bool headOnlyIcon = false; // the cab-off row draws the head-only glyph, not the probe's
         const EffectProcessor* probe = nullptr; // icon + accent; owned by the dialog's probe cache
+        juce::Colour categoryColour;            // tile + glyph tint, the same colour the block gets in the chain
+        juce::Image tintedIcon;                 // the glyph re-coloured for the current theme; built on first paint
+        juce::Colour tintedFor;
 
         std::function<void()> onTap;
 

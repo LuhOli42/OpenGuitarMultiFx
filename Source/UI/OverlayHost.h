@@ -43,6 +43,14 @@ public:
     virtual void outsideTapDismissed() = 0;
 };
 
+/** Marker for a card that takes the whole window instead of floating as a sheet -- the stage screens (Live,
+    Tuner), which have to be read from a distance. The host gives it its full bounds and draws no card behind it. */
+class FullScreenOverlay
+{
+public:
+    virtual ~FullScreenOverlay() = default;
+};
+
 class OverlayHost : public juce::Component
 {
 public:
