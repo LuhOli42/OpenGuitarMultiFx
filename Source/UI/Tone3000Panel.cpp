@@ -207,6 +207,22 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     audioPage.addAndMakeVisible (bufferHintLabel);
     bufferHintLabel.setFont (juce::Font (14.0f));
 
+    audioPage.addAndMakeVisible (perfSectionLabel);
+    perfSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
+    audioPage.addAndMakeVisible (perfButton);
+    perfButton.setClickingTogglesState (true);
+    perfButton.onClick = [this]
+    {
+        perfButton.setButtonText (perfButton.getToggleState() ? "On" : "Off");
+        if (onPerformanceModeChanged)
+            onPerformanceModeChanged (perfButton.getToggleState());
+    };
+    audioPage.addAndMakeVisible (perfHintLabel);
+    perfHintLabel.setFont (juce::Font (14.0f));
+    perfHintLabel.setText ("Splits a single-row chain across the two fast cores so heavy amps stop dropping out. "
+                           "Adds two buffers of latency (about 5 ms at 128 samples). Takes effect right away.",
+                           juce::dontSendNotification);
+
     tone3000Page.addAndMakeVisible (tone3000SectionLabel);
     tone3000SectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
     tone3000SectionLabel.setText ("TONE3000 account", juce::dontSendNotification);
@@ -325,6 +341,12 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
     resized();
 }
 
+void Tone3000Panel::setPerformanceMode (bool enabled)
+{
+    perfButton.setToggleState (enabled, juce::dontSendNotification);
+    perfButton.setButtonText (enabled ? "On" : "Off");
+}
+
 void Tone3000Panel::showBufferSizes (const juce::Array<int>& sizes, int current, double rate)
 {
     bufferButtons.clear();
@@ -436,7 +458,7 @@ void Tone3000Panel::applyLabelColours()
     const auto& t = theme::current();
     const auto muted = [this, &t] (juce::Label& label) { label.setColour (juce::Label::textColourId, t.textMuted); };
 
-    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &statusLabel,
+    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &statusLabel,
                                 &updateStatusLabel, &midiHintLabel, &aboutDetailsLabel, &interfaceLabel,
                                 &currentVersionLabel, &clientIdLabel })
         muted (*label);
@@ -669,6 +691,13 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
             }
             area.removeFromTop (6);
             bufferHintLabel.setBounds (area.removeFromTop (48));
+            area.removeFromTop (14);
+
+            perfSectionLabel.setBounds (area.removeFromTop (26));
+            area.removeFromTop (6);
+            perfButton.setBounds (area.removeFromTop (touch::minTapTarget).removeFromLeft (110));
+            area.removeFromTop (6);
+            perfHintLabel.setBounds (area.removeFromTop (60));
             break;
         }
         case Section::tone3000:

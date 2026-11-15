@@ -372,6 +372,82 @@ public:
             }
             expectEquals (graph.getJobsRunByWorkers(), 0); // whole graph forced legacy serial
         }
+
+        beginTest ("performance mode: a single serial lane is cut in two and plays the same audio, two blocks late");
+        {
+            // Position-dependent processors (different gains, each counting calls) so a wrong order or a lost block shows.
+            TestGainProcessor a (0.5f), b (0.8f), c (2.0f);
+            SignalGraph pipelined;
+            pipelined.setPipelineEnabled (true);
+            pipelined.setLaneProcessors (0, { &a, &b, &c });
+            pipelined.setLaneReadsDeviceInput (0, true);
+            pipelined.setLaneWritesDeviceOutput (0, true);
+            pipelined.prepare (48000.0, 64, 1);
+            expect (pipelined.isPipelineActive());
+
+            constexpr int blockSize = 64, numBlocks = 40;
+            std::vector<float> input ((size_t) (blockSize * numBlocks)), output (input.size());
+            for (size_t i = 0; i < input.size(); ++i)
+                input[i] = std::sin ((float) i * 0.05f);
+
+            for (int blk = 0; blk < numBlocks; ++blk)
+            {
+                juce::AudioBuffer<float> buffer (1, blockSize);
+                for (int i = 0; i < blockSize; ++i)
+                    buffer.setSample (0, i, input[(size_t) (blk * blockSize + i)]);
+                pipelined.process (buffer);
+                for (int i = 0; i < blockSize; ++i)
+                    output[(size_t) (blk * blockSize + i)] = buffer.getSample (0, i);
+
+                // The worker runs concurrently; give it its turn the way a real callback period would.
+                juce::Thread::sleep (3);
+            }
+
+            const int latency = SignalGraph::pipelineLatencyBlocks * blockSize;
+            const float totalGain = 0.5f * 0.8f * 2.0f;
+            for (int i = 0; i < latency; ++i)
+                expectWithinAbsoluteError (output[(size_t) i], 0.0f, 1.0e-6f); // nothing has come through yet
+
+            int mismatches = 0;
+            for (size_t i = (size_t) latency; i < output.size(); ++i)
+                if (std::abs (output[i] - input[i - (size_t) latency] * totalGain) > 1.0e-5f)
+                    ++mismatches;
+            expectEquals (mismatches, 0);
+            expectEquals (pipelined.takePipelineLateBlocks(), 0);
+            expectEquals (a.processCalls + 0, numBlocks); // every block ran through every stage exactly once
+            expectEquals (b.processCalls, numBlocks);
+            expectEquals (c.processCalls, numBlocks);
+        }
+
+        beginTest ("performance mode stays off for graphs it cannot cut (two lanes, a lone processor, a split)");
+        {
+            TestGainProcessor a (1.0f), b (1.0f);
+
+            SignalGraph twoLanes;
+            twoLanes.setPipelineEnabled (true);
+            twoLanes.setLaneProcessors (0, { &a, &b });
+            twoLanes.setLaneProcessors (1, { &a });
+            twoLanes.setLaneReadsDeviceInput (0, true);
+            twoLanes.setLaneWritesDeviceOutput (1, true);
+            twoLanes.addLaneConnection (0, 1);
+            twoLanes.prepare (48000.0, 64, 1);
+            expect (! twoLanes.isPipelineActive());
+
+            SignalGraph lone;
+            lone.setPipelineEnabled (true);
+            lone.setLaneProcessors (0, { &a });
+            lone.setLaneReadsDeviceInput (0, true);
+            lone.setLaneWritesDeviceOutput (0, true);
+            lone.prepare (48000.0, 64, 1);
+            expect (! lone.isPipelineActive());
+
+            SignalGraph off; // not requested
+            off.setLaneProcessors (0, { &a, &b });
+            off.setLaneReadsDeviceInput (0, true);
+            off.setLaneWritesDeviceOutput (0, true);
+            off.prepare (48000.0, 64, 1);
+            expect (! off.isPipelineActive());
+        }
     }
 };
 

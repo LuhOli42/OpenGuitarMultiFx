@@ -26,6 +26,17 @@ namespace openguitarmultifx
 
 namespace
 {
+    juce::File performanceModeFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("OpenGuitarMultiFx")
+                   .getChildFile ("performance_mode.txt");
+    }
+}
+
+
+namespace
+{
     constexpr int blockGap = 21; // prototype .slots space-between pitch minus the 108px block
 
     // Prototype .ep tiles are 96x96; cableLane is the 22px padding the
@@ -308,6 +319,8 @@ MainComponent::MainComponent()
         audioEngine.setMasterEqBands (master.bands);
         audioEngine.setOutputLimiterEnabled (master.limiter);
     }
+    audioEngine.setPerformanceMode (performanceModeFile().existsAsFile()
+                                    && performanceModeFile().loadFileAsString().trim() == "on");
 
     // Row 0 starts wired device-in -> device-out so the app still makes
     // sound out of the box; rows 1-3 start unrouted, showing a "+" at both
@@ -759,6 +772,7 @@ void MainComponent::rebuildSignalGraph()
     // and merges are the engine's own job now (Source/Engine/SignalGraph.h),
     // not something this function has to fake by reordering blocks.
     auto signalGraph = std::make_unique<SignalGraph>();
+    signalGraph->setPipelineEnabled (audioEngine.isPerformanceMode());
 
     for (int row = 0; row < numRows; ++row)
     {
@@ -1085,6 +1099,14 @@ void MainComponent::showSettingsPanel()
         return err;
     };
     panel->onBufferSizeChanged = [this] (int size) { return audioEngine.setBufferSize (size); };
+    panel->setPerformanceMode (audioEngine.isPerformanceMode());
+    panel->onPerformanceModeChanged = [this] (bool enabled)
+    {
+        audioEngine.setPerformanceMode (enabled);
+        performanceModeFile().getParentDirectory().createDirectory();
+        performanceModeFile().replaceWithText (enabled ? "on" : "off");
+        rebuildSignalGraph(); // the new graph picks the mode up
+    };
     panel->onRetryDevice = [this, rawPanel]
     {
         const auto err = audioEngine.retryDevice();

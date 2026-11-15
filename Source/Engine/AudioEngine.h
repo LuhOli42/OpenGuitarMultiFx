@@ -111,6 +111,11 @@ public:
     /** Output peak limiter (OutputLimiter.h): on by default, so a hot chain is turned down instead of clipped. */
     void setOutputLimiterEnabled (bool enabled) noexcept { limiterEnabled.store (enabled, std::memory_order_relaxed); }
     bool isOutputLimiterEnabled() const noexcept { return limiterEnabled.load (std::memory_order_relaxed); }
+
+    /** Performance mode (SignalGraph::setPipelineEnabled): split a single-lane chain across the two fast cores, at the
+        cost of SignalGraph::pipelineLatencyBlocks blocks of latency. Applies to the NEXT graph MainComponent builds. */
+    void setPerformanceMode (bool enabled) noexcept { performanceMode.store (enabled, std::memory_order_relaxed); }
+    bool isPerformanceMode() const noexcept { return performanceMode.load (std::memory_order_relaxed); }
     /** True if the limiter pulled the gain down since the last call (the meter's "LIM" indicator); clears the flag. */
     bool takeLimiterActive() noexcept { return limiterActive.exchange (false, std::memory_order_relaxed); }
 
@@ -250,6 +255,7 @@ private:
     std::atomic<float> masterGainDb { 0.0f }, masterGainLinear { 1.0f }; // see setMasterGainDb()
     OutputLimiter outputLimiter;                  // audio thread only
     std::atomic<bool> limiterEnabled { true };
+    std::atomic<bool> performanceMode { false };
     std::atomic<bool> limiterActive { false };
     std::atomic<juce::uint32> overBudgetBlocks { 0 };
     // Audio thread only: ramps masterGainLinear's target over ~20 ms so a footer-knob drag can't zipper.

@@ -39,6 +39,7 @@ namespace
 SignalGraph::~SignalGraph()
 {
     stopWorkers();
+    stopPipelineWorker();
 }
 
 void SignalGraph::setLaneProcessors (int lane, std::vector<EffectProcessor*> processorsForLane)
@@ -173,9 +174,59 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
     reconcileWorkers (parallelAllowed && ! legacySerialOrder
                           ? juce::jmax (0, widestDispatchableStage - 1) : 0,
                       sampleRate, maxBlockSize);
+
+    // ---- Performance mode: only a lone serial lane (input -> chain -> output, no edges) can be cut in two ----
+    stopPipelineWorker();
+    pipeLane = -1;
+    if (pipelineRequested && connections.empty())
+    {
+        int bearing = -1, count = 0;
+        for (int l = 0; l < numLanes; ++l)
+            if (! lanes[(size_t) l].processors.empty())
+            {
+                bearing = l;
+                ++count;
+            }
+
+        if (count == 1 && lanes[(size_t) bearing].processors.size() >= 2 && lanes[(size_t) bearing].readsDeviceInput
+            && lanes[(size_t) bearing].writesDeviceOutput && ! legacySerialOrder)
+            pipeLane = bearing;
+    }
+
+    if (pipeLane >= 0)
+    {
+        const auto n = lanes[(size_t) pipeLane].processors.size();
+        for (auto& slot : pipeSlots)
+        {
+            slot.buffer.setSize (numChannels, maxBlockSize, false, true, true);
+            slot.state.store (PipeSlot::free, std::memory_order_relaxed);
+        }
+        pipeLastOutput.setSize (numChannels, maxBlockSize, false, true, true);
+        pipeLastOutput.clear();
+        pipeProcessorCost = std::vector<std::atomic<float>> (n);
+        for (auto& c : pipeProcessorCost)
+            c.store (0.0f, std::memory_order_relaxed);
+        pipeSplit = (int) juce::jmax<size_t> (1, n / 2);
+        pipeWriteSlot = pipeReadSlot = pipeInFlight = pipeBlocksSinceRebalance = 0;
+        pipeShouldStop.store (false, std::memory_order_relaxed);
+
+        pipeWorker = std::make_unique<PipeWorker> (*this);
+        if (! pipeWorker->startRealtimeThread (juce::Thread::RealtimeOptions().withPriority (5)
+                                                   .withApproximateAudioProcessingTime (maxBlockSize, sampleRate)))
+            pipeWorker->startThread (juce::Thread::Priority::high);
+    }
 }
 
 void SignalGraph::runLane (int laneIndex, int numSamples)
+{
+    auto& lane = lanes[(size_t) laneIndex];
+    loadLaneInput (laneIndex, numSamples);
+
+    for (auto* p : lane.processors)
+        p->processWithBypass (lane.buffer); // bypass is a crossfade now, not a skip -- see EffectProcessor
+}
+
+void SignalGraph::loadLaneInput (int laneIndex, int numSamples)
 {
     auto& lane = lanes[(size_t) laneIndex];
     lane.buffer.clear();
@@ -195,9 +246,6 @@ void SignalGraph::runLane (int laneIndex, int numSamples)
 
     for (int s = 0; s < laneSourceCounts[(size_t) laneIndex]; ++s)
         addClamped (lane.buffer, lanes[(size_t) laneSources[(size_t) laneIndex][(size_t) s]].buffer, numSamples);
-
-    for (auto* p : lane.processors)
-        p->processWithBypass (lane.buffer); // bypass is a crossfade now, not a skip -- see EffectProcessor
 }
 
 void SignalGraph::collectJobs (int numJobs, int numSamples)
@@ -377,6 +425,12 @@ void SignalGraph::processImpl (juce::AudioBuffer<float>& buffer)
     deviceInputSnapshot.clear();
     addClamped (deviceInputSnapshot, buffer, numSamples);
 
+    if (pipeLane >= 0)
+    {
+        processPipelined (buffer);
+        return;
+    }
+
     if (legacySerialOrder)
         for (int i = 0; i < numLanes; ++i)
             runLane (i, numSamples); // the pre-parallel flat pass, verbatim
@@ -425,6 +479,168 @@ void SignalGraph::processImpl (juce::AudioBuffer<float>& buffer)
             addClamped (deviceInputSnapshot, lanes[(size_t) i].buffer, numSamples);
 
     spreadInto (buffer, deviceInputSnapshot, numSamples);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Performance mode (see setPipelineEnabled in the header).
+// Block k: the audio thread runs stage A on input k and hands the block to the worker, which runs stage B while the
+// audio thread is already on block k+1; callback k+2 plays block k. Two blocks of extra latency, in exchange for each
+// stage owning a whole block of time. Nothing on the audio thread ever waits: a late worker means the previous output is
+// repeated (counted), exactly what an overrun of the serial chain would have cost.
+// ---------------------------------------------------------------------------------------------------------------------
+void SignalGraph::stopPipelineWorker()
+{
+    if (pipeWorker == nullptr)
+        return;
+
+    pipeShouldStop.store (true, std::memory_order_relaxed);
+    pipeEpoch.fetch_add (1, std::memory_order_release);
+    pipeEpoch.notify_all();
+    pipeWorker->stopThread (10000);
+    pipeWorker.reset();
+    pipeShouldStop.store (false, std::memory_order_relaxed);
+}
+
+void SignalGraph::PipeWorker::run()
+{
+    const juce::ScopedNoDenormals noDenormals;
+    cpuaffinity::pinThisThreadToAudio();
+
+    auto& processors = graph.lanes[(size_t) graph.pipeLane].processors;
+    int next = 0;
+
+    while (! threadShouldExit() && ! graph.pipeShouldStop.load (std::memory_order_relaxed))
+    {
+        const auto epoch = graph.pipeEpoch.load (std::memory_order_acquire);
+        auto& slot = graph.pipeSlots[(size_t) next];
+
+        if (slot.state.load (std::memory_order_acquire) != PipeSlot::ready)
+        {
+            graph.pipeEpoch.wait (epoch); // futex sleep; the audio thread bumps the epoch after marking a slot ready
+            continue;
+        }
+
+        // A view over the slot's memory, sized to this block (the slot itself is allocated for the largest block).
+        juce::AudioBuffer<float> view (slot.buffer.getArrayOfWritePointers(), slot.buffer.getNumChannels(), slot.numSamples);
+        for (size_t i = (size_t) slot.split; i < processors.size(); ++i)
+        {
+            const auto start = juce::Time::getHighResolutionTicks();
+            processors[i]->processWithBypass (view);
+            const auto us = (float) (juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - start) * 1.0e6);
+            auto& cost = graph.pipeProcessorCost[i];
+            cost.store (cost.load (std::memory_order_relaxed) * 0.97f + us * 0.03f, std::memory_order_relaxed);
+        }
+
+        slot.state.store (PipeSlot::done, std::memory_order_release);
+        next = (next + 1) % pipeDepth;
+    }
+}
+
+void SignalGraph::rebalancePipeline()
+{
+    const auto n = pipeProcessorCost.size();
+    if (n < 2)
+        return;
+
+    std::vector<float> cost (n);
+    float total = 0.0f;
+    for (size_t i = 0; i < n; ++i)
+    {
+        cost[i] = pipeProcessorCost[i].load (std::memory_order_relaxed);
+        total += cost[i];
+    }
+    if (total <= 0.0f)
+        return;
+
+    auto worst = [&] (size_t split)
+    {
+        float a = 0.0f;
+        for (size_t i = 0; i < split; ++i)
+            a += cost[i];
+        return std::max (a, total - a);
+    };
+
+    size_t best = (size_t) pipeSplit;
+    float bestWorst = worst (best);
+    for (size_t s = 1; s < n; ++s)
+        if (worst (s) < bestWorst * 0.9f) // hysteresis: only move for a real (10%) gain
+        {
+            best = s;
+            bestWorst = worst (s);
+        }
+
+    pipeSplit = (int) best;
+}
+
+void SignalGraph::processPipelined (juce::AudioBuffer<float>& buffer)
+{
+    const int numSamples = buffer.getNumSamples();
+    auto& lane = lanes[(size_t) pipeLane];
+    auto& processors = lane.processors;
+
+    // The live input must be read before `buffer` is overwritten with this callback's output.
+    loadLaneInput (pipeLane, numSamples);
+
+    // 1. Output: the block handed over two callbacks ago, if the worker finished it.
+    if (pipeInFlight >= pipeDepth - 1)
+    {
+        auto& oldest = pipeSlots[(size_t) pipeReadSlot];
+        if (oldest.state.load (std::memory_order_acquire) == PipeSlot::done)
+        {
+            if (oldest.numSamples == numSamples)
+                for (int ch = 0; ch < pipeLastOutput.getNumChannels(); ++ch)
+                    pipeLastOutput.copyFrom (ch, 0, oldest.buffer, ch, 0, numSamples);
+            oldest.state.store (PipeSlot::free, std::memory_order_release);
+            pipeReadSlot = (pipeReadSlot + 1) % pipeDepth;
+            --pipeInFlight;
+        }
+        else
+            pipeLateBlocks.fetch_add (1, std::memory_order_relaxed); // repeat the previous output
+    }
+
+    deviceInputSnapshot.clear();
+    addClamped (deviceInputSnapshot, pipeLastOutput, numSamples);
+    spreadInto (buffer, deviceInputSnapshot, numSamples);
+
+    // 2. Move the cut if the worker is idle (no processor may be touched by both threads at once).
+    if (++pipeBlocksSinceRebalance >= 64)
+    {
+        bool workerIdle = true;
+        for (auto& slot : pipeSlots)
+            workerIdle = workerIdle && slot.state.load (std::memory_order_acquire) != PipeSlot::ready;
+        if (workerIdle)
+        {
+            pipeBlocksSinceRebalance = 0;
+            rebalancePipeline();
+        }
+    }
+
+    // 3. Stage A here, then hand the block over.
+    const int split = juce::jlimit (1, (int) processors.size() - 1, pipeSplit);
+    for (int i = 0; i < split; ++i)
+    {
+        const auto start = juce::Time::getHighResolutionTicks();
+        processors[(size_t) i]->processWithBypass (lane.buffer);
+        const auto us = (float) (juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - start) * 1.0e6);
+        auto& cost = pipeProcessorCost[(size_t) i];
+        cost.store (cost.load (std::memory_order_relaxed) * 0.97f + us * 0.03f, std::memory_order_relaxed);
+    }
+
+    if (pipeInFlight < pipeDepth)
+    {
+        auto& slot = pipeSlots[(size_t) pipeWriteSlot];
+        for (int ch = 0; ch < slot.buffer.getNumChannels(); ++ch)
+            slot.buffer.copyFrom (ch, 0, lane.buffer, ch, 0, numSamples);
+        slot.numSamples = numSamples;
+        slot.split = split;
+        slot.state.store (PipeSlot::ready, std::memory_order_release);
+        pipeWriteSlot = (pipeWriteSlot + 1) % pipeDepth;
+        ++pipeInFlight;
+        pipeEpoch.fetch_add (1, std::memory_order_release);
+        pipeEpoch.notify_one();
+    }
+    else
+        pipeLateBlocks.fetch_add (1, std::memory_order_relaxed); // every slot busy: this block is dropped
 }
 
 void SignalGraph::reset()

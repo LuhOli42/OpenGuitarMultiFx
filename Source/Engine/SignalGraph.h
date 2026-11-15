@@ -103,6 +103,22 @@ public:
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels);
 
+    /** PERFORMANCE MODE (control thread, before prepare()). When the graph is one serial lane (the common live rig:
+        input -> chain -> output, no splits), its chain is cut in two: the first part runs on the audio thread, the
+        second on a worker pinned to the other fast core, one block behind. Each part then has a whole block of time
+        instead of the chain sharing one, roughly doubling what a chain can cost before it drops out.
+
+        The price is `pipelineLatencyBlocks` extra blocks of latency (2 x 2.7 ms at 128 samples) and silence for that
+        long when a graph starts (a chain edit). Where the cut sits is rebalanced from measured per-processor times,
+        only at moments the worker is idle. Any other graph shape runs exactly as before (isPipelineActive() false). */
+    void setPipelineEnabled (bool enabled) { pipelineRequested = enabled; }
+    bool isPipelineActive() const noexcept { return pipeLane >= 0; }
+    static constexpr int pipelineLatencyBlocks = 2;
+    /** Blocks the worker had not finished in time since the last call (each repeats the previous output). */
+    int takePipelineLateBlocks() noexcept { return pipeLateBlocks.exchange (0, std::memory_order_relaxed); }
+    /** The current cut: how many processors the audio thread runs itself (diagnostics/tests). */
+    int getPipelineSplit() const noexcept { return pipeSplit; }
+
     /** `buffer` holds the live device input on entry. If at least one lane
         writes to the device output, `buffer` is overwritten with the sum
         of those lanes' output; if NONE do (nothing configured at all, or
@@ -189,7 +205,11 @@ private:
     };
 
     void processImpl (juce::AudioBuffer<float>& buffer);
+    void processPipelined (juce::AudioBuffer<float>& buffer);
+    void rebalancePipeline();
+    void stopPipelineWorker();
     void runLane (int laneIndex, int numSamples);
+    void loadLaneInput (int laneIndex, int numSamples); // clears the lane buffer and sums in its input and source lanes
     void runStage (const Stage&, int numSamples);
     void collectJobs (int numJobs, int numSamples);
     void reconcileWorkers (int wanted, double sampleRate, int maxBlockSize);
@@ -222,6 +242,40 @@ private:
     std::atomic<bool> workersShouldStop { false };
     std::atomic<int> jobsRunByWorkers { 0 };
     std::vector<std::unique_ptr<LaneWorker>> workers;
+
+    // ---- performance mode (see setPipelineEnabled) ----
+    static constexpr int pipeDepth = 3; // blocks in flight: 2 being worked on + 1 free to fill
+    struct PipeSlot
+    {
+        enum State : int { free = 0, ready = 1, done = 2 };
+        juce::AudioBuffer<float> buffer;
+        int numSamples = 0;
+        int split = 0;                    // processors [0, split) ran on the audio thread, [split, n) are the worker's
+        std::atomic<int> state { free };
+    };
+
+    class PipeWorker final : public juce::Thread
+    {
+    public:
+        explicit PipeWorker (SignalGraph& owningGraph) : juce::Thread ("SigGraphPipe"), graph (owningGraph) {}
+        void run() override;
+
+    private:
+        SignalGraph& graph;
+    };
+
+    bool pipelineRequested = false;
+    int pipeLane = -1;                    // the one pipelined lane, -1 = off
+    std::array<PipeSlot, pipeDepth> pipeSlots;
+    std::unique_ptr<PipeWorker> pipeWorker;
+    std::atomic<uint32_t> pipeEpoch { 0 };       // futex the worker sleeps on; bumped after a slot turns ready
+    std::atomic<bool> pipeShouldStop { false };
+    std::atomic<int> pipeLateBlocks { 0 };
+    int pipeSplit = 1;                    // audio thread only (the worker reads the split stored in each slot)
+    int pipeWriteSlot = 0, pipeReadSlot = 0, pipeInFlight = 0;   // audio thread only
+    int pipeBlocksSinceRebalance = 0;
+    std::vector<std::atomic<float>> pipeProcessorCost;           // smoothed microseconds per processor, measured where it runs
+    juce::AudioBuffer<float> pipeLastOutput;                     // repeated when the worker is late
 };
 
 } // namespace openguitarmultifx
