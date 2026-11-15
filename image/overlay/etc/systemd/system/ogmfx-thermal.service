@@ -1,0 +1,11 @@
+[Unit]
+Description=OGMFX: kernel thermal trips at 105 C, clock caps instead of the factory 60 C trips (which pin the CPU at 416 MHz)
+After=sysinit.target
+
+[Service]
+ExecStart=/usr/local/sbin/ogmfx-thermal.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
