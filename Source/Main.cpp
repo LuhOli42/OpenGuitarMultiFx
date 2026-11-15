@@ -121,8 +121,22 @@ public:
         if (const int at = args.indexOf ("--window-snapshot"); at >= 0 && at + 1 < args.size())
         {
             const juce::File out (args[at + 1].unquoted());
+            // Optional `--theme <0|1|2>` (not saved) and `--screen <name>` (MainComponent::showScreenForSnapshot).
+            if (const int t = args.indexOf ("--theme"); t >= 0 && t + 1 < args.size())
+            {
+                theme::setCurrent ((theme::Id) juce::jlimit (0, theme::count - 1, args[t + 1].getIntValue()));
+                lookAndFeel->applyTheme();
+            }
+            juce::String screen;
+            if (const int s = args.indexOf ("--screen"); s >= 0 && s + 1 < args.size())
+                screen = args[s + 1].unquoted();
             snapshotComponent = std::make_unique<MainComponent>();
             snapshotComponent->setSize (1280, 800);
+            juce::Timer::callAfterDelay (2000, [this, screen]
+            {
+                if (auto* main = dynamic_cast<MainComponent*> (snapshotComponent.get()))
+                    main->showScreenForSnapshot (screen);
+            });
             juce::Timer::callAfterDelay (3000, [this, out]
             {
                 const auto image = snapshotComponent->createComponentSnapshot (snapshotComponent->getLocalBounds(), true, 1.0f);

@@ -79,6 +79,11 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
 
+    /** Dev aid for `--window-snapshot ... --screen <name>` (Main.cpp): puts the UI in the named prototype screen
+        (grid, drawer, add, presets, snap, tuner, eq, settings, live) so it can be rendered off-screen and compared
+        with docs/ui/prototype.html. An empty chain gets a small demo chain first, so the grid is not blank. */
+    void showScreenForSnapshot (const juce::String& screen);
+
 private:
     /** targetGridSlot is a grid cell (row*chainColumns+col), not an array
         index -- see EffectBlockComponent::gridSlot's comment. < 0 (the

@@ -957,6 +957,30 @@ void MainComponent::handleBlockDragEnded (EffectBlockComponent& blockComp)
     layoutChain(); // snaps every block, including the dragged one, back onto the clean grid
 }
 
+void MainComponent::showScreenForSnapshot (const juce::String& screen)
+{
+    if (chain.empty())
+        for (auto* key : { "Compressor", "OD1StyleOverdrive", "AC30StyleAmplifier", "Chorus", "AnalogDelay", "Hall" })
+            addEffect (key);
+
+    if (screen == "drawer" && ! chain.empty())
+        selectBlock (chain[juce::jmin ((size_t) 2, chain.size() - 1)].get());
+    else if (screen == "add")
+        showAddEffectMenu();
+    else if (screen == "presets")
+        showPresetsPanel();
+    else if (screen == "snap")
+        showSnapshotMenu (0);
+    else if (screen == "tuner")
+        showTuner();
+    else if (screen == "eq")
+        showMasterEq();
+    else if (screen == "settings")
+        showSettingsPanel();
+    else if (screen == "live")
+        showLive();
+}
+
 void MainComponent::showAddEffectMenu (int targetGridSlot)
 {
     // The real picker is an OverlayHost card now (category rail + tile grid
