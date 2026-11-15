@@ -100,6 +100,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
 
     addAndMakeVisible (viewport);
     viewport.setViewedComponent (&content, false);
+    touch::enableDragScroll (viewport);
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (10);
 

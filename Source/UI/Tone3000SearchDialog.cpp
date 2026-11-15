@@ -38,6 +38,7 @@ Tone3000SearchDialog::Tone3000SearchDialog (Tone3000Manager& managerToUse, juce:
 
     addAndMakeVisible (resultsList);
     resultsList.setColour (juce::ListBox::backgroundColourId, theme::current().surface);
+    touch::enableDragScroll (*resultsList.getViewport());
     resultsList.setRowHeight (64);
 
     addAndMakeVisible (downloadButton);

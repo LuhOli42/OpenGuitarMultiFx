@@ -184,6 +184,7 @@ MainComponent::MainComponent()
     // Wraps into rows instead of growing sideways now (see layoutChain()),
     // so it's the vertical scrollbar that's the overflow fallback.
     chainViewport.setViewedComponent (&chainContainer, false);
+    touch::enableDragScroll (chainViewport);
     chainViewport.setScrollBarsShown (false, false); // driven by chainScrollBar instead -- see its member comment
     chainViewport.onScrolled = [this] { syncChainScrollBar(); layoutChain(); repaint(); };
     addAndMakeVisible (chainViewport);

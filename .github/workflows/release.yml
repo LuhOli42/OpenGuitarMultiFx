@@ -126,6 +126,7 @@ jobs:
           prerelease=""
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || prerelease="--prerelease"
           gh release create "$TAG" out/* \
+            --repo "$GITHUB_REPOSITORY" \
             --title "$TAG" \
             --generate-notes \
             $prerelease
