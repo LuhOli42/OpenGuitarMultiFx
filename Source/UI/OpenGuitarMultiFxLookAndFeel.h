@@ -34,6 +34,7 @@ public:
     /** Slider value boxes use the same raised, rounded numeric field as the
         parameter drawer, with the embedded Sora bold face. */
     juce::Label* createSliderTextBox (juce::Slider&) override;
+    juce::Slider::SliderLayout getSliderLayout (juce::Slider&) override;
 
     /** For the handful of places (the big preset number/name -- see
         MainComponent) that specifically want the heavier display weight,

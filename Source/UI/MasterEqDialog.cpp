@@ -89,6 +89,7 @@ MasterEqDialog::MasterEqDialog()
         addAndMakeVisible (s);
         s.setSliderStyle (juce::Slider::LinearHorizontal);
         s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 90, touch::minTapTarget);
+        s.getProperties().set ("masterEqTrackGap", true);
         s.onValueChange = [this] { /* rebound per selection below */ };
         addAndMakeVisible (label);
         label.setText (juce::String (name).toUpperCase(), juce::dontSendNotification);
@@ -293,14 +294,14 @@ void MasterEqDialog::refreshSelectedStrip()
 
     if (typeIsCut (band.type))
     {
-        qLabel.setText ("Slope", juce::dontSendNotification);
+        qLabel.setText ("SLOPE", juce::dontSendNotification);
         qSlider.setRange (12.0, 48.0, 1.0);
         qSlider.setSkewFactor (1.0);
         qSlider.setValue (band.slopeDbOct, juce::dontSendNotification);
     }
     else if (band.type == MasterEqBand::Type::lowShelf || band.type == MasterEqBand::Type::highShelf)
     {
-        qLabel.setText ("Slope", juce::dontSendNotification);
+        qLabel.setText ("SLOPE", juce::dontSendNotification);
         qSlider.setRange (0.2, 2.0, 0.05);
         qSlider.setSkewFactor (1.0);
         qSlider.setValue (band.q, juce::dontSendNotification);
@@ -334,36 +335,40 @@ void MasterEqDialog::resized()
     hintLabel.setBounds (top.removeFromLeft (top.getWidth()).withTrimmedTop (28).withHeight (20));
 
     area.removeFromTop (10);
-    graphArea = area.removeFromTop (juce::jmax (300, area.getHeight() - 240)).toFloat();
+    constexpr int stripHeight = 112;
+    constexpr int contentBelowGraph = 10 + stripHeight + 10 + touch::minTapTarget;
+    graphArea = area.removeFromTop (juce::jmax (300, area.getHeight() - contentBelowGraph)).toFloat();
 
     area.removeFromTop (10);
 
-    auto strip = area.removeFromTop (96);
-    selectedStripBounds = strip;
+    auto strip = area.removeFromTop (stripHeight);
     noSelectionLabel.setBounds (strip);
 
-    auto deleteArea = strip.removeFromRight (56);
-    bandDeleteButton.setBounds (deleteArea.withSizeKeepingCentre (56, touch::minTapTarget));
-    strip.removeFromRight (8);
-    auto onArea = strip.removeFromRight (80);
-    bandEnabledButton.setBounds (onArea.withSizeKeepingCentre (80, touch::minTapTarget));
-    strip.removeFromRight (12);
+    auto metaRow = strip.removeFromTop (48);
+    selectedStripBounds = metaRow;
+    metaRow.removeFromRight (8);
+    auto deleteArea = metaRow.removeFromRight (88);
+    bandDeleteButton.setBounds (deleteArea);
+    metaRow.removeFromRight (8);
+    auto onArea = metaRow.removeFromRight (80);
+    bandEnabledButton.setBounds (onArea);
+    selectedLabel.setBounds (metaRow.withTrimmedLeft (32).withTrimmedRight (8));
 
-    auto meta = strip.removeFromLeft (200);
-    selectedLabel.setBounds (meta.withX (meta.getX() + 26).withWidth (meta.getWidth() - 26)
-                                  .withY (meta.getCentreY() - 12).withHeight (24));
-
-    auto sliderCol = [] (juce::Rectangle<int>& zone, juce::Label& label, juce::Slider& slider)
+    strip.removeFromTop (8);
+    auto faderRow = strip.removeFromTop (48).reduced (8, 0);
+    constexpr int groupGap = 16;
+    const int groupWidth = (faderRow.getWidth() - 2 * groupGap) / 3;
+    std::array<juce::Label*, 3> labels { &freqLabel, &gainLabel, &qLabel };
+    std::array<juce::Slider*, 3> sliders { &freqSlider, &gainSlider, &qSlider };
+    for (size_t i = 0; i < sliders.size(); ++i)
     {
-        auto cell = zone.removeFromLeft ((zone.getWidth() - 16) / 3);
-        label.setBounds (cell.removeFromTop (18));
-        cell.removeFromTop (2);
-        slider.setBounds (cell.withHeight (72));
-        zone.removeFromLeft (8);
-    };
-    sliderCol (strip, freqLabel, freqSlider);
-    sliderCol (strip, gainLabel, gainSlider);
-    sliderCol (strip, qLabel, qSlider);
+        auto group = faderRow.removeFromLeft (groupWidth);
+        labels[i]->setBounds (group.removeFromLeft (48));
+        group.removeFromLeft (8);
+        sliders[i]->setBounds (group);
+        if (i + 1 < sliders.size())
+            faderRow.removeFromLeft (groupGap);
+    }
 
     area.removeFromTop (10);
 
@@ -384,7 +389,7 @@ void MasterEqDialog::paint (juce::Graphics& g)
     paintGraph (g, graphArea);
     if (selectedBand >= 0 && selectedBand < (int) bands.size())
     {
-        const auto dot = juce::Rectangle<float> ((float) selectedStripBounds.getX() + 2.0f,
+        const auto dot = juce::Rectangle<float> ((float) selectedStripBounds.getX() + 8.0f,
                                                    (float) selectedStripBounds.getCentreY() - 8.0f,
                                                    16.0f, 16.0f);
         g.setColour (bandColour (selectedBand));

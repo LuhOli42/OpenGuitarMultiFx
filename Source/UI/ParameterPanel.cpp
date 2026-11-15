@@ -48,6 +48,21 @@ namespace
 
     constexpr int accentColourId = 0x4f475543; // arbitrary private ColourId for the drawer accent
 
+    bool containsWholeToken (const juce::String& value, const juce::String& token)
+    {
+        int tokenStart = 0;
+        for (int i = 0; i <= value.length(); ++i)
+        {
+            if (i < value.length() && juce::CharacterFunctions::isLetterOrDigit (value[i]))
+                continue;
+
+            if (value.substring (tokenStart, i - tokenStart) == token)
+                return true;
+            tokenStart = i + 1;
+        }
+        return false;
+    }
+
     juce::Colour liftAccent (juce::Colour accent)
     {
         if (accent.getPerceivedBrightness() >= 0.45f)
@@ -461,7 +476,7 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
             const bool isSelector = range.interval >= 1.0f
                                  && (range.end - range.start) / range.interval <= 8.0f
                                  && ! current->prefersSteppedKnob (*param);
-            if ((isSelector && name.contains ("eq")) || name.endsWithIgnoreCase ("Hz"))
+            if ((isSelector && containsWholeToken (name, "eq")) || name.endsWith ("hz"))
             {
                 graphicEq.push_back (param);
                 continue;
@@ -521,11 +536,34 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
                     .push_back (param);
         }
 
+        if ((int) firstCore.size() < maxControlsPerScreen)
+        {
+            std::vector<juce::AudioParameterFloat*> remainingOther;
+            for (auto* param : other)
+            {
+                const auto name = param->getName (64).toLowerCase();
+                const bool toneRelated = name.contains ("mid") || name.contains ("bass")
+                                      || name.contains ("treble") || name.contains ("freq")
+                                      || name.contains ("presence") || name.contains ("contour")
+                                      || name.contains ("shape") || name.contains ("shift");
+                if (toneRelated && (int) firstCore.size() < maxControlsPerScreen)
+                    firstCore.push_back (param);
+                else
+                    remainingOther.push_back (param);
+            }
+            other = std::move (remainingOther);
+        }
+
         int localPage = 0;
         if (! firstCore.empty())
             appendPage (std::move (firstCore), localPage++);
         std::vector<juce::AudioParameterFloat*> afterCore (overflowCore);
         afterCore.insert (afterCore.end(), other.begin(), other.end());
+        if (! afterCore.empty() && afterCore.size() + graphicEq.size() <= (size_t) maxControlsPerScreen)
+        {
+            afterCore.insert (afterCore.end(), graphicEq.begin(), graphicEq.end());
+            graphicEq.clear();
+        }
         if (! afterCore.empty())
         {
             const size_t chunks = (afterCore.size() + (size_t) maxControlsPerScreen - 1)

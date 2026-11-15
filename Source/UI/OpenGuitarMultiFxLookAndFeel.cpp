@@ -132,6 +132,17 @@ juce::Label* OpenGuitarMultiFxLookAndFeel::createSliderTextBox (juce::Slider& sl
     return label;
 }
 
+juce::Slider::SliderLayout OpenGuitarMultiFxLookAndFeel::getSliderLayout (juce::Slider& slider)
+{
+    auto layout = juce::LookAndFeel_V4::getSliderLayout (slider);
+    if (slider.getProperties().getWithDefault ("masterEqTrackGap", false))
+    {
+        layout.sliderBounds = layout.sliderBounds.expanded (getSliderThumbRadius (slider), 0);
+        layout.sliderBounds.removeFromRight (8);
+    }
+    return layout;
+}
+
 void OpenGuitarMultiFxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                                                        float sliderPos, const float rotaryStartAngle,
                                                        const float rotaryEndAngle, juce::Slider& slider)
