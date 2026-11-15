@@ -4,6 +4,8 @@
 
 #include <BinaryData.h>
 
+#include <cmath>
+
 namespace openguitarmultifx
 {
 namespace
@@ -263,29 +265,73 @@ void OpenGuitarMultiFxLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, i
     const bool horizontal = style == juce::Slider::LinearHorizontal;
     const bool console = t.id == theme::Id::console;
     const bool stageGlass = t.id == theme::Id::stageGlass;
+
+    if (! horizontal)
+    {
+        const float trackWidth = 6.0f;
+        const float consoleThumbWidth = 26.0f;
+        const float thumbSize = console ? 12.0f : 22.0f;
+        const float top = (float) y;
+        const float bottom = (float) (y + height);
+        const float thumbInset = thumbSize * 0.5f;
+        const float pos = juce::jlimit (top + thumbInset, bottom - thumbInset, sliderPos);
+        const auto track = juce::Rectangle<float> ((float) x + (float) width * 0.5f - trackWidth * 0.5f,
+                                                   top, trackWidth, (float) height);
+        const auto range = slider.getRange();
+        const bool bipolar = std::abs (range.getStart() + range.getEnd()) < 0.0001;
+        const float fillStart = bipolar ? track.getCentreY() : pos;
+        const float fillEnd = bipolar ? pos : bottom;
+        const auto fill = juce::Rectangle<float> (track.getX(), juce::jmin (fillStart, fillEnd),
+                                                   trackWidth, std::abs (fillEnd - fillStart));
+
+        g.setColour (t.raised);
+        g.fillRoundedRectangle (track, 3.0f);
+        if (fill.getHeight() > 0.0f)
+        {
+            if (stageGlass)
+            {
+                g.setColour (accent.withAlpha (0.12f));
+                g.drawRoundedRectangle (fill.expanded (2.0f), 4.0f, 5.0f);
+                g.setColour (accent.withAlpha (0.22f));
+                g.drawRoundedRectangle (fill.expanded (1.0f), 4.0f, 3.0f);
+            }
+            g.setColour (accent);
+            g.fillRoundedRectangle (fill, 3.0f);
+        }
+
+        const float thumbWidth = console ? consoleThumbWidth : thumbSize;
+        const float thumbHeight = thumbSize;
+        const auto thumb = juce::Rectangle<float> ((float) x + (float) width * 0.5f - thumbWidth * 0.5f,
+                                                   pos - thumbHeight * 0.5f, thumbWidth, thumbHeight);
+        if (stageGlass)
+        {
+            g.setColour (accent.withAlpha (0.18f));
+            g.fillEllipse (thumb.getCentreX() - 13.0f, pos - 13.0f, 26.0f, 26.0f);
+        }
+        g.setColour (console ? juce::Colour (0xffe6e6e8)
+                             : juce::Colours::white.withAlpha (slider.isEnabled() ? 1.0f : 0.45f));
+        if (console)
+            g.fillRoundedRectangle (thumb, 3.0f);
+        else
+            g.fillEllipse (thumb);
+
+        g.setColour (console ? juce::Colour (0xff35353a) : accent);
+        g.drawLine (thumb.getCentreX() - (console ? 7.0f : 5.0f), pos,
+                    thumb.getCentreX() + (console ? 7.0f : 5.0f), pos, 2.0f);
+        return;
+    }
+
     const float thumbSize = 24.0f;
     juce::Rectangle<float> track;
     juce::Rectangle<float> fill;
     juce::Rectangle<float> thumb;
 
-    if (horizontal)
-    {
-        const float left = (float) x + thumbSize * 0.5f;
-        const float right = juce::jmax (left, (float) (x + width) - thumbSize * 0.5f);
-        const float pos = juce::jlimit (left, right, sliderPos);
-        track = { left, (float) y + (float) height * 0.5f - 4.0f, right - left, 8.0f };
-        fill = { left, track.getY(), pos - left, track.getHeight() };
-        thumb = { pos - thumbSize * 0.5f, track.getCentreY() - thumbSize * 0.5f, thumbSize, thumbSize };
-    }
-    else
-    {
-        const float top = (float) y + thumbSize * 0.5f;
-        const float bottom = juce::jmax (top, (float) (y + height) - thumbSize * 0.5f);
-        const float pos = juce::jlimit (top, bottom, sliderPos);
-        track = { (float) x + (float) width * 0.5f - 4.0f, top, 8.0f, bottom - top };
-        fill = { track.getX(), pos, track.getWidth(), bottom - pos };
-        thumb = { track.getCentreX() - thumbSize * 0.5f, pos - thumbSize * 0.5f, thumbSize, thumbSize };
-    }
+    const float left = (float) x + thumbSize * 0.5f;
+    const float right = juce::jmax (left, (float) (x + width) - thumbSize * 0.5f);
+    const float pos = juce::jlimit (left, right, sliderPos);
+    track = { left, (float) y + (float) height * 0.5f - 4.0f, right - left, 8.0f };
+    fill = { left, track.getY(), pos - left, track.getHeight() };
+    thumb = { pos - thumbSize * 0.5f, track.getCentreY() - thumbSize * 0.5f, thumbSize, thumbSize };
 
     g.setColour (t.raised);
     g.fillRoundedRectangle (track, 4.0f);

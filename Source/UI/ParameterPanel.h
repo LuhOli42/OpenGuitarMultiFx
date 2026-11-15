@@ -118,6 +118,16 @@ private:
     void refreshLabelStyles();
     void updateSubtitle();
     struct SliderRow;
+    struct LayoutPlan;
+    class GraphicEqPanel : public juce::Component
+    {
+    public:
+        void setEmbeddedSelector (bool hasSelector) noexcept { embeddedSelector = hasSelector; repaint(); }
+        void paint (juce::Graphics& g) override;
+    private:
+        bool embeddedSelector = false;
+    };
+    LayoutPlan makeLayoutPlan (const std::vector<size_t>& shown, int availableWidth) const;
     std::vector<size_t> visibleSliders() const;
     int contentHeightForRow (const SliderRow& row) const;
     void cycleTempoSync (juce::AudioParameterFloat* param);
@@ -293,7 +303,10 @@ private:
     {
     public:
         ValueFieldButton() : juce::Button ({}) {}
+        void setCompactVisual (bool shouldBeCompact) noexcept { compactVisual = shouldBeCompact; repaint(); }
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
+    private:
+        bool compactVisual = false;
     };
 
     struct SliderRow
@@ -342,6 +355,7 @@ private:
     // actually capped to the drawer's bounds.
     juce::Viewport knobViewport;
     juce::Component knobGridHost;
+    GraphicEqPanel graphicEqPanel;
 
     juce::Rectangle<int> pageTabsBounds;
     juce::Colour effectAccent = juce::Colours::transparentBlack;

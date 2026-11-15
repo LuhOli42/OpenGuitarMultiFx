@@ -3,6 +3,7 @@
 #include "Theme.h"
 #include "ModelListDialog.h"
 #include "PromptCards.h"
+#include "ParameterPanelPagePlanner.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Tone3000SearchDialog.h"
 #include "TouchSizing.h"
@@ -32,36 +33,34 @@ namespace
     constexpr int drawerGap = 12;
 
     constexpr int knobCellWidth = 120;
-    constexpr int knobColumnGap = 26;
-    constexpr int knobPitch = knobCellWidth + knobColumnGap; // 146
+    constexpr int knobColumnGap = 16;
+    constexpr int knobPitch = knobCellWidth + knobColumnGap;
     constexpr int knobDiameter = 110;
     constexpr int knobLabelHeight = 18;
     constexpr int knobValueHitHeight = 48;  // .kv is 36px visually, centred in the 48px target
     constexpr int knobLabelGap = 8;
     constexpr int knobContentHeight = knobDiameter + knobLabelGap + knobLabelHeight
-                                   + knobLabelGap + knobValueHitHeight; // 188
-    constexpr int selectorLabelGap = 8;
+                                   + knobLabelGap + knobValueHitHeight;
+    constexpr int switchLabelHeight = parameterPanelLayout::switchLabelHeight;
+    constexpr int selectorLabelGap = 4;
+    constexpr int switchStackGap = 10;
+    constexpr int faderValueHitHeight = 48;
+    constexpr int faderValueSliderGap = 4;
+    constexpr int faderSliderHeight = 120;
+    constexpr int graphicEqSliderHeight = 111;
+    constexpr int faderLabelHeight = 18;
+    constexpr int faderContentHeight = faderValueHitHeight + faderValueSliderGap + faderSliderHeight
+                                     + faderValueSliderGap + faderLabelHeight;
+    constexpr int graphicEqPanelPadding = 14;
+    constexpr int graphicEqTitleHeight = 18;
+    constexpr int graphicEqTitleGap = 6;
+    constexpr int graphicEqSwitchTopInset = 5;
     constexpr int syncToggleHeight = 48; // touch::minTapTarget
     constexpr int syncToggleGap = 8;
     constexpr int knobRowGap = 26;
     constexpr int minDrawerHeight = 330; // prototype .drw height
 
     constexpr int accentColourId = 0x4f475543; // arbitrary private ColourId for the drawer accent
-
-    bool containsWholeToken (const juce::String& value, const juce::String& token)
-    {
-        int tokenStart = 0;
-        for (int i = 0; i <= value.length(); ++i)
-        {
-            if (i < value.length() && juce::CharacterFunctions::isLetterOrDigit (value[i]))
-                continue;
-
-            if (value.substring (tokenStart, i) == token)
-                return true;
-            tokenStart = i + 1;
-        }
-        return false;
-    }
 
     juce::Colour liftAccent (juce::Colour accent)
     {
@@ -78,6 +77,27 @@ namespace
 
         const float textWidth = juce::GlyphArrangement::getStringWidth (juce::Font (13.0f), text);
         return (int) std::ceil (textWidth + (hasGlyph ? 26.0f : 0.0f) + 32.0f);
+    }
+
+    juce::String shortenedFaderLabel (juce::String name)
+    {
+        name = name.trim();
+        const auto lower = name.toLowerCase();
+        if (lower.endsWith ("khz"))
+            return name.substring (0, name.length() - 3).trim() + "k";
+        if (! lower.endsWith ("hz"))
+            return name;
+
+        const auto number = name.substring (0, name.length() - 2).trim();
+        const double hz = number.getDoubleValue();
+        if (hz >= 1000.0)
+        {
+            auto kilo = juce::String (hz / 1000.0, 1);
+            if (kilo.endsWith ("0"))
+                kilo = kilo.dropLastCharacters (2);
+            return kilo + "k";
+        }
+        return number;
     }
 
     juce::Point<float> knobPoint (juce::Point<float> centre, float radius, float angle)
@@ -209,6 +229,7 @@ ParameterPanel::ParameterPanel()
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onCloseRequested) onCloseRequested(); };
 
+    knobGridHost.addChildComponent (graphicEqPanel);
     addAndMakeVisible (knobViewport);
     knobViewport.setViewedComponent (&knobGridHost, false);
     touch::enableDragScroll (knobViewport);
@@ -223,6 +244,9 @@ void ParameterPanel::lookAndFeelChanged()
     titleLabel.setColour (juce::Label::textColourId, t.text);
     subtitleLabel.setColour (juce::Label::textColourId, t.textMuted);
     refreshLabelStyles();
+    resized();
+    if (onPreferredHeightChanged)
+        onPreferredHeightChanged();
     repaint();
     juce::Component::lookAndFeelChanged();
 }
@@ -235,11 +259,12 @@ void ParameterPanel::refreshLabelStyles()
         if (row.label == nullptr || row.param == nullptr)
             continue;
 
-        auto text = juce::String (row.param->getName (64));
+        auto text = row.fader ? shortenedFaderLabel (row.param->getName (64))
+                              : juce::String (row.param->getName (64));
         if (t.uppercaseLabels)
             text = text.toUpperCase();
         row.label->setText (text, juce::dontSendNotification);
-        row.label->setFont (juce::Font (12.0f, juce::Font::bold));
+        row.label->setFont (juce::Font (row.fader ? 11.0f : 12.0f, juce::Font::bold));
         row.label->setColour (juce::Label::textColourId, t.textMuted);
         row.label->setJustificationType (juce::Justification::centred);
     }
@@ -358,6 +383,7 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
         removeButton.setVisible (false);
         closeButton.setVisible (false);
         knobViewport.setVisible (false);
+        graphicEqPanel.setVisible (false);
         resized();
         return;
     }
@@ -442,13 +468,10 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
             return pageIndex == 0 ? juce::String ("Main") : juce::String ("Page ") + juce::String (pageIndex + 1);
         }());
 
-    constexpr int maxControlsPerScreen = 8;
     std::vector<std::vector<juce::AudioParameterFloat*>> pages;
     for (int pageIndex = 0; pageIndex < sourceCount; ++pageIndex)
     {
         const auto& src = sourcePages[(size_t) pageIndex];
-        const int activeCount = (int) std::count_if (src.begin(), src.end(),
-            [this] (auto* param) { return param != nullptr && current->isParameterActive (*param); });
         auto appendPage = [&] (std::vector<juce::AudioParameterFloat*> controls, int localPage)
         {
             auto label = sourceLabels[(size_t) pageIndex];
@@ -459,128 +482,9 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
             pageLabels.push_back (label);
         };
 
-        if (activeCount <= maxControlsPerScreen)
-        {
-            appendPage (src, 0);
-            continue;
-        }
-
-        std::vector<juce::AudioParameterFloat*> core, other, graphicEq;
-        for (auto* param : src)
-        {
-            if (param == nullptr || ! current->isParameterActive (*param))
-                continue;
-
-            const auto name = param->getName (64).toLowerCase();
-            const auto range = param->getNormalisableRange();
-            const bool isSelector = range.interval >= 1.0f
-                                 && (range.end - range.start) / range.interval <= 8.0f
-                                 && ! current->prefersSteppedKnob (*param);
-            if ((isSelector && containsWholeToken (name, "eq")) || name.endsWith ("hz"))
-            {
-                graphicEq.push_back (param);
-                continue;
-            }
-
-            const bool isCoreKnob = ! isSelector
-                && (name.contains ("gain") || name.contains ("drive") || name.contains ("volume")
-                    || name.contains ("master") || name.contains ("bass") || name.contains ("middle")
-                    || name.contains ("mid") || name.contains ("treble") || name.contains ("presence")
-                    || name.contains ("resonance") || name.contains ("depth") || name.contains ("contour")
-                    || name.contains ("tone"));
-            (isCoreKnob ? core : other).push_back (param);
-        }
-
-        std::vector<juce::AudioParameterFloat*> firstCore, overflowCore;
-        if ((int) core.size() <= maxControlsPerScreen)
-        {
-            firstCore = core;
-        }
-        else
-        {
-            std::vector<juce::AudioParameterFloat*> priority, toneStack;
-            auto isToneStackControl = [] (const juce::String& name)
-            {
-                return name.contains ("bass") || name.contains ("mid") || name.contains ("middle")
-                    || name.contains ("treble") || name.contains ("presence");
-            };
-            for (auto* param : core)
-            {
-                const auto name = param->getName (64).toLowerCase();
-                if (isToneStackControl (name)
-                    || name.contains ("gain") || name.contains ("drive")
-                    || name.contains ("volume") || name.contains ("master"))
-                    priority.push_back (param);
-                if (isToneStackControl (name))
-                    toneStack.push_back (param);
-            }
-
-            std::vector<juce::AudioParameterFloat*> chosen = toneStack;
-            for (auto* param : priority)
-            {
-                if (std::find (chosen.begin(), chosen.end(), param) != chosen.end())
-                    continue;
-                if ((int) chosen.size() < maxControlsPerScreen)
-                    chosen.push_back (param);
-            }
-            for (auto* param : core)
-            {
-                if ((int) chosen.size() >= maxControlsPerScreen)
-                    break;
-                if (std::find (chosen.begin(), chosen.end(), param) == chosen.end())
-                    chosen.push_back (param);
-            }
-
-            for (auto* param : core)
-                (std::find (chosen.begin(), chosen.end(), param) != chosen.end() ? firstCore : overflowCore)
-                    .push_back (param);
-        }
-
-        if ((int) firstCore.size() < maxControlsPerScreen)
-        {
-            std::vector<juce::AudioParameterFloat*> remainingOther;
-            for (auto* param : other)
-            {
-                const auto name = param->getName (64).toLowerCase();
-                const bool toneRelated = name.contains ("mid") || name.contains ("bass")
-                                      || name.contains ("treble") || name.contains ("freq")
-                                      || name.contains ("presence") || name.contains ("contour")
-                                      || name.contains ("shape") || name.contains ("shift");
-                if (toneRelated && (int) firstCore.size() < maxControlsPerScreen)
-                    firstCore.push_back (param);
-                else
-                    remainingOther.push_back (param);
-            }
-            other = std::move (remainingOther);
-        }
-
-        int localPage = 0;
-        if (! firstCore.empty())
-            appendPage (std::move (firstCore), localPage++);
-        std::vector<juce::AudioParameterFloat*> afterCore (overflowCore);
-        afterCore.insert (afterCore.end(), other.begin(), other.end());
-        if (! afterCore.empty() && afterCore.size() + graphicEq.size() <= (size_t) maxControlsPerScreen)
-        {
-            afterCore.insert (afterCore.end(), graphicEq.begin(), graphicEq.end());
-            graphicEq.clear();
-        }
-        if (! afterCore.empty())
-        {
-            const size_t chunks = (afterCore.size() + (size_t) maxControlsPerScreen - 1)
-                                / (size_t) maxControlsPerScreen;
-            const size_t perChunk = (afterCore.size() + chunks - 1) / chunks;
-            for (size_t start = 0; start < afterCore.size(); start += perChunk)
-            {
-                const size_t end = juce::jmin (afterCore.size(), start + perChunk);
-                appendPage (std::vector<juce::AudioParameterFloat*> (
-                                afterCore.begin() + (std::ptrdiff_t) start,
-                                afterCore.begin() + (std::ptrdiff_t) end),
-                            localPage++);
-            }
-        }
-
-        if (! graphicEq.empty())
-            appendPage (std::move (graphicEq), localPage);
+        auto splitPages = parameterPanelLayout::splitSourcePage (*current, src);
+        for (size_t localPage = 0; localPage < splitPages.size(); ++localPage)
+            appendPage (std::move (splitPages[localPage]), (int) localPage);
     }
     pageCount = (int) pages.size();
     currentPage = juce::jlimit (0, juce::jmax (0, pageCount - 1), pageToPreserve);
@@ -657,6 +561,7 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
             if (! isSelector)
             {
                 row.valueBox = std::make_unique<ValueFieldButton>();
+                row.valueBox->setCompactVisual (row.fader);
                 row.valueBox->setButtonText (rawSlider->getTextFromValue (rawSlider->getValue()));
                 row.valueBox->onClick = [this, rawSlider] { showValueKeypadFor (rawSlider); };
                 knobGridHost.addAndMakeVisible (*row.valueBox);
@@ -961,8 +866,245 @@ std::vector<size_t> ParameterPanel::visibleSliders() const
 int ParameterPanel::contentHeightForRow (const SliderRow& row) const
 {
     if (row.selector != nullptr)
-        return row.selector->getPreferredHeight() + selectorLabelGap + knobLabelHeight;
+        return switchLabelHeight + selectorLabelGap + row.selector->getPreferredHeight();
+    if (row.fader)
+        return faderContentHeight;
     return knobContentHeight;
+}
+
+struct ParameterPanel::LayoutPlan
+{
+    struct SwitchColumn
+    {
+        std::vector<size_t> rows;
+        int width = 0;
+        int height = 0;
+        bool canStackTwoOption = false;
+    };
+
+    struct GridRow
+    {
+        std::vector<size_t> rows;
+        std::vector<int> cellWidths;
+        int width = 0;
+        int height = 0;
+    };
+
+    std::vector<size_t> knobs, faders;
+    std::vector<SwitchColumn> switchColumns;
+    std::vector<GridRow> gridRows;
+    int leftColumnCount = 0;
+    int leftSwitchWidth = 0, rightSwitchWidth = 0;
+    int knobGroupWidth = 0;
+    int faderStripWidth = 0, faderGroupWidth = 0;
+    int faderSliderHeight = 0;
+    int faderRowHeight = faderContentHeight;
+    int panelHeight = 0;
+    int width = 0, height = 0;
+    int eqSwitchRow = -1;
+    bool useGraphicEqPanel = false;
+    bool singleLine = true;
+};
+
+ParameterPanel::LayoutPlan ParameterPanel::makeLayoutPlan (const std::vector<size_t>& shown,
+                                                            int availableWidth) const
+{
+    LayoutPlan plan;
+    if (current == nullptr || shown.empty())
+        return plan;
+
+    std::vector<juce::AudioParameterFloat*> params;
+    std::vector<size_t> switches;
+    for (auto index : shown)
+    {
+        const auto& row = sliders[index];
+        params.push_back (row.param);
+        if (row.fader)
+            plan.faders.push_back (index);
+        else if (row.selector != nullptr)
+        {
+            switches.push_back (index);
+            if (plan.eqSwitchRow < 0
+                && parameterPanelLayout::containsWholeToken (row.param->getName (64).toLowerCase(), "eq"))
+                plan.eqSwitchRow = (int) index;
+        }
+        else
+            plan.knobs.push_back (index);
+    }
+
+    plan.useGraphicEqPanel = ! plan.faders.empty()
+                          && (! plan.knobs.empty() || plan.eqSwitchRow >= 0);
+    if (plan.useGraphicEqPanel && plan.eqSwitchRow >= 0)
+        switches.erase (std::remove (switches.begin(), switches.end(), (size_t) plan.eqSwitchRow),
+                        switches.end());
+
+    for (auto index : switches)
+    {
+        const auto& row = sliders[index];
+        const int width = juce::jmax (row.selector->getPreferredWidth(),
+                                      parameterPanelLayout::parameterLabelWidth (*row.param));
+        const bool twoOption = row.selector->getNumOptions() == 2;
+        if (twoOption && ! plan.switchColumns.empty()
+            && plan.switchColumns.back().canStackTwoOption
+            && plan.switchColumns.back().rows.size() == 1)
+        {
+            auto& column = plan.switchColumns.back();
+            column.rows.push_back (index);
+            column.width = juce::jmax (column.width, width);
+            column.height += switchStackGap + switchLabelHeight + selectorLabelGap
+                           + row.selector->getPreferredHeight();
+            column.canStackTwoOption = false;
+        }
+        else
+        {
+            plan.switchColumns.push_back ({ { index }, width,
+                switchLabelHeight + selectorLabelGap + row.selector->getPreferredHeight(), twoOption });
+        }
+    }
+
+    plan.leftColumnCount = plan.knobs.empty() ? (int) plan.switchColumns.size()
+                                              : ((int) plan.switchColumns.size() + 1) / 2;
+    auto switchWidth = [&] (int start, int end)
+    {
+        int width = 0;
+        for (int i = start; i < end; ++i)
+            width += plan.switchColumns[(size_t) i].width;
+        if (end > start + 1)
+            width += parameterPanelLayout::sectionGap * (end - start - 1);
+        return width;
+    };
+    plan.leftSwitchWidth = switchWidth (0, plan.leftColumnCount);
+    plan.rightSwitchWidth = switchWidth (plan.leftColumnCount, (int) plan.switchColumns.size());
+
+    bool haveFader = false;
+    for (auto index : plan.faders)
+    {
+        const auto& row = sliders[index];
+        if (! parameterPanelLayout::isGraphicEqBand (*row.param))
+            plan.faderStripWidth += parameterPanelLayout::faderExtraGap;
+        if (haveFader)
+            plan.faderStripWidth += parameterPanelLayout::faderPitch
+                                  - parameterPanelLayout::faderCellWidth;
+        plan.faderStripWidth += parameterPanelLayout::faderCellWidth;
+        haveFader = true;
+    }
+
+    plan.faderRowHeight = faderContentHeight;
+    plan.faderSliderHeight = faderSliderHeight;
+    if (plan.useGraphicEqPanel)
+    {
+        const juce::Font titleFont (juce::FontOptions (11.0f, juce::Font::bold));
+        const int titleWidth = (int) std::ceil (juce::GlyphArrangement::getStringWidth (titleFont, "GRAPHIC EQ"));
+        const int unitsWidth = (int) std::ceil (juce::GlyphArrangement::getStringWidth (titleFont, "HZ"));
+        int headerWidth = titleWidth + 8 + unitsWidth;
+        if (plan.eqSwitchRow >= 0)
+            headerWidth += 8 + sliders[(size_t) plan.eqSwitchRow].selector->getPreferredWidth() + 16;
+        plan.faderGroupWidth = juce::jmax (plan.faderStripWidth, headerWidth)
+                             + graphicEqPanelPadding * 2;
+
+        if (plan.eqSwitchRow >= 0)
+        {
+            plan.faderSliderHeight = graphicEqSliderHeight;
+            plan.faderRowHeight = faderValueHitHeight + faderValueSliderGap + graphicEqSliderHeight
+                                + faderValueSliderGap + faderLabelHeight;
+            plan.panelHeight = graphicEqSwitchTopInset
+                             + touch::minTapTarget + graphicEqTitleGap
+                             + plan.faderRowHeight + graphicEqPanelPadding;
+        }
+        else
+        {
+            plan.panelHeight = graphicEqPanelPadding + graphicEqTitleHeight + graphicEqTitleGap
+                             + plan.faderRowHeight + graphicEqPanelPadding;
+        }
+    }
+    else if (! plan.faders.empty())
+    {
+        plan.faderGroupWidth = plan.faderStripWidth;
+    }
+
+    plan.knobGroupWidth = (int) plan.knobs.size() * knobCellWidth
+                        + juce::jmax (0, (int) plan.knobs.size() - 1) * knobColumnGap;
+
+    std::vector<int> sections;
+    if (plan.leftSwitchWidth > 0)
+        sections.push_back (plan.leftSwitchWidth);
+    if (plan.knobGroupWidth > 0)
+        sections.push_back (plan.knobGroupWidth);
+    if (plan.rightSwitchWidth > 0)
+        sections.push_back (plan.rightSwitchWidth);
+    if (plan.faderGroupWidth > 0)
+        sections.push_back (plan.faderGroupWidth);
+    for (int section : sections)
+        plan.width += section;
+    if (sections.size() > 1)
+        plan.width += parameterPanelLayout::sectionGap * ((int) sections.size() - 1);
+
+    int switchHeight = 0;
+    for (const auto& column : plan.switchColumns)
+        switchHeight = juce::jmax (switchHeight, column.height);
+    int knobHeight = 0;
+    for (auto index : plan.knobs)
+    {
+        const auto& row = sliders[index];
+        int height = contentHeightForRow (row);
+        if (row.syncToggle != nullptr)
+            height += syncToggleGap + syncToggleHeight;
+        knobHeight = juce::jmax (knobHeight, height);
+    }
+    const int faderHeight = plan.useGraphicEqPanel ? plan.panelHeight
+                                                   : plan.faders.empty() ? 0 : faderContentHeight;
+    plan.height = juce::jmax (switchHeight, juce::jmax (knobHeight, faderHeight));
+
+    const auto measuredParamsWidth = parameterPanelLayout::lineWidth (params, *current);
+    plan.width = juce::jmax (plan.width, measuredParamsWidth);
+    plan.singleLine = plan.width <= availableWidth;
+
+    if (! plan.singleLine)
+    {
+        plan.gridRows.clear();
+        for (auto index : shown)
+        {
+            const auto& row = sliders[index];
+            const int cellWidth = row.selector != nullptr
+                                ? juce::jmax (knobCellWidth, row.selector->getPreferredWidth(),
+                                              parameterPanelLayout::parameterLabelWidth (*row.param))
+                                : row.fader
+                                    ? parameterPanelLayout::faderPitch
+                                        + (parameterPanelLayout::isGraphicEqBand (*row.param) ? 0
+                                                                                             : parameterPanelLayout::faderExtraGap)
+                                    : knobCellWidth;
+            int cellHeight = contentHeightForRow (row);
+            if (row.syncToggle != nullptr)
+                cellHeight += syncToggleGap + syncToggleHeight;
+            if (plan.gridRows.empty()
+                || (plan.gridRows.back().width > 0
+                    && plan.gridRows.back().width + knobColumnGap + cellWidth > availableWidth))
+                plan.gridRows.push_back ({});
+
+            auto& gridRow = plan.gridRows.back();
+            if (! gridRow.rows.empty())
+            {
+                gridRow.width += knobColumnGap;
+            }
+            gridRow.rows.push_back (index);
+            gridRow.cellWidths.push_back (cellWidth);
+            gridRow.width += cellWidth;
+            gridRow.height = juce::jmax (gridRow.height, cellHeight);
+        }
+
+        plan.width = 0;
+        plan.height = 0;
+        for (size_t i = 0; i < plan.gridRows.size(); ++i)
+        {
+            plan.width = juce::jmax (plan.width, plan.gridRows[i].width);
+            plan.height += plan.gridRows[i].height;
+            if (i + 1 < plan.gridRows.size())
+                plan.height += knobRowGap;
+        }
+        plan.useGraphicEqPanel = false;
+    }
+
+    return plan;
 }
 
 void ParameterPanel::showPage (int page)
@@ -991,31 +1133,9 @@ int ParameterPanel::getPreferredContentHeight (int availableWidth) const
     if (current == nullptr)
         return 0;
 
-    const int hostWidth = juce::jmax (knobPitch, availableWidth);
-    const int columns = juce::jmax (1, hostWidth / knobPitch);
     const auto shown = visibleSliders();
-
-    int contentHeight = 0;
-    int rowCount = 0;
-    for (size_t start = 0; start < shown.size(); start += (size_t) columns)
-    {
-        const size_t end = juce::jmin (shown.size(), start + (size_t) columns);
-        int rowHeight = 0;
-        for (size_t k = start; k < end; ++k)
-        {
-            const auto& row = sliders[shown[k]];
-            int h = contentHeightForRow (row);
-            if (row.syncToggle != nullptr)
-                h += syncToggleGap + syncToggleHeight;
-            rowHeight = juce::jmax (rowHeight, h);
-        }
-        contentHeight += rowHeight;
-        ++rowCount;
-    }
-    if (rowCount > 1)
-        contentHeight += knobRowGap * (rowCount - 1);
-
-    return juce::jmax (minDrawerHeight, drawerHeaderHeight + contentHeight);
+    const auto plan = makeLayoutPlan (shown, juce::jmax (0, availableWidth - 2 * drawerSidePadding));
+    return juce::jmax (minDrawerHeight, drawerHeaderHeight + plan.height);
 }
 
 void ParameterPanel::resized()
@@ -1093,80 +1213,173 @@ void ParameterPanel::resized()
     }
 
     knobViewport.setBounds (area);
-
-    const int hostWidth = juce::jmax (knobPitch, knobViewport.getWidth());
-    const int columns = juce::jmax (1, hostWidth / knobPitch);
     const auto shown = visibleSliders();
-
-    std::vector<std::pair<size_t, size_t>> rows;
-    std::vector<int> rowHeights;
-    int contentHeight = 0;
-    for (size_t start = 0; start < shown.size(); start += (size_t) columns)
-    {
-        const size_t end = juce::jmin (shown.size(), start + (size_t) columns);
-        rows.emplace_back (start, end);
-        int rowHeight = 0;
-        for (size_t k = start; k < end; ++k)
-        {
-            const auto& row = sliders[shown[k]];
-            int h = contentHeightForRow (row);
-            if (row.syncToggle != nullptr)
-                h += syncToggleGap + syncToggleHeight;
-            rowHeight = juce::jmax (rowHeight, h);
-        }
-        rowHeights.push_back (rowHeight);
-        contentHeight += rowHeight;
-    }
-    if (rows.size() > 1)
-        contentHeight += knobRowGap * (int) (rows.size() - 1);
-
+    const auto plan = makeLayoutPlan (shown, juce::jmax (0, knobViewport.getWidth() - 2 * drawerSidePadding));
     const int viewportHeight = juce::jmax (0, knobViewport.getHeight());
-    const int hostHeight = juce::jmax (viewportHeight, contentHeight);
-    const int startY = contentHeight <= viewportHeight ? (hostHeight - contentHeight) / 2 : 0;
+    const int hostWidth = juce::jmax (knobViewport.getWidth(), plan.width + 2 * drawerSidePadding);
+    const int hostHeight = juce::jmax (viewportHeight, plan.height);
+    const int startY = plan.height <= viewportHeight ? (hostHeight - plan.height) / 2 : 0;
     knobGridHost.setSize (hostWidth, hostHeight);
+    graphicEqPanel.setVisible (false);
+    for (auto index : shown)
+        sliders[index].label->setVisible (true);
 
-    int y = startY;
-    for (size_t rowIndex = 0; rowIndex < rows.size(); ++rowIndex)
+    auto layoutKnob = [&] (SliderRow& row, int x, int y, int width)
     {
-        const auto [start, end] = rows[rowIndex];
-        const int count = (int) (end - start);
-        const int rowWidth = count * knobCellWidth + (count - 1) * knobColumnGap;
-        int x = juce::jmax (0, (hostWidth - rowWidth) / 2);
+        row.widget()->setBounds (x + (width - knobDiameter) / 2, y, knobDiameter, knobDiameter);
+        row.label->setBounds (x, y + knobDiameter + knobLabelGap, width, knobLabelHeight);
+        if (row.valueBox != nullptr)
+            row.valueBox->setBounds (x + (width - 92) / 2,
+                                     y + knobDiameter + knobLabelGap + knobLabelHeight + knobLabelGap,
+                                     92, knobValueHitHeight);
+        if (row.syncToggle != nullptr)
+            row.syncToggle->setBounds (x, y + contentHeightForRow (row) + syncToggleGap,
+                                       width, syncToggleHeight);
+    };
 
-        for (size_t k = start; k < end; ++k)
+    auto layoutSelector = [&] (SliderRow& row, int x, int y, int width)
+    {
+        const int selectorWidth = row.selector->getPreferredWidth();
+        row.label->setBounds (x, y, width, switchLabelHeight);
+        row.selector->setBounds (x + (width - selectorWidth) / 2,
+                                 y + switchLabelHeight + selectorLabelGap,
+                                 selectorWidth, row.selector->getPreferredHeight());
+    };
+
+    auto layoutFader = [&] (SliderRow& row, int x, int y, int width, int sliderHeight)
+    {
+        const int touchWidth = touch::minTapTarget;
+        const int touchX = x + (width - touchWidth) / 2;
+        if (row.valueBox != nullptr)
+            row.valueBox->setBounds (touchX, y, touchWidth, faderValueHitHeight);
+        row.widget()->setBounds (touchX, y + faderValueHitHeight + faderValueSliderGap,
+                                 touchWidth, sliderHeight);
+        const int labelWidth = parameterPanelLayout::faderCellWidth + 12;
+        row.label->setBounds (x + (width - labelWidth) / 2,
+                              y + faderValueHitHeight + faderValueSliderGap
+                                + sliderHeight + faderValueSliderGap,
+                              labelWidth, faderLabelHeight);
+    };
+
+    if (plan.singleLine)
+    {
+        int cursor = (hostWidth - plan.width) / 2;
+        auto placeColumns = [&] (int start, int end)
         {
-            auto& row = sliders[shown[k]];
-            const int cellContentHeight = contentHeightForRow (row);
-
-            if (row.selector != nullptr)
+            for (int columnIndex = start; columnIndex < end; ++columnIndex)
             {
-                const int selectorHeight = row.selector->getPreferredHeight();
-                row.widget()->setBounds (x, y, knobCellWidth, selectorHeight);
-                row.label->setBounds (x, y + selectorHeight + selectorLabelGap, knobCellWidth, knobLabelHeight);
+                const auto& column = plan.switchColumns[(size_t) columnIndex];
+                int y = startY + (plan.height - column.height) / 2;
+                for (size_t rowPosition = 0; rowPosition < column.rows.size(); ++rowPosition)
+                {
+                    auto& row = sliders[column.rows[rowPosition]];
+                    layoutSelector (row, cursor, y, column.width);
+                    y += switchLabelHeight + selectorLabelGap + row.selector->getPreferredHeight();
+                    if (rowPosition + 1 < column.rows.size())
+                        y += switchStackGap;
+                }
+                cursor += column.width;
+                if (columnIndex + 1 < end)
+                    cursor += parameterPanelLayout::sectionGap;
             }
-            else
-            {
-                if (row.fader)
-                    row.widget()->setBounds (x + (knobCellWidth - touch::minTapTarget) / 2,
-                                             y, touch::minTapTarget, knobDiameter);
-                else
-                    row.widget()->setBounds (x + (knobCellWidth - knobDiameter) / 2,
-                                             y, knobDiameter, knobDiameter);
-                row.label->setBounds (x, y + knobDiameter + knobLabelGap, knobCellWidth, knobLabelHeight);
-                if (row.valueBox != nullptr)
-                    row.valueBox->setBounds (x + (knobCellWidth - 92) / 2,
-                                             y + knobDiameter + knobLabelGap + knobLabelHeight + knobLabelGap,
-                                             92, knobValueHitHeight);
-            }
+        };
 
-            if (row.syncToggle != nullptr)
-                row.syncToggle->setBounds (x, y + cellContentHeight + syncToggleGap,
-                                           knobCellWidth, syncToggleHeight);
+        placeColumns (0, plan.leftColumnCount);
+        if (plan.leftSwitchWidth > 0
+            && (plan.knobGroupWidth > 0 || plan.rightSwitchWidth > 0 || plan.faderGroupWidth > 0))
+            cursor += parameterPanelLayout::sectionGap;
 
-            x += knobPitch;
+        for (auto index : plan.knobs)
+        {
+            auto& row = sliders[index];
+            const int height = contentHeightForRow (row)
+                             + (row.syncToggle != nullptr ? syncToggleGap + syncToggleHeight : 0);
+            layoutKnob (row, cursor, startY + (plan.height - height) / 2, knobCellWidth);
+            cursor += knobPitch;
+        }
+        if (! plan.knobs.empty())
+            cursor -= knobColumnGap;
+
+        if (plan.rightSwitchWidth > 0)
+        {
+            if (plan.knobGroupWidth > 0)
+                cursor += parameterPanelLayout::sectionGap;
+            placeColumns (plan.leftColumnCount, (int) plan.switchColumns.size());
         }
 
-        y += rowHeights[rowIndex] + (rowIndex + 1 < rows.size() ? knobRowGap : 0);
+        if (plan.faderGroupWidth > 0)
+        {
+            if (plan.rightSwitchWidth > 0 || plan.knobGroupWidth > 0)
+                cursor += parameterPanelLayout::sectionGap;
+
+            int faderX = cursor;
+            int faderY = startY + (plan.height - faderContentHeight) / 2;
+            if (plan.useGraphicEqPanel)
+            {
+                const int panelY = startY + (plan.height - plan.panelHeight) / 2;
+                graphicEqPanel.setBounds (faderX, panelY, plan.faderGroupWidth, plan.panelHeight);
+                graphicEqPanel.setEmbeddedSelector (plan.eqSwitchRow >= 0);
+                graphicEqPanel.setVisible (true);
+                graphicEqPanel.toBack();
+
+                if (plan.eqSwitchRow >= 0)
+                {
+                    auto& row = sliders[(size_t) plan.eqSwitchRow];
+                    const juce::Font titleFont (juce::FontOptions (11.0f, juce::Font::bold));
+                    const int titleWidth = (int) std::ceil (
+                        juce::GlyphArrangement::getStringWidth (titleFont, "GRAPHIC EQ"));
+                    const int selectorWidth = row.selector->getPreferredWidth();
+                    row.label->setVisible (false);
+                    row.selector->setBounds (faderX + graphicEqPanelPadding + titleWidth + 8,
+                                             panelY + graphicEqSwitchTopInset,
+                                             selectorWidth, touch::minTapTarget);
+                    faderY = panelY + graphicEqSwitchTopInset + touch::minTapTarget + graphicEqTitleGap;
+                }
+                else
+                    faderY = panelY + graphicEqPanelPadding + graphicEqTitleHeight + graphicEqTitleGap;
+
+                const int innerWidth = plan.faderGroupWidth - graphicEqPanelPadding * 2;
+                faderX += graphicEqPanelPadding + (innerWidth - plan.faderStripWidth) / 2;
+            }
+
+            bool haveFader = false;
+            for (auto index : plan.faders)
+            {
+                auto& row = sliders[index];
+                if (! parameterPanelLayout::isGraphicEqBand (*row.param))
+                    faderX += parameterPanelLayout::faderExtraGap;
+                if (haveFader)
+                    faderX += parameterPanelLayout::faderPitch - parameterPanelLayout::faderCellWidth;
+                layoutFader (row, faderX, faderY, parameterPanelLayout::faderCellWidth,
+                             plan.faderSliderHeight);
+                faderX += parameterPanelLayout::faderCellWidth;
+                haveFader = true;
+            }
+        }
+    }
+    else
+    {
+        int y = startY;
+        for (const auto& gridRow : plan.gridRows)
+        {
+            int x = (hostWidth - gridRow.width) / 2;
+            for (size_t i = 0; i < gridRow.rows.size(); ++i)
+            {
+                auto& row = sliders[gridRow.rows[i]];
+                const int cellWidth = gridRow.cellWidths[i];
+                const int cellHeight = contentHeightForRow (row)
+                                     + (row.syncToggle != nullptr ? syncToggleGap + syncToggleHeight : 0);
+                const int cellY = y + (gridRow.height - cellHeight) / 2;
+                if (row.selector != nullptr)
+                    layoutSelector (row, x, cellY, cellWidth);
+                else if (row.fader)
+                    layoutFader (row, x, cellY, cellWidth, faderSliderHeight);
+                else
+                    layoutKnob (row, x, cellY, cellWidth);
+                x += cellWidth + knobColumnGap;
+            }
+            y += gridRow.height + knobRowGap;
+        }
     }
 }
 
@@ -1446,11 +1659,35 @@ void ParameterPanel::PillButton::paintButton (juce::Graphics& g, bool highlighte
     }
 }
 
+void ParameterPanel::GraphicEqPanel::paint (juce::Graphics& g)
+{
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
+
+    g.setColour (t.textMuted);
+    const juce::Font baseFont (juce::FontOptions (11.0f, juce::Font::bold));
+    g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)
+                               .withTypeface (getLookAndFeel().getTypefaceForFont (baseFont))));
+    const float titleY = embeddedSelector ? 20.0f : 14.0f;
+    g.drawText ("GRAPHIC EQ", juce::Rectangle<float> (14.0f, titleY, 104.0f, graphicEqTitleHeight),
+                juce::Justification::centredLeft);
+    g.drawText ("HZ", juce::Rectangle<float> (bounds.getWidth() - 44.0f, titleY, 30.0f, graphicEqTitleHeight),
+                juce::Justification::centredRight);
+}
+
 void ParameterPanel::ValueFieldButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     const auto& t = theme::current();
     const auto bounds = getLocalBounds().toFloat();
-    const auto visual = bounds.withY (bounds.getCentreY() - 18.0f).withHeight (36.0f);
+    const float visualHeight = compactVisual ? 24.0f : 36.0f;
+    const float visualWidth = compactVisual ? 44.0f : bounds.getWidth();
+    const auto visual = juce::Rectangle<float> (bounds.getCentreX() - visualWidth * 0.5f,
+                                                bounds.getCentreY() - visualHeight * 0.5f,
+                                                visualWidth, visualHeight);
     const float radius = t.id == theme::Id::console ? 3.0f : 9.0f;
 
     g.setColour (down ? t.raisedHigh : (highlighted ? t.raisedHigh.brighter (0.04f) : t.raised));
@@ -1459,12 +1696,18 @@ void ParameterPanel::ValueFieldButton::paintButton (juce::Graphics& g, bool high
     g.drawRoundedRectangle (visual, radius, 1.0f);
 
     g.setColour (t.text.withAlpha (isEnabled() ? 1.0f : 0.4f));
-    g.setFont (juce::Font (15.0f, juce::Font::bold));
+    g.setFont (juce::Font (compactVisual ? 11.0f : 15.0f, juce::Font::bold));
     g.drawText (getButtonText(), visual.reduced (8.0f, 0.0f), juce::Justification::centred);
 }
 
 void ParameterPanel::FineTuneSlider::paint (juce::Graphics& g)
 {
+    if (getSliderStyle() == juce::Slider::LinearVertical)
+    {
+        juce::Slider::paint (g);
+        return;
+    }
+
     const auto& t = theme::current();
     const auto accent = findColour (accentColourId).isTransparent()
                             ? findColour (juce::Slider::rotarySliderFillColourId)

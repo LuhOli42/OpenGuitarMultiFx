@@ -4,21 +4,21 @@
 #include "Theme.h"
 #include "TouchSizing.h"
 
+#include <cmath>
 #include <functional>
 
 namespace openguitarmultifx
 {
 
-/** A compact vertical detent switch with its position names alongside the track. */
+/** A touch-sized horizontal selector with compact switch and segmented variants. */
 class SelectorSwitch : public juce::Component
 {
 public:
-    static constexpr int optionWidth = 120;
-
     void setOptions (juce::StringArray newOptions)
     {
         options = std::move (newOptions);
         selected = juce::jlimit (0, juce::jmax (0, options.size() - 1), selected);
+        resized();
         repaint();
     }
 
@@ -41,10 +41,20 @@ public:
 
     int getSelectedIndex() const noexcept { return selected; }
     int getNumOptions() const noexcept { return options.size(); }
-    int getPreferredHeight() const noexcept
+    int getPreferredHeight() const noexcept { return touch::minTapTarget; }
+
+    int getPreferredWidth() const
     {
-        const int n = juce::jmax (0, options.size());
-        return n == 0 ? 0 : n * pitchFor (n);
+        if (options.size() == 2)
+            return optionTextWidth (0) + labelGap + switchWidth + labelGap + optionTextWidth (1);
+
+        if (options.size() < 3)
+            return 0;
+
+        int width = segmentPadding * 2 + segmentGap * (options.size() - 1);
+        for (int i = 0; i < options.size(); ++i)
+            width += segmentWidth (i);
+        return width;
     }
 
     /** Fired when the user taps a different position. */
@@ -53,130 +63,226 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto& t = theme::current();
-        const int n = juce::jmax (1, options.size());
-        const float pitch = (float) pitchFor (n);
-        const float trackWidth = 26.0f;
-        const float thumbSize = 20.0f;
-        const float trackX = 8.0f;
-        const float centreX = trackX + trackWidth * 0.5f;
-        const float firstY = pitch * 0.5f;
-        const float selectedY = firstY + (float) selected * pitch;
-        const bool console = t.id == theme::Id::console;
-        const bool stageGlass = t.id == theme::Id::stageGlass;
-        const float trackRadius = console ? 4.0f : trackWidth * 0.5f;
-        const float selectedRadius = console ? 3.0f : thumbSize * 0.5f;
-        const auto accentLifted = accent.getPerceivedBrightness() < 0.35f ? accent.brighter (0.9f) : accent;
-
-        const auto track = juce::Rectangle<float> (trackX, firstY - trackWidth * 0.5f,
-                                                   trackWidth,
-                                                   (float) (n - 1) * pitch + trackWidth);
-        g.setColour (t.raised);
-        g.fillRoundedRectangle (track, trackRadius);
-        g.setColour (t.line);
-        g.drawRoundedRectangle (track, trackRadius, 1.0f);
-
-        if (selected > 0)
-        {
-            const auto segment = juce::Rectangle<float> (trackX + 1.0f, firstY,
-                                                          trackWidth - 2.0f,
-                                                          selectedY - firstY);
-            if (stageGlass)
-            {
-                g.setColour (accentLifted.withAlpha (0.12f));
-                g.drawRoundedRectangle (segment.expanded (3.0f), trackRadius, 5.0f);
-                g.setColour (accentLifted.withAlpha (0.22f));
-                g.drawRoundedRectangle (segment.expanded (1.5f), trackRadius, 3.0f);
-            }
-            g.setColour (accentLifted);
-            g.fillRect (segment);
-        }
-
-        for (int i = 0; i < n; ++i)
-        {
-            const bool isSelected = i == selected;
-            const float detentY = firstY + (float) i * pitch;
-            const auto thumb = juce::Rectangle<float> (centreX - thumbSize * 0.5f,
-                                                        detentY - thumbSize * 0.5f,
-                                                        thumbSize, thumbSize);
-            if (isSelected && stageGlass)
-            {
-                g.setColour (accentLifted.withAlpha (0.12f));
-                g.fillEllipse (thumb.expanded (5.0f));
-                g.setColour (accentLifted.withAlpha (0.22f));
-                g.fillEllipse (thumb.expanded (2.5f));
-            }
-            g.setColour (isSelected ? juce::Colours::white : t.textMuted);
-            if (console)
-                g.fillRoundedRectangle (thumb, selectedRadius);
-            else
-                g.fillEllipse (thumb);
-            if (isSelected)
-            {
-                g.setColour (t.lineStrong);
-                if (console)
-                    g.drawRoundedRectangle (thumb, selectedRadius, 1.0f);
-                else
-                    g.drawEllipse (thumb, 1.0f);
-            }
-
-            auto optionText = options[i];
-            if (t.uppercaseLabels)
-                optionText = optionText.toUpperCase();
-            const auto font = juce::Font (12.0f, isSelected ? juce::Font::bold : juce::Font::plain);
-            const auto fullText = optionText;
-            const auto maxTextWidth = (float) juce::jmax (0, getWidth() - 48);
-            while (optionText.isNotEmpty()
-                   && font.getStringWidthFloat (optionText + "...") > maxTextWidth)
-                optionText = optionText.substring (0, optionText.length() - 1);
-            if (optionText != fullText)
-                optionText += "...";
-            g.setColour (isSelected ? t.text : t.textMuted);
-            g.setFont (font);
-            g.drawText (optionText, juce::Rectangle<float> (42.0f, detentY - pitch * 0.5f,
-                                                             (float) juce::jmax (0, getWidth() - 48),
-                                                             pitch),
-                        juce::Justification::centredLeft, false);
-        }
+        if (options.size() == 2)
+            paintTwoOptionSwitch (g, t);
+        else if (options.size() >= 3)
+            paintSegments (g, t);
     }
 
     void mouseDown (const juce::MouseEvent& event) override
     {
         dragOrigin = event.position;
         dragged = false;
-        if (options.size() != 2)
-            select (event.position);
+        gesture = targetAt (event.position);
+        if (options.size() >= 3)
+            selectSegmentAt (event.position.x);
     }
 
     void mouseDrag (const juce::MouseEvent& event) override
     {
         if (! dragged && event.position.getDistanceFrom (dragOrigin) >= 3.0f)
             dragged = true;
-        if (dragged)
-            select (event.position);
+        if (! dragged)
+            return;
+
+        if (options.size() == 2 && gesture == Gesture::track
+            && std::abs (event.position.x - dragOrigin.x) >= std::abs (event.position.y - dragOrigin.y))
+            setSelectedIndex (event.position.x < trackBounds().getCentreX() ? 0 : 1);
+        else if (options.size() >= 3)
+            selectSegmentAt (event.position.x);
     }
 
     void mouseUp (const juce::MouseEvent& event) override
     {
-        if (options.size() == 2 && ! dragged)
-            setSelectedIndex (1 - selected);
-        else if (dragged || options.size() != 2)
-            select (event.position);
+        if (options.size() == 2)
+        {
+            if (dragged)
+            {
+                if (gesture == Gesture::track)
+                    setSelectedIndex (event.position.x < trackBounds().getCentreX() ? 0 : 1);
+            }
+            else if (gesture == Gesture::track)
+                setSelectedIndex (1 - selected);
+            else if (gesture == Gesture::leftLabel)
+                setSelectedIndex (0);
+            else if (gesture == Gesture::rightLabel)
+                setSelectedIndex (1);
+        }
+        else if (options.size() >= 3)
+            selectSegmentAt (event.position.x);
     }
 
 private:
-    static int pitchFor (int n) noexcept
+    enum class Gesture { none, leftLabel, track, rightLabel, segments };
+
+    static constexpr int switchWidth = 52;
+    static constexpr int switchHeight = 30;
+    static constexpr int labelGap = 8;
+    static constexpr int thumbSize = 24;
+    static constexpr int segmentHeight = 32;
+    static constexpr int segmentPadding = 3;
+    static constexpr int segmentGap = 3;
+
+    juce::String optionText (int index) const
     {
-        return n == 2 ? 28 : touch::minTapTarget;
+        auto text = options[index];
+        if (theme::current().uppercaseLabels)
+            text = text.toUpperCase();
+        return text;
     }
 
-    void select (juce::Point<float> position)
+    juce::Font fontFor (float height, bool bold) const
     {
-        const int n = juce::jmax (1, options.size());
-        const float pitch = (float) pitchFor (n);
-        const float firstCentre = pitch * 0.5f;
-        const int index = juce::jlimit (0, n - 1,
-            juce::roundToInt ((position.y - firstCentre) / pitch));
-        setSelectedIndex (index);
+        const int style = bold ? juce::Font::bold : juce::Font::plain;
+        const juce::Font base (juce::FontOptions (height, style));
+        return juce::Font (juce::FontOptions (height, style)
+                               .withTypeface (getLookAndFeel().getTypefaceForFont (base)));
+    }
+
+    int optionTextWidth (int index) const
+    {
+        const auto text = optionText (index);
+        return (int) std::ceil (juce::jmax (
+            juce::GlyphArrangement::getStringWidth (fontFor (12.0f, false), text),
+            juce::GlyphArrangement::getStringWidth (fontFor (12.0f, true), text))) + 1;
+    }
+
+    int segmentWidth (int index) const
+    {
+        return (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+            fontFor (11.0f, true), optionText (index))) + 16;
+    }
+
+    juce::Rectangle<float> trackBounds() const
+    {
+        const float x = (float) optionTextWidth (0) + labelGap;
+        return { x, (getHeight() - switchHeight) * 0.5f, (float) switchWidth, (float) switchHeight };
+    }
+
+    Gesture targetAt (juce::Point<float> position) const
+    {
+        if (options.size() != 2)
+            return options.size() >= 3 ? Gesture::segments : Gesture::none;
+
+        const auto track = trackBounds();
+        if (track.contains (position))
+            return Gesture::track;
+        return position.x < track.getX() ? Gesture::leftLabel
+                                         : position.x > track.getRight() ? Gesture::rightLabel
+                                                                         : Gesture::none;
+    }
+
+    void paintTwoOptionSwitch (juce::Graphics& g, const theme::Tokens& t)
+    {
+        const bool on = selected == 1;
+        const bool console = t.id == theme::Id::console;
+        const bool stage = t.id == theme::Id::stageGlass;
+        const auto track = trackBounds();
+        const float radius = console ? 4.0f : track.getHeight() * 0.5f;
+        const auto fill = on ? accent : t.raised;
+
+        if (on && stage)
+        {
+            g.setColour (accent.withAlpha (0.12f));
+            g.drawRoundedRectangle (track.expanded (4.0f), radius + 2.0f, 4.0f);
+            g.setColour (accent.withAlpha (0.20f));
+            g.drawRoundedRectangle (track.expanded (2.0f), radius + 1.0f, 2.0f);
+        }
+
+        g.setColour (fill);
+        g.fillRoundedRectangle (track, radius);
+        g.setColour (t.line);
+        g.drawRoundedRectangle (track, radius, 1.0f);
+
+        const float thumbX = on ? track.getRight() - 3.0f - thumbSize : track.getX() + 3.0f;
+        const auto thumb = juce::Rectangle<float> (thumbX, track.getY() + 3.0f,
+                                                   (float) thumbSize, (float) thumbSize);
+        g.setColour (on ? juce::Colours::white : t.textMuted);
+        if (console)
+            g.fillRoundedRectangle (thumb, 3.0f);
+        else
+            g.fillEllipse (thumb);
+
+        for (int i = 0; i < 2; ++i)
+        {
+            const bool active = i == selected;
+            const auto font = fontFor (12.0f, active);
+            const float x = i == 0 ? 0.0f : track.getRight() + labelGap;
+            const float width = i == 0 ? track.getX() - labelGap : (float) getWidth() - x;
+            g.setColour (active ? t.text : t.textMuted);
+            g.setFont (font);
+            g.drawText (optionText (i), juce::Rectangle<float> (x, 0.0f, width, (float) getHeight()),
+                        i == 0 ? juce::Justification::centredRight : juce::Justification::centredLeft,
+                        false);
+        }
+    }
+
+    void paintSegments (juce::Graphics& g, const theme::Tokens& t)
+    {
+        const bool console = t.id == theme::Id::console;
+        const bool stage = t.id == theme::Id::stageGlass;
+        const int totalWidth = getPreferredWidth();
+        const float xOffset = (getWidth() - totalWidth) * 0.5f;
+        const float containerHeight = segmentHeight + segmentPadding * 2;
+        const juce::Rectangle<float> container (xOffset, (getHeight() - containerHeight) * 0.5f,
+                                                 (float) totalWidth, containerHeight);
+        const float containerRadius = t.smallRadius;
+
+        g.setColour (t.raised);
+        g.fillRoundedRectangle (container, containerRadius);
+        g.setColour (t.line);
+        g.drawRoundedRectangle (container, containerRadius, 1.0f);
+
+        float x = container.getX() + segmentPadding;
+        for (int i = 0; i < options.size(); ++i)
+        {
+            const float width = (float) segmentWidth (i);
+            const juce::Rectangle<float> segment (x, container.getY() + segmentPadding, width,
+                                                   (float) segmentHeight);
+            const bool active = i == selected;
+            const float radius = juce::jmax (0.0f, t.smallRadius - 4.0f);
+
+            if (active && stage)
+            {
+                g.setColour (accent.withAlpha (0.12f));
+                g.drawRoundedRectangle (segment.expanded (3.0f), radius + 1.0f, 4.0f);
+                g.setColour (accent.withAlpha (0.20f));
+                g.drawRoundedRectangle (segment.expanded (1.5f), radius + 0.5f, 2.0f);
+            }
+
+            if (active)
+            {
+                g.setColour (console ? juce::Colour (0xffe6e6e8) : accent);
+                g.fillRoundedRectangle (segment, radius);
+                if (console)
+                {
+                    g.setColour (accent);
+                    g.fillRect (segment.withY (segment.getBottom() - 3.0f).withHeight (3.0f));
+                }
+            }
+
+            g.setColour (active ? (console ? juce::Colour (0xff111111) : theme::inkOn (accent))
+                                : t.textMuted);
+            g.setFont (fontFor (11.0f, active));
+            g.drawText (optionText (i), segment, juce::Justification::centred, false);
+            x += width + segmentGap;
+        }
+    }
+
+    void selectSegmentAt (float positionX)
+    {
+        const float xOffset = (getWidth() - getPreferredWidth()) * 0.5f + segmentPadding;
+        float x = xOffset;
+        for (int i = 0; i < options.size(); ++i)
+        {
+            const float width = (float) segmentWidth (i);
+            if (positionX < x + width + segmentGap * 0.5f || i == options.size() - 1)
+            {
+                setSelectedIndex (i);
+                return;
+            }
+            x += width + segmentGap;
+        }
     }
 
     juce::StringArray options;
@@ -184,6 +290,7 @@ private:
     juce::Colour accent = juce::Colours::grey;
     juce::Point<float> dragOrigin;
     bool dragged = false;
+    Gesture gesture = Gesture::none;
 };
 
 } // namespace openguitarmultifx
