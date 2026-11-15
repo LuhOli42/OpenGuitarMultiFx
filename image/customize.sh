@@ -59,8 +59,11 @@ PROTECTED_GLOBS=('linux-image-*-a733' 'linux-headers-*-a733' 'radxa-*' 'task-a73
 PURGE_PACKAGES=(
     # Desktop/browser pulled by the general-purpose image; the kiosk is Xorg+app.
     chromium gnome-shell
-    # PulseAudio grabs the USB interface; the app talks to ALSA hw: directly.
+    # PulseAudio / PipeWire (Debian 13 bases ship it) grab the USB interface and wake up on every card event; the
+    # app talks to ALSA hw: directly and this is an appliance with no desktop audio. Names that do not exist on a
+    # given base are skipped. scripts/setup-target.sh also masks the user units, for installs that keep the packages.
     pulseaudio pulseaudio-module-bluetooth
+    pipewire pipewire-pulse pipewire-audio pipewire-alsa wireplumber libspa-0.2-modules
     # Server/dev conveniences with no place on a pedalboard.
     samba samba-common-bin python3-samba python3-pip software-properties-common
     needrestart apt-listchanges local-apt-repository

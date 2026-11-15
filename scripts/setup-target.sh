@@ -234,10 +234,42 @@ unit_exists() {
     [[ -f "/etc/systemd/system/$1" || -f "/lib/systemd/system/$1" || -f "/usr/lib/systemd/system/$1" ]]
 }
 
+# A sound server in the way of the USB interface (PipeWire/WirePlumber on Debian 13 bases, PulseAudio before) is a
+# pops-and-dropouts source on a pedalboard: the app opens the ALSA hw: device itself. Mask the user units for every
+# user (/etc/systemd/user/*.service -> /dev/null), the same thing `systemctl --global mask` writes, so it also works
+# offline inside the image chroot. Harmless when the packages are not installed.
+mask_sound_servers() {
+    local unit
+    install -d /etc/systemd/user
+    for unit in pipewire.socket pipewire.service pipewire-pulse.socket pipewire-pulse.service wireplumber.service \
+                pulseaudio.socket pulseaudio.service; do
+        ln -sfn /dev/null "/etc/systemd/user/$unit"
+    done
+    if (( ! IMAGE )); then
+        pkill -x pipewire 2>/dev/null || true
+        pkill -x pipewire-pulse 2>/dev/null || true
+        pkill -x wireplumber 2>/dev/null || true
+    fi
+    log "sound servers (PipeWire/PulseAudio) masked"
+}
+
+# USB runtime autosuspend dropped the dock's hub shortly after boot on the vendor 6.6 kernel (xHCI died, the USB
+# audio interface and the touchscreen vanished). Off for good via the kernel command line.
+disable_usb_autosuspend() {
+    local cmdline=/etc/kernel/cmdline
+    [[ -f "$cmdline" ]] || return 0
+    grep -q 'usbcore.autosuspend=' "$cmdline" && return 0
+    sed -i '1s/$/ usbcore.autosuspend=-1/' "$cmdline"
+    command -v u-boot-update >/dev/null 2>&1 && u-boot-update >/dev/null 2>&1 || true
+    log "usbcore.autosuspend=-1 added to $cmdline"
+}
+
 configure_systemd() {
     if (( ! IMAGE )); then
         systemctl daemon-reload
     fi
+    mask_sound_servers
+    disable_usb_autosuspend
     # irqbalance would migrate the pinned USB IRQ away again; with 8 cores and
     # a handful of busy IRQs explicit pinning is the better trade.
     if unit_exists irqbalance.service; then

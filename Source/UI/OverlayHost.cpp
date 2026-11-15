@@ -52,6 +52,13 @@ void OverlayHost::layOutTop()
     // its constructor -- clamp that to fit this host rather than trusting
     // it blindly (a search dialog built for a wide desktop window would
     // otherwise overflow a narrow touchscreen).
+    // A card that sets the "fullscreen" property (the stage screen) takes the whole host.
+    if (top->getProperties().getWithDefault ("fullscreen", false))
+    {
+        top->setBounds (getLocalBounds());
+        return;
+    }
+
     const int w = juce::jlimit (240, (int) (getWidth()  * 0.92f), top->getWidth());
     const int h = juce::jlimit (160, (int) (getHeight() * 0.90f), top->getHeight());
 

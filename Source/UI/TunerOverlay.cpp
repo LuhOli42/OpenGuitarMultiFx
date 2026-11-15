@@ -62,6 +62,18 @@ TunerOverlay::TunerOverlay()
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
+    addAndMakeVisible (muteButton);
+    muteButton.text = "Mute while tuning";
+    muteButton.onClick = [this]
+    {
+        muteButton.selected = ! muteButton.selected;
+        muteButton.repaint();
+        if (onMuteToggled) onMuteToggled (muteButton.selected);
+    };
+    addAndMakeVisible (midiButton);
+    midiButton.text = "MIDI Learn";
+    midiButton.onClick = [this] { if (onMidiLearnTapped) onMidiLearnTapped(); };
+
     setSize (1180, 780);
 
     startTimerHz (30);
@@ -73,6 +85,21 @@ TunerOverlay::~TunerOverlay()
         onDestroyed();
 }
 
+void TunerOverlay::setMuteState (bool muted)
+{
+    muteButton.selected = muted;
+    muteButton.selectedStyle = overlaychrome::SelectedStyle::chip;
+    muteButton.repaint();
+}
+
+void TunerOverlay::setMidiLabel (const juce::String& text, bool armed)
+{
+    midiButton.text = text;
+    midiButton.selectedStyle = overlaychrome::SelectedStyle::chip;
+    midiButton.selected = armed;
+    midiButton.repaint();
+}
+
 void TunerOverlay::resized()
 {
     auto area = getLocalBounds();
@@ -81,7 +108,9 @@ void TunerOverlay::resized()
     referenceLabel.setBounds (header.removeFromRight (150).withSizeKeepingCentre (150, 48));
     titleLabel.setBounds (header.removeFromLeft (220));
 
-    area.removeFromBottom (132);
+    auto controls = area.removeFromBottom (132).withSizeKeepingCentre (700, 64);
+    muteButton.setBounds (controls.removeFromLeft (340));
+    midiButton.setBounds (controls.removeFromRight (340));
     const int contentHeight = 390;
     const int topPad = juce::jmax (0, (area.getHeight() - contentHeight) / 2);
     area.removeFromTop (topPad);
