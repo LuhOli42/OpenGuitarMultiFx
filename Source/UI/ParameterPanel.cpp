@@ -56,7 +56,7 @@ namespace
             if (i < value.length() && juce::CharacterFunctions::isLetterOrDigit (value[i]))
                 continue;
 
-            if (value.substring (tokenStart, i - tokenStart) == token)
+            if (value.substring (tokenStart, i) == token)
                 return true;
             tokenStart = i + 1;
         }
