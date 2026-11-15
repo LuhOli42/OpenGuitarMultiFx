@@ -17,6 +17,11 @@ fi
 
 # OGMFX_X_ARGS: extra Xorg flags, e.g. "-nocursor" for touch-only units.
 # shellcheck disable=SC2086
-exec /usr/bin/xinit "$(readlink -f "$0")" --client -- /usr/bin/Xorg \
+# Debian's own server, not /usr/bin/Xorg: the Radxa base image ships a vendor Xorg there (1.21.1.2) that cannot load
+# Debian's GLX module. The app itself draws through EGL/GLES (the PowerVR has no hardware GLX), and glamor runs on the
+# GPU with either server, but the vendor one is a stray binary nothing else expects.
+XSERVER=/usr/lib/xorg/Xorg
+[ -x "$XSERVER" ] || XSERVER=/usr/bin/Xorg
+exec /usr/bin/xinit "$(readlink -f "$0")" --client -- "$XSERVER" \
     "${OGMFX_DISPLAY:-:0}" "${OGMFX_VT:-vt7}" -keeptty -nolisten tcp -s 0 -dpms \
     ${OGMFX_X_ARGS:-}
