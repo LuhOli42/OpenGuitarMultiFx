@@ -64,6 +64,11 @@ DynamicCabProcessor::DynamicCabProcessor()
     // single-IR default behaves exactly like a plain Cab.
     sourceParamA = makeSourceParam ("dyncab_source_a", "IR A Source", 1.0f, *parameters);
     sourceParamB = makeSourceParam ("dyncab_source_b", "IR B Source", 0.0f, *parameters);
+    {
+        auto channels = cabchannels::makeParameter ("dyncab_channels");
+        channelsParam = channels.get();
+        parameters->addChild (std::move (channels));
+    }
 
     startTimer (100); // sweeps irSlotA/B and applies Source changes -- see DeferredReclaimer
 }
@@ -328,6 +333,9 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
         cabDryPtrs[(size_t) ch] = dryScratch.getReadPointer (ch);
     }
 
+    // A channel the cab does not process is mixed at 0: it leaves as its own dry signal (and skips the output trim below).
+    const int channelMode = cabchannels::modeOf (channelsParam);
+
     // Sample-major so smoothedMix.getNextValue() advances once per sample
     // (not once per channel-sample) and both channels share the ramp.
     for (int i = 0; i < numSamples; ++i)
@@ -335,9 +343,10 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
         const float mix = smoothedMix.getNextValue();
         for (int ch = 0; ch < mixChannels; ++ch)
         {
+            const float channelMix = cabchannels::processes (channelMode, ch) ? mix : 0.0f;
             wetMatch[(size_t) ch].accumulate (cabDryPtrs[(size_t) ch][i], cabDataPtrs[(size_t) ch][i]);
-            cabDataPtrs[(size_t) ch][i] = cabDryPtrs[(size_t) ch][i] * (1.0f - mix)
-                + cabDataPtrs[(size_t) ch][i] * mix * wetMatch[(size_t) ch].gain();
+            cabDataPtrs[(size_t) ch][i] = cabDryPtrs[(size_t) ch][i] * (1.0f - channelMix)
+                + cabDataPtrs[(size_t) ch][i] * channelMix * wetMatch[(size_t) ch].gain();
         }
     }
     for (int ch = 0; ch < juce::jmin (2, numChannels); ++ch)
@@ -349,7 +358,8 @@ void DynamicCabProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             const float g = juce::Decibels::decibelsToGain (smoothedOutputGainDb.getNextValue());
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-                buffer.setSample (ch, i, buffer.getSample (ch, i) * g);
+                if (cabchannels::processes (channelMode, ch))
+                    buffer.setSample (ch, i, buffer.getSample (ch, i) * g);
         }
 }
 

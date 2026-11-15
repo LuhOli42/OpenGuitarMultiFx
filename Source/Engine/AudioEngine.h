@@ -1,5 +1,7 @@
 #pragma once
 
+#include "OutputLimiter.h"
+
 #include "DeferredReclaimer.h"
 #include "MasterEq.h"
 #include "PitchDetector.h"
@@ -105,6 +107,16 @@ public:
                                 std::memory_order_relaxed);
     }
     float getMasterGainDb() const noexcept { return masterGainDb.load (std::memory_order_relaxed); }
+
+    /** Output peak limiter (OutputLimiter.h): on by default, so a hot chain is turned down instead of clipped. */
+    void setOutputLimiterEnabled (bool enabled) noexcept { limiterEnabled.store (enabled, std::memory_order_relaxed); }
+    bool isOutputLimiterEnabled() const noexcept { return limiterEnabled.load (std::memory_order_relaxed); }
+    /** True if the limiter pulled the gain down since the last call (the meter's "LIM" indicator); clears the flag. */
+    bool takeLimiterActive() noexcept { return limiterActive.exchange (false, std::memory_order_relaxed); }
+
+    /** Callbacks that took longer than the audio they produced since the last call -- each one is an audible dropout
+        (this kernel has no ALSA xrun log). MainComponent writes the count to the log every few seconds. */
+    juce::uint32 takeOverBudgetBlocks() noexcept { return overBudgetBlocks.exchange (0, std::memory_order_relaxed); }
 
     /** Control thread. Replaces the master-bus EQ band list (see MasterEq.h -- free-form parametric bands
         edited from the footer's EQ card). Coefficients are rebuilt here and published to the audio thread
@@ -236,6 +248,10 @@ private:
     std::atomic<bool> tunerActive { false }; // see setTunerActive()
     std::atomic<float> inputGainDb { 0.0f }, inputGainLinear { 1.0f }; // see setInputGainDb()
     std::atomic<float> masterGainDb { 0.0f }, masterGainLinear { 1.0f }; // see setMasterGainDb()
+    OutputLimiter outputLimiter;                  // audio thread only
+    std::atomic<bool> limiterEnabled { true };
+    std::atomic<bool> limiterActive { false };
+    std::atomic<juce::uint32> overBudgetBlocks { 0 };
     // Audio thread only: ramps masterGainLinear's target over ~20 ms so a footer-knob drag can't zipper.
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> masterGainSmooth;
     std::atomic<int> selectedInputChannel { 0 };

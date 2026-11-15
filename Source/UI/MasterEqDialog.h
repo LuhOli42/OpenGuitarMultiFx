@@ -46,6 +46,9 @@ public:
     const std::vector<MasterEqBand>& getBands() const noexcept { return bands; }
 
     std::function<void()> onPopOverlay;
+    /** The output limiter toggle (OutputLimiter.h): MainComponent applies it to the engine and saves it. */
+    std::function<void (bool)> onLimiterToggled;
+    void setLimiterEnabled (bool enabled);
     std::function<void (const std::vector<MasterEqBand>&)> onBandsChanged;
     /** The running sample rate for response-curve maths (0 -> 48 kHz assumed). */
     std::function<double()> getSampleRate;
@@ -90,6 +93,7 @@ private:
     juce::Label titleLabel;
     juce::Label hintLabel;
     overlaychrome::CloseButton closeButton;
+    overlaychrome::ActionButton limiterButton;
     juce::TextButton clearButton { "Clear" };
 
     // "+ band" row, one per type, in typeForIndex() order.

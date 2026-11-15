@@ -70,6 +70,10 @@ IRLoaderProcessor::IRLoaderProcessor (juce::String chainRoleName)
                 }));
         sourceParam = source.get();
         parameters->addChild (std::move (source));
+
+        auto channels = cabchannels::makeParameter ("ir_channels");
+        channelsParam = channels.get();
+        parameters->addChild (std::move (channels));
     }
 
     startTimer (100); // sweeps irSlot and applies IR Source changes -- see DeferredReclaimer
@@ -236,6 +240,9 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
         irDryPtrs[(size_t) ch] = dryScratch.getReadPointer (ch);
     }
 
+    // A channel the cab does not process is mixed at 0: it leaves as its own dry signal (and skips the output trim below).
+    const int channelMode = cabchannels::modeOf (channelsParam);
+
     // Sample-major so smoothedMix.getNextValue() advances once per sample
     // (not once per channel-sample) and both channels share the ramp.
     for (int i = 0; i < numSamples; ++i)
@@ -243,9 +250,10 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
         const float mix = smoothedMix.getNextValue();
         for (int ch = 0; ch < mixChannels; ++ch)
         {
+            const float channelMix = cabchannels::processes (channelMode, ch) ? mix : 0.0f;
             wetMatch[(size_t) ch].accumulate (irDryPtrs[(size_t) ch][i], irDataPtrs[(size_t) ch][i]);
-            irDataPtrs[(size_t) ch][i] = irDryPtrs[(size_t) ch][i] * (1.0f - mix)
-                + irDataPtrs[(size_t) ch][i] * mix * wetMatch[(size_t) ch].gain();
+            irDataPtrs[(size_t) ch][i] = irDryPtrs[(size_t) ch][i] * (1.0f - channelMix)
+                + irDataPtrs[(size_t) ch][i] * channelMix * wetMatch[(size_t) ch].gain();
         }
     }
     for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
@@ -260,7 +268,8 @@ void IRLoaderProcessor::process (juce::AudioBuffer<float>& buffer)
         {
             const float g = juce::Decibels::decibelsToGain (smoothedOutputGainDb.getNextValue());
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-                buffer.setSample (ch, i, buffer.getSample (ch, i) * g);
+                if (cabchannels::processes (channelMode, ch))
+                    buffer.setSample (ch, i, buffer.getSample (ch, i) * g);
         }
 }
 

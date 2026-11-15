@@ -18,6 +18,7 @@ struct State
 {
     float gainDb = 0.0f;
     std::vector<MasterEqBand> bands;
+    bool limiter = true; // output peak limiter (OutputLimiter.h)
 };
 
 inline juce::File settingsFile()
@@ -49,6 +50,7 @@ inline State loadState()
         return state;
 
     state.gainDb = juce::jlimit (-60.0f, 12.0f, (float) xml->getDoubleAttribute ("gainDb", 0.0));
+    state.limiter = xml->getBoolAttribute ("limiter", true);
 
     for (auto* bandXml : xml->getChildIterator())
     {
@@ -72,6 +74,7 @@ inline void saveState (const State& state)
 {
     juce::XmlElement xml ("MasterBus");
     xml.setAttribute ("gainDb", juce::String (state.gainDb, 2));
+    xml.setAttribute ("limiter", state.limiter);
 
     for (const auto& band : state.bands)
     {

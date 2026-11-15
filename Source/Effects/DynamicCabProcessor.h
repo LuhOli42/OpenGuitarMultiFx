@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CabChannelMode.h"
 #include "EffectProcessor.h"
 #include "EnvelopeFollower.h"
 #include "WetLevelMatcher.h"
@@ -96,6 +97,7 @@ private:
     // appended after the existing four params, order untouched.
     juce::AudioParameterFloat* sourceParamA = nullptr;
     juce::AudioParameterFloat* sourceParamB = nullptr;
+    juce::AudioParameterFloat* channelsParam = nullptr; // L+R / left only / right only (CabChannelMode.h)
     int appliedSourceA = -1, appliedSourceB = -1; // control thread
 
     DeferredReclaimer<juce::dsp::Convolution> irSlotA, irSlotB;

@@ -8,9 +8,14 @@
 #include "ParameterPanel.h"
 #include "PresetBadge.h"
 #include "BypassPedalXml.h"
+#include "TunerSettings.h"
+#include "LiveTilesXml.h"
+#include "RawMidiInput.h"
+#include "NetworkCards.h"
 #include "SceneMidi.h"
 #include "SnapshotBar.h"
 #include "LiveOverlay.h"
+#include "TunerOverlay.h"
 #include "UndoHistory.h"
 #include "SnapshotPresetXml.h"
 #include "../EffectRegistry.h"
@@ -101,6 +106,11 @@ private:
     void applyRenderQuality (EffectRegistry::OversamplingQuality quality);
     void showPresetsPanel();
     void showTuner();
+    /** Footswitch / tap: opens the tuner, or closes it when it is already up. */
+    void toggleTuner();
+    void refreshTunerOverlay();
+    /** Silences the output while the tuner is open (and gives the volume back after). */
+    void applyTunerMute (bool mute);
     void showMasterEq();
     /** Stage-mode screen (redesign card 6): giant preset, TUNER/BPM and the
         eight scene tiles -- see LiveOverlay.h. Opened from the top bar's
@@ -110,6 +120,9 @@ private:
         is open -- called from updatePresetDisplay() (every snapshot/preset
         change) and timerCallback() (BPM). */
     void refreshLiveOverlay();
+    /** Stage screen, EDIT mode: pick what one of the eight big buttons does (a scene, one effect on/off, or nothing). */
+    void showLiveTileMenu (int slot);
+    void pressLiveTile (int slot);
     std::unique_ptr<juce::XmlElement> buildPresetXml() const;
     void applyPresetXml (const juce::XmlElement& xml);
     /** Saves under `name`, reusing its existing number if `name` is already a
@@ -299,6 +312,16 @@ private:
     EffectProcessor* bypassPedalArmed = nullptr;
     scenemidi::StompDetector bypassStomps;
     scenemidi::Bindings sceneMidi;
+    tunersettings::Settings tunerSettings;
+    livetiles::Layout liveTiles = livetiles::defaultLayout(); // per preset (<LiveTiles>), see LiveTilesXml.h
+    scenemidi::StompDetector tunerStomps;
+    bool tunerMidiArmed = false;
+    int audioStatTicks = 0;               // timerCallback ticks since the last AudioStats log line
+    juce::uint32 overBudgetAccum = 0;
+    bool tunerMuted = false;
+    float tunerSavedGainDb = 0.0f;
+    TunerOverlay* tunerOverlay = nullptr; // non-owning: OverlayHost owns the card
+    std::unique_ptr<RawMidiInput> rawMidi;   // only when the kernel has no ALSA sequencer (see RawMidiInput.h)
     int sceneMidiArmed = scenemidi::noAction;
     void clearMidiBindingsFor (EffectProcessor* processor);
 
@@ -420,7 +443,7 @@ private:
     class IconButton : public juce::Button
     {
     public:
-        enum class Glyph { chevronLeft, chevronRight, undo, redo, live };
+        enum class Glyph { chevronLeft, chevronRight, undo, redo, live, wifi, bluetooth };
         explicit IconButton (Glyph glyphIn) : juce::Button ({}) , glyph (glyphIn) {}
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
     private:
@@ -464,6 +487,8 @@ private:
 
     /** Top-bar LIVE button: opens the stage-mode LiveOverlay card. */
     IconButton liveButton { IconButton::Glyph::live };
+    IconButton wifiButton { IconButton::Glyph::wifi };
+    IconButton bluetoothButton { IconButton::Glyph::bluetooth };
     /** Non-owning: OverlayHost owns the card; nulled by its onDestroyed. */
     LiveOverlay* liveOverlay = nullptr;
 

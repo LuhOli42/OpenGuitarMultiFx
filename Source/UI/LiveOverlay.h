@@ -37,7 +37,9 @@ public:
 
     std::function<void()> onClose;
     std::function<void()> onTunerTapped;
-    std::function<void (int sceneIndex)> onSceneSelected;
+    /** A big button was tapped (fires its action) or, in EDIT mode, picked for re-assignment. */
+    std::function<void (int slot)> onTileTapped;
+    std::function<void (int slot)> onTileEdit;
     /** Fires from the destructor (OverlayHost owns the card) so MainComponent
         can drop its non-owning pointer. */
     std::function<void()> onDestroyed;
@@ -46,12 +48,17 @@ public:
         number + live scene letter), `title` the preset name, `subtitle` the
         scene detail line. */
     void setPresetInfo (juce::String badge, juce::String title, juce::String subtitle);
-    /** The eight scenes A-H: names (empty -> letter), resolved colours, how
-        many exist, and which is live. Tiles beyond `count` draw dimmed and
-        don't answer taps. */
-    void setScenes (const std::array<juce::String, 8>& sceneNames,
-                    const std::array<juce::Colour, 8>& sceneColours,
-                    int count, int currentIndex);
+    /** What one big button shows: the small `letter` chip (scene letter, or "FX"), the `name`, its accent colour, whether
+        it is lit (live scene / effect on) and whether it answers taps. */
+    struct TileInfo
+    {
+        juce::String letter, name;
+        juce::Colour colour;
+        bool active = false;
+        bool enabled = true;
+    };
+
+    void setTiles (const std::array<TileInfo, 8>& newTiles);
     void setBpm (double bpm);
 
 private:
@@ -66,6 +73,7 @@ private:
         juce::String letter, name;
         juce::Colour colour;
         bool active = false;
+        bool editing = false; // EDIT mode: dashed outline + "tap to assign"
 
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
     };
@@ -76,15 +84,14 @@ private:
     juce::Typeface::Ptr displayTypeface; // Sora ExtraBold, captured from the app LookAndFeel
 
     overlaychrome::CloseButton closeButton;
-    overlaychrome::ActionButton tunerButton;
+    overlaychrome::ActionButton tunerButton, editButton;
     juce::Label bpmValueLabel, bpmUnitLabel, captionLabel;
 
     juce::Rectangle<float> presetArea; // computed in resized(), painted in paint()
 
     juce::String presetBadge, presetTitle, presetSubtitle;
-    std::array<juce::String, 8> sceneNames;
-    std::array<juce::Colour, 8> sceneColours {};
-    int sceneCount = 0, currentScene = 0;
+    std::array<TileInfo, 8> tileInfos;
+    bool editMode = false;
     double bpm = 120.0;
 
     std::array<std::unique_ptr<SceneTile>, 8> tiles;

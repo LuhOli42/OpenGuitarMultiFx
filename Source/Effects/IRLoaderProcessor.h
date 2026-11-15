@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CabChannelMode.h"
 #include "EffectProcessor.h"
 #include "WetLevelMatcher.h"
 
@@ -113,6 +114,7 @@ private:
     // "IR Source" selector (0 = File, 1..N = bundled) -- only exists on the
     // "Cab" role; a convolved reverb tail has no business being a cabinet.
     juce::AudioParameterFloat* sourceParam = nullptr;
+    juce::AudioParameterFloat* channelsParam = nullptr; // Cab role only: L+R / left only / right only (CabChannelMode.h)
     int appliedSource = -1; // control thread: which source index is currently published
 
     DeferredReclaimer<juce::dsp::Convolution> irSlot;

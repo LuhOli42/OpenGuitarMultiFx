@@ -33,6 +33,13 @@ public:
     /** Wired by whoever hosts this to OverlayHost::popOverlay. */
     std::function<void()> onPopOverlay;
 
+    /** The MUTE toggle (silence the output while the tuner is open) and the MIDI Learn button (a footswitch that opens
+        and closes the tuner) live on this screen; MainComponent owns the state and the learning. */
+    std::function<void (bool)> onMuteToggled;
+    std::function<void()> onMidiLearnTapped;
+    void setMuteState (bool muted);
+    void setMidiLabel (const juce::String& text, bool armed);
+
     /** Fired from the destructor, however the overlay was dismissed -- MainComponent turns the pitch analysis back off
         with it (AudioEngine::setTunerActive()). */
     std::function<void()> onDestroyed;
@@ -42,6 +49,7 @@ private:
 
     juce::Label titleLabel, hintLabel, referenceLabel;
     overlaychrome::CloseButton closeButton;
+    overlaychrome::ActionButton muteButton, midiButton;
     juce::Rectangle<float> gaugeBounds, noteBounds, readoutBounds;
 
     bool active = false;

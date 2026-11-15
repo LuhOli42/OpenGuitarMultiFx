@@ -1,3 +1,4 @@
+#include "CpuAffinity.h"
 #include "SignalGraph.h"
 
 #include <cstdlib>
@@ -276,6 +277,7 @@ void SignalGraph::LaneWorker::run()
     // denormal-heavy tails (reverb, filters) are 10-100x slower without
     // it, and this thread runs the same DSP.
     const juce::ScopedNoDenormals noDenormals;
+    cpuaffinity::pinThisThreadToAudio(); // lane workers do the audio thread's DSP: same fast cores (CpuAffinity.h)
 
     auto seen = graph.jobEpoch.load (std::memory_order_acquire);
 

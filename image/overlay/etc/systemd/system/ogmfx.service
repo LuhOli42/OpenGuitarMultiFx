@@ -18,6 +18,12 @@ SupplementaryGroups=audio video input render
 WorkingDirectory=/var/lib/ogmfx
 Environment=OGMFX_DATA_DIR=/var/lib/ogmfx
 Environment=OGMFX_KIOSK=1
+# big.LITTLE on the Cubie A7S (2 fast A76 = cpu6-7, 6 slow A55 = cpu0-5): Xorg and the app's UI/message thread (drawing,
+# touch events, the tuner's analysis) stay on the slow cores; the app pins its audio callback and lane workers to the
+# fast ones itself (Source/Engine/CpuAffinity.h).
+CPUAffinity=0-5
+Environment=OGMFX_AUDIO_CPUS=6-7
+Environment=OGMFX_UI_CPUS=0-5
 # A PAM "login" session on tty7 registers a logind seat session, which is what
 # lets Xorg take DRM master and open input devices without running as root.
 PAMName=login

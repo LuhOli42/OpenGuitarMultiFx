@@ -167,6 +167,21 @@ MainComponent::MainComponent()
     addAndMakeVisible (liveButton);
     liveButton.onClick = [this] { showLive(); };
 
+    addAndMakeVisible (wifiButton);
+    wifiButton.onClick = [this]
+    {
+        auto card = std::make_unique<WifiCard>();
+        card->onPopOverlay = [this] { overlayHost.popOverlay(); };
+        overlayHost.pushOverlay (std::move (card));
+    };
+    addAndMakeVisible (bluetoothButton);
+    bluetoothButton.onClick = [this]
+    {
+        auto card = std::make_unique<BluetoothCard>();
+        card->onPopOverlay = [this] { overlayHost.popOverlay(); };
+        overlayHost.pushOverlay (std::move (card));
+    };
+
     addChildComponent (retryAudioButton);
     retryAudioButton.onClick = [this]
     {
@@ -291,6 +306,7 @@ MainComponent::MainComponent()
         audioEngine.setMasterGainDb (master.gainDb);
         footerBar.setMasterGainDb (master.gainDb);
         audioEngine.setMasterEqBands (master.bands);
+        audioEngine.setOutputLimiterEnabled (master.limiter);
     }
 
     // Row 0 starts wired device-in -> device-out so the app still makes
@@ -341,7 +357,14 @@ MainComponent::MainComponent()
     }
 
     scenemidi::load (sceneMidi);
+    tunersettings::load (tunerSettings);
     refreshScenePedalDisplay();
+
+    // Kernels without the ALSA sequencer (the Cubie A7S image): read the rawmidi nodes directly, or no controller
+    // would ever reach MIDI Learn.
+    if (RawMidiInput::isNeeded())
+        rawMidi = std::make_unique<RawMidiInput> ([this] (const juce::MidiMessage& message)
+                                                  { handleIncomingMidiMessage (nullptr, message); });
 
     // Snapshot A's colour owns the accent from launch -- no updatePresetDisplay()
     // runs this early (it would also clobber the audio-device warning above).
@@ -351,6 +374,7 @@ MainComponent::MainComponent()
 MainComponent::~MainComponent()
 {
     aliveFlag->store (false); // must be first -- an in-flight MIDI callAsync can still fire after this point
+    rawMidi = nullptr;        // its thread calls handleIncomingMidiMessage()
 
     for (auto& midiInput : juce::MidiInput::getAvailableDevices())
         audioEngine.getDeviceManager().removeMidiInputDeviceCallback (midiInput.identifier, this);
@@ -1137,16 +1161,85 @@ void MainComponent::applyRenderQuality (EffectRegistry::OversamplingQuality qual
     layoutChain();
 }
 
+void MainComponent::toggleTuner()
+{
+    if (tunerOverlay != nullptr)
+        overlayHost.popOverlay();
+    else
+        showTuner();
+}
+
+void MainComponent::applyTunerMute (bool mute)
+{
+    if (mute && ! tunerMuted)
+    {
+        tunerSavedGainDb = audioEngine.getMasterGainDb();
+        audioEngine.setMasterGainDb (-90.0f); // below -60 dB is a hard mute (AudioEngine::setMasterGainDb)
+        tunerMuted = true;
+    }
+    else if (! mute && tunerMuted)
+    {
+        audioEngine.setMasterGainDb (tunerSavedGainDb);
+        tunerMuted = false;
+    }
+}
+
+void MainComponent::refreshTunerOverlay()
+{
+    if (tunerOverlay == nullptr)
+        return;
+
+    tunerOverlay->setMuteState (tunerSettings.muteWhileOpen);
+    if (tunerMidiArmed)
+        tunerOverlay->setMidiLabel ("Press the pedal...", true);
+    else if (tunerSettings.cc >= 0)
+        tunerOverlay->setMidiLabel ("Pedal: CC " + juce::String (tunerSettings.cc) + " (tap to clear)", false);
+    else
+        tunerOverlay->setMidiLabel ("MIDI Learn: tuner pedal", false);
+}
+
 void MainComponent::showTuner()
 {
+    if (tunerOverlay != nullptr)
+        return;
+
     auto overlay = std::make_unique<TunerOverlay>();
     overlay->getFrequencyHz = [this] { return audioEngine.getDetectedFrequencyHz(); };
     overlay->onPopOverlay = [this] { overlayHost.popOverlay(); };
+    overlay->onMuteToggled = [this] (bool mute)
+    {
+        tunerSettings.muteWhileOpen = mute;
+        tunersettings::save (tunerSettings);
+        applyTunerMute (mute);
+    };
+    overlay->onMidiLearnTapped = [this]
+    {
+        if (tunerMidiArmed)
+            tunerMidiArmed = false;
+        else if (tunerSettings.cc >= 0)
+        {
+            tunerSettings.cc = -1;
+            tunersettings::save (tunerSettings);
+        }
+        else
+            tunerMidiArmed = true;
+        refreshTunerOverlay();
+    };
+    tunerOverlay = overlay.get();
+    refreshTunerOverlay();
+    if (tunerSettings.muteWhileOpen)
+        applyTunerMute (true);
 
     // The pitch analysis only runs while this overlay is up (AudioEngine::setTunerActive()): YIN's pass is the most
     // expensive single thing the app does per unit of audio, and nothing reads it otherwise.
     audioEngine.setTunerActive (true);
-    overlay->onDestroyed = [this] { audioEngine.setTunerActive (false); };
+    overlay->onDestroyed = [this]
+    {
+        audioEngine.setTunerActive (false);
+        applyTunerMute (false);
+        tunerMidiArmed = false;
+        tunerOverlay = nullptr;
+    };
 
     overlayHost.pushOverlay (std::move (overlay));
 }
@@ -1156,7 +1249,8 @@ void MainComponent::showLive()
     auto overlay = std::make_unique<LiveOverlay>();
     overlay->onClose = [this] { overlayHost.popOverlay(); };
     overlay->onTunerTapped = [this] { showTuner(); };
-    overlay->onSceneSelected = [this] (int index) { selectSnapshot (index); };
+    overlay->onTileTapped = [this] (int slot) { pressLiveTile (slot); };
+    overlay->onTileEdit = [this] (int slot) { showLiveTileMenu (slot); };
     overlay->onDestroyed = [this] { if (liveOverlay != nullptr) liveOverlay = nullptr; };
     liveOverlay = overlay.get();
     refreshLiveOverlay();
@@ -1176,14 +1270,101 @@ void MainComponent::refreshLiveOverlay()
         snapshotName.isNotEmpty() ? juce::String ("Scene ") + sceneLetter + " - " + snapshotName
                                   : juce::String ("Scene ") + sceneLetter);
 
-    std::array<juce::String, 8> names;
-    std::array<juce::Colour, 8> colours;
-    for (int i = 0; i < snapshotxml::maxSnapshots; ++i)
+    std::array<LiveOverlay::TileInfo, 8> tiles;
+    for (int i = 0; i < livetiles::slots; ++i)
     {
-        names[(size_t) i] = snapshots[(size_t) i].name;
-        colours[(size_t) i] = colourOfSnapshot (i);
+        const auto& tile = liveTiles[(size_t) i];
+        auto& info = tiles[(size_t) i];
+
+        if (tile.kind == livetiles::Kind::scene)
+        {
+            info.letter = snapshotxml::letterFor (tile.scene);
+            info.name = snapshots[(size_t) tile.scene].name;
+            info.colour = colourOfSnapshot (tile.scene);
+            info.active = tile.scene == currentSnapshot && tile.scene < snapshotCount;
+            info.enabled = tile.scene < snapshotCount;
+        }
+        else if (tile.kind == livetiles::Kind::pedal && tile.pedal != nullptr)
+        {
+            info.letter = "FX";
+            info.name = tile.pedal->getName();
+            info.colour = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+            info.active = ! tile.pedal->isBypassed();
+        }
+        else
+        {
+            info.letter = "-";
+            info.name = "Empty";
+            info.colour = juce::Colours::grey;
+            info.enabled = false;
+        }
     }
-    liveOverlay->setScenes (names, colours, snapshotCount, currentSnapshot);
+    liveOverlay->setTiles (tiles);
+}
+
+void MainComponent::pressLiveTile (int slot)
+{
+    if (slot < 0 || slot >= livetiles::slots)
+        return;
+
+    const auto& tile = liveTiles[(size_t) slot];
+    if (tile.kind == livetiles::Kind::scene)
+        selectSnapshot (tile.scene);
+    else if (tile.kind == livetiles::Kind::pedal && tile.pedal != nullptr)
+        toggleBypassPedal (tile.pedal); // refreshes the stage screen itself
+    refreshLiveOverlay();
+}
+
+void MainComponent::showLiveTileMenu (int slot)
+{
+    if (slot < 0 || slot >= livetiles::slots)
+        return;
+
+    const auto current = liveTiles[(size_t) slot];
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("Button " + juce::String (slot + 1));
+
+    for (int s = 0; s < snapshotCount; ++s)
+    {
+        const auto& name = snapshots[(size_t) s].name;
+        menu.addItem (100 + s, "Scene " + snapshotxml::letterFor (s) + (name.isNotEmpty() ? " - " + name : juce::String()),
+                      true, current.kind == livetiles::Kind::scene && current.scene == s);
+    }
+
+    std::vector<EffectProcessor*> pedalChoices;
+    juce::PopupMenu pedalMenu;
+    for (auto& p : chain)
+    {
+        pedalMenu.addItem (200 + (int) pedalChoices.size(), p->getName(), true,
+                           current.kind == livetiles::Kind::pedal && current.pedal == p.get());
+        pedalChoices.push_back (p.get());
+    }
+    if (! pedalChoices.empty())
+        menu.addSubMenu ("Effect on/off", pedalMenu);
+
+    menu.addItem (300, "Empty", true, current.kind == livetiles::Kind::none);
+
+    menu.showMenuAsync (juce::PopupMenu::Options(), [this, slot, pedalChoices, alive = aliveFlag] (int result)
+    {
+        if (! alive->load() || result == 0)
+            return;
+
+        auto& tile = liveTiles[(size_t) slot];
+        if (result >= 100 && result < 108)
+            tile = { livetiles::Kind::scene, result - 100, nullptr };
+        else if (result >= 200 && result - 200 < (int) pedalChoices.size())
+        {
+            auto* target = pedalChoices[(size_t) (result - 200)];
+            for (auto& p : chain)
+                if (p.get() == target)
+                    tile = { livetiles::Kind::pedal, 0, target };
+        }
+        else if (result == 300)
+            tile = { livetiles::Kind::none, 0, nullptr };
+
+        refreshLiveOverlay();
+        updatePresetDisplay(); // <LiveTiles> is part of the preset: it can now be unsaved
+    });
 }
 
 void MainComponent::showMasterEq()
@@ -1192,6 +1373,12 @@ void MainComponent::showMasterEq()
     dialog->setBands (audioEngine.getMasterEqBands());
     dialog->getSampleRate = [this] { return audioEngine.getCurrentSampleRate(); };
     dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
+    dialog->setLimiterEnabled (audioEngine.isOutputLimiterEnabled());
+    dialog->onLimiterToggled = [this] (bool enabled)
+    {
+        audioEngine.setOutputLimiterEnabled (enabled);
+        masterBusSaveCountdown = 10;
+    };
     dialog->onBandsChanged = [this] (const std::vector<MasterEqBand>& bands)
     {
         audioEngine.setMasterEqBands (bands);
@@ -1817,6 +2004,12 @@ void MainComponent::refreshScenePedalDisplay()
 
 void MainComponent::freeCcForLearning (int cc)
 {
+    if (tunerSettings.cc == cc)
+    {
+        tunerSettings.cc = -1;
+        tunersettings::save (tunerSettings);
+        refreshTunerOverlay();
+    }
     midiCcBindings.erase (cc);
     bypassPedals.erase (cc);
     if (sceneMidi.hasCc (cc))
@@ -1894,6 +2087,7 @@ void MainComponent::toggleBypassPedal (EffectProcessor* processor)
         {
             processor->setBypassed (! processor->isBypassed());
             block->repaint();
+            refreshLiveOverlay();
             return;
         }
 }
@@ -2032,6 +2226,28 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         return;
     }
 
+    // The tuner screen's MIDI Learn button takes the next stomp (opens/closes the tuner from then on).
+    if (tunerMidiArmed)
+    {
+        if (ccValue >= scenemidi::pressThreshold)
+        {
+            freeCcForLearning (ccNumber);
+            tunerSettings.cc = ccNumber;
+            tunersettings::save (tunerSettings);
+            tunerStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()); // the learning stomp must not also toggle
+            tunerMidiArmed = false;
+            refreshTunerOverlay();
+        }
+        return;
+    }
+
+    if (ccNumber == tunerSettings.cc)
+    {
+        if (tunerStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()))
+            toggleTuner();
+        return;
+    }
+
     // Same for a block armed for its on/off pedal.
     if (bypassPedalArmed != nullptr)
     {
@@ -2101,6 +2317,9 @@ void MainComponent::clearMidiBindingsFor (EffectProcessor* processor)
         bypassPedalArmed = nullptr;
     for (auto it = bypassPedals.begin(); it != bypassPedals.end();)
         it = it->second == processor ? bypassPedals.erase (it) : std::next (it);
+    for (auto& tile : liveTiles)
+        if (tile.kind == livetiles::Kind::pedal && tile.pedal == processor)
+            tile = { livetiles::Kind::none, 0, nullptr };
 
     auto* group = processor->getParameters();
     if (group == nullptr)
@@ -2218,6 +2437,7 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
 
     midilearnxml::write (*xml, midiCcBindings, savedBlockGroups);
     bypasspedal::write (*xml, bypassPedals, savedBlocks);
+    livetiles::write (*xml, liveTiles, savedBlocks);
 
     // Snapshots (docs/PresetsAndSnapshots.md, stage 3): the current slot's
     // stored copy is refreshed from the LIVE chain here -- a knob edit only
@@ -2393,6 +2613,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
     // Per-preset, like a hardware pedalboard's controller assignments: a preset saved without any leaves none active.
     midiCcBindings = midilearnxml::read (xml, loadedBlockGroups);
     bypassPedals = bypasspedal::read (xml, loadedBlocks);
+    liveTiles = livetiles::read (xml, loadedBlocks);
 
     // Snapshots: read them if the file has them (current = whichever was
     // live at save time), else default every slot to the just-loaded state
@@ -2564,10 +2785,23 @@ void MainComponent::timerCallback()
 
     parameterPanel.refresh();
 
+    // Dropout counter: a block that took longer than its audio is an audible pop. Logged every ~10 s, only when there
+    // was one, with the peak-hold CPU reading -- the number to look at when "an effect makes it crackle".
+    overBudgetAccum += audioEngine.takeOverBudgetBlocks();
+    if (++audioStatTicks >= 200)
+    {
+        audioStatTicks = 0;
+        if (overBudgetAccum > 0)
+            juce::Logger::writeToLog ("AudioStats: " + juce::String (overBudgetAccum) + " block(s) over budget in ~10 s; "
+                                      "avg " + juce::String (audioEngine.getCurrentCpuUsage() * 100.0, 0) + "%, peak "
+                                      + juce::String (audioEngine.getPeakCpuUsage() * 100.0, 0) + "% of the block time");
+        overBudgetAccum = 0;
+    }
+
     // Debounced master-bus save: knob drags and node drags fire dozens of edits a second -- one write, ~500 ms
     // after the last change, is plenty for a file read once per launch.
     if (masterBusSaveCountdown > 0 && --masterBusSaveCountdown == 0)
-        masterbus::saveState ({ audioEngine.getMasterGainDb(), audioEngine.getMasterEqBands() });
+        masterbus::saveState ({ audioEngine.getMasterGainDb(), audioEngine.getMasterEqBands(), audioEngine.isOutputLimiterEnabled() });
 
     if (--ticksUntilDirtyCheck <= 0)
     {
@@ -2640,6 +2874,23 @@ void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted
                     g.fillRoundedRectangle (juce::Rectangle<float> (x, y, arm * 0.85f, arm * 0.85f), 3.0f);
                 }
             return;
+        case Glyph::wifi:
+        {
+            const juce::Point<float> origin (c.x, c.y + arm * 1.15f);
+            for (int ring = 1; ring <= 3; ++ring)
+                path.addCentredArc (origin.x, origin.y, arm * 0.8f * (float) ring, arm * 0.8f * (float) ring, 0.0f,
+                                    -juce::MathConstants<float>::pi * 0.28f, juce::MathConstants<float>::pi * 0.28f, true);
+            g.fillEllipse (origin.x - arm * 0.17f, origin.y - arm * 0.17f, arm * 0.34f, arm * 0.34f);
+            break;
+        }
+        case Glyph::bluetooth:
+            path.startNewSubPath (c.x - arm * 0.8f, c.y - arm * 0.65f);
+            path.lineTo (c.x + arm * 0.8f, c.y + arm * 0.65f);
+            path.lineTo (c.x, c.y + arm * 1.25f);
+            path.lineTo (c.x, c.y - arm * 1.25f);
+            path.lineTo (c.x + arm * 0.8f, c.y - arm * 0.65f);
+            path.lineTo (c.x - arm * 0.8f, c.y + arm * 0.65f);
+            break;
     }
 
     g.strokePath (path, stroke);
@@ -2752,6 +3003,8 @@ void MainComponent::resized()
     if (retryAudioButton.isVisible())
         placeRight (retryAudioButton, 72, touch::minTapTarget);
     placeRight (liveButton, touch::minTapTarget, touch::minTapTarget);
+    placeRight (bluetoothButton, touch::minTapTarget, touch::minTapTarget);
+    placeRight (wifiButton, touch::minTapTarget, touch::minTapTarget);
     placeRight (redoButton, touch::minTapTarget, touch::minTapTarget);
     placeRight (undoButton, touch::minTapTarget, touch::minTapTarget);
 

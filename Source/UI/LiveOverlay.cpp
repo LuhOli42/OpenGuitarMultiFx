@@ -27,6 +27,19 @@ LiveOverlay::LiveOverlay()
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onClose) onClose(); };
 
+    getProperties().set ("fullscreen", true); // OverlayHost: the whole window, not a 92% card
+
+    addAndMakeVisible (editButton);
+    editButton.text = "EDIT";
+    editButton.onClick = [this]
+    {
+        editMode = ! editMode;
+        editButton.selected = editMode;
+        editButton.selectedStyle = overlaychrome::SelectedStyle::chip;
+        editButton.repaint();
+        refreshTiles();
+    };
+
     addAndMakeVisible (tunerButton);
     tunerButton.text = "TUNER";
     tunerButton.onClick = [this] { if (onTunerTapped) onTunerTapped(); };
@@ -51,7 +64,15 @@ LiveOverlay::LiveOverlay()
     {
         auto tile = std::make_unique<SceneTile>();
         tile->letter = juce::String::charToString ((juce::juce_wchar) ('A' + i));
-        tile->onClick = [this, i] { if (onSceneSelected) onSceneSelected (i); };
+        tile->onClick = [this, i]
+        {
+            if (editMode)
+            {
+                if (onTileEdit) onTileEdit (i);
+            }
+            else if (onTileTapped)
+                onTileTapped (i);
+        };
         addAndMakeVisible (*tile);
         tiles[(size_t) i] = std::move (tile);
     }
@@ -83,14 +104,9 @@ void LiveOverlay::setPresetInfo (juce::String badge, juce::String title, juce::S
     repaint();
 }
 
-void LiveOverlay::setScenes (const std::array<juce::String, 8>& sceneNamesIn,
-                             const std::array<juce::Colour, 8>& sceneColoursIn,
-                             int count, int currentIndex)
+void LiveOverlay::setTiles (const std::array<TileInfo, 8>& newTiles)
 {
-    sceneNames = sceneNamesIn;
-    sceneColours = sceneColoursIn;
-    sceneCount = juce::jlimit (0, sceneSlots, count);
-    currentScene = juce::jlimit (0, juce::jmax (0, sceneCount - 1), currentIndex);
+    tileInfos = newTiles;
     refreshTiles();
 }
 
@@ -107,11 +123,14 @@ void LiveOverlay::refreshTiles()
     for (int i = 0; i < sceneSlots; ++i)
     {
         auto& tile = tiles[(size_t) i];
-        tile->name = sceneNames[(size_t) i];
-        tile->colour = sceneColours[(size_t) i];
-        tile->active = i == currentScene && sceneCount > 0;
-        tile->setEnabled (i < sceneCount);
-        tile->setButtonText (tile->name.isNotEmpty() ? tile->name : tile->letter);
+        const auto& info = tileInfos[(size_t) i];
+        tile->letter = info.letter;
+        tile->name = info.name;
+        tile->colour = info.colour;
+        tile->active = info.active && ! editMode;
+        tile->editing = editMode;
+        tile->setEnabled (editMode || info.enabled);
+        tile->setButtonText (info.name.isNotEmpty() ? info.name : info.letter);
         tile->repaint();
     }
 }
@@ -123,6 +142,7 @@ void LiveOverlay::resized()
     auto top = area.removeFromTop (84);
     closeButton.setBounds (top.removeFromRight (84).withSizeKeepingCentre (64, 64));
     tunerButton.setBounds (top.removeFromRight (188).withSizeKeepingCentre (188, 64));
+    editButton.setBounds (top.removeFromRight (150).withSizeKeepingCentre (130, 64));
 
     auto bpmArea = top.removeFromRight (150);
     auto bpmValueBox = bpmArea.removeFromTop (bpmArea.getHeight() * 3 / 5).toNearestInt();
@@ -223,7 +243,18 @@ void LiveOverlay::SceneTile::paintButton (juce::Graphics& g, bool highlighted, b
     }
 
     g.setColour (border.withAlpha (alpha));
-    g.drawRoundedRectangle (bounds.reduced (1.0f), t.radius, active ? 3.0f : 1.5f);
+    if (editing)
+    {
+        juce::Path outline;
+        outline.addRoundedRectangle (bounds.reduced (2.0f), t.radius);
+        juce::Path dashed;
+        const float dashes[] = { 10.0f, 7.0f };
+        juce::PathStrokeType (2.0f).createDashedStroke (dashed, outline, dashes, 2);
+        g.setColour (t.text.withAlpha (0.75f));
+        g.fillPath (dashed);
+    }
+    else
+        g.drawRoundedRectangle (bounds.reduced (1.0f), t.radius, active ? 3.0f : 1.5f);
 
     g.setColour (labelColour.withAlpha (alpha));
     g.setFont (juce::FontOptions (15.0f).withStyle ("Bold"));
@@ -241,6 +272,13 @@ void LiveOverlay::SceneTile::paintButton (juce::Graphics& g, bool highlighted, b
     g.drawText (name, bounds.withTrimmedTop (bounds.getHeight() * 0.38f).withTrimmedLeft (16.0f)
                          .withTrimmedRight (16.0f).withTrimmedBottom (16.0f).toNearestInt(),
                 juce::Justification::centred);
+
+    if (editing)
+    {
+        g.setColour (t.textMuted);
+        g.setFont (juce::Font (juce::FontOptions (14.0f)));
+        g.drawText ("tap to assign", bounds.withTrimmedBottom (10.0f).toNearestInt(), juce::Justification::centredBottom);
+    }
 
     if ((highlighted || down) && enabled)
     {
