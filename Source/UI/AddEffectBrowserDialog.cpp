@@ -515,8 +515,9 @@ void AddEffectBrowserDialog::resized()
     emptyStateLabel.setBounds (content);
 
     const int railContentWidth = railViewport.getMaximumVisibleWidth();
-    rail.setSize (railContentWidth, juce::jmax (0, railViewport.getMaximumVisibleHeight()));
     const int buttonStep = 52;
+    // Tall enough for every tab, so the rail scrolls (by finger drag on the device) when they don't all fit.
+    rail.setSize (railContentWidth, juce::jmax (railViewport.getMaximumVisibleHeight(), 12 + categoryButtons.size() * buttonStep + 12));
     for (int i = 0; i < categoryButtons.size(); ++i)
     {
         categoryButtons[i]->setBounds (12, 12 + i * buttonStep, juce::jmax (48, railContentWidth - 24), 48);
