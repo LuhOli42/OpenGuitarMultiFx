@@ -170,6 +170,27 @@ public:
     /** True for delays and reverbs: bypassing them lets the repeats/tail ring out (see processWithBypass()). */
     virtual bool hasTrails() const { return false; }
 
+    /** True when the output is "dry at unity + wet * level" (the Wet / Kill Dry law the delays and reverbs use), so the
+        wet part alone is `process(x) - x`. Only such an effect can be moved to a parallel send (SignalGraph): an effect
+        with a crossfading Mix would leave a ghost of the delayed dry. */
+    bool isWetOverDryEffect() const noexcept { return ! legacyMixes.empty(); }
+
+    /** A guitar-synth block: it tracks the pitch of its input and builds its own voices, so as the first block of a
+        chain (clean guitar in) it can run as a send on the second fast core. */
+    virtual bool isParallelSynth() const { return false; }
+
+    /** Send mode: how much of this block's INPUT reaches its output as it is (the rest is wet and may arrive late). */
+    virtual float parallelDryGain() const { return dryIsKilled() ? 0.0f : 1.0f; }
+
+    /** Kill Dry is on: the output is the wet signal alone (no dry at unity inside it). */
+    bool dryIsKilled() const noexcept
+    {
+        for (const auto& legacy : legacyMixes)
+            if (legacy.killDry != nullptr && legacy.killDry->get() >= 0.5f)
+                return true;
+        return false;
+    }
+
     /** For a trails processor: how long its output may sit silent while a
         repeat is still pending inside -- a delay emits nothing between
         repeats, so a 1 s delay legitimately goes quiet for 1 s mid-tail.

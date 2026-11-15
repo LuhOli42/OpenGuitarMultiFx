@@ -102,6 +102,14 @@ jobs:
               ./build-aarch64/Tests/OpenGuitarMultiFx_Tests_artefacts/Release/OpenGuitarMultiFx_Tests \
                 SignalGraph DeferredReclaimer ParameterManager
 
+      - name: Upload device binary (aarch64, for on-board testing before a release)
+        if: matrix.arch == 'aarch64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogmfx-aarch64-binary
+          path: build-aarch64/OpenGuitarMultiFx_artefacts/Release/OpenGuitarMultiFx
+          retention-days: 5
+
       - name: Verify install() payload (x86_64)
         if: matrix.arch == 'x86_64'
         run: |

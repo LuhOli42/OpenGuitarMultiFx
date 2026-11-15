@@ -223,6 +223,22 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
                            "Adds two buffers of latency (about 5 ms at 128 samples). Takes effect right away.",
                            juce::dontSendNotification);
 
+    audioPage.addAndMakeVisible (sendSectionLabel);
+    sendSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
+    audioPage.addAndMakeVisible (sendButton);
+    sendButton.setClickingTogglesState (true);
+    sendButton.onClick = [this]
+    {
+        sendButton.setButtonText (sendButton.getToggleState() ? "On" : "Off");
+        if (onSendModeChanged)
+            onSendModeChanged (sendButton.getToggleState());
+    };
+    audioPage.addAndMakeVisible (sendHintLabel);
+    sendHintLabel.setFont (juce::Font (14.0f));
+    sendHintLabel.setText ("Runs the delays and reverbs at the end of a single-row chain on the second fast core, as a send: "
+                           "the dry signal stays instant and only the echoes/tail arrive about 5 ms late. Ignored while Performance mode is on.",
+                           juce::dontSendNotification);
+
     tone3000Page.addAndMakeVisible (tone3000SectionLabel);
     tone3000SectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
     tone3000SectionLabel.setText ("TONE3000 account", juce::dontSendNotification);
@@ -339,6 +355,12 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
                            juce::dontSendNotification);
     retryDeviceButton.setVisible (rateValues.isEmpty());
     resized();
+}
+
+void Tone3000Panel::setSendMode (bool enabled)
+{
+    sendButton.setToggleState (enabled, juce::dontSendNotification);
+    sendButton.setButtonText (enabled ? "On" : "Off");
 }
 
 void Tone3000Panel::setPerformanceMode (bool enabled)
@@ -458,7 +480,7 @@ void Tone3000Panel::applyLabelColours()
     const auto& t = theme::current();
     const auto muted = [this, &t] (juce::Label& label) { label.setColour (juce::Label::textColourId, t.textMuted); };
 
-    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &statusLabel,
+    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &statusLabel,
                                 &updateStatusLabel, &midiHintLabel, &aboutDetailsLabel, &interfaceLabel,
                                 &currentVersionLabel, &clientIdLabel })
         muted (*label);
@@ -698,6 +720,12 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
             perfButton.setBounds (area.removeFromTop (touch::minTapTarget).removeFromLeft (110));
             area.removeFromTop (6);
             perfHintLabel.setBounds (area.removeFromTop (60));
+            area.removeFromTop (14);
+            sendSectionLabel.setBounds (area.removeFromTop (26));
+            area.removeFromTop (6);
+            sendButton.setBounds (area.removeFromTop (touch::minTapTarget).removeFromLeft (110));
+            area.removeFromTop (6);
+            sendHintLabel.setBounds (area.removeFromTop (60));
             break;
         }
         case Section::tone3000:

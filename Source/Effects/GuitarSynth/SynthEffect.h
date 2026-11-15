@@ -10,6 +10,12 @@ namespace openguitarmultifx
 class SynthEffect : public EffectProcessor
 {
 public:
+    bool isParallelSynth() const override { return true; }
+    float parallelDryGain() const override
+    {
+        return mix == nullptr || level == nullptr ? 1.0f
+                 : (1.0f - mix->get() / 100.0f) * juce::Decibels::decibelsToGain (level->get());
+    }
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     const char* getName() const override { return displayName; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffb5527a); }

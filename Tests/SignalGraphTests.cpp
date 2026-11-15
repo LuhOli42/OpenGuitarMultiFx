@@ -32,6 +32,30 @@ namespace
         int prepareCalls = 0, processCalls = 0, resetCalls = 0;
     };
 
+    /** Stand-in for a delay/reverb on the Wet-over-dry law: dry stays at unity, wet is added on top. */
+    class TestSendTailProcessor : public TestGainProcessor
+    {
+    public:
+        TestSendTailProcessor() : TestGainProcessor (1.3f)
+        {
+            registerLegacyMix (&wet, &killDry, "mix");
+        }
+
+        bool hasTrails() const override { return true; }
+
+        juce::AudioParameterFloat wet { juce::ParameterID { "wet", 1 }, "Wet", 0.0f, 1.0f, 0.3f };
+        juce::AudioParameterFloat killDry { juce::ParameterID { "kill", 1 }, "Kill Dry", 0.0f, 1.0f, 0.0f };
+    };
+
+    /** Stand-in for a guitar synth: passes 0.6 of its input and adds a wet part worth 0.4 of it. */
+    class TestSynthProcessor : public TestGainProcessor
+    {
+    public:
+        TestSynthProcessor() : TestGainProcessor (1.0f) {}
+        bool isParallelSynth() const override { return true; }
+        float parallelDryGain() const override { return 0.6f; }
+    };
+
     /** Gain processor that burns a fixed amount of CPU per block, so a
         worker thread reliably gets to its job before the audio thread
         could ever finish the other lane and claim it back. */
@@ -417,6 +441,86 @@ public:
             expectEquals (a.processCalls + 0, numBlocks); // every block ran through every stage exactly once
             expectEquals (b.processCalls, numBlocks);
             expectEquals (c.processCalls, numBlocks);
+        }
+
+        beginTest ("parallel send: the dry part is instant, only the trailing delay/reverb tail arrives two blocks late");
+        {
+            TestGainProcessor pre (0.5f);
+            TestSendTailProcessor tail;
+            SignalGraph graph;
+            graph.setSendEnabled (true);
+            graph.setLaneProcessors (0, { &pre, &tail });
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneWritesDeviceOutput (0, true);
+            graph.prepare (48000.0, 64, 1);
+            expect (graph.isSendActive());
+            expect (! graph.isPipelineActive());
+
+            constexpr int blockSize = 64, numBlocks = 40;
+            std::vector<float> input ((size_t) (blockSize * numBlocks)), output (input.size());
+            for (size_t i = 0; i < input.size(); ++i)
+                input[i] = std::sin ((float) i * 0.05f);
+
+            for (int blk = 0; blk < numBlocks; ++blk)
+            {
+                juce::AudioBuffer<float> buffer (1, blockSize);
+                for (int i = 0; i < blockSize; ++i)
+                    buffer.setSample (0, i, input[(size_t) (blk * blockSize + i)]);
+                graph.process (buffer);
+                for (int i = 0; i < blockSize; ++i)
+                    output[(size_t) (blk * blockSize + i)] = buffer.getSample (0, i);
+                juce::Thread::sleep (3);
+            }
+
+            const int latency = SignalGraph::pipelineLatencyBlocks * blockSize;
+            int mismatches = 0;
+            for (size_t i = 0; i < output.size(); ++i)
+            {
+                const float dry = input[i] * 0.5f;
+                const float wet = i >= (size_t) latency ? input[i - (size_t) latency] * 0.5f * 0.3f : 0.0f;
+                if (std::abs (output[i] - (dry + wet)) > 1.0e-5f)
+                    ++mismatches;
+            }
+            expectEquals (mismatches, 0);
+        }
+
+        beginTest ("parallel send: a leading synth runs on the worker, its wet part two blocks late, the rest of the chain stays here");
+        {
+            TestSynthProcessor synth;
+            TestGainProcessor post (0.5f);
+            SignalGraph graph;
+            graph.setSendEnabled (true);
+            graph.setLaneProcessors (0, { &synth, &post });
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneWritesDeviceOutput (0, true);
+            graph.prepare (48000.0, 64, 1);
+            expect (graph.isSendActive());
+
+            constexpr int blockSize = 64, numBlocks = 40;
+            std::vector<float> input ((size_t) (blockSize * numBlocks)), output (input.size());
+            for (size_t i = 0; i < input.size(); ++i)
+                input[i] = std::sin ((float) i * 0.05f);
+
+            for (int blk = 0; blk < numBlocks; ++blk)
+            {
+                juce::AudioBuffer<float> buffer (1, blockSize);
+                for (int i = 0; i < blockSize; ++i)
+                    buffer.setSample (0, i, input[(size_t) (blk * blockSize + i)]);
+                graph.process (buffer);
+                for (int i = 0; i < blockSize; ++i)
+                    output[(size_t) (blk * blockSize + i)] = buffer.getSample (0, i);
+                juce::Thread::sleep (3);
+            }
+
+            const int latency = SignalGraph::pipelineLatencyBlocks * blockSize;
+            int mismatches = 0;
+            for (size_t i = 0; i < output.size(); ++i)
+            {
+                const float wet = i >= (size_t) latency ? input[i - (size_t) latency] * 0.4f : 0.0f;
+                if (std::abs (output[i] - 0.5f * (input[i] * 0.6f + wet)) > 1.0e-5f)
+                    ++mismatches;
+            }
+            expectEquals (mismatches, 0);
         }
 
         beginTest ("performance mode stays off for graphs it cannot cut (two lanes, a lone processor, a split)");

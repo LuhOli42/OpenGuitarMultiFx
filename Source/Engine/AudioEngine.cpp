@@ -602,6 +602,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 
     if (in != nullptr)
     {
+        if (const auto c = inDetector.process (in, numSamples); c.clicks > 0)
+            inClicks.fetch_add ((juce::uint32) c.clicks, std::memory_order_relaxed);
+
         // Only while the tuner is on screen -- see setTunerActive(). This is now just a ring-buffer write; the analysis
         // itself runs on the control thread (timerCallback -> PitchDetector::analyse()).
         if (tunerActive.load (std::memory_order_relaxed))
@@ -691,6 +694,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     }
     lastOutputLevel.store (outPeak, std::memory_order_relaxed);
 
+    ClickDetector::Result outClickResult;
+    if (numOutputChannels > 0)
+    {
+        const int watched = juce::jlimit (0, numOutputChannels - 1, selectedOutputPairStart.load (std::memory_order_relaxed));
+        outClickResult = outDetector.process (outputChannelData[watched], numSamples);
+        if (outClickResult.clicks > 0)
+        {
+            outClicks.fetch_add ((juce::uint32) outClickResult.clicks, std::memory_order_relaxed);
+            if (outClickResult.biggest > outBiggest.load (std::memory_order_relaxed))
+                outBiggest.store (outClickResult.biggest, std::memory_order_relaxed);
+        }
+    }
+
     // Silence every physical output channel outside the selected pair --
     // clamped to what this device actually has, so a stale selection from a
     // previously-connected interface with more outputs can never reach past
@@ -714,7 +730,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     // single block come close to dropping out" -- one block over 100% IS a dropout.
     const double instant = blockSeconds > 0.0 ? elapsedSeconds / blockSeconds : 0.0;
     if (instant > 1.0)
+    {
         overBudgetBlocks.fetch_add (1, std::memory_order_relaxed);
+        if (outClickResult.clicks > 0)
+            outClicksLate.fetch_add ((juce::uint32) outClickResult.clicks, std::memory_order_relaxed);
+    }
     const double averageCoeff = 1.0 - std::exp (-blockSeconds / 0.5);
     const double previousAverage = averageCpuUsage.load (std::memory_order_relaxed);
     averageCpuUsage.store (previousAverage + averageCoeff * (instant - previousAverage), std::memory_order_relaxed);
