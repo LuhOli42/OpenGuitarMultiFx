@@ -2,7 +2,9 @@
 #include "UI/MainComponent.h"
 #include "UI/OpenGuitarMultiFxLookAndFeel.h"
 #include "UI/Theme.h"
+#include "UI/OnScreenKeyboard.h"
 #include "UI/ParameterPanel.h"
+#include "UI/TouchSizing.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -26,6 +28,27 @@ public:
         setResizable (true, false);
         centreWithSize (getWidth(), getHeight());
         setVisible (true);
+        if (touch::kioskMode())
+            goKiosk();
+    }
+
+    /** Device build: the app is the only X client and the panel is a 1920x1200 8" touchscreen, so the 1280x800 layout
+        is scaled up to fill it (UI scale = panel width / 1280, override with OGMFX_UI_SCALE) and shown full-screen
+        with no title bar. */
+    void goKiosk()
+    {
+        auto& desktop = juce::Desktop::getInstance();
+        float scale = juce::SystemStats::getEnvironmentVariable ("OGMFX_UI_SCALE", {}).getFloatValue();
+        if (scale <= 0.0f)
+            if (auto* display = desktop.getDisplays().getPrimaryDisplay())
+                scale = (float) display->totalArea.getWidth() / 1280.0f; // logical px at scale 1.0 -> 1280 wide after scaling
+        if (scale > 0.5f && scale < 4.0f)
+            desktop.setGlobalScaleFactor (scale);
+
+        setTitleBarHeight (0);
+        setTitleBarButtonsRequired (0, false); // no minimise/maximise/close buttons on the panel
+        setResizable (false, false);
+        desktop.setKioskModeComponent (this, false);
     }
 
     void closeButtonPressed() override
@@ -136,6 +159,8 @@ public:
             return;
         }
 
+        if (touch::kioskMode())
+            keyboardManager = std::make_unique<OnScreenKeyboardManager>();
         mainWindow = std::make_unique<MainWindow> (getApplicationName() + " -- cheapCortex");
         juce::Logger::writeToLog ("initialise() -- MainWindow created and visible");
     }
@@ -149,6 +174,7 @@ public:
     void shutdown() override
     {
         juce::Logger::writeToLog ("shutdown() -- destroying MainWindow");
+        keyboardManager = nullptr;
         mainWindow = nullptr;
         juce::LookAndFeel::setDefaultLookAndFeel (nullptr); // before lookAndFeel is destroyed below -- no dangling default
         lookAndFeel = nullptr;
@@ -158,6 +184,7 @@ public:
 
 private:
     std::unique_ptr<MainWindow> mainWindow;
+    std::unique_ptr<OnScreenKeyboardManager> keyboardManager; // device (kiosk) build only
     std::unique_ptr<juce::Component> snapshotComponent; // --window-snapshot only
     std::unique_ptr<OpenGuitarMultiFxLookAndFeel> lookAndFeel;
     std::unique_ptr<juce::FileLogger> fileLogger;

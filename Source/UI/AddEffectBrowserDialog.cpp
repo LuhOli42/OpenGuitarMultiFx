@@ -239,6 +239,7 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     addAndMakeVisible (railViewport);
     railViewport.setScrollBarsShown (true, false);
     railViewport.setViewedComponent (&rail, false);
+    touch::enableDragScroll (railViewport);
 
     addChildComponent (chipsViewport);
     // No scrollbar: on the touch target the chip row scrolls by drag, and a
@@ -246,6 +247,7 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     // ever becomes necessary. The clipped chip edge is the overflow cue.
     chipsViewport.setScrollBarsShown (false, false);
     chipsViewport.setViewedComponent (&chipsBar, false);
+    touch::enableDragScroll (chipsViewport);
 
     rowList.onRowTap = [this] (EffectRow& row)
     {
@@ -262,6 +264,7 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     addAndMakeVisible (gridViewport);
     gridViewport.setScrollBarsShown (true, false);
     gridViewport.setViewedComponent (&rowList, false);
+    touch::enableDragScroll (gridViewport);
 
     addAndMakeVisible (emptyStateLabel);
     emptyStateLabel.setJustificationType (juce::Justification::centred);

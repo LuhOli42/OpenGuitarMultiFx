@@ -19,6 +19,7 @@ ModelListDialog::ModelListDialog (juce::String titleText, juce::Array<juce::File
 
     addAndMakeVisible (listBox);
     listBox.setColour (juce::ListBox::backgroundColourId, theme::current().background);
+    touch::enableDragScroll (*listBox.getViewport());
     listBox.setRowHeight (56);
     listBox.setVisible (! files.isEmpty());
 

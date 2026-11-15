@@ -269,6 +269,7 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
     addAndMakeVisible (gridViewport);
     gridViewport.setScrollBarsShown (true, false);
     gridViewport.setViewedComponent (&tileGrid, false);
+    touch::enableDragScroll (gridViewport);
 
     addAndMakeVisible (emptyStateLabel);
     emptyStateLabel.setJustificationType (juce::Justification::centred);

@@ -196,6 +196,7 @@ ParameterPanel::ParameterPanel()
 
     addAndMakeVisible (knobViewport);
     knobViewport.setViewedComponent (&knobGridHost, false);
+    touch::enableDragScroll (knobViewport);
     knobViewport.setScrollBarsShown (true, false);
 
     rebuildForCurrentProcessor();
