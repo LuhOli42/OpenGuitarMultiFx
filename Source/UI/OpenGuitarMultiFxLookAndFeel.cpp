@@ -137,6 +137,10 @@ juce::Label* OpenGuitarMultiFxLookAndFeel::createSliderTextBox (juce::Slider& sl
 juce::Slider::SliderLayout OpenGuitarMultiFxLookAndFeel::getSliderLayout (juce::Slider& slider)
 {
     auto layout = juce::LookAndFeel_V4::getSliderLayout (slider);
+    if (slider.getSliderStyle() == juce::Slider::LinearVertical
+        && slider.getProperties().getWithDefault ("graphicEqFullTrack", false))
+        layout.sliderBounds = slider.getLocalBounds();
+
     if (slider.getProperties().getWithDefault ("masterEqTrackGap", false))
     {
         layout.sliderBounds = layout.sliderBounds.expanded (getSliderThumbRadius (slider), 0);
@@ -284,7 +288,7 @@ void OpenGuitarMultiFxLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, i
         const auto fill = juce::Rectangle<float> (track.getX(), juce::jmin (fillStart, fillEnd),
                                                    trackWidth, std::abs (fillEnd - fillStart));
 
-        g.setColour (t.raised);
+        g.setColour (t.background);
         g.fillRoundedRectangle (track, 3.0f);
         if (fill.getHeight() > 0.0f)
         {

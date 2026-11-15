@@ -426,6 +426,38 @@ splitSourcePage (EffectProcessor& processor, const std::vector<juce::AudioParame
 
     pages.erase (std::remove_if (pages.begin(), pages.end(), [] (const auto& page) { return page.empty(); }),
                  pages.end());
+
+    const auto declaredIndex = [&] (juce::AudioParameterFloat* param)
+    {
+        return std::find (active.begin(), active.end(), param) - active.begin();
+    };
+    for (auto& page : pages)
+    {
+        std::stable_sort (page.begin(), page.end(), [&] (auto* first, auto* second)
+        {
+            return declaredIndex (first) < declaredIndex (second);
+        });
+
+        const auto presence = std::find_if (page.begin(), page.end(), [] (auto* param)
+        {
+            return param->getName (64).equalsIgnoreCase ("Presence");
+        });
+        const auto master = std::find_if (page.begin(), page.end(), [] (auto* param)
+        {
+            return param->getName (64).equalsIgnoreCase ("Master");
+        });
+        if (presence != page.end() && master != page.end() && presence > master)
+        {
+            auto* presenceParam = *presence;
+            page.erase (presence);
+            const auto reorderedMaster = std::find_if (page.begin(), page.end(), [] (auto* param)
+            {
+                return param->getName (64).equalsIgnoreCase ("Master");
+            });
+            page.insert (reorderedMaster, presenceParam);
+        }
+    }
+
     return pages;
 }
 

@@ -47,14 +47,14 @@ namespace
     constexpr int faderValueHitHeight = 48;
     constexpr int faderValueSliderGap = 4;
     constexpr int faderSliderHeight = 120;
-    constexpr int graphicEqSliderHeight = 111;
+    constexpr int graphicEqSliderHeight = 110;
     constexpr int faderLabelHeight = 18;
     constexpr int faderContentHeight = faderValueHitHeight + faderValueSliderGap + faderSliderHeight
                                      + faderValueSliderGap + faderLabelHeight;
     constexpr int graphicEqPanelPadding = 14;
+    constexpr int graphicEqPanelVerticalPadding = 10;
+    constexpr int graphicEqPanelClearance = 10;
     constexpr int graphicEqTitleHeight = 18;
-    constexpr int graphicEqTitleGap = 6;
-    constexpr int graphicEqSwitchTopInset = 5;
     constexpr int syncToggleHeight = 48; // touch::minTapTarget
     constexpr int syncToggleGap = 8;
     constexpr int knobRowGap = 26;
@@ -1005,17 +1005,11 @@ ParameterPanel::LayoutPlan ParameterPanel::makeLayoutPlan (const std::vector<siz
         if (plan.eqSwitchRow >= 0)
         {
             plan.faderSliderHeight = graphicEqSliderHeight;
-            plan.faderRowHeight = faderValueHitHeight + faderValueSliderGap + graphicEqSliderHeight
-                                + faderValueSliderGap + faderLabelHeight;
-            plan.panelHeight = graphicEqSwitchTopInset
-                             + touch::minTapTarget + graphicEqTitleGap
-                             + plan.faderRowHeight + graphicEqPanelPadding;
         }
-        else
-        {
-            plan.panelHeight = graphicEqPanelPadding + graphicEqTitleHeight + graphicEqTitleGap
-                             + plan.faderRowHeight + graphicEqPanelPadding;
-        }
+        const int titleRowHeight = plan.eqSwitchRow >= 0 ? touch::minTapTarget : graphicEqTitleHeight;
+        plan.faderRowHeight = titleRowHeight + faderValueHitHeight + faderValueSliderGap
+                            + plan.faderSliderHeight + faderValueSliderGap + faderLabelHeight;
+        plan.panelHeight = graphicEqPanelVerticalPadding * 2 + plan.faderRowHeight;
     }
     else if (! plan.faders.empty())
     {
@@ -1051,7 +1045,8 @@ ParameterPanel::LayoutPlan ParameterPanel::makeLayoutPlan (const std::vector<siz
             height += syncToggleGap + syncToggleHeight;
         knobHeight = juce::jmax (knobHeight, height);
     }
-    const int faderHeight = plan.useGraphicEqPanel ? plan.panelHeight
+    const int faderHeight = plan.useGraphicEqPanel
+                              ? plan.panelHeight + graphicEqPanelClearance * 2
                                                    : plan.faders.empty() ? 0 : faderContentHeight;
     plan.height = juce::jmax (switchHeight, juce::jmax (knobHeight, faderHeight));
 
@@ -1316,7 +1311,9 @@ void ParameterPanel::resized()
             int faderY = startY + (plan.height - faderContentHeight) / 2;
             if (plan.useGraphicEqPanel)
             {
-                const int panelY = startY + (plan.height - plan.panelHeight) / 2;
+                const int panelBlockHeight = plan.panelHeight + graphicEqPanelClearance * 2;
+                const int panelY = startY + (plan.height - panelBlockHeight) / 2
+                                 + graphicEqPanelClearance;
                 graphicEqPanel.setBounds (faderX, panelY, plan.faderGroupWidth, plan.panelHeight);
                 graphicEqPanel.setEmbeddedSelector (plan.eqSwitchRow >= 0);
                 graphicEqPanel.setVisible (true);
@@ -1331,12 +1328,12 @@ void ParameterPanel::resized()
                     const int selectorWidth = row.selector->getPreferredWidth();
                     row.label->setVisible (false);
                     row.selector->setBounds (faderX + graphicEqPanelPadding + titleWidth + 8,
-                                             panelY + graphicEqSwitchTopInset,
+                                             panelY + graphicEqPanelVerticalPadding,
                                              selectorWidth, touch::minTapTarget);
-                    faderY = panelY + graphicEqSwitchTopInset + touch::minTapTarget + graphicEqTitleGap;
+                    faderY = panelY + graphicEqPanelVerticalPadding + touch::minTapTarget;
                 }
                 else
-                    faderY = panelY + graphicEqPanelPadding + graphicEqTitleHeight + graphicEqTitleGap;
+                    faderY = panelY + graphicEqPanelVerticalPadding + graphicEqTitleHeight;
 
                 const int innerWidth = plan.faderGroupWidth - graphicEqPanelPadding * 2;
                 faderX += graphicEqPanelPadding + (innerWidth - plan.faderStripWidth) / 2;
@@ -1346,6 +1343,7 @@ void ParameterPanel::resized()
             for (auto index : plan.faders)
             {
                 auto& row = sliders[index];
+                row.widget()->getProperties().set ("graphicEqFullTrack", plan.useGraphicEqPanel);
                 if (! parameterPanelLayout::isGraphicEqBand (*row.param))
                     faderX += parameterPanelLayout::faderExtraGap;
                 if (haveFader)
@@ -1672,7 +1670,8 @@ void ParameterPanel::GraphicEqPanel::paint (juce::Graphics& g)
     const juce::Font baseFont (juce::FontOptions (11.0f, juce::Font::bold));
     g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)
                                .withTypeface (getLookAndFeel().getTypefaceForFont (baseFont))));
-    const float titleY = embeddedSelector ? 20.0f : 14.0f;
+    const float titleY = (float) graphicEqPanelVerticalPadding
+                       + (embeddedSelector ? (touch::minTapTarget - graphicEqTitleHeight) * 0.5f : 0.0f);
     g.drawText ("GRAPHIC EQ", juce::Rectangle<float> (14.0f, titleY, 104.0f, graphicEqTitleHeight),
                 juce::Justification::centredLeft);
     g.drawText ("HZ", juce::Rectangle<float> (bounds.getWidth() - 44.0f, titleY, 30.0f, graphicEqTitleHeight),

@@ -55,6 +55,59 @@ public:
         return names;
     }
 
+    static juce::StringArray activeKnobNames (EffectProcessor& fx,
+                                              const std::vector<juce::AudioParameterFloat*>& page)
+    {
+        juce::StringArray names;
+        for (auto* parameter : page)
+            if (parameter != nullptr && fx.isParameterActive (*parameter)
+                && ! parameterPanelLayout::isSelector (fx, *parameter)
+                && ! fx.prefersFader (*parameter))
+                names.add (parameter->getName (64));
+        return names;
+    }
+
+    static bool splitPagesRespectDeclaredOrder (EffectProcessor& fx)
+    {
+        for (const auto& sourcePage : fx.getParameterPages())
+        {
+            const auto activeSourceCount = std::count_if (sourcePage.begin(), sourcePage.end(),
+                [&] (auto* parameter) { return parameter != nullptr && fx.isParameterActive (*parameter); });
+            if (activeSourceCount <= 8)
+                continue;
+
+            for (const auto& page : parameterPanelLayout::splitSourcePage (fx, sourcePage))
+            {
+                std::vector<juce::AudioParameterFloat*> expected;
+                for (auto* parameter : sourcePage)
+                    if (parameter != nullptr && fx.isParameterActive (*parameter)
+                        && std::find (page.begin(), page.end(), parameter) != page.end())
+                        expected.push_back (parameter);
+                const auto presence = std::find_if (expected.begin(), expected.end(), [] (auto* parameter)
+                {
+                    return parameter->getName (64).equalsIgnoreCase ("Presence");
+                });
+                const auto master = std::find_if (expected.begin(), expected.end(), [] (auto* parameter)
+                {
+                    return parameter->getName (64).equalsIgnoreCase ("Master");
+                });
+                if (presence != expected.end() && master != expected.end() && presence > master)
+                {
+                    auto* presenceParameter = *presence;
+                    expected.erase (presence);
+                    const auto reorderedMaster = std::find_if (expected.begin(), expected.end(), [] (auto* parameter)
+                    {
+                        return parameter->getName (64).equalsIgnoreCase ("Master");
+                    });
+                    expected.insert (reorderedMaster, presenceParameter);
+                }
+                if (page != expected)
+                    return false;
+            }
+        }
+        return true;
+    }
+
     void runTest() override
     {
         beginTest ("amps keep every real panel control on page 1");
@@ -161,6 +214,37 @@ public:
                                             "240 Hz", "750 Hz", "2200 Hz", "6600 Hz" })
                     expect (pageTwo.contains (controlName), juce::String ("page 2 contains ") + controlName);
                 expectEquals ((int) pageTwo.size(), 8, "page 2 keeps Lead controls with all EQ bands");
+            }
+        }
+
+        beginTest ("Mark IIC+ and Dual Rectifier display controls in declared order");
+        {
+            auto mark = registry.create ("MarkIICPlusStyleAmplifier");
+            expect (mark != nullptr, "Mark IIC+ is registered");
+            if (mark != nullptr)
+            {
+                auto* channel = findParameter (*mark, "mk2c_channel");
+                if (channel != nullptr)
+                    *channel = 1.0f;
+                expect (splitPagesRespectDeclaredOrder (*mark), "Mark IIC+ split pages preserve declared control order");
+                const auto pages = plannedPages (*mark);
+                if (! pages.empty())
+                    expectEquals (activeKnobNames (*mark, pages[0]).joinIntoString (", "),
+                                  juce::String ("Volume 1, Treble, Bass, Middle, Presence, Master"),
+                                  "Mark IIC+ page 1 knobs follow parameter order");
+            }
+
+            auto dualRectifier = registry.create ("DualRectifierStyleAmplifier");
+            expect (dualRectifier != nullptr, "Dual Rectifier is registered");
+            if (dualRectifier != nullptr)
+            {
+                expect (splitPagesRespectDeclaredOrder (*dualRectifier),
+                        "Dual Rectifier split pages preserve declared control order");
+                const auto pages = plannedPages (*dualRectifier);
+                if (! pages.empty())
+                    expectEquals (activeKnobNames (*dualRectifier, pages[0]).joinIntoString (", "),
+                                  juce::String ("Gain, Treble, Mid, Bass, Presence"),
+                                  "Dual Rectifier page 1 knobs follow parameter order");
             }
         }
 
