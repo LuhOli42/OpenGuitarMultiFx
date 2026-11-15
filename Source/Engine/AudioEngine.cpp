@@ -539,6 +539,7 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     // re-detect on the new stream's first callback.
     callbackRealtimeDetected.store (false, std::memory_order_relaxed);
     callbackIsRealtime.store (false, std::memory_order_relaxed);
+    outputLimiter.prepare (device != nullptr ? device->getCurrentSampleRate() : 48000.0);
 
     activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
     swapFadeActive = false;
@@ -657,6 +658,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
             buffer.applyGain (g);
     }
 
+    if (limiterEnabled.load (std::memory_order_relaxed))
+    {
+        outputLimiter.process (outputChannelData, numOutputChannels, numSamples);
+        if (outputLimiter.takeMinimumGain() < 0.995f)
+            limiterActive.store (true, std::memory_order_relaxed);
+    }
+
     // Final device boundary: the DAC hard-clips past full scale, so whatever the chain or master
     // section emits saturates into deviceSoftCeiling instead. Its knee sits at the model ceiling,
     // so an amp's already-limited emit passes through untouched -- only genuinely over-scale signal
@@ -702,6 +710,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     // swings too much to read): an average over ~0.5 s for "how loaded am I", and a peak hold over ~1 s for "did any
     // single block come close to dropping out" -- one block over 100% IS a dropout.
     const double instant = blockSeconds > 0.0 ? elapsedSeconds / blockSeconds : 0.0;
+    if (instant > 1.0)
+        overBudgetBlocks.fetch_add (1, std::memory_order_relaxed);
     const double averageCoeff = 1.0 - std::exp (-blockSeconds / 0.5);
     const double previousAverage = averageCpuUsage.load (std::memory_order_relaxed);
     averageCpuUsage.store (previousAverage + averageCoeff * (instant - previousAverage), std::memory_order_relaxed);

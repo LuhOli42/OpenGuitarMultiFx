@@ -306,6 +306,7 @@ MainComponent::MainComponent()
         audioEngine.setMasterGainDb (master.gainDb);
         footerBar.setMasterGainDb (master.gainDb);
         audioEngine.setMasterEqBands (master.bands);
+        audioEngine.setOutputLimiterEnabled (master.limiter);
     }
 
     // Row 0 starts wired device-in -> device-out so the app still makes
@@ -1372,6 +1373,12 @@ void MainComponent::showMasterEq()
     dialog->setBands (audioEngine.getMasterEqBands());
     dialog->getSampleRate = [this] { return audioEngine.getCurrentSampleRate(); };
     dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
+    dialog->setLimiterEnabled (audioEngine.isOutputLimiterEnabled());
+    dialog->onLimiterToggled = [this] (bool enabled)
+    {
+        audioEngine.setOutputLimiterEnabled (enabled);
+        masterBusSaveCountdown = 10;
+    };
     dialog->onBandsChanged = [this] (const std::vector<MasterEqBand>& bands)
     {
         audioEngine.setMasterEqBands (bands);
@@ -2778,10 +2785,23 @@ void MainComponent::timerCallback()
 
     parameterPanel.refresh();
 
+    // Dropout counter: a block that took longer than its audio is an audible pop. Logged every ~10 s, only when there
+    // was one, with the peak-hold CPU reading -- the number to look at when "an effect makes it crackle".
+    overBudgetAccum += audioEngine.takeOverBudgetBlocks();
+    if (++audioStatTicks >= 200)
+    {
+        audioStatTicks = 0;
+        if (overBudgetAccum > 0)
+            juce::Logger::writeToLog ("AudioStats: " + juce::String (overBudgetAccum) + " block(s) over budget in ~10 s; "
+                                      "avg " + juce::String (audioEngine.getCurrentCpuUsage() * 100.0, 0) + "%, peak "
+                                      + juce::String (audioEngine.getPeakCpuUsage() * 100.0, 0) + "% of the block time");
+        overBudgetAccum = 0;
+    }
+
     // Debounced master-bus save: knob drags and node drags fire dozens of edits a second -- one write, ~500 ms
     // after the last change, is plenty for a file read once per launch.
     if (masterBusSaveCountdown > 0 && --masterBusSaveCountdown == 0)
-        masterbus::saveState ({ audioEngine.getMasterGainDb(), audioEngine.getMasterEqBands() });
+        masterbus::saveState ({ audioEngine.getMasterGainDb(), audioEngine.getMasterEqBands(), audioEngine.isOutputLimiterEnabled() });
 
     if (--ticksUntilDirtyCheck <= 0)
     {

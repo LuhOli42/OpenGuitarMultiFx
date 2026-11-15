@@ -316,6 +316,8 @@ private:
     livetiles::Layout liveTiles = livetiles::defaultLayout(); // per preset (<LiveTiles>), see LiveTilesXml.h
     scenemidi::StompDetector tunerStomps;
     bool tunerMidiArmed = false;
+    int audioStatTicks = 0;               // timerCallback ticks since the last AudioStats log line
+    juce::uint32 overBudgetAccum = 0;
     bool tunerMuted = false;
     float tunerSavedGainDb = 0.0f;
     TunerOverlay* tunerOverlay = nullptr; // non-owning: OverlayHost owns the card

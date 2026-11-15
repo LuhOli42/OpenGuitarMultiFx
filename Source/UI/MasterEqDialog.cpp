@@ -41,6 +41,16 @@ MasterEqDialog::MasterEqDialog()
     addAndMakeVisible (closeButton);
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
+    addAndMakeVisible (limiterButton);
+    limiterButton.text = "Limiter";
+    limiterButton.selectedStyle = overlaychrome::SelectedStyle::chip;
+    limiterButton.onClick = [this]
+    {
+        limiterButton.selected = ! limiterButton.selected;
+        limiterButton.repaint();
+        if (onLimiterToggled) onLimiterToggled (limiterButton.selected);
+    };
+
     addAndMakeVisible (clearButton);
     clearButton.onClick = [this]
     {
@@ -305,6 +315,12 @@ void MasterEqDialog::refreshSelectedStrip()
 
 // -- painting ----------------------------------------------------------------
 
+void MasterEqDialog::setLimiterEnabled (bool enabled)
+{
+    limiterButton.selected = enabled;
+    limiterButton.repaint();
+}
+
 void MasterEqDialog::resized()
 {
     auto area = getLocalBounds().reduced (22, 22);
@@ -312,6 +328,7 @@ void MasterEqDialog::resized()
     auto top = area.removeFromTop (76);
     closeButton.setBounds (top.removeFromRight (52).withSizeKeepingCentre (52, 52));
     clearButton.setBounds (top.removeFromRight (12 + 96).withSizeKeepingCentre (96, 48));
+    limiterButton.setBounds (top.removeFromRight (12 + 120).withSizeKeepingCentre (120, 48));
     titleLabel.setBounds (top.removeFromLeft (260));
     hintLabel.setBounds (top.removeFromLeft (top.getWidth()).withTrimmedTop (28).withHeight (20));
 
