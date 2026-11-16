@@ -190,7 +190,7 @@ private:
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
     };
 
-    /** The prototype's "Ligado" rocker: a 66x36 visual switch inside a
+    /** The prototype's "On" rocker: a 66x36 visual switch inside a
         48px-high touch target (the visual is shorter than the hit area,
         never the other way around). `on` means the effect is LIVE, so the
         panel writes bypassed = !on. */
@@ -362,7 +362,7 @@ private:
     juce::Image shadowCache;               // stage-style panel shadow, see paint()
     juce::Point<int> shadowCacheSize;
     BypassSwitch bypassSwitch;
-    PillButton modelButton { "Trocar modelo", PillButton::Glyph::switchModel };
+    PillButton modelButton { "Swap model", PillButton::Glyph::switchModel };
     PillButton midiButton { "MIDI", PillButton::Glyph::midi };
     PillButton tone3000Button { "TONE3000", PillButton::Glyph::cloud };
     PillButton removeButton { {}, PillButton::Glyph::trash };

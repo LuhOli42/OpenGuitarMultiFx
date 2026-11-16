@@ -74,6 +74,8 @@ public:
     bool leftAccent = false;
     bool mutedIdle = false;
     juce::Colour dotColour;
+    juce::Colour borderOverride;   // when set, replaces the normal border colour (e.g. armed/red pills)
+    bool chromeless = false;       // no own fill/border — for buttons inside a shared segmented container
     juce::String trailingText;
     std::function<void()> onClick;
 
@@ -128,9 +130,11 @@ public:
                 fill = fill.brighter (0.08f);
         }
 
-        g.setColour (fill);
-        if (ghost) g.fillRoundedRectangle (bounds, radius);
-        else       g.fillRoundedRectangle (bounds, radius);
+        if (! chromeless)
+        {
+            g.setColour (fill);
+            g.fillRoundedRectangle (bounds, radius);
+        }
 
         if (selected && selectedStyle == SelectedStyle::tab && ! primary)
         {
@@ -145,30 +149,41 @@ public:
                 g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
                 g.fillRoundedRectangle (bounds.withWidth (3.0f).withX (bounds.getX() + 1.0f), 1.5f);
             }
-            else
+            else if (chromeless)
             {
-                g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
-                g.fillRoundedRectangle (bounds.withY (bounds.getBottom() - 3.0f).withHeight (3.0f), 1.5f);
+                // tuner segment selection: fixed amber from the mockup (not the theme accent)
+                const auto seg = juce::Colour (0xfff6c343);
+                g.setColour (seg);
+                g.fillRoundedRectangle (bounds, radius);
+                textColour = inkOn (seg);
             }
         }
 
-        g.setColour (border.withAlpha (ghost ? 0.8f : 1.0f));
-        g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
+        if (! chromeless)
+        {
+            g.setColour ((borderOverride == juce::Colour() ? border : borderOverride).withAlpha (ghost ? 0.8f : 1.0f));
+            g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
+        }
 
         auto textArea = bounds.reduced (10.0f, 0.0f);
+        const auto textFont = font (14.0f, primary || selected);
+        const auto textW = juce::GlyphArrangement::getStringWidth (textFont, text);
         if (showDot)
         {
-            const auto dot = juce::Rectangle<float> (textArea.getX(), textArea.getCentreY() - 5.0f, 10.0f, 10.0f);
+            // mockup centres the LED+label group with a 9px gap — don't pad the label area
+            const auto groupW = 9.0f + 9.0f + textW;
+            const auto groupX = textArea.getCentreX() - groupW * 0.5f;
+            const auto dot = juce::Rectangle<float> (groupX, textArea.getCentreY() - 4.5f, 9.0f, 9.0f);
             g.setColour (dotColour);
             g.fillEllipse (dot);
-            textArea.removeFromLeft (16.0f);
+            textArea = textArea.withLeft (groupX + 18.0f);
         }
         if (trailingText.isNotEmpty())
             textArea.removeFromRight (juce::jmax (34.0f, juce::GlyphArrangement::getStringWidth (font (11.0f), trailingText) + 14.0f));
 
         g.setColour (textColour);
-        g.setFont (font (14.0f, primary || selected));
-        g.drawFittedText (text, textArea.toNearestInt(), juce::Justification::centredLeft, 1);
+        g.setFont (textFont);
+        g.drawFittedText (text, textArea.toNearestInt(), showDot ? juce::Justification::centredLeft : juce::Justification::centred, 1);
 
         if (trailingText.isNotEmpty())
         {
