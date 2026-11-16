@@ -202,6 +202,14 @@ private:
     /** Auto-engage: switches every block with a knob learned on pedal `index`'s CC on or off. */
     void setExpressionBlocksOn (int index, bool on);
     void cancelOtherLearning();
+    /** Links/unlinks `param` to expression pedal `pedal` (a knob follows one controller, so its other bindings go). */
+    void toggleExpressionLink (juce::AudioParameterFloat* param, int pedal);
+    std::vector<ParameterPanel::PedalLink> pedalLinksFor (juce::AudioParameterFloat* param) const;
+    /** "Link knobs" mode: Settings closes, the banner shows, the drawer's knobs get link chips. -1 = off. */
+    void setExpressionLinkMode (int pedal);
+    int expressionLinkMode = -1;
+    class LinkBanner;
+    std::unique_ptr<LinkBanner> linkBanner;
     void refreshScenePedalDisplay();
     void copySnapshot (int from, int to);
     /** "+" on the scene bar: a new scene after the last one, holding `source`'s values (the live scene by default --
@@ -322,7 +330,8 @@ private:
     // (MidiLearnPresetXml.h). Cleared per-parameter in
     // removeEffect() so a removed block can never leave a dangling
     // AudioParameterFloat* behind in either map.
-    std::map<int, juce::AudioParameterFloat*> midiCcBindings;
+    // A multimap: an expression pedal's CC can drive several knobs; any other CC drives one (learning replaces it).
+    std::multimap<int, juce::AudioParameterFloat*> midiCcBindings;
     juce::AudioParameterFloat* midiLearnArmedParam = nullptr;
     void handleMidiCc (int ccNumber, int ccValue);
     exppedal::Settings expressionPedals;  // global, expression_pedals.xml

@@ -25,6 +25,7 @@ struct MidiMappingRow
     juce::String type;   // "Knob", "Block on/off", ...
     juce::String target; // "Wah - Freq", "Scene B"
     bool perPreset = false;
+    const void* ref = nullptr; // which knob, for a CC driving several (an expression pedal)
 
     juce::String key() const { return juce::String ((int) kind) + ":" + juce::String (cc) + ":" + target + ":" + source; }
 };
@@ -144,7 +145,7 @@ private:
 class ExpressionPedalEditor : public juce::Component
 {
 public:
-    std::function<void()> onLearn, onClear, onCalibrate;
+    std::function<void()> onLearn, onClear, onCalibrate, onLinkKnobs;
     std::function<void (const exppedal::Pedal&)> onEdited;
 
     explicit ExpressionPedalEditor (int pedalIndex) : index (pedalIndex)
@@ -157,10 +158,11 @@ public:
             l->setFont (juce::Font (juce::FontOptions (14.0f)));
         curveLabel.setText ("Curve", juce::dontSendNotification);
         autoLabel.setText ("Auto on/off", juce::dontSendNotification);
-        drivesLabel.setJustificationType (juce::Justification::topLeft);
+        drivesLabel.setJustificationType (juce::Justification::centredLeft);
 
-        for (auto* b : { &learnButton, &clearButton, &calibrateButton, &invertButton, &autoButton })
+        for (auto* b : { &learnButton, &clearButton, &calibrateButton, &invertButton, &autoButton, &linkButton })
             addAndMakeVisible (*b);
+        linkButton.onClick = [this] { if (onLinkKnobs) onLinkKnobs(); };
         learnButton.onClick = [this] { if (onLearn) onLearn(); };
         clearButton.onClick = [this] { if (onClear) onClear(); };
         calibrateButton.onClick = [this] { if (onCalibrate) onCalibrate(); };
@@ -191,7 +193,7 @@ public:
         }
     }
 
-    static constexpr int idealHeight = 26 + 8 + 22 + 10 + 4 * (touch::minTapTarget + 8) + 44;
+    static constexpr int idealHeight = 26 + 8 + 22 + 10 + 5 * (touch::minTapTarget + 8);
 
     void setStatus (const ExpressionPedalStatus& s)
     {
@@ -202,6 +204,7 @@ public:
         clearButton.setEnabled (p.isAssigned() && ! s.learning);
         calibrateButton.setButtonText (s.calibrating ? "Done" : "Calibrate");
         calibrateButton.setEnabled (p.isAssigned());
+        linkButton.setEnabled (p.isAssigned() && ! s.learning);
 
         juce::String ccText;
         if (s.learning)
@@ -238,7 +241,7 @@ public:
 
         drivesLabel.setText (p.isAssigned()
                                  ? (s.drives.isNotEmpty() ? "Drives: " + s.drives : juce::String ("Drives nothing in this preset yet."))
-                                       + "  To add a knob: press and hold its name in the parameter drawer, then move this pedal."
+                                       + "  Tap Link knobs to pick them on screen."
                                  : juce::String(),
                              juce::dontSendNotification);
         applyColours();
@@ -301,7 +304,10 @@ public:
         }
         area.removeFromTop (8);
 
-        drivesLabel.setBounds (area.removeFromTop (44));
+        row = area.removeFromTop (rowH);
+        linkButton.setBounds (row.removeFromLeft (150));
+        row.removeFromLeft (12);
+        drivesLabel.setBounds (row);
     }
 
     void paint (juce::Graphics& g) override
@@ -352,7 +358,7 @@ private:
 
     juce::Label title, ccLabel, calibrationLabel, curveLabel, autoLabel, drivesLabel;
     juce::TextButton learnButton { "Learn CC" }, clearButton { "Clear" }, calibrateButton { "Calibrate" },
-                     invertButton { "Invert" }, autoButton { "Off" };
+                     invertButton { "Invert" }, autoButton { "Off" }, linkButton { "Link knobs" };
     juce::OwnedArray<juce::TextButton> curveButtons, offTimeButtons;
 };
 

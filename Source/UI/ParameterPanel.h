@@ -106,6 +106,22 @@ public:
         marker of docs/PresetsAndSnapshots.md), transparent when it doesn't. Polled on refresh(), like the MIDI one. */
     std::function<juce::Colour (EffectProcessor*, juce::AudioParameterFloat*)> getSnapshotMarkerColour;
 
+    /** Expression pedals a knob can be linked to (only pedals that have a CC), for the knob's long-press menu and the
+        link chips. */
+    struct PedalLink
+    {
+        int pedal = -1;
+        juce::String label; // "EXP 1"
+        bool linked = false;
+    };
+    std::function<std::vector<PedalLink> (juce::AudioParameterFloat*)> getPedalLinks;
+    std::function<void (juce::AudioParameterFloat*, int pedal)> onTogglePedalLink;
+
+    /** "Link knobs" mode (Settings -> Expression): while `pedal` >= 0 every knob on the open page gets a chip over it,
+        and tapping a knob links/unlinks it to that pedal instead of turning it. -1 turns the chips off. */
+    void setPedalLinkMode (int pedal);
+    int getPedalLinkMode() const noexcept { return linkModePedal; }
+
 private:
     void rebuildForCurrentProcessor (int pageToPreserve = 0);
     void browseInstalledModels();
@@ -347,6 +363,12 @@ private:
         }
     };
     std::vector<SliderRow> sliders;
+
+    class LinkChip;
+    juce::OwnedArray<juce::Component> linkChips;
+    int linkModePedal = -1;
+    void layoutLinkChips();
+    void refreshLinkChips();
 
     // The knob grid scrolls instead of clipping -- this drawer is capped at
     // 45% of the window (see MainComponent), which a processor with a lot

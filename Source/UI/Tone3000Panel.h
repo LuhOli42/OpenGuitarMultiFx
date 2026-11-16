@@ -90,6 +90,8 @@ public:
         and sends edits. Learn and Calibrate toggle (a second tap cancels / finishes). */
     std::function<ExpressionPedalStatus (int)> getExpressionPedalStatus;
     std::function<void (int)> onExpressionLearn, onExpressionClear, onExpressionCalibrate;
+    /** "Link knobs": the host closes Settings and lets you tap the knobs on screen. */
+    std::function<void (int)> onExpressionLinkKnobs;
     std::function<void (int, const exppedal::Pedal&)> onExpressionEdited;
     /** Settings is closing: the host drops a pending pedal learn / calibration nobody can see any more. */
     std::function<void()> onClosing;
@@ -176,8 +178,6 @@ private:
     double updateProgressValue = 0.0;
     juce::ProgressBar updateProgressBar { updateProgressValue };
 
-    juce::Label midiIntroLabel;
-    juce::Label midiHintLabel;
     juce::Label midiTableLabel;
     MidiMappingTable midiTable;
     juce::Label expressionIntroLabel;

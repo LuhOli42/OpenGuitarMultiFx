@@ -290,6 +290,8 @@ MainComponent::MainComponent()
                 return cc;
         return -1;
     };
+    parameterPanel.getPedalLinks = [this] (juce::AudioParameterFloat* param) { return pedalLinksFor (param); };
+    parameterPanel.onTogglePedalLink = [this] (juce::AudioParameterFloat* param, int pedal) { toggleExpressionLink (param, pedal); };
     addAndMakeVisible (parameterPanel);
 
     addAndMakeVisible (footerBar);
@@ -1112,6 +1114,17 @@ void MainComponent::showSettingsPanel()
     panel->getExpressionPedalStatus = [this] (int i) { return expressionPedalStatus (i); };
     panel->onExpressionLearn = [this] (int i) { toggleExpressionLearn (i); };
     panel->onExpressionCalibrate = [this] (int i) { toggleExpressionCalibration (i); };
+    panel->onExpressionLinkKnobs = [this, alive = aliveFlag] (int i)
+    {
+        // Close Settings after the button's click has finished (the card owns that button), then link on screen.
+        juce::MessageManager::callAsync ([this, alive, i]
+        {
+            if (! alive->load())
+                return;
+            overlayHost.popOverlay();
+            setExpressionLinkMode (i);
+        });
+    };
     panel->onExpressionClear = [this] (int i)
     {
         if (i == expressionCalibrating)
@@ -2091,7 +2104,9 @@ void MainComponent::freeCcForLearning (int cc, bool learningKnob)
         tunersettings::save (tunerSettings);
         refreshTunerOverlay();
     }
-    midiCcBindings.erase (cc);
+    // A pedal CC collects knobs; any other CC drives exactly one, so learning onto it replaces what was there.
+    if (! (learningKnob && expressionPedals.indexForCc (cc) >= 0))
+        midiCcBindings.erase (cc);
     bypassPedals.erase (cc);
     if (sceneMidi.hasCc (cc))
     {
@@ -2151,6 +2166,7 @@ std::vector<MidiMappingRow> MainComponent::describeMidiMappings() const
         const auto* owner = processorOwning (param);
         add (MidiMappingRow::Kind::knob, cc, "Knob",
              (owner != nullptr ? describeBlock (owner) + " - " : juce::String()) + param->getName (64), true);
+        rows.back().ref = param;
     }
     for (auto& [cc, processor] : bypassPedals)
         add (MidiMappingRow::Kind::blockOnOff, cc, "Block on/off", describeBlock (processor), true);
@@ -2175,7 +2191,12 @@ void MainComponent::removeMidiMapping (const MidiMappingRow& row)
     switch (row.kind)
     {
         case MidiMappingRow::Kind::knob:
-            midiCcBindings.erase (row.cc);
+            for (auto [it, end] = midiCcBindings.equal_range (row.cc); it != end; ++it)
+                if (it->second == row.ref)
+                {
+                    midiCcBindings.erase (it);
+                    break;
+                }
             break;
         case MidiMappingRow::Kind::blockOnOff:
             bypassPedals.erase (row.cc);
@@ -2214,12 +2235,144 @@ ExpressionPedalStatus MainComponent::expressionPedalStatus (int index) const
     }
 
     if (status.pedal.isAssigned())
-        if (const auto it = midiCcBindings.find (status.pedal.cc); it != midiCcBindings.end())
+    {
+        juce::StringArray knobs;
+        for (auto [it, end] = midiCcBindings.equal_range (status.pedal.cc); it != end; ++it)
         {
             const auto* owner = processorOwning (it->second);
-            status.drives = (owner != nullptr ? describeBlock (owner) + " - " : juce::String()) + it->second->getName (64);
+            knobs.add ((owner != nullptr ? describeBlock (owner) + " - " : juce::String()) + it->second->getName (64));
         }
+        status.drives = knobs.joinIntoString (", ");
+    }
     return status;
+}
+
+std::vector<ParameterPanel::PedalLink> MainComponent::pedalLinksFor (juce::AudioParameterFloat* param) const
+{
+    std::vector<ParameterPanel::PedalLink> links;
+    for (int i = 0; i < exppedal::numPedals; ++i)
+    {
+        const auto& pedal = expressionPedals.pedals[(size_t) i];
+        if (! pedal.isAssigned())
+            continue;
+        ParameterPanel::PedalLink link;
+        link.pedal = i;
+        link.label = "EXP " + juce::String (i + 1);
+        for (auto [it, end] = midiCcBindings.equal_range (pedal.cc); it != end; ++it)
+            link.linked = link.linked || it->second == param;
+        links.push_back (link);
+    }
+    return links;
+}
+
+void MainComponent::toggleExpressionLink (juce::AudioParameterFloat* param, int pedal)
+{
+    if (param == nullptr || pedal < 0 || pedal >= exppedal::numPedals || processorOwning (param) == nullptr)
+        return;
+    const int cc = expressionPedals.pedals[(size_t) pedal].cc;
+    if (cc < 0)
+        return;
+
+    bool wasLinked = false;
+    for (auto it = midiCcBindings.begin(); it != midiCcBindings.end();)
+    {
+        if (it->second != param)
+        {
+            ++it;
+            continue;
+        }
+        wasLinked = wasLinked || it->first == cc;
+        it = midiCcBindings.erase (it);
+    }
+    if (! wasLinked)
+    {
+        // The knob jumps to where the pedal is now, so what you hear matches the pedal from the first tap.
+        midiCcBindings.emplace (cc, param);
+        if (const int raw = expressionLastRaw[(size_t) pedal]; raw >= 0)
+            *param = param->getNormalisableRange().convertFrom0to1 (expressionPedals.pedals[(size_t) pedal].shape (raw));
+    }
+}
+
+/** The strip across the top while knobs are being linked to a pedal: says what is going on and holds Done. */
+class MainComponent::LinkBanner : public juce::Component
+{
+public:
+    LinkBanner()
+    {
+        addAndMakeVisible (doneButton);
+        doneButton.onClick = [this] { if (onDone) onDone(); };
+    }
+
+    void setText (juce::String title, juce::String detail)
+    {
+        if (title == heading && detail == subtitle)
+            return;
+        heading = std::move (title);
+        subtitle = std::move (detail);
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto& t = theme::current();
+        const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+        auto r = getLocalBounds().toFloat();
+        g.setColour (t.surface);
+        g.fillRoundedRectangle (r, t.radius);
+        g.setColour (accent);
+        g.drawRoundedRectangle (r.reduced (1.0f), t.radius, 2.0f);
+
+        auto text = getLocalBounds().reduced (20, 8);
+        text.removeFromRight (doneButton.getWidth() + 16);
+        g.setColour (accent);
+        g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
+        g.drawText (heading, text.removeFromTop (text.getHeight() / 2), juce::Justification::bottomLeft);
+        g.setColour (t.textMuted);
+        g.setFont (juce::FontOptions (14.0f));
+        g.drawText (subtitle, text, juce::Justification::topLeft);
+    }
+
+    void resized() override
+    {
+        doneButton.setBounds (getLocalBounds().reduced (10).removeFromRight (120));
+    }
+
+    std::function<void()> onDone;
+
+private:
+    juce::String heading, subtitle;
+    juce::TextButton doneButton { "Done" };
+};
+
+void MainComponent::setExpressionLinkMode (int pedal)
+{
+    if (pedal >= 0 && ! expressionPedals.pedals[(size_t) pedal].isAssigned())
+        pedal = -1;
+    expressionLinkMode = pedal;
+
+    if (linkBanner == nullptr)
+    {
+        linkBanner = std::make_unique<LinkBanner>();
+        addChildComponent (*linkBanner);
+        linkBanner->onDone = [this] { setExpressionLinkMode (-1); };
+    }
+
+    if (pedal >= 0)
+    {
+        cancelOtherLearning();
+        // Nothing to tap until a block is open: start on the first one in the chain.
+        if (selectedProcessor == nullptr && ! chain.empty())
+            selectBlock (chain.front().get());
+    }
+
+    parameterPanel.setPedalLinkMode (pedal);
+    linkBanner->setVisible (pedal >= 0);
+    if (pedal >= 0)
+    {
+        linkBanner->toFront (false);
+        overlayHost.toFront (false); // a card opened on top still covers the banner
+    }
+    resized();
 }
 
 void MainComponent::cancelOtherLearning()
@@ -2486,8 +2639,8 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     {
         const int pedal = expressionLearnArmed;
         expressionLearnArmed = -1;
+        expressionPedals.assignCc (pedal, ccNumber); // first, so freeCcForLearning keeps the knobs on this CC
         freeCcForLearning (ccNumber, true);
-        expressionPedals.assignCc (pedal, ccNumber);
         expressionAuto[(size_t) pedal].reset();
         expressionLastRaw[(size_t) pedal] = ccValue;
         exppedal::save (expressionPedals);
@@ -2579,7 +2732,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         for (auto it = midiCcBindings.begin(); it != midiCcBindings.end(); )
             it = it->second == midiLearnArmedParam ? midiCcBindings.erase (it) : std::next (it);
 
-        midiCcBindings[ccNumber] = midiLearnArmedParam;
+        midiCcBindings.emplace (ccNumber, midiLearnArmedParam);
         midiLearnArmedParam = nullptr;
         return;
     }
@@ -2599,17 +2752,13 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         return; // likewise for an on/off pedal
     }
 
-    const auto it = midiCcBindings.find (ccNumber);
-    if (it == midiCcBindings.end())
-        return;
-
     // CC values are 0-127; convert through the parameter's own
     // NormalisableRange (not a plain linear map) so a log-skewed
     // parameter like a delay Time knob still sweeps musically under CC
     // control instead of spending most of the CC's range on one extreme.
-    auto* param = it->second;
     const float normalised = pedalValue >= 0.0f ? pedalValue : (float) ccValue / 127.0f;
-    *param = param->getNormalisableRange().convertFrom0to1 (normalised);
+    for (auto [it, end] = midiCcBindings.equal_range (ccNumber); it != end; ++it)
+        *it->second = it->second->getNormalisableRange().convertFrom0to1 (normalised);
 }
 
 void MainComponent::clearMidiBindingsFor (EffectProcessor* processor)
@@ -3049,6 +3198,16 @@ void MainComponent::timerCallback()
 {
     refreshBypassPedalDisplay();
 
+    if (linkBanner != nullptr && expressionLinkMode >= 0)
+    {
+        const auto status = expressionPedalStatus (expressionLinkMode);
+        const auto pedalName = "EXP " + juce::String (expressionLinkMode + 1);
+        linkBanner->setText ("Linking knobs to " + pedalName + (status.drives.isNotEmpty() ? "  -  " + status.drives : juce::String()),
+                             selectedProcessor == nullptr
+                                 ? juce::String ("Tap a block on the grid, then tap the knobs this pedal should move.")
+                                 : "Tap a knob to link or unlink it. Open other blocks on the grid to add theirs. Move the pedal to try it.");
+    }
+
     for (int i = 0; i < exppedal::numPedals; ++i)
     {
         const auto& pedal = expressionPedals.pedals[(size_t) i];
@@ -3305,6 +3464,8 @@ void MainComponent::GearButton::paintButton (juce::Graphics& g, bool highlighted
 void MainComponent::resized()
 {
     overlayHost.setBounds (getLocalBounds());
+    if (linkBanner != nullptr)
+        linkBanner->setBounds (getLocalBounds().removeFromTop (76).reduced (gridSide, 8));
 
     auto area = getLocalBounds();
 

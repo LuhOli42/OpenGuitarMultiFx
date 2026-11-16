@@ -290,6 +290,7 @@ void ParameterPanel::updateSubtitle()
 
 void ParameterPanel::refresh()
 {
+    refreshLinkChips();
     if (current != nullptr)
     {
         updateSubtitle();
@@ -353,6 +354,8 @@ void ParameterPanel::refresh()
 
 void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
 {
+    linkChips.clear(); // they point at the parameters about to go; resized() makes new ones
+
     for (auto& tab : pageTabs)
         removeChildComponent (tab.get());
     pageTabs.clear();
@@ -758,11 +761,17 @@ void ParameterPanel::showMidiLearnMenu (juce::AudioParameterFloat* param)
     else
         menu.addItem (1, "Learn MIDI CC...");
 
+    if (getPedalLinks)
+        for (auto& link : getPedalLinks (param))
+            menu.addItem (100 + link.pedal, (link.linked ? "Unlink from " : "Link to ") + link.label);
+
     menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
         [this, param] (int result)
         {
             if (result == 1 && onMidiLearnRequested)
                 onMidiLearnRequested (param);
+            else if (result >= 100 && onTogglePedalLink)
+                onTogglePedalLink (param, result - 100);
         });
 }
 
@@ -1377,6 +1386,134 @@ void ParameterPanel::resized()
                 x += cellWidth + knobColumnGap;
             }
             y += gridRow.height + knobRowGap;
+        }
+    }
+
+    layoutLinkChips();
+}
+
+class ParameterPanel::LinkChip : public juce::Component
+{
+public:
+    LinkChip (juce::AudioParameterFloat* p, juce::String pedalLabel) : param (p), label (std::move (pedalLabel)) {}
+
+    void paint (juce::Graphics& g) override
+    {
+        // Translucent veil so the knob underneath still shows (and still moves when the pedal does), a frame that is
+        // solid accent when linked and a dashed line when not, and a badge naming the pedal.
+        const auto& t = theme::current();
+        const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+        auto r = getLocalBounds().toFloat().reduced (1.5f);
+        g.setColour (t.background.withAlpha (linked ? 0.25f : 0.45f));
+        g.fillRoundedRectangle (r, t.smallRadius);
+
+        if (linked)
+        {
+            g.setColour (accent);
+            g.drawRoundedRectangle (r, t.smallRadius, 2.5f);
+        }
+        else
+        {
+            juce::Path outline;
+            outline.addRoundedRectangle (r, t.smallRadius);
+            juce::Path dashed;
+            const float dashes[] = { 6.0f, 5.0f };
+            juce::PathStrokeType (1.5f).createDashedStroke (dashed, outline, dashes, 2);
+            g.setColour (t.textMuted);
+            g.fillPath (dashed);
+        }
+
+        const auto text = (linked ? juce::String (juce::CharPointer_UTF8 ("\xe2\x9c\x93 ")) : juce::String ("+ ")) + label;
+        const juce::Font font (juce::FontOptions (13.0f, juce::Font::bold));
+        const float badgeW = juce::GlyphArrangement::getStringWidth (font, text) + 18.0f;
+        // Over the value readout at the bottom (covered, it means nothing here): the knob and its name stay readable.
+        g.setColour (t.surface.withAlpha (0.94f));
+        g.fillRoundedRectangle (r.withTop (r.getBottom() - 38.0f).reduced (3.0f, 3.0f), t.smallRadius);
+        auto badge = juce::Rectangle<float> (r.getCentreX() - badgeW / 2.0f, r.getBottom() - 30.0f, badgeW, 26.0f);
+        g.setColour (linked ? accent : t.raised);
+        g.fillRoundedRectangle (badge, 12.0f);
+        if (! linked)
+        {
+            g.setColour (t.lineStrong);
+            g.drawRoundedRectangle (badge, 12.0f, 1.0f);
+        }
+        g.setColour (linked ? theme::inkOn (accent) : t.text);
+        g.setFont (font);
+        g.drawText (text, badge, juce::Justification::centred);
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (e.mouseWasClicked() && onTap)
+            onTap();
+    }
+
+    juce::AudioParameterFloat* param;
+    juce::String label;
+    bool linked = false;
+    std::function<void()> onTap;
+};
+
+void ParameterPanel::setPedalLinkMode (int pedal)
+{
+    if (linkModePedal == pedal)
+        return;
+    linkModePedal = pedal;
+    layoutLinkChips();
+}
+
+void ParameterPanel::layoutLinkChips()
+{
+    linkChips.clear();
+    if (linkModePedal < 0 || current == nullptr || ! getPedalLinks)
+        return;
+
+    for (auto& row : sliders)
+    {
+        // Knobs and faders only: a multi-position switch swept by a pedal just clicks between positions.
+        if (row.param == nullptr || row.selector != nullptr || ! row.widget()->isVisible())
+            continue;
+
+        juce::String pedalLabel;
+        for (auto& link : getPedalLinks (row.param))
+            if (link.pedal == linkModePedal)
+                pedalLabel = link.label;
+        if (pedalLabel.isEmpty())
+            continue;
+
+        auto area = row.widget()->getBounds().getUnion (row.label->getBounds());
+        if (row.valueBox != nullptr && row.valueBox->isVisible())
+            area = area.getUnion (row.valueBox->getBounds());
+
+        auto* chip = new LinkChip (row.param, pedalLabel);
+        linkChips.add (chip);
+        knobGridHost.addAndMakeVisible (chip);
+        chip->setBounds (area.expanded (6, 6));
+        chip->onTap = [this, param = row.param]
+        {
+            if (onTogglePedalLink)
+                onTogglePedalLink (param, linkModePedal);
+            refreshLinkChips();
+        };
+    }
+    refreshLinkChips();
+}
+
+void ParameterPanel::refreshLinkChips()
+{
+    if (! getPedalLinks)
+        return;
+    for (auto* component : linkChips)
+    {
+        auto* chip = static_cast<LinkChip*> (component);
+        bool linked = false;
+        for (auto& link : getPedalLinks (chip->param))
+            if (link.pedal == linkModePedal)
+                linked = link.linked;
+        if (linked != chip->linked)
+        {
+            chip->linked = linked;
+            chip->repaint();
         }
     }
 }

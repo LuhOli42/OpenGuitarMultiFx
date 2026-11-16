@@ -264,19 +264,9 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
 
     tone3000Page.addAndMakeVisible (statusLabel);
 
-    midiPage.addAndMakeVisible (midiIntroLabel);
-    midiIntroLabel.setFont (juce::Font (18.0f, juce::Font::bold));
-    midiIntroLabel.setText ("MIDI", juce::dontSendNotification);
-    midiPage.addAndMakeVisible (midiHintLabel);
-    midiHintLabel.setFont (juce::Font (15.0f));
-    midiHintLabel.setText ("Learn a knob: press and hold its name in the parameter drawer, then move a MIDI control.\n"
-                           "Learn a block on/off footswitch: press and hold the block on the grid.\n"
-                           "Learn a scene footswitch: press and hold the + on the snapshot strip.\n"
-                           "Program Change 1-128 recalls presets 1-128. Every available MIDI input is enabled automatically.",
-                           juce::dontSendNotification);
     midiPage.addAndMakeVisible (midiTableLabel);
     midiTableLabel.setFont (juce::Font (18.0f, juce::Font::bold));
-    midiTableLabel.setText ("Learned assignments", juce::dontSendNotification);
+    midiTableLabel.setText ("MIDI assignments", juce::dontSendNotification);
     midiPage.addAndMakeVisible (midiTable);
     midiTable.onRemove = [this] (const MidiMappingRow& row)
     {
@@ -306,6 +296,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
         editor->onLearn = [this, i] { if (onExpressionLearn) onExpressionLearn (i); pollMidiPages(); };
         editor->onClear = [this, i] { if (onExpressionClear) onExpressionClear (i); pollMidiPages(); };
         editor->onCalibrate = [this, i] { if (onExpressionCalibrate) onExpressionCalibrate (i); pollMidiPages(); };
+        editor->onLinkKnobs = [this, i] { if (onExpressionLinkKnobs) onExpressionLinkKnobs (i); };
         editor->onEdited = [this, i] (const exppedal::Pedal& p) { if (onExpressionEdited) onExpressionEdited (i, p); pollMidiPages(); };
     }
     midiPoll.tick = [this] { pollMidiPages(); };
@@ -545,7 +536,7 @@ void Tone3000Panel::applyLabelColours()
     const auto muted = [this, &t] (juce::Label& label) { label.setColour (juce::Label::textColourId, t.textMuted); };
 
     for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &statusLabel,
-                                &updateStatusLabel, &midiHintLabel, &expressionHintLabel, &aboutDetailsLabel, &interfaceLabel,
+                                &updateStatusLabel, &expressionHintLabel, &aboutDetailsLabel, &interfaceLabel,
                                 &currentVersionLabel, &clientIdLabel })
         muted (*label);
 }
@@ -812,10 +803,6 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
         }
         case Section::midi:
         {
-            midiIntroLabel.setBounds (area.removeFromTop (26));
-            area.removeFromTop (8);
-            midiHintLabel.setBounds (area.removeFromTop (96));
-            area.removeFromTop (12);
             midiTableLabel.setBounds (area.removeFromTop (26));
             area.removeFromTop (6);
             midiTable.setBounds (area.removeFromTop (midiTable.getIdealHeight()));

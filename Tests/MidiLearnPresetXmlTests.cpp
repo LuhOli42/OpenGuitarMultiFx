@@ -30,10 +30,10 @@ public:
             auto bindings = midilearnxml::read (preset, { reloadedTremolo.getParameters(), reloadedAmp.getParameters() });
 
             expectEquals ((int) bindings.size(), 2);
-            expect (bindings[1] != nullptr && reloadedTremolo.getParameters()->getParameters (true).contains (bindings[1]));
-            expect (bindings[11] != nullptr && reloadedAmp.getParameters()->getParameters (true).contains (bindings[11]));
-            expectEquals (bindings[1]->paramID, depth->paramID);
-            expectEquals (bindings[11]->paramID, pageTwoParam->paramID);
+            expect (bindings.find (1)->second != nullptr && reloadedTremolo.getParameters()->getParameters (true).contains (bindings.find (1)->second));
+            expect (bindings.find (11)->second != nullptr && reloadedAmp.getParameters()->getParameters (true).contains (bindings.find (11)->second));
+            expectEquals (bindings.find (1)->second->paramID, depth->paramID);
+            expectEquals (bindings.find (11)->second->paramID, pageTwoParam->paramID);
         }
 
         beginTest ("no bindings writes nothing; a preset without <MidiLearn> reads as no bindings");
@@ -74,8 +74,25 @@ public:
             TremoloProcessor reloaded;
             auto bindings = midilearnxml::read (preset, { nullptr, reloaded.getParameters() });
             expectEquals ((int) bindings.size(), 1);
-            expect (bindings.count (4) == 1 && bindings[4]->paramID == rate->paramID);
-            expect (reloaded.getParameters()->getParameters (true).contains (bindings[4]));
+            expect (bindings.count (4) == 1 && bindings.find (4)->second->paramID == rate->paramID);
+            expect (reloaded.getParameters()->getParameters (true).contains (bindings.find (4)->second));
+        }
+
+        beginTest ("one CC (an expression pedal) driving two knobs round-trips both");
+        {
+            TremoloProcessor tremolo;
+            auto* first = tremolo.getParameterPages()[0].front();
+            auto* last = tremolo.getParameterPages()[0].back();
+            juce::XmlElement preset ("Preset");
+            midilearnxml::write (preset, { { 11, first }, { 11, last } }, { tremolo.getParameters() });
+
+            TremoloProcessor reloaded;
+            auto bindings = midilearnxml::read (preset, { reloaded.getParameters() });
+            expectEquals ((int) bindings.count (11), 2);
+            juce::StringArray ids;
+            for (auto [it, end] = bindings.equal_range (11); it != end; ++it)
+                ids.add (it->second->paramID);
+            expect (ids.contains (first->paramID) && ids.contains (last->paramID));
         }
     }
 };
