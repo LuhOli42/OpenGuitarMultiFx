@@ -168,7 +168,7 @@ public:
 
         g.setColour (textColour);
         g.setFont (font (14.0f, primary || selected));
-        g.drawFittedText (text, textArea.toNearestInt(), juce::Justification::centredLeft, 1);
+        g.drawFittedText (text, textArea.toNearestInt(), juce::Justification::centred, 1);
 
         if (trailingText.isNotEmpty())
         {

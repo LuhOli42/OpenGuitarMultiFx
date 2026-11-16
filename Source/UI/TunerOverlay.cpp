@@ -141,16 +141,16 @@ void TunerOverlay::resized()
     auto header = getLocalBounds().removeFromTop (76).reduced (16, 0);
     closeButton.setBounds (header.removeFromRight (52).withSizeKeepingCentre (52, 52));
     header.removeFromRight (8);
-    muteButton.setBounds (header.removeFromRight (110).withSizeKeepingCentre (110, 48));
+    muteButton.setBounds (header.removeFromRight (96).withSizeKeepingCentre (96, 48));
     header.removeFromRight (8);
-    midiButton.setBounds (header.removeFromRight (230).withSizeKeepingCentre (230, 48));
+    midiButton.setBounds (header.removeFromRight (178).withSizeKeepingCentre (178, 48));
     header.removeFromRight (8);
-    referenceLabel.setBounds (header.removeFromRight (120).withSizeKeepingCentre (120, 48));
+    referenceLabel.setBounds (header.removeFromRight (118).withSizeKeepingCentre (118, 48));
 
     titleLabel.setBounds (header.removeFromLeft (90));
     header.removeFromLeft (8);
-    needleButton.setBounds (header.removeFromLeft (104).withSizeKeepingCentre (104, 48));
-    strobeButton.setBounds (header.removeFromLeft (104).withSizeKeepingCentre (104, 48));
+    needleButton.setBounds (header.removeFromLeft (92).withSizeKeepingCentre (92, 48));
+    strobeButton.setBounds (header.removeFromLeft (92).withSizeKeepingCentre (92, 48));
 
     auto body = getLocalBounds().withTrimmedTop (76).reduced (0, 12);
     noteBounds = body.removeFromLeft (430).reduced (24, 0).toFloat();
