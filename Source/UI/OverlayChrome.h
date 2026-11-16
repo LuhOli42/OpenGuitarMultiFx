@@ -151,10 +151,11 @@ public:
             }
             else if (chromeless)
             {
-                // mockup: selected segment = accent fill, dark ink (seg .on in bold; user wants accent everywhere)
-                g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
+                // tuner segment selection: fixed amber from the mockup (not the theme accent)
+                const auto seg = juce::Colour (0xfff6c343);
+                g.setColour (seg);
                 g.fillRoundedRectangle (bounds, radius);
-                textColour = inkOn (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
+                textColour = inkOn (seg);
             }
         }
 
