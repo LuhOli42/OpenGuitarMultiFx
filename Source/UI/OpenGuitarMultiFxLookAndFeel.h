@@ -31,15 +31,10 @@ public:
     juce::Typeface::Ptr getTypefaceForFont (const juce::Font& font) override;
     juce::Font getPopupMenuFont() override;
 
-    /** JUCE never auto-sizes a Slider's value textbox font to the box's own
-        pixel size -- it just inherits juce::Label's plain default font
-        (see LookAndFeel_V2::createSliderTextBox/getLabelFont), which is why
-        every knob's value readout rendered small regardless of how big the
-        box was drawn. Bumped explicitly here per user request 2026-09-10
-        (needs to read clearly from a couple of metres away on a 10" stage
-        display) -- the only juce::Slider usage in this app is
-        ParameterPanel's knobs, so this is safe as a blanket override. */
+    /** Slider value boxes use the same raised, rounded numeric field as the
+        parameter drawer, with the embedded Sora bold face. */
     juce::Label* createSliderTextBox (juce::Slider&) override;
+    juce::Slider::SliderLayout getSliderLayout (juce::Slider&) override;
 
     /** For the handful of places (the big preset number/name -- see
         MainComponent) that specifically want the heavier display weight,
@@ -64,6 +59,9 @@ public:
         unchanged -- only the painting differs. */
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height, float sliderPos,
                            float rotaryStartAngle, float rotaryEndAngle, juce::Slider&) override;
+    void drawLinearSlider (juce::Graphics&, int x, int y, int width, int height, float sliderPos,
+                           float minSliderPos, float maxSliderPos, juce::Slider::SliderStyle,
+                           juce::Slider&) override;
 
     /** The app's CURRENT accent colour -- the knob fill/pointer colour
         (Slider::rotarySliderFillColourId, set in the .cpp) and the drawer's

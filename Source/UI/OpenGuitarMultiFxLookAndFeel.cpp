@@ -4,8 +4,31 @@
 
 #include <BinaryData.h>
 
+#include <cmath>
+
 namespace openguitarmultifx
 {
+namespace
+{
+    class SliderValueBox final : public juce::Label
+    {
+    public:
+        void paint (juce::Graphics& g) override
+        {
+            const auto& t = theme::current();
+            const auto bounds = getLocalBounds().toFloat();
+            const auto visual = bounds.withY (bounds.getCentreY() - 18.0f).withHeight (36.0f);
+            const float radius = t.id == theme::Id::console ? 3.0f : 9.0f;
+
+            g.setColour (t.raised);
+            g.fillRoundedRectangle (visual, radius);
+            g.setColour (t.line);
+            g.drawRoundedRectangle (visual, radius, 1.0f);
+            juce::Label::paint (g);
+        }
+    };
+}
+
 // The fallback accent, used until the first applySnapshotAccent() call
 // moves it to the live snapshot's colour (see the header).
 juce::Colour OpenGuitarMultiFxLookAndFeel::appAccent { 0xff42a2c8 };
@@ -49,8 +72,8 @@ void OpenGuitarMultiFxLookAndFeel::applyTheme()
 
     setColour (juce::Slider::rotarySliderOutlineColourId, t.lineStrong);
     setColour (juce::Slider::textBoxTextColourId, t.text);
-    setColour (juce::Slider::textBoxBackgroundColourId, t.surface);
-    setColour (juce::Slider::textBoxOutlineColourId, t.lineStrong);
+    setColour (juce::Slider::textBoxBackgroundColourId, t.raised);
+    setColour (juce::Slider::textBoxOutlineColourId, t.line);
     setColour (juce::Slider::trackColourId, t.raisedHigh);
     setColour (juce::Slider::backgroundColourId, t.raised);
 
@@ -102,9 +125,28 @@ juce::Font OpenGuitarMultiFxLookAndFeel::getPopupMenuFont()
 
 juce::Label* OpenGuitarMultiFxLookAndFeel::createSliderTextBox (juce::Slider& slider)
 {
-    auto* label = LookAndFeel_V4::createSliderTextBox (slider);
-    label->setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
+    auto* label = new SliderValueBox();
+    label->setJustificationType (juce::Justification::centred);
+    label->setEditable (true, true, false);
+    label->setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
+    label->setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    label->setColour (juce::Label::outlineColourId, juce::Colours::transparentBlack);
     return label;
+}
+
+juce::Slider::SliderLayout OpenGuitarMultiFxLookAndFeel::getSliderLayout (juce::Slider& slider)
+{
+    auto layout = juce::LookAndFeel_V4::getSliderLayout (slider);
+    if (slider.getSliderStyle() == juce::Slider::LinearVertical
+        && slider.getProperties().getWithDefault ("graphicEqFullTrack", false))
+        layout.sliderBounds = slider.getLocalBounds();
+
+    if (slider.getProperties().getWithDefault ("masterEqTrackGap", false))
+    {
+        layout.sliderBounds = layout.sliderBounds.expanded (getSliderThumbRadius (slider), 0);
+        layout.sliderBounds.removeFromRight (8);
+    }
+    return layout;
 }
 
 void OpenGuitarMultiFxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
@@ -209,6 +251,112 @@ void OpenGuitarMultiFxLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, i
         g.setColour (slider.isEnabled() ? accent : t.textDim);
         g.fillEllipse (thumbPoint.x - thumbRadius, thumbPoint.y - thumbRadius, thumbRadius * 2.0f, thumbRadius * 2.0f);
     }
+}
+
+void OpenGuitarMultiFxLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+                                                       float sliderPos, float, float,
+                                                       juce::Slider::SliderStyle style, juce::Slider& slider)
+{
+    if (style != juce::Slider::LinearHorizontal && style != juce::Slider::LinearVertical)
+    {
+        LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos, 0.0f, 0.0f, style, slider);
+        return;
+    }
+
+    const auto& t = theme::current();
+    const auto accent = slider.findColour (juce::Slider::rotarySliderFillColourId)
+                            .withAlpha (slider.isEnabled() ? 1.0f : 0.4f);
+    const bool horizontal = style == juce::Slider::LinearHorizontal;
+    const bool console = t.id == theme::Id::console;
+    const bool stageGlass = t.id == theme::Id::stageGlass;
+
+    if (! horizontal)
+    {
+        const float trackWidth = 6.0f;
+        const float consoleThumbWidth = 26.0f;
+        const float thumbSize = console ? 12.0f : 22.0f;
+        const float top = (float) y;
+        const float bottom = (float) (y + height);
+        const float thumbInset = thumbSize * 0.5f;
+        const float pos = juce::jlimit (top + thumbInset, bottom - thumbInset, sliderPos);
+        const auto track = juce::Rectangle<float> ((float) x + (float) width * 0.5f - trackWidth * 0.5f,
+                                                   top, trackWidth, (float) height);
+        const auto range = slider.getRange();
+        const bool bipolar = std::abs (range.getStart() + range.getEnd()) < 0.0001;
+        const float fillStart = bipolar ? track.getCentreY() : pos;
+        const float fillEnd = bipolar ? pos : bottom;
+        const auto fill = juce::Rectangle<float> (track.getX(), juce::jmin (fillStart, fillEnd),
+                                                   trackWidth, std::abs (fillEnd - fillStart));
+
+        g.setColour (t.background);
+        g.fillRoundedRectangle (track, 3.0f);
+        if (fill.getHeight() > 0.0f)
+        {
+            if (stageGlass)
+            {
+                g.setColour (accent.withAlpha (0.12f));
+                g.drawRoundedRectangle (fill.expanded (2.0f), 4.0f, 5.0f);
+                g.setColour (accent.withAlpha (0.22f));
+                g.drawRoundedRectangle (fill.expanded (1.0f), 4.0f, 3.0f);
+            }
+            g.setColour (accent);
+            g.fillRoundedRectangle (fill, 3.0f);
+        }
+
+        const float thumbWidth = console ? consoleThumbWidth : thumbSize;
+        const float thumbHeight = thumbSize;
+        const auto thumb = juce::Rectangle<float> ((float) x + (float) width * 0.5f - thumbWidth * 0.5f,
+                                                   pos - thumbHeight * 0.5f, thumbWidth, thumbHeight);
+        if (stageGlass)
+        {
+            g.setColour (accent.withAlpha (0.18f));
+            g.fillEllipse (thumb.getCentreX() - 13.0f, pos - 13.0f, 26.0f, 26.0f);
+        }
+        g.setColour (console ? juce::Colour (0xffe6e6e8)
+                             : juce::Colours::white.withAlpha (slider.isEnabled() ? 1.0f : 0.45f));
+        if (console)
+            g.fillRoundedRectangle (thumb, 3.0f);
+        else
+            g.fillEllipse (thumb);
+
+        g.setColour (console ? juce::Colour (0xff35353a) : accent);
+        g.drawLine (thumb.getCentreX() - (console ? 7.0f : 5.0f), pos,
+                    thumb.getCentreX() + (console ? 7.0f : 5.0f), pos, 2.0f);
+        return;
+    }
+
+    const float thumbSize = 24.0f;
+    juce::Rectangle<float> track;
+    juce::Rectangle<float> fill;
+    juce::Rectangle<float> thumb;
+
+    const float left = (float) x + thumbSize * 0.5f;
+    const float right = juce::jmax (left, (float) (x + width) - thumbSize * 0.5f);
+    const float pos = juce::jlimit (left, right, sliderPos);
+    track = { left, (float) y + (float) height * 0.5f - 4.0f, right - left, 8.0f };
+    fill = { left, track.getY(), pos - left, track.getHeight() };
+    thumb = { pos - thumbSize * 0.5f, track.getCentreY() - thumbSize * 0.5f, thumbSize, thumbSize };
+
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (track, 4.0f);
+    if (fill.getWidth() > 0.0f && fill.getHeight() > 0.0f)
+    {
+        if (stageGlass)
+        {
+            g.setColour (accent.withAlpha (0.12f));
+            g.drawRoundedRectangle (fill.expanded (2.0f), 4.0f, 5.0f);
+            g.setColour (accent.withAlpha (0.22f));
+            g.drawRoundedRectangle (fill.expanded (1.0f), 4.0f, 3.0f);
+        }
+        g.setColour (accent);
+        g.fillRoundedRectangle (fill, 4.0f);
+    }
+
+    g.setColour (juce::Colours::white.withAlpha (slider.isEnabled() ? 1.0f : 0.45f));
+    if (console)
+        g.fillRoundedRectangle (thumb, 3.0f);
+    else
+        g.fillEllipse (thumb);
 }
 
 void OpenGuitarMultiFxLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
