@@ -203,7 +203,7 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
                 while (headEnd < chain.size() && chain[headEnd]->isParallelSynth())
                     ++headEnd;
                 size_t tailStart = chain.size();
-                while (tailStart > 0 && chain[tailStart - 1]->hasTrails() && chain[tailStart - 1]->isWetOverDryEffect())
+                while (tailStart > 0 && chain[tailStart - 1]->canRunAsSendTail())
                     --tailStart;
                 if (headEnd > 0)
                 {
@@ -625,7 +625,7 @@ void SignalGraph::processSend (juce::AudioBuffer<float>& buffer)
     // two callbacks late: y = g*x + wet, so wet = y - g*x (with g read when the block was handed over).
     float dryGain = 1.0f;
     for (size_t i = workerFirst; i < workerEnd; ++i)
-        dryGain *= processors[i]->parallelDryGain();
+        dryGain *= processors[i]->isBypassed() ? 1.0f : processors[i]->parallelDryGain(); // bypassed: the dry passes as it is
 
     const int channels = pipeLastOutput.getNumChannels();
     for (int ch = 0; ch < channels; ++ch)

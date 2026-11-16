@@ -2825,6 +2825,7 @@ void MainComponent::timerCallback()
     // Dropout counter: a block that took longer than its audio is an audible pop. Logged every ~10 s, only when there
     // was one, with the peak-hold CPU reading -- the number to look at when "an effect makes it crackle".
     overBudgetAccum += audioEngine.takeOverBudgetBlocks();
+    audioEngine.serviceClickCapture (performanceModeFile().getSiblingFile ("clicks"));
     {
         const auto c = audioEngine.takeClickStats();
         clickInAccum += c.inClicks;

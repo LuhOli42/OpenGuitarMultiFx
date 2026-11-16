@@ -179,6 +179,10 @@ public:
         chain (clean guitar in) it can run as a send on the second fast core. */
     virtual bool isParallelSynth() const { return false; }
 
+    /** Can sit in the trailing part of a chain that runs as a send (SignalGraph): its output is dry * parallelDryGain()
+        plus a wet part, per channel, so the wet part can arrive late. Delays/reverbs on the Wet-over-dry law by default. */
+    virtual bool canRunAsSendTail() const { return hasTrails() && isWetOverDryEffect(); }
+
     /** Send mode: how much of this block's INPUT reaches its output as it is (the rest is wet and may arrive late). */
     virtual float parallelDryGain() const { return dryIsKilled() ? 0.0f : 1.0f; }
 
