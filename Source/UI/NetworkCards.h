@@ -15,26 +15,6 @@ namespace openguitarmultifx
 
 namespace netcards
 {
-    /** The row of the network / device in use: an accent bar on the left, an accent outline and a "CONNECTED" pill
-        on the right, so it reads at a glance instead of as one more grey caption. Returns the space left of the pill. */
-    inline juce::Rectangle<float> paintConnectedRow (juce::Graphics& g, juce::Rectangle<float> bounds)
-    {
-        const auto& t = theme::current();
-        const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
-        g.setColour (accent.withAlpha (0.14f));
-        g.fillRoundedRectangle (bounds, t.smallRadius);
-        g.setColour (accent);
-        g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 2.0f);
-        g.fillRoundedRectangle (bounds.withWidth (6.0f).reduced (0.0f, 6.0f), 3.0f);
-
-        auto pill = bounds.withTrimmedRight (90.0f).removeFromRight (128.0f).withSizeKeepingCentre (124.0f, 30.0f);
-        g.fillRoundedRectangle (pill, 15.0f);
-        g.setColour (theme::inkOn (accent));
-        g.setFont (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)));
-        g.drawText ("CONNECTED", pill.toNearestInt(), juce::Justification::centred);
-        return bounds.withRight (pill.getX() - 8.0f);
-    }
-
     /** Runs `args` (no shell), waits for it and returns stdout+stderr. Call from a worker thread only. */
     inline juce::String run (const juce::StringArray& args)
     {
@@ -82,6 +62,93 @@ namespace netcards
 }
 
 /**
+    The "Connected" block at the top of the Wi-Fi and Bluetooth cards: what is connected right now, in the accent
+    colour, each with its own Disconnect button. Hidden (zero height) when nothing is connected; the list below then
+    holds only the networks / devices that are not.
+*/
+class ConnectedPanel : public juce::Component
+{
+public:
+    struct Item
+    {
+        juce::String name, detail;
+        int bars = -1; // Wi-Fi signal 1..4, -1 = none
+    };
+
+    std::function<void (int)> onDisconnect;
+
+    void setItems (std::vector<Item> newItems)
+    {
+        items = std::move (newItems);
+        buttons.clear();
+        for (int i = 0; i < (int) items.size(); ++i)
+        {
+            auto* b = buttons.add (new overlaychrome::ActionButton());
+            b->text = "Disconnect";
+            b->onClick = [this, i] { if (onDisconnect) onDisconnect (i); };
+            addAndMakeVisible (*b);
+        }
+        resized();
+        repaint();
+    }
+
+    int getPreferredHeight() const { return items.empty() ? 0 : captionHeight + (int) items.size() * (rowHeight + gap); }
+
+    void resized() override
+    {
+        for (int i = 0; i < buttons.size(); ++i)
+            buttons[i]->setBounds (rowBounds (i).toNearestInt().removeFromRight (180).reduced (14, 14));
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        if (items.empty())
+            return;
+        const auto& t = theme::current();
+        const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+
+        g.setColour (accent);
+        g.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
+        g.drawText ("CONNECTED", getLocalBounds().removeFromTop (captionHeight).withTrimmedLeft (4), juce::Justification::centredLeft);
+
+        for (int i = 0; i < (int) items.size(); ++i)
+        {
+            const auto r = rowBounds (i);
+            g.setColour (accent.withAlpha (0.16f));
+            g.fillRoundedRectangle (r, t.smallRadius);
+            g.setColour (accent);
+            g.drawRoundedRectangle (r.reduced (1.0f), t.smallRadius, 2.0f);
+            g.fillRoundedRectangle (r.withWidth (7.0f).reduced (0.0f, 8.0f), 3.5f);
+
+            auto text = r.withTrimmedLeft (24.0f).withTrimmedRight (190.0f);
+            if (items[(size_t) i].bars > 0)
+            {
+                netcards::drawBars (g, text.removeFromRight (44.0f).withSizeKeepingCentre (34.0f, 28.0f),
+                                    items[(size_t) i].bars, t.text, t.lineStrong);
+                text.removeFromRight (12.0f);
+            }
+            g.setColour (t.text);
+            g.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
+            g.drawText (items[(size_t) i].name, text.removeFromTop (text.getHeight() * 0.58f).toNearestInt(),
+                        juce::Justification::bottomLeft, true);
+            g.setColour (t.textMuted);
+            g.setFont (juce::Font (juce::FontOptions (15.0f)));
+            g.drawText (items[(size_t) i].detail, text.toNearestInt(), juce::Justification::topLeft, true);
+        }
+    }
+
+private:
+    juce::Rectangle<float> rowBounds (int i) const
+    {
+        return juce::Rectangle<float> (0.0f, (float) (captionHeight + i * (rowHeight + gap)), (float) getWidth(), (float) rowHeight);
+    }
+
+    static constexpr int captionHeight = 28, rowHeight = 76, gap = 8;
+    std::vector<Item> items;
+    juce::OwnedArray<overlaychrome::ActionButton> buttons;
+};
+
+/**
     Settings card for the Wi-Fi radio (nmcli): scan, pick a network, type the password with the on-screen keyboard
     (OnScreenKeyboard.h), connect. The device has no keyboard or desktop to do it with.
 */
@@ -105,6 +172,13 @@ public:
         addAndMakeVisible (scanButton);
         scanButton.text = "Scan";
         scanButton.onClick = [this] { scan(); };
+
+        addAndMakeVisible (connectedPanel);
+        connectedPanel.onDisconnect = [this] (int) { disconnect(); };
+        addAndMakeVisible (availableLabel);
+        availableLabel.setText ("AVAILABLE", juce::dontSendNotification);
+        availableLabel.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
+        availableLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
 
         addAndMakeVisible (list);
         list.setRowHeight (touch::minTapTarget + 16);
@@ -141,6 +215,10 @@ public:
 
         statusLabel.setBounds (area.removeFromTop (34));
         area.removeFromTop (6);
+        connectedPanel.setBounds (area.removeFromTop (connectedPanel.getPreferredHeight()));
+        if (connectedPanel.getPreferredHeight() > 0)
+            area.removeFromTop (10);
+        availableLabel.setBounds (area.removeFromTop (26));
 
         auto bottom = area.removeFromBottom (selectedNeedsPassword() || connectButton.isVisible() ? 76 : 0);
         list.setBounds (area);
@@ -216,6 +294,7 @@ private:
                 if (safe == nullptr)
                     return;
                 safe->networks = std::move (found);
+                safe->rebuildRows();
                 safe->selected = -1;
                 safe->passwordField.setVisible (false);
                 safe->connectButton.setVisible (false);
@@ -224,6 +303,41 @@ private:
                 safe->resized();
                 safe->refreshCurrent();
             });
+        });
+    }
+
+    void rebuildRows()
+    {
+        rows.clear();
+        std::vector<ConnectedPanel::Item> inUse;
+        for (int i = 0; i < (int) networks.size(); ++i)
+        {
+            const auto& n = networks[(size_t) i];
+            if (n.inUse)
+                inUse.push_back ({ n.ssid, juce::String (n.signal) + "% signal" + (n.secured ? ", secured" : ", open"),
+                                   n.signal >= 75 ? 4 : n.signal >= 50 ? 3 : n.signal >= 25 ? 2 : 1 });
+            else
+                rows.push_back (i);
+        }
+        connectedPanel.setItems (std::move (inUse));
+        list.updateContent();
+        resized();
+    }
+
+    void disconnect()
+    {
+        juce::String ssid;
+        for (const auto& n : networks)
+            if (n.inUse)
+                ssid = n.ssid;
+        if (ssid.isEmpty())
+            return;
+        setStatus ("Disconnecting " + ssid + "...");
+        juce::Component::SafePointer<WifiCard> safe (this);
+        juce::Thread::launch ([safe, ssid]
+        {
+            netcards::run ({ "nmcli", "-w", "15", "connection", "down", "id", ssid });
+            juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->scan(); });
         });
     }
 
@@ -260,21 +374,24 @@ private:
                     return;
                 safe->setStatus (ok ? "Connected to " + ssid
                                     : "Could not connect: " + out.trim().fromLastOccurrenceOf ("Error:", false, false).trim());
-                safe->refreshCurrent();
+                if (ok)
+                    safe->scan(); // moves it into the Connected block
+                else
+                    safe->refreshCurrent();
             });
         });
     }
 
     // ---- ListBoxModel
-    int getNumRows() override { return (int) networks.size(); }
+    int getNumRows() override { return (int) rows.size(); }
 
     void paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selectedRow) override
     {
-        if (! juce::isPositiveAndBelow (row, (int) networks.size()))
+        if (! juce::isPositiveAndBelow (row, (int) rows.size()))
             return;
 
         const auto& t = theme::current();
-        const auto& n = networks[(size_t) row];
+        const auto& n = networks[(size_t) rows[(size_t) row]];
         auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height).reduced (4.0f, 3.0f);
 
         g.setColour (selectedRow ? t.raisedHigh : t.raised);
@@ -285,21 +402,14 @@ private:
             g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.5f);
         }
 
-        auto textArea = bounds.withTrimmedRight (200.0f);
-        if (n.inUse)
-            textArea = netcards::paintConnectedRow (g, bounds);
-
         g.setColour (t.text);
-        g.setFont (juce::Font (juce::FontOptions (22.0f, n.inUse ? juce::Font::bold : juce::Font::plain)));
-        g.drawText (n.ssid, textArea.reduced (16.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft);
+        g.setFont (juce::Font (juce::FontOptions (22.0f)));
+        g.drawText (n.ssid, bounds.reduced (16.0f, 0.0f).withTrimmedRight (200.0f).toNearestInt(), juce::Justification::centredLeft);
 
-        if (! n.inUse)
-        {
-            g.setColour (t.textMuted);
-            g.setFont (juce::Font (juce::FontOptions (15.0f)));
-            g.drawText (n.secured ? "secured" : "open", bounds.withTrimmedRight (86.0f).removeFromRight (150.0f).toNearestInt(),
-                        juce::Justification::centredRight);
-        }
+        g.setColour (t.textMuted);
+        g.setFont (juce::Font (juce::FontOptions (15.0f)));
+        g.drawText (n.secured ? "secured" : "open", bounds.withTrimmedRight (86.0f).removeFromRight (150.0f).toNearestInt(),
+                    juce::Justification::centredRight);
 
         const int bars = n.signal >= 75 ? 4 : n.signal >= 50 ? 3 : n.signal >= 25 ? 2 : 1;
         netcards::drawBars (g, juce::Rectangle<float> (bounds.getRight() - 62.0f, bounds.getCentreY() - 14.0f, 34.0f, 28.0f),
@@ -308,7 +418,9 @@ private:
 
     void listBoxItemClicked (int row, const juce::MouseEvent&) override
     {
-        selected = row;
+        if (! juce::isPositiveAndBelow (row, (int) rows.size()))
+            return;
+        selected = rows[(size_t) row];
         const bool secured = selectedNeedsPassword();
         passwordField.clear();
         passwordField.setVisible (secured);
@@ -325,8 +437,11 @@ private:
     overlaychrome::ActionButton scanButton, connectButton;
     juce::ListBox list { "wifiNetworks", this };
     juce::TextEditor passwordField;
+    ConnectedPanel connectedPanel;
+    juce::Label availableLabel;
     std::vector<Network> networks;
-    int selected = -1;
+    std::vector<int> rows;   // list row -> networks index (the one in use is in connectedPanel, not the list)
+    int selected = -1;       // networks index
 };
 
 /**
@@ -353,6 +468,17 @@ public:
         scanButton.text = "Scan";
         scanButton.onClick = [this] { scan(); };
 
+        addAndMakeVisible (connectedPanel);
+        connectedPanel.onDisconnect = [this] (int i)
+        {
+            if (juce::isPositiveAndBelow (i, (int) connectedRows.size()))
+                toggleConnection (connectedRows[(size_t) i]);
+        };
+        addAndMakeVisible (availableLabel);
+        availableLabel.setText ("AVAILABLE", juce::dontSendNotification);
+        availableLabel.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
+        availableLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
+
         addAndMakeVisible (list);
         list.setRowHeight (touch::minTapTarget + 16);
         list.setColour (juce::ListBox::backgroundColourId, theme::current().surface);
@@ -375,6 +501,10 @@ public:
         titleLabel.setBounds (header);
         statusLabel.setBounds (area.removeFromTop (34));
         area.removeFromTop (6);
+        connectedPanel.setBounds (area.removeFromTop (connectedPanel.getPreferredHeight()));
+        if (connectedPanel.getPreferredHeight() > 0)
+            area.removeFromTop (10);
+        availableLabel.setBounds (area.removeFromTop (26));
         list.setBounds (area);
     }
 
@@ -394,7 +524,7 @@ private:
             if (d.connected)
                 names.add (d.name);
         if (! names.isEmpty())
-            return "Connected to " + names.joinIntoString (", ") + " (tap to disconnect)";
+            return "Connected to " + names.joinIntoString (", ");
         return devices.empty() ? "No devices found" : "Nothing connected - tap a device to pair and connect";
     }
 
@@ -425,16 +555,35 @@ private:
             {
                 if (safe == nullptr)
                     return;
-                std::stable_sort (found.begin(), found.end(), [] (const Device& a, const Device& b) { return a.connected && ! b.connected; });
                 safe->devices = std::move (found);
-                safe->list.updateContent();
-                safe->list.repaint();
+                safe->rebuildRows();
                 safe->setStatus (safe->connectedSummary());
             });
         });
     }
 
-    void toggleConnection (int row)
+    void rebuildRows()
+    {
+        rows.clear();
+        connectedRows.clear();
+        std::vector<ConnectedPanel::Item> connected;
+        for (int i = 0; i < (int) devices.size(); ++i)
+        {
+            if (devices[(size_t) i].connected)
+            {
+                connectedRows.push_back (i);
+                connected.push_back ({ devices[(size_t) i].name, devices[(size_t) i].mac, -1 });
+            }
+            else
+                rows.push_back (i);
+        }
+        connectedPanel.setItems (std::move (connected));
+        list.updateContent();
+        list.repaint();
+        resized();
+    }
+
+    void toggleConnection (int row) // row = devices index
     {
         if (! juce::isPositiveAndBelow (row, (int) devices.size()))
             return;
@@ -461,48 +610,48 @@ private:
                 for (auto& d : safe->devices)
                     if (d.mac == device.mac && ok)
                         d.connected = ! device.connected;
-                std::stable_sort (safe->devices.begin(), safe->devices.end(),
-                                  [] (const Device& a, const Device& b) { return a.connected && ! b.connected; });
+                safe->rebuildRows();
                 safe->setStatus (ok ? safe->connectedSummary()
                                     : "Failed: " + out.trim().fromLastOccurrenceOf ("\n", false, false).trim());
-                safe->list.repaint();
             });
         });
     }
 
-    int getNumRows() override { return (int) devices.size(); }
+    int getNumRows() override { return (int) rows.size(); }
 
     void paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selectedRow) override
     {
-        if (! juce::isPositiveAndBelow (row, (int) devices.size()))
+        if (! juce::isPositiveAndBelow (row, (int) rows.size()))
             return;
 
         const auto& t = theme::current();
-        const auto& d = devices[(size_t) row];
+        const auto& d = devices[(size_t) rows[(size_t) row]];
         auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height).reduced (4.0f, 3.0f);
         g.setColour (selectedRow ? t.raisedHigh : t.raised);
         g.fillRoundedRectangle (bounds, t.smallRadius);
 
-        auto textArea = bounds.withTrimmedRight (240.0f);
-        if (d.connected)
-            textArea = netcards::paintConnectedRow (g, bounds);
-
         g.setColour (t.text);
-        g.setFont (juce::Font (juce::FontOptions (22.0f, d.connected ? juce::Font::bold : juce::Font::plain)));
-        g.drawText (d.name, textArea.reduced (16.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft);
+        g.setFont (juce::Font (juce::FontOptions (22.0f)));
+        g.drawText (d.name, bounds.reduced (16.0f, 0.0f).withTrimmedRight (240.0f).toNearestInt(), juce::Justification::centredLeft);
         g.setColour (t.textMuted);
         g.setFont (juce::Font (juce::FontOptions (15.0f)));
-        if (! d.connected)
-            g.drawText (d.mac, bounds.reduced (16.0f, 0.0f).toNearestInt(), juce::Justification::centredRight);
+        g.drawText (d.mac, bounds.reduced (16.0f, 0.0f).toNearestInt(), juce::Justification::centredRight);
     }
 
-    void listBoxItemClicked (int row, const juce::MouseEvent&) override { toggleConnection (row); }
+    void listBoxItemClicked (int row, const juce::MouseEvent&) override
+    {
+        if (juce::isPositiveAndBelow (row, (int) rows.size()))
+            toggleConnection (rows[(size_t) row]);
+    }
 
     juce::Label titleLabel, statusLabel;
     overlaychrome::CloseButton closeButton;
     overlaychrome::ActionButton scanButton;
     juce::ListBox list { "btDevices", this };
+    ConnectedPanel connectedPanel;
+    juce::Label availableLabel;
     std::vector<Device> devices;
+    std::vector<int> rows, connectedRows; // list row / panel item -> devices index
 };
 
 } // namespace openguitarmultifx
