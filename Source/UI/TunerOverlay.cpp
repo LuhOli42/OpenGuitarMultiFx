@@ -90,9 +90,12 @@ TunerOverlay::TunerOverlay()
 
     addAndMakeVisible (muteButton);
     muteButton.text = "Mute";
+    muteButton.dotColour = flatColour;   // mockup: the red dot appears only while Mute is on
     muteButton.onClick = [this]
     {
         muteButton.selected = ! muteButton.selected;
+        muteButton.showDot = muteButton.selected;
+        muteButton.borderOverride = muteButton.selected ? flatColour : juce::Colour();
         muteButton.repaint();
         repaint();
         if (onMuteToggled) onMuteToggled (muteButton.selected);
@@ -100,6 +103,8 @@ TunerOverlay::TunerOverlay()
 
     addAndMakeVisible (midiButton);
     midiButton.text = "MIDI Learn";
+    midiButton.showDot = true;
+    midiButton.dotColour = theme::current().textMuted;
     midiButton.onClick = [this] { if (onMidiLearnTapped) onMidiLearnTapped(); };
 
     setSize (1280, 800);
@@ -115,7 +120,8 @@ TunerOverlay::~TunerOverlay()
 void TunerOverlay::setMuteState (bool muted)
 {
     muteButton.selected = muted;
-    muteButton.selectedStyle = overlaychrome::SelectedStyle::chip;
+    muteButton.showDot = muted;
+    muteButton.borderOverride = muted ? flatColour : juce::Colour();
     muteButton.repaint();
     repaint();
 }
@@ -123,7 +129,8 @@ void TunerOverlay::setMuteState (bool muted)
 void TunerOverlay::setMidiLabel (const juce::String& text, bool armed)
 {
     midiButton.text = text;
-    midiButton.selectedStyle = overlaychrome::SelectedStyle::chip;
+    midiButton.dotColour = armed ? flatColour : theme::current().textMuted;
+    midiButton.borderOverride = armed ? flatColour : juce::Colour();
     midiButton.selected = armed;
     midiButton.repaint();
 }

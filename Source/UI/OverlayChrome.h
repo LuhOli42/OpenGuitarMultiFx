@@ -74,6 +74,7 @@ public:
     bool leftAccent = false;
     bool mutedIdle = false;
     juce::Colour dotColour;
+    juce::Colour borderOverride;   // when set, replaces the normal border colour (e.g. armed/red pills)
     juce::String trailingText;
     std::function<void()> onClick;
 
@@ -147,12 +148,11 @@ public:
             }
             else
             {
-                g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
-                g.fillRoundedRectangle (bounds.withY (bounds.getBottom() - 3.0f).withHeight (3.0f), 1.5f);
+                // Mockup: a selected segment is just a lighter fill; the accent underline was an earlier style
             }
         }
 
-        g.setColour (border.withAlpha (ghost ? 0.8f : 1.0f));
+        g.setColour ((borderOverride == juce::Colour() ? border : borderOverride).withAlpha (ghost ? 0.8f : 1.0f));
         g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
 
         auto textArea = bounds.reduced (10.0f, 0.0f);
