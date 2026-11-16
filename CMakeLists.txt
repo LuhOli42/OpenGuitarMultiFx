@@ -320,6 +320,14 @@ add_library(OpenGuitarMultiFx_Core STATIC ${OGMFX_CORE_SOURCES})
 
 target_include_directories(OpenGuitarMultiFx_Core PUBLIC Source)
 
+# Same floating-point results on the board as on the PC: GCC fuses a*b+c into one FMA by default on aarch64
+# (-ffp-contract=fast) but cannot on the x86_64 build, and the Newton solvers in the amp/distortion models
+# (NodalCircuit) are sensitive enough to that rounding difference to fail to converge on loud low notes on the
+# board only -- audible as small pops with an amp or a drive in the chain, never with delays/reverbs.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+  target_compile_options(OpenGuitarMultiFx_Core PRIVATE -ffp-contract=off)
+endif()
+
 # Same web/curl-off profile the test runner always compiled these sources
 # with -- nothing under Effects/Engine/Presets touches the browser or curl
 # code paths (those live in Source/Tone3000 and the UI, which stay in the
@@ -465,6 +473,9 @@ target_link_libraries(OpenGuitarMultiFx PRIVATE
 )
 # The UI draws through the GPU: EGL + OpenGL ES (see cmake/JuceEglPatch.cmake and Source/UI/GpuRendering.h).
 target_compile_definitions(OpenGuitarMultiFx PRIVATE JUCE_OPENGL_LINUX_EGL=1)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+  target_compile_options(OpenGuitarMultiFx PRIVATE -ffp-contract=off) # same as the core: inline DSP emitted here must not fuse either
+endif()
 
 enable_testing()
 add_subdirectory(Tests)
