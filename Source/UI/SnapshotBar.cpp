@@ -73,8 +73,28 @@ void SnapshotBar::setDisplayTypeface (juce::Typeface::Ptr typeface)
 
 int SnapshotBar::getPreferredWidth() const noexcept
 {
-    const int cells = count + (addCellIndex() >= 0 ? 1 : 0);
+    const int cells = displayCount() + (addCellIndex() >= 0 ? 1 : 0);
     return cells * cellWidth + juce::jmax (0, cells - 1) * cellGap;
+}
+
+int SnapshotBar::displayCount() const noexcept
+{
+    // The prototype always shows six letter cells (i<6 even unnamed) --
+    // cells past `count` draw dim and inert. When the top bar can't give
+    // every cell the 48px tap floor, drop filler letters first (down to
+    // the real count) so real cells and "+" stay touch-sized.
+    const int fit = getWidth() > 0 ? juce::jmax (1, (getWidth() + cellGap) / (48 + cellGap)) : 6;
+    const int fillerCap = juce::jmax (0, fit - 1);
+    return juce::jmin (snapshotxml::maxSnapshots, juce::jmax (count, juce::jmin (6, fillerCap)));
+}
+
+float SnapshotBar::effectiveCellWidth() const noexcept
+{
+    // The bar is given whatever width the top bar can spare; cells scale
+    // down from the prototype's 62px to keep every letter reachable.
+    const int cells = displayCount() + (addCellIndex() >= 0 ? 1 : 0);
+    const float fit = ((float) getWidth() - (float) (cells - 1) * (float) cellGap) / (float) cells;
+    return juce::jmin ((float) cellWidth, juce::jmax (40.0f, fit));
 }
 
 int SnapshotBar::cellIndexAt (juce::Point<int> position) const
@@ -83,12 +103,13 @@ int SnapshotBar::cellIndexAt (juce::Point<int> position) const
     if (position.y < top)
         return -1; // the caption strip isn't a cell
 
-    const int pitch = cellWidth + cellGap;
-    const int index = position.x / pitch;
-    if (index < 0 || index >= count + (addCellIndex() >= 0 ? 1 : 0))
+    const float pitch = effectiveCellWidth() + (float) cellGap;
+    const int index = (int) (position.x / pitch);
+    if (index < 0 || index >= displayCount() + (addCellIndex() >= 0 ? 1 : 0))
         return -1;
-    if (position.x - index * pitch >= cellWidth)
+    if (position.x - index * pitch >= effectiveCellWidth())
         return -1;
+    // Only real scenes and the "+" cell respond; filler cells are inert.
     return index < count || index == addCellIndex() ? index : -1;
 }
 
@@ -149,15 +170,16 @@ void SnapshotBar::paint (juce::Graphics& g)
     }
 
     const int cellsTop = learning ? captionHeight : 0;
-    const float pitch = (float) (cellWidth + cellGap);
-    const float cellHeight = (float) SnapshotBar::cellHeight;
+    const float cellW = effectiveCellWidth();
+    const float pitch = cellW + (float) cellGap;
+    const float cellH = (float) SnapshotBar::cellHeight;
 
     const bool filledStyle = t.blockStyle == theme::BlockStyle::filled;
     const bool stripeStyle = t.blockStyle == theme::BlockStyle::topStripe;
 
     if (const int add = addCellIndex(); add >= 0)
     {
-        const auto cell = juce::Rectangle<float> ((float) add * pitch, (float) cellsTop, (float) cellWidth, cellHeight);
+        const auto cell = juce::Rectangle<float> ((float) add * pitch, (float) cellsTop, cellW, cellH);
         g.setColour (t.raised);
         g.fillRoundedRectangle (cell, t.smallRadius);
         g.setColour (t.line);
@@ -173,12 +195,13 @@ void SnapshotBar::paint (juce::Graphics& g)
         g.drawLine (c.x, c.y - arm, c.x, c.y + arm, 2.0f);
     }
 
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < displayCount(); ++i)
     {
-        auto cell = juce::Rectangle<float> ((float) i * pitch, (float) cellsTop, (float) cellWidth, cellHeight);
+        auto cell = juce::Rectangle<float> ((float) i * pitch, (float) cellsTop, cellW, cellH);
 
         const auto colour = cellColours[(size_t) i].isTransparent() ? snapshotxml::defaultColourFor (i) : cellColours[(size_t) i];
-        const bool on = i == current;
+        const bool on = i == current && i < count;
+        const bool inert = i >= count;
         juce::Colour ink = juce::Colours::grey;
 
         if (on && filledStyle)
@@ -187,11 +210,6 @@ void SnapshotBar::paint (juce::Graphics& g)
             g.setColour (colour);
             g.fillRoundedRectangle (cell, t.smallRadius);
             ink = theme::inkOn (colour, juce::Colours::black, juce::Colours::white);
-            if (t.blockStyle == theme::BlockStyle::glow)
-            {
-                g.setColour (colour.withAlpha (0.3f));
-                g.drawRoundedRectangle (cell.expanded (3.0f), t.smallRadius + 3.0f, 5.0f);
-            }
         }
         else if (on && stripeStyle)
         {
@@ -204,16 +222,15 @@ void SnapshotBar::paint (juce::Graphics& g)
         }
         else if (on)
         {
-            // Stage Glass: colour fill + glow, same as Bold's generic rule.
+            // Stage Glass: plain colour fill -- a fake-blur halo pad reads
+            // as a displaced shadow, so the glow stays off the snap cells.
             g.setColour (colour);
             g.fillRoundedRectangle (cell, t.smallRadius);
             ink = theme::inkOn (colour, juce::Colours::black, juce::Colours::white);
-            g.setColour (colour.withAlpha (0.3f));
-            g.drawRoundedRectangle (cell.expanded (3.0f), t.smallRadius + 3.0f, 5.0f);
         }
         else
         {
-            g.setColour (t.raised);
+            g.setColour (inert ? t.raised.withMultipliedAlpha (0.5f) : t.raised);
             g.fillRoundedRectangle (cell, t.smallRadius);
             g.setColour (t.line);
             g.drawRoundedRectangle (cell.reduced (0.5f), t.smallRadius, 1.0f);
@@ -233,13 +250,13 @@ void SnapshotBar::paint (juce::Graphics& g)
             {
                 // Stage Glass / Bold Blocks: a hint of the slot colour as a
                 // bar along the bottom edge.
-                g.setColour (colour.withAlpha (0.7f));
+                g.setColour (colour.withAlpha (inert ? 0.25f : 0.7f));
                 g.fillRoundedRectangle (cell.withTrimmedTop (cell.getHeight() - 5.0f).withTrimmedLeft (8.0f).withTrimmedRight (8.0f).reduced (0.0f, 1.0f), 1.5f);
             }
             ink = t.textMuted;
         }
 
-        if (pedalCcs[(size_t) i] >= 0)
+        if (pedalCcs[(size_t) i] >= 0 && ! inert)
         {
             g.setColour (ink.withAlpha (0.85f));
             g.setFont (juce::FontOptions (9.0f));
@@ -247,24 +264,23 @@ void SnapshotBar::paint (juce::Graphics& g)
                         juce::Justification::topRight);
         }
 
-        // Name lives inside the cell now (redesign card 2): small line at
-        // the bottom, letter above it.
-        const auto& label = labels[(size_t) i];
-        auto letterArea = cell.reduced (3.0f);
+        // Prototype .snap: letter 19px extra-bold centred, name 9.5px 3px
+        // below it; the colour bar stays along the bottom edge.
+        const auto& label = inert ? juce::String() : labels[(size_t) i];
+        auto letterArea = cell.reduced (3.0f).withTrimmedBottom (label.isNotEmpty() ? 0.0f : 4.0f);
         if (label.isNotEmpty())
         {
             g.setColour (ink);
-            g.setFont (juce::FontOptions (10.0f));
-            g.drawFittedText (label, letterArea.removeFromBottom (12.0f).toNearestInt(),
+            g.setFont (juce::FontOptions (9.5f));
+            g.drawFittedText (label, cell.reduced (3.0f).removeFromBottom (14.0f).toNearestInt(),
                               juce::Justification::centred, 1, 0.7f);
-            letterArea = cell.reduced (3.0f);
+            letterArea = cell.reduced (3.0f, 4.0f).withTrimmedBottom (10.0f);
         }
 
-        g.setColour (ink);
-        const auto fontHeight = letterArea.getHeight() * (label.isNotEmpty() ? 0.62f : 0.55f);
+        g.setColour (inert ? ink.withAlpha (0.55f) : ink);
         g.setFont (displayTypeface != nullptr
-                       ? juce::Font (juce::FontOptions (fontHeight).withTypeface (displayTypeface))
-                       : juce::Font (juce::FontOptions (fontHeight, juce::Font::bold)));
+                       ? juce::Font (juce::FontOptions (19.0f).withTypeface (displayTypeface))
+                       : juce::Font (juce::FontOptions (19.0f, juce::Font::bold)));
         g.drawText (snapshotxml::letterFor (i), letterArea, juce::Justification::centred);
     }
 }

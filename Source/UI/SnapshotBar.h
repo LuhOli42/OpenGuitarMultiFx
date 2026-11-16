@@ -83,10 +83,15 @@ public:
 
 private:
     int cellIndexAt (juce::Point<int> position) const;
+    /** Actual cell width drawn: prototype 62px when there's room, scaled down to fit. */
+    float effectiveCellWidth() const noexcept;
     void timerCallback() override;
 
-    /** The "+" cell's index, or -1 when all eight are in use. */
-    int addCellIndex() const noexcept { return count < snapshotxml::maxSnapshots ? count : -1; }
+    /** The prototype always shows at least six letter cells (docs/ui/prototype.html
+        renders i<6 even unnamed) -- cells past `count` draw dim and inert.
+        The "+" cell sits after them, or -1 when all eight are in use. */
+    int displayCount() const noexcept;
+    int addCellIndex() const noexcept { return displayCount() < snapshotxml::maxSnapshots ? displayCount() : -1; }
 
     int current = 0;
     int count = 1;

@@ -57,7 +57,7 @@ namespace
     constexpr int gridTop = 88;
     constexpr int gridBottom = 96;
     constexpr int gridSide = 16;
-    constexpr int chainTopPadding = 24;
+    constexpr int chainTopPadding = 18;
 
     /** <paramID>_ch<N>: ChannelKnobMemory's serialized per-channel slots.
         Derived mirror state -- the snapshot format deliberately stores
@@ -250,7 +250,7 @@ MainComponent::MainComponent()
             {
                 const int row = block->gridSlot / juce::jmax (1, chainColumns);
                 const int col = block->gridSlot % juce::jmax (1, chainColumns);
-                return "Linha " + juce::String (row + 1) + ", slot " + juce::String (col + 1);
+                return "Line " + juce::String (row + 1) + ", slot " + juce::String (col + 1);
             }
         return juce::String();
     });
@@ -540,13 +540,13 @@ juce::String MainComponent::describeRowDestinationDetail (int row) const
     const auto& routing = rowRouting[(size_t) row];
     juce::StringArray parts;
 
-    // Prototype: OUT over "1 / 2" (the physical pair), "-> L2" over "Linha 2".
+    // Prototype: OUT over "1 / 2" (the physical pair), "-> L2" over "Line 2".
     if (routing.toDevice)
         parts.add (juce::String (routing.deviceOutputPair + 1) + " / " + juce::String (routing.deviceOutputPair + 2));
 
     for (int target = 0; target < numRows; ++target)
         if (routing.toRows[(size_t) target])
-            parts.add ("Linha " + juce::String (target + 1));
+            parts.add ("Line " + juce::String (target + 1));
 
     return parts.joinIntoString (" + ");
 }
@@ -563,7 +563,7 @@ juce::String MainComponent::describeRowFeedersDetail (const std::vector<int>& fe
 {
     juce::StringArray parts;
     for (int feeder : feeders)
-        parts.add ("Linha " + juce::String (feeder + 1));
+        parts.add ("Line " + juce::String (feeder + 1));
     return parts.joinIntoString (" + ");
 }
 
@@ -581,7 +581,7 @@ void MainComponent::refreshRowEndpoints()
         // top of the incoming row(s) would be exactly the contradiction the
         // routing model avoids (per user request 2026-09-11: "quando a
         // linha tiver sendo usada por um output ela pode sumir o input +").
-        // Wording follows the prototype: "IN 1" / channel name, "L1 ->" / "Linha 1".
+        // Wording follows the prototype: "IN 1" / channel name, "L1 ->" / "Line 1".
         const auto feeders = feedersFor (row);
         if (! feeders.empty())
             rowInputBlocks[(size_t) row].setDisplay (describeRowFeeders (feeders), describeRowFeedersDetail (feeders));
@@ -883,12 +883,13 @@ void MainComponent::layoutChain()
     // linha").
     for (int row = 0; row < numRows; ++row)
     {
-        // Tiles hug the grid side of their gutter; the cable lane is the
-        // strip left over on the outer side.
+        // Tiles hug the OUTER edge of their gutter; the cable lane is the
+        // strip between the tile and the first/last block, like the
+        // prototype's slots padding.
         const auto leftSlot = gutterRowSlot (leftGutterColumn, row);
         const auto rightSlot = gutterRowSlot (rightGutterColumn, row);
-        const auto inBounds = leftSlot.withTrimmedLeft (cableLane).withSizeKeepingCentre (ioWidth, ioHeight);
-        const auto outBounds = rightSlot.withTrimmedRight (cableLane).withSizeKeepingCentre (ioWidth, ioHeight);
+        const auto inBounds = leftSlot.withTrimmedRight (cableLane).withSizeKeepingCentre (ioWidth, ioHeight);
+        const auto outBounds = rightSlot.withTrimmedLeft (cableLane).withSizeKeepingCentre (ioWidth, ioHeight);
 
         rowInputBlocks[(size_t) row].setBounds (inBounds);
         rowOutputBlocks[(size_t) row].setBounds (outBounds);
@@ -3044,11 +3045,10 @@ void MainComponent::resized()
     x += 300 + 12;
     presetNextButton.setBounds (x, topY, 48, controlH);
     x += 48 + 12;
-    const int snapWidth = snapshotBar.getPreferredWidth();
-    const int snapY = juce::jmax (2, topY + (controlH - snapshotBar.getPreferredHeight()) / 2);
-    snapshotBar.setBounds (x + 6, snapY, snapWidth, snapshotBar.getPreferredHeight());
-    x += 6 + snapWidth + 12;
 
+    // Right-side icons are placed first so the snapshot strip gets whatever
+    // room is actually left between them and the chevron -- the strip scales
+    // its cells down when it can't have the full prototype width.
     int rightX = getWidth() - gridSide;
     auto placeRight = [&] (juce::Component& c, int w, int h)
     {
@@ -3065,6 +3065,11 @@ void MainComponent::resized()
     placeRight (wifiButton, touch::minTapTarget, touch::minTapTarget);
     placeRight (redoButton, touch::minTapTarget, touch::minTapTarget);
     placeRight (undoButton, touch::minTapTarget, touch::minTapTarget);
+
+    const int snapWidth = juce::jmin (snapshotBar.getPreferredWidth(),
+                                      juce::jmax (0, rightX - 12 - x - 6));
+    const int snapY = juce::jmax (2, topY + (controlH - snapshotBar.getPreferredHeight()) / 2);
+    snapshotBar.setBounds (x + 6, snapY, snapWidth, snapshotBar.getPreferredHeight());
 
     area = getLocalBounds().withTrimmedLeft (gridSide).withTrimmedRight (gridSide)
               .withTrimmedTop (gridTop).withTrimmedBottom (gridBottom);
@@ -3234,21 +3239,37 @@ void MainComponent::paint (juce::Graphics& g)
     g.setColour (t.line);
     g.drawLine (0.0f, (float) topBarHeight - 0.5f, (float) getWidth(), (float) topBarHeight - 0.5f, 1.0f);
 
-    // Prototype .lane .lab: "LINHA n" in 10 px dim caps, letter-spaced, just above each row's input tile.
+    // Prototype .lane .lab: "LINE n" in 10 px dim caps, letter-spaced, just above each row's input tile.
     {
         g.setColour (t.textDim);
-        g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)).withExtraKerningFactor (0.1f));
+        g.setFont (juce::Font (juce::FontOptions (10.0f)).withExtraKerningFactor (0.1f));
         for (int row = 0; row < numRows; ++row)
         {
             const auto& tile = rowInputBlocks[(size_t) row];
             if (! tile.isVisible())
                 continue;
             const int rowTop = tile.getBounds().getCentreY() - blockHeight / 2;
-            const int labelY = juce::jmin (tile.getY() - 14, rowTop - 2);
+            const int labelY = juce::jmin (tile.getY() - 22, rowTop - 2);
             if (labelY < topBarHeight + 2)
                 continue;
-            g.drawText ("LINHA " + juce::String (row + 1), tile.getX(), labelY, 120, 12, juce::Justification::centredLeft);
+            g.drawText ("LINE " + juce::String (row + 1), tile.getX(), labelY, 120, 12, juce::Justification::centredLeft);
         }
+    }
+
+    // Cable-lane stubs: the prototype's .wire runs left:96/right:96, i.e.
+    // THROUGH the 22px lanes, touching each endpoint tile. ChainContainer's
+    // seam line starts at the viewport's edge, so paint the two 22px stubs
+    // here -- the gutters live outside the scrollable viewport.
+    g.setColour (t.lineStrong);
+    for (int row = 0; row < numRows; ++row)
+    {
+        const auto& inTile = rowInputBlocks[(size_t) row];
+        const auto& outTile = rowOutputBlocks[(size_t) row];
+        if (! inTile.isVisible() || ! outTile.isVisible())
+            continue;
+        const float y = (float) inTile.getBounds().getCentreY();
+        g.drawLine ((float) inTile.getRight(), y, (float) chainViewport.getX(), y, 2.0f);
+        g.drawLine ((float) chainViewport.getRight(), y, (float) outTile.getX(), y, 2.0f);
     }
 
     // Inter-row connectors: every row before the last occupied one connects
