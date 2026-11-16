@@ -110,6 +110,13 @@ jobs:
           path: build-aarch64/OpenGuitarMultiFx_artefacts/Release/OpenGuitarMultiFx
           retention-days: 5
 
+      - name: Upload offline renderer (both arches, to compare the board's DSP output with the PC's)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ogmfx-renderfx-${{ matrix.arch }}
+          path: build-${{ matrix.arch }}/Tests/OpenGuitarMultiFx_RenderFx_artefacts/Release/OpenGuitarMultiFx RenderFx
+          retention-days: 5
+
       - name: Verify install() payload (x86_64)
         if: matrix.arch == 'x86_64'
         run: |
