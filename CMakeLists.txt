@@ -473,6 +473,9 @@ target_link_libraries(OpenGuitarMultiFx PRIVATE
 )
 # The UI draws through the GPU: EGL + OpenGL ES (see cmake/JuceEglPatch.cmake and Source/UI/GpuRendering.h).
 target_compile_definitions(OpenGuitarMultiFx PRIVATE JUCE_OPENGL_LINUX_EGL=1)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+  target_compile_options(OpenGuitarMultiFx PRIVATE -ffp-contract=off) # same as the core: inline DSP emitted here must not fuse either
+endif()
 
 enable_testing()
 add_subdirectory(Tests)
