@@ -48,8 +48,14 @@ inline void enableDragScroll (juce::Viewport& viewport)
     px of jitter, so every gate that checks those helpers silently swallows
     the tap on the device while a mouse on a desktop passes. Anything that
     fires "on tap" should use this instead.
+
+    40px, not the previous 16: cheap capacitive panels jitter well past
+    16px on an ordinary tap, which kept cancelling taps even after the
+    first fix. 40 stays comfortably under the smallest interactive surface
+    (minTapTarget 48px and the 96/108px tiles), so a release that far from
+    the press can't have been meant as a neighbouring control either.
 */
-inline bool wasTap (const juce::MouseEvent& event, float maxDistance = 16.0f)
+inline bool wasTap (const juce::MouseEvent& event, float maxDistance = 40.0f)
 {
     return event.getDistanceFromDragStart() <= maxDistance;
 }

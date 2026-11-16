@@ -1444,7 +1444,7 @@ public:
 
     void mouseUp (const juce::MouseEvent& e) override
     {
-        if (e.mouseWasClicked() && onTap)
+        if (touch::wasListTap (e) && onTap)
             onTap();
     }
 

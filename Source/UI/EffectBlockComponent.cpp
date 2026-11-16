@@ -69,7 +69,9 @@ void EffectBlockComponent::timerCallback()
 
 void EffectBlockComponent::mouseDrag (const juce::MouseEvent& event)
 {
-    if (! isDragging && event.getDistanceFromDragStart() > 16)
+    // Must sit above touch::wasTap's tolerance (40px): below it a jittery
+    // touchscreen tap became a "drag", and mouseUp() then dropped the click.
+    if (! isDragging && event.getDistanceFromDragStart() > 40)
     {
         stopTimer();
         isDragging = true;
