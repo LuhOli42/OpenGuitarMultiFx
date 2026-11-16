@@ -200,7 +200,7 @@ public:
 
     void mouseUp (const juce::MouseEvent& event) override
     {
-        if (! event.mouseWasDraggedSinceMouseDown() && onClick)
+        if (touch::wasTap (event) && onClick)
             onClick();
     }
 
@@ -233,7 +233,7 @@ public:
 
     void mouseUp (const juce::MouseEvent& event) override
     {
-        if (! event.mouseWasDraggedSinceMouseDown() && onClick)
+        if (touch::wasTap (event) && onClick)
             onClick();
     }
 };
@@ -261,7 +261,7 @@ public:
 
     void mouseUp (const juce::MouseEvent& event) override
     {
-        if (! event.mouseWasDraggedSinceMouseDown() && onClick)
+        if (touch::wasTap (event) && onClick)
             onClick();
     }
 };

@@ -1,5 +1,6 @@
 #include "PresetBadge.h"
 #include "Theme.h"
+#include "TouchSizing.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 
 namespace openguitarmultifx
@@ -42,7 +43,7 @@ void PresetBadge::setDisplayTypeface (juce::Typeface::Ptr typeface)
 
 void PresetBadge::mouseUp (const juce::MouseEvent& event)
 {
-    if (event.mouseWasClicked() && onClicked)
+    if (touch::wasTap (event) && onClicked)
         onClicked();
 }
 
