@@ -41,4 +41,17 @@ inline void enableDragScroll (juce::Viewport& viewport)
         viewport.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::all);
 }
 
+/**
+    Finger-tap test for custom-painted controls. `mouseWasClicked()` /
+    `mouseWasDraggedSinceMouseDown()` use JUCE's drag threshold, which a
+    real touchscreen trips constantly: a fingertip "tap" reports several
+    px of jitter, so every gate that checks those helpers silently swallows
+    the tap on the device while a mouse on a desktop passes. Anything that
+    fires "on tap" should use this instead.
+*/
+inline bool wasTap (const juce::MouseEvent& event)
+{
+    return event.getDistanceFromDragStart() <= 16.0f;
+}
+
 } // namespace openguitarmultifx::touch

@@ -1,5 +1,6 @@
 #include "EffectBlockComponent.h"
 #include "Theme.h"
+#include "TouchSizing.h"
 
 #include "../Effects/IconKit.h"
 
@@ -68,7 +69,7 @@ void EffectBlockComponent::timerCallback()
 
 void EffectBlockComponent::mouseDrag (const juce::MouseEvent& event)
 {
-    if (! isDragging && event.getDistanceFromDragStart() > 4)
+    if (! isDragging && event.getDistanceFromDragStart() > 16)
     {
         stopTimer();
         isDragging = true;

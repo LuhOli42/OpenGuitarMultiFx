@@ -51,7 +51,7 @@ void RowEndpointBlock::paint (juce::Graphics& g)
 
 void RowEndpointBlock::mouseUp (const juce::MouseEvent& event)
 {
-    if (event.mouseWasClicked() && onClicked)
+    if (touch::wasTap (event) && onClicked)
         onClicked();
 }
 

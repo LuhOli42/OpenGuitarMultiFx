@@ -1,5 +1,6 @@
 #include "ChainContainer.h"
 #include "Theme.h"
+#include "TouchSizing.h"
 
 namespace openguitarmultifx
 {
@@ -145,7 +146,7 @@ void ChainContainer::mouseExit (const juce::MouseEvent&)
 
 void ChainContainer::mouseUp (const juce::MouseEvent& event)
 {
-    if (! event.mouseWasClicked())
+    if (! touch::wasTap (event))
         return;
     const int index = rawIndexForPosition (event.getPosition());
     if (index >= 0 && ! cellOccupied (index) && onSlotClicked)

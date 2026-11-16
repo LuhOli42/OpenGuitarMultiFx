@@ -121,7 +121,7 @@ void SnapshotBar::mouseUp (const juce::MouseEvent& event)
     if (longPressFired)
         return;
 
-    if (! event.mouseWasClicked())
+    if (! touch::wasTap (event))
         return;
     const int index = cellIndexAt (event.getPosition());
     if (index >= 0 && index == addCellIndex())

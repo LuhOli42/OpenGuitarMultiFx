@@ -141,7 +141,7 @@ void AddEffectBrowserDialog::EffectRow::paint (juce::Graphics& g)
 
 void AddEffectBrowserDialog::EffectRow::mouseUp (const juce::MouseEvent& event)
 {
-    if (! event.mouseWasDraggedSinceMouseDown() && onTap)
+    if (touch::wasTap (event) && onTap)
         onTap();
 }
 
