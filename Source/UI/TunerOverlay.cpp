@@ -25,6 +25,30 @@ namespace
         return { name.substring (0, 1), name.substring (1), nearest / 12 - 1, (midi - (float) nearest) * 100.0f };
     }
 
+    /** A music sharp sign drawn as vector strokes (the embedded Sora has no U+266F, and a plain '#' in the note's font looks
+        like a hash). `r` is the box it fills: two slightly slanted verticals and two thick rising bars. */
+    void drawSharp (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour colour)
+    {
+        const float stem = r.getWidth() * 0.095f, bar = r.getHeight() * 0.11f;
+        g.setColour (colour);
+        for (const float fx : { 0.30f, 0.70f })
+        {
+            juce::Path p;
+            const float x = r.getX() + r.getWidth() * fx;
+            p.startNewSubPath (x - r.getWidth() * 0.035f, r.getBottom() - r.getHeight() * 0.04f);
+            p.lineTo (x + r.getWidth() * 0.035f, r.getY() + r.getHeight() * 0.04f);
+            g.strokePath (p, juce::PathStrokeType (stem, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
+        }
+        for (const float fy : { 0.36f, 0.66f })
+        {
+            juce::Path p;
+            const float y = r.getY() + r.getHeight() * fy;
+            p.startNewSubPath (r.getX(), y + r.getHeight() * 0.07f);
+            p.lineTo (r.getRight(), y - r.getHeight() * 0.07f);
+            g.strokePath (p, juce::PathStrokeType (bar, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
+        }
+    }
+
     constexpr float inTuneCents = 5.0f;  // inside this, the display goes green -- the usual tolerance for a tuner
     constexpr float gaugeRangeCents = 50.0f;
 
@@ -109,7 +133,7 @@ TunerOverlay::TunerOverlay()
     midiButton.onClick = [this] { if (onMidiLearnTapped) onMidiLearnTapped(); };
 
     setSize (1280, 800);
-    startTimerHz (30);
+    startTimerHz (60); // drawn on the GPU now: a frame costs next to nothing, and 60 is what the glide is built for
 }
 
 TunerOverlay::~TunerOverlay()
@@ -218,18 +242,32 @@ void TunerOverlay::paintNoteBlock (juce::Graphics& g, juce::Rectangle<float> bou
     auto noteArea = bounds.withHeight (bounds.getHeight() * 0.6f);
     if (active)
     {
-        g.setColour (inTuneColour);
-        g.setFont (juce::FontOptions ((int) (noteArea.getHeight() * 0.82f)).withStyle ("Bold"));
-        const juce::String symbol = noteLetter + noteAccidental;
-        const auto symbolBounds = noteArea.withTrimmedRight (noteArea.getWidth() * 0.15f);
-        g.drawText (symbol, symbolBounds.toNearestInt(), juce::Justification::centred);
+        // The letter and the sharp are laid out together and the size is chosen so that BOTH fit the card: drawn as one
+        // text string at a fixed 0.82 x height the letter alone filled the width, so "C#" was cut off with an ellipsis
+        // and the sharp never showed.
+        const bool sharp = noteAccidental.isNotEmpty();
+        g.setFont (juce::FontOptions (100.0f).withStyle ("Bold"));
+        const float letterPerPx = g.getCurrentFont().getStringWidthFloat (noteLetter) / 100.0f; // advance width per pixel of height
+        const float sharpPerPx = sharp ? 0.36f : 0.0f;
+        const float usableW = noteArea.getWidth() * 0.84f;                                         // leave room for the octave digit
+        const float fh = juce::jmin (noteArea.getHeight() * 0.82f, usableW / (letterPerPx + sharpPerPx + 0.02f));
+        g.setFont (juce::FontOptions (fh).withStyle ("Bold"));
+        const float letterW = g.getCurrentFont().getStringWidthFloat (noteLetter);
+        const float sharpW = fh * sharpPerPx;
+        const float totalW = letterW + sharpW;
+        const float x0 = noteArea.getCentreX() - totalW * 0.5f - noteArea.getWidth() * 0.04f;
 
-        const float symbolWidth = g.getCurrentFont().getStringWidthFloat (symbol);
+        g.setColour (inTuneColour);
+        g.drawText (noteLetter, juce::Rectangle<float> (x0, noteArea.getY(), letterW + 8.0f, noteArea.getHeight()).toNearestInt(),
+                    juce::Justification::centredLeft, false);
+        if (sharp)
+            drawSharp (g, juce::Rectangle<float> (x0 + letterW + fh * 0.02f, noteArea.getCentreY() - fh * 0.42f, sharpW * 0.92f, fh * 0.5f),
+                       inTuneColour);
+
         g.setColour (t.textMuted);
         g.setFont (juce::FontOptions (48.0f).withStyle ("Bold"));
         g.drawText (juce::String (noteOctave),
-                    juce::Rectangle<float> (symbolBounds.getCentreX() + symbolWidth * 0.55f,
-                                            symbolBounds.getBottom() - 96.0f, 90.0f, 60.0f).toNearestInt(),
+                    juce::Rectangle<float> (x0 + totalW + 6.0f, noteArea.getBottom() - 96.0f, 90.0f, 60.0f).toNearestInt(),
                     juce::Justification::centredLeft);
 
         g.setColour (t.textMuted);
@@ -262,7 +300,9 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
     const float cy = bounds.getBottom() - bounds.getHeight() * 0.06f;
     const float cx = bounds.getCentreX();
 
-    const int litHalf = active ? (int) std::round (std::abs (cents) / 2.5f) : 0;
+    // How far the needle has swept, in ticks (one tick = 2.5 cents = 3 degrees). The tick under it lights fractionally,
+    // so the glow grows tick by tick smoothly instead of jumping a whole tick at a time.
+    const float sweepTicks = active ? std::abs (cents) / 2.5f : 0.0f;
 
     for (int i = 0; i <= 40; ++i)
     {
@@ -279,12 +319,12 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
         float alpha = centre ? 1.0f : 0.85f;
         if (active && ! centre)
         {
-            // light the ticks between the centre and the needle's side
+            // light the ticks between the centre and the needle's side, the last one only as far as the needle reached
             const int off = i - 20; // negative = flat side
-            const bool lit = cents < 0.0f ? (off >= litHalf * -1 && off <= 0)
-                                          : (off >= 0 && off <= litHalf);
-            if (lit && off != 0)
-                col = flatColour;
+            const bool side = cents < 0.0f ? off < 0 : off > 0;
+            const float cover = side ? juce::jlimit (0.0f, 1.0f, sweepTicks - (float) (std::abs (off) - 1)) : 0.0f;
+            if (cover > 0.0f)
+                col = t.raisedHigh.interpolatedWith (flatColour, cover);
         }
         g.setColour (col.withAlpha (alpha));
         g.drawLine ({ q0, q1 }, centre ? 10.0f : 7.0f);
@@ -297,6 +337,20 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
         const auto p1 = juce::Point<float> (cx + (r1 + 14.0f) * std::cos (a), cy + (r1 + 14.0f) * std::sin (a));
         const auto p0 = juce::Point<float> (cx + (r0 - 14.0f) * std::cos (a), cy + (r0 - 14.0f) * std::sin (a));
         g.drawLine ({ p0, p1 }, 22.0f);
+    }
+
+    if (active)
+    {
+        // The needle itself: a thin line from the fan's pivot to past the tick tips, at 1.2 degrees per cent, sub-pixel exact.
+        const float deg = juce::jlimit (-60.0f, 60.0f, cents * 1.2f);
+        const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
+        const auto tip = juce::Point<float> (cx + (r1 + 10.0f) * std::cos (a), cy + (r1 + 10.0f) * std::sin (a));
+        const auto base = juce::Point<float> (cx + (r0 - 34.0f) * std::cos (a), cy + (r0 - 34.0f) * std::sin (a));
+        const auto needleColour = tuningColour (cents, active);
+        g.setColour (needleColour.withAlpha (0.28f));
+        g.drawLine ({ base, tip }, 14.0f);
+        g.setColour (needleColour);
+        g.drawLine ({ base, tip }, 5.0f);
     }
 
     g.setFont (juce::FontOptions (14.0f));
@@ -323,22 +377,23 @@ void TunerOverlay::paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> b
     const float r0 = bounds.getHeight() * 0.33f;
     const float r1 = bounds.getHeight() * 0.46f;
 
-    // The lit wedge drifts around the ring proportional to cents: its angular offset from the top
-    // marker reads like the strobe disc's rotation direction and speed frozen in a frame.
-    const float drift = active ? cents * 3.6f : 0.0f; // cents -> degrees of offset
-    const float wedgeCentre = drift;                  // deg 0 is the top marker; flat drifts left, sharp right
+    // A real strobe: alternating bands that turn at a speed proportional to the error (sharp clockwise, flat the other way)
+    // and stand still when the note is in tune. `stripePhaseDeg` is advanced every frame by the timer, so the ring keeps
+    // moving smoothly between detector updates.
     const bool inTune = active && std::abs (cents) <= inTuneCents;
-
-    for (int i = 0; i < 72; ++i)
+    constexpr int segments = 72;
+    constexpr float bandDeg = 30.0f; // 6 lit bands, 6 dark
+    for (int i = 0; i < segments; ++i)
     {
-        const float deg = (float) i * 5.0f;
+        const float deg = (float) i * (360.0f / segments);
         const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
         const auto p0 = juce::Point<float> (cx + r0 * std::cos (a), cy + r0 * std::sin (a));
         const auto p1 = juce::Point<float> (cx + r1 * std::cos (a), cy + r1 * std::sin (a));
 
-        float diff = std::fmod (deg - wedgeCentre + 540.0f, 360.0f) - 180.0f;
-        const bool lit = active && ! inTune && std::abs (diff) <= 30.0f;
-        g.setColour (lit ? flatColour : t.raisedHigh.withAlpha (0.85f));
+        const float band = std::fmod (deg - stripePhaseDeg + 720.0f, 2.0f * bandDeg);
+        const bool litBand = active && ! inTune && band < bandDeg;
+        const float fade = juce::jlimit (0.0f, 1.0f, std::abs (cents) / 12.0f); // faint when nearly in tune
+        g.setColour (litBand ? t.raisedHigh.interpolatedWith (flatColour, fade) : t.raisedHigh.withAlpha (0.85f));
         g.drawLine ({ p0, p1 }, 9.0f);
     }
 
@@ -354,27 +409,45 @@ void TunerOverlay::paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> b
 
 void TunerOverlay::timerCallback()
 {
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    const float dt = lastTickMs > 0.0 ? juce::jlimit (0.004f, 0.1f, (float) ((nowMs - lastTickMs) * 0.001)) : 1.0f / 60.0f;
+    lastTickMs = nowMs;
+
     const float hz = getFrequencyHz != nullptr ? getFrequencyHz() : 0.0f;
     const bool rawActive = hz > 0.0f;
 
     // The analysis updates a few times a second and each estimate carries its own noise, so a raw readout jitters and a
     // hard on/off flickers between updates: fast attack so a note lights up promptly, slow release so it holds.
+    // Rates are per second, not per frame, so the feel does not depend on how often this timer really fires.
     const float target = rawActive ? 1.0f : 0.0f;
-    activityLevel += (target > activityLevel ? 0.4f : 0.035f) * (target - activityLevel);
+    activityLevel += (1.0f - std::exp (-dt * (target > activityLevel ? 24.0f : 2.2f))) * (target - activityLevel);
     active = activityLevel > 0.5f;
 
     if (rawActive)
     {
         const auto reading = readingFor (hz);
+        if (reading.letter != noteLetter || reading.accidental != noteAccidental || reading.octave != noteOctave)
+        {
+            // another note: the old cents value belonged to the previous one, so start the glide from where this one is
+            centsStage1 = cents = juce::jlimit (-gaugeRangeCents, gaugeRangeCents, reading.cents);
+        }
         noteLetter = reading.letter;
         noteAccidental = reading.accidental;
         noteOctave = reading.octave;
         frequencyHz = hz;
-        smoothedCents += 0.3f * (reading.cents - smoothedCents);
-        cents = juce::jlimit (-gaugeRangeCents, gaugeRangeCents, smoothedCents);
+        targetCents = juce::jlimit (-gaugeRangeCents, gaugeRangeCents, reading.cents);
     }
 
-    repaint();
+    // Two cascaded one-pole filters (time constant ~55 ms each): the needle follows within a tenth of a second and its
+    // velocity is continuous, so a new detector reading bends the motion instead of jerking it.
+    const float k = 1.0f - std::exp (-dt / 0.055f);
+    centsStage1 += k * (targetCents - centsStage1);
+    cents += k * (centsStage1 - cents);
+
+    // The strobe ring turns at a speed proportional to how far off the note is, and stands still when in tune.
+    stripePhaseDeg = std::fmod (stripePhaseDeg + (active ? cents : 0.0f) * 9.0f * dt + 360.0f, 360.0f);
+
+    repaint (getLocalBounds().withTrimmedTop (76)); // the header never changes between frames
 }
 
 } // namespace openguitarmultifx

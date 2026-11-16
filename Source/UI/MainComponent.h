@@ -349,6 +349,9 @@ private:
     livetiles::Layout liveTiles = livetiles::defaultLayout(); // per preset (<LiveTiles>), see LiveTilesXml.h
     scenemidi::StompDetector tunerStomps;
     bool tunerMidiArmed = false;
+    scenemidi::StompDetector tapStomps;
+    bool tapMidiArmed = false;
+    void refreshTapPedal();
     int audioStatTicks = 0;               // timerCallback ticks since the last AudioStats log line
     juce::uint32 overBudgetAccum = 0;
     juce::uint32 clickInAccum = 0, clickOutAccum = 0, clickLateAccum = 0;

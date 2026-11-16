@@ -1,6 +1,6 @@
 #include "FooterBar.h"
 #include "Theme.h"
-
+#include <cmath>
 #include "OpenGuitarMultiFxLookAndFeel.h"
 
 namespace openguitarmultifx
@@ -77,6 +77,7 @@ FooterBar::FooterBar()
 
     addAndMakeVisible (tapButton);
     tapButton.onClick = [this] { tapTempo(); };
+    tapButton.onLongPress = [this] { if (onTapLongPress) onTapLongPress(); };
     tapButton.contentPainter = [this] (juce::Graphics& g, juce::Rectangle<float> area)
     {
         const auto& t = theme::current();
@@ -86,13 +87,15 @@ FooterBar::FooterBar()
         g.setColour (t.text);
         g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
         g.drawText (juce::String (juce::roundToInt (bpm)), area.toNearestInt(), juce::Justification::centredRight);
-        g.setColour (t.raisedHigh);
+        const auto armedColour = juce::Colour (0xffff4d6a); // the same red the tuner's MIDI Learn uses while it waits
+        g.setColour (tapArmed ? armedColour.withAlpha (0.22f) : t.raisedHigh);
         g.fillRoundedRectangle (pill, 8.0f);
-        g.setColour (t.line);
-        g.drawRoundedRectangle (pill.reduced (0.5f), 8.0f, 1.0f);
-        g.setColour (t.text);
-        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-        g.drawText ("TAP", pill.toNearestInt(), juce::Justification::centred);
+        g.setColour (tapArmed ? armedColour : t.line);
+        g.drawRoundedRectangle (pill.reduced (0.5f), 8.0f, tapArmed ? 2.0f : 1.0f);
+        g.setColour (tapArmed ? armedColour : t.text);
+        g.setFont (juce::FontOptions (tapCc >= 0 && ! tapArmed ? 11.0f : 10.0f, juce::Font::bold));
+        g.drawText (tapArmed ? juce::String ("...") : tapCc >= 0 ? "CC " + juce::String (tapCc) : juce::String ("TAP"),
+                    pill.toNearestInt(), juce::Justification::centred);
     };
 
     addAndMakeVisible (masterSlider);
@@ -139,6 +142,13 @@ void FooterBar::updateMasterReadout()
                               juce::dontSendNotification);
 }
 
+void FooterBar::setTapPedal (int cc, bool armed)
+{
+    tapCc = cc;
+    tapArmed = armed;
+    tapButton.repaint();
+}
+
 void FooterBar::tapTempo()
 {
     const double now = juce::Time::getMillisecondCounterHiRes();
@@ -175,9 +185,31 @@ void FooterBar::setActiveSnapshot (const juce::String& label, juce::Colour colou
 
 void FooterBar::setLevels (float inLevelIn, float outLevelIn)
 {
-    inLevel = juce::jlimit (0.0f, 1.0f, inLevelIn);
-    outLevel = juce::jlimit (0.0f, 1.0f, outLevelIn);
-    repaint();
+    // The engine reports ~20 times a second; drawing that directly makes the bars jump in 50 ms steps. Keep the latest
+    // reading as a target and let the frame timer ease the drawn level toward it (fast up, slower down, like a meter).
+    inTarget = juce::jlimit (0.0f, 1.0f, inLevelIn);
+    outTarget = juce::jlimit (0.0f, 1.0f, outLevelIn);
+    if (! isTimerRunning())
+        startTimerHz (60);
+}
+
+void FooterBar::timerCallback()
+{
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const float dt = lastFrameMs > 0.0 ? juce::jlimit (0.004f, 0.1f, (float) ((now - lastFrameMs) * 0.001)) : 1.0f / 60.0f;
+    lastFrameMs = now;
+
+    const auto ease = [dt] (float shown, float target)
+    {
+        const float rate = target > shown ? 30.0f : 7.0f; // per second: ~30 ms to rise, ~140 ms to fall
+        return shown + (1.0f - std::exp (-dt * rate)) * (target - shown);
+    };
+    const float newIn = ease (inLevel, inTarget), newOut = ease (outLevel, outTarget);
+    const bool moved = std::abs (newIn - inLevel) > 0.0005f || std::abs (newOut - outLevel) > 0.0005f;
+    inLevel = newIn;
+    outLevel = newOut;
+    if (moved)
+        repaint (inMeterBounds.getUnion (outMeterBounds).expanded (4.0f).getSmallestIntegerContainer());
 }
 
 void FooterBar::resized()
