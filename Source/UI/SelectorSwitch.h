@@ -80,7 +80,9 @@ public:
 
     void mouseDrag (const juce::MouseEvent& event) override
     {
-        if (! dragged && event.position.getDistanceFrom (dragOrigin) >= 3.0f)
+        // 3px treated ordinary touchscreen jitter as a drag; use the list
+        // threshold so a tap never flips the switch by accident.
+        if (! dragged && event.position.getDistanceFrom (dragOrigin) >= 6.0f)
             dragged = true;
         if (! dragged)
             return;
