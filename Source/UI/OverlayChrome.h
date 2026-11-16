@@ -151,9 +151,10 @@ public:
             }
             else if (chromeless)
             {
-                // segmented container owns the chrome; a selected segment is just a lighter fill
-                g.setColour (t.raisedHigh);
+                // mockup: selected segment = accent fill, dark ink (seg .on in bold; user wants accent everywhere)
+                g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
                 g.fillRoundedRectangle (bounds, radius);
+                textColour = inkOn (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
             }
         }
 
@@ -166,10 +167,10 @@ public:
         auto textArea = bounds.reduced (10.0f, 0.0f);
         if (showDot)
         {
-            const auto dot = juce::Rectangle<float> (textArea.getX(), textArea.getCentreY() - 5.0f, 10.0f, 10.0f);
+            const auto dot = juce::Rectangle<float> (textArea.getX(), textArea.getCentreY() - 4.5f, 9.0f, 9.0f);
             g.setColour (dotColour);
             g.fillEllipse (dot);
-            textArea.removeFromLeft (16.0f);
+            textArea.removeFromLeft (18.0f);
         }
         if (trailingText.isNotEmpty())
             textArea.removeFromRight (juce::jmax (34.0f, juce::GlyphArrangement::getStringWidth (font (11.0f), trailingText) + 14.0f));

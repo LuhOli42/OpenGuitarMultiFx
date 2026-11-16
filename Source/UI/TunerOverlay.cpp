@@ -30,7 +30,7 @@ namespace
 
     const auto inTuneColour = juce::Colour (0xff3bd68a);
     const auto flatColour   = juce::Colour (0xffff4d6a);
-    const auto sharpColour  = juce::Colour (0xfff6c343);
+    // single out-of-tune colour (red) on both sides — flat lights left, sharp lights right
 
     juce::Colour tuningColour (float cents, bool active)
     {
@@ -38,7 +38,7 @@ namespace
             return theme::current().textDim;
         if (std::abs (cents) <= inTuneCents)
             return inTuneColour;
-        return cents < 0.0f ? flatColour : sharpColour;
+        return flatColour;
     }
 }
 
@@ -284,7 +284,7 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
             const bool lit = cents < 0.0f ? (off >= litHalf * -1 && off <= 0)
                                           : (off >= 0 && off <= litHalf);
             if (lit && off != 0)
-                col = cents < 0.0f ? flatColour : sharpColour;
+                col = flatColour;
         }
         g.setColour (col.withAlpha (alpha));
         g.drawLine ({ q0, q1 }, centre ? 10.0f : 7.0f);
@@ -338,7 +338,7 @@ void TunerOverlay::paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> b
 
         float diff = std::fmod (deg - wedgeCentre + 540.0f, 360.0f) - 180.0f;
         const bool lit = active && ! inTune && std::abs (diff) <= 30.0f;
-        g.setColour (lit ? (cents < 0.0f ? flatColour : sharpColour) : t.raisedHigh.withAlpha (0.85f));
+        g.setColour (lit ? flatColour : t.raisedHigh.withAlpha (0.85f));
         g.drawLine ({ p0, p1 }, 9.0f);
     }
 
