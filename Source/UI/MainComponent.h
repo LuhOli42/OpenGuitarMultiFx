@@ -13,6 +13,7 @@
 #include "TunerSettings.h"
 #include "LiveTilesXml.h"
 #include "RawMidiInput.h"
+#include "BleMidiInput.h"
 #include "NetworkCards.h"
 #include "SceneMidi.h"
 #include "SnapshotBar.h"
@@ -356,6 +357,7 @@ private:
     float tunerSavedGainDb = 0.0f;
     TunerOverlay* tunerOverlay = nullptr; // non-owning: OverlayHost owns the card
     std::unique_ptr<RawMidiInput> rawMidi;   // only when the kernel has no ALSA sequencer (see RawMidiInput.h)
+    std::unique_ptr<BleMidiInput> bleMidi;   // same condition: Bluetooth LE MIDI controllers via BlueZ (BleMidiInput.h)
     int sceneMidiArmed = scenemidi::noAction;
     void clearMidiBindingsFor (EffectProcessor* processor);
 
