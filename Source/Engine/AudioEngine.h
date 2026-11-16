@@ -2,6 +2,7 @@
 
 #include "OutputLimiter.h"
 #include "ClickDetector.h"
+#include "ClickCapture.h"
 
 #include "DeferredReclaimer.h"
 #include "MasterEq.h"
@@ -127,6 +128,8 @@ public:
     /** Clicks seen since the last call, on the device input and on the device output (see ClickDetector), plus how many of
         the output ones happened in a block that also ran over budget. Logged by MainComponent every ~10 s. */
     struct ClickStats { juce::uint32 inClicks = 0, outClicks = 0, outClicksInLateBlocks = 0; float outBiggest = 0.0f; };
+    /** Control thread: saves pending click captures as WAVs into `folder` (see ClickCapture). */
+    void serviceClickCapture (const juce::File& folder) { clickCapture.service (folder); }
     ClickStats takeClickStats() noexcept
     {
         ClickStats s;
@@ -275,6 +278,8 @@ private:
     std::atomic<bool> limiterActive { false };
     std::atomic<juce::uint32> overBudgetBlocks { 0 };
     ClickDetector inDetector, outDetector;        // audio thread only
+    ClickCapture clickCapture;
+    int lastInClicks = 0;                         // audio thread only: this block's input clicks
     std::atomic<juce::uint32> inClicks { 0 }, outClicks { 0 }, outClicksLate { 0 };
     std::atomic<float> outBiggest { 0.0f };
     // Audio thread only: ramps masterGainLinear's target over ~20 ms so a footer-knob drag can't zipper.

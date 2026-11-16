@@ -26,6 +26,9 @@ public:
     void reset() override;
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    // Output = input * (1 - mix) + delayed * mix per channel, so it can join the delay/reverb send (SignalGraph).
+    bool canRunAsSendTail() const override { return true; }
+    float parallelDryGain() const override { return mix != nullptr ? 1.0f - mix->get() : 1.0f; }
     const char* getName() const override { return "Chorus"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff7a5cc9); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

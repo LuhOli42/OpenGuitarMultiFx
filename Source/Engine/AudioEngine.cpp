@@ -543,6 +543,7 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     callbackRealtimeDetected.store (false, std::memory_order_relaxed);
     callbackIsRealtime.store (false, std::memory_order_relaxed);
     outputLimiter.prepare (device != nullptr ? device->getCurrentSampleRate() : 48000.0);
+    clickCapture.prepare (device != nullptr ? device->getCurrentSampleRate() : 48000.0);
 
     activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
     swapFadeActive = false;
@@ -599,10 +600,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
                                ? juce::jlimit (0, numInputChannels - 1, selectedInputChannel.load (std::memory_order_relaxed))
                                : 0;
     const float* in = (numInputChannels > 0) ? inputChannelData[inChIndex] : nullptr;
+    lastInClicks = 0;
 
     if (in != nullptr)
     {
-        if (const auto c = inDetector.process (in, numSamples); c.clicks > 0)
+        const auto c = inDetector.process (in, numSamples);
+        lastInClicks = c.clicks;
+        if (c.clicks > 0)
             inClicks.fetch_add ((juce::uint32) c.clicks, std::memory_order_relaxed);
 
         // Only while the tuner is on screen -- see setTunerActive(). This is now just a ring-buffer write; the analysis
@@ -699,6 +703,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     {
         const int watched = juce::jlimit (0, numOutputChannels - 1, selectedOutputPairStart.load (std::memory_order_relaxed));
         outClickResult = outDetector.process (outputChannelData[watched], numSamples);
+        clickCapture.push (in, outputChannelData[watched], numSamples, outClickResult.clicks > 0 || lastInClicks > 0,
+                           lastInClicks > 0);
         if (outClickResult.clicks > 0)
         {
             outClicks.fetch_add ((juce::uint32) outClickResult.clicks, std::memory_order_relaxed);
