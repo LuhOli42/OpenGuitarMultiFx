@@ -30,7 +30,6 @@ namespace
 
     const auto inTuneColour = juce::Colour (0xff3bd68a);
     const auto flatColour   = juce::Colour (0xffff4d6a);
-    // single out-of-tune colour (red) on both sides — flat lights left, sharp lights right
 
     juce::Colour tuningColour (float cents, bool active)
     {
@@ -152,7 +151,7 @@ void TunerOverlay::resized()
     header.removeFromRight (8);
     muteButton.setBounds (header.removeFromRight (96).withSizeKeepingCentre (96, 48));
     header.removeFromRight (8);
-    midiButton.setBounds (header.removeFromRight (178).withSizeKeepingCentre (178, 48));
+    midiButton.setBounds (header.removeFromRight (148).withSizeKeepingCentre (148, 48));
     header.removeFromRight (8);
     referenceLabel.setBounds (header.removeFromRight (118).withSizeKeepingCentre (118, 48));
 

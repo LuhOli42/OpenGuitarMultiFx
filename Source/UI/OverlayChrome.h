@@ -165,19 +165,24 @@ public:
         }
 
         auto textArea = bounds.reduced (10.0f, 0.0f);
+        const auto textFont = font (14.0f, primary || selected);
+        const auto textW = juce::GlyphArrangement::getStringWidth (textFont, text);
         if (showDot)
         {
-            const auto dot = juce::Rectangle<float> (textArea.getX(), textArea.getCentreY() - 4.5f, 9.0f, 9.0f);
+            // mockup centres the LED+label group with a 9px gap — don't pad the label area
+            const auto groupW = 9.0f + 9.0f + textW;
+            const auto groupX = textArea.getCentreX() - groupW * 0.5f;
+            const auto dot = juce::Rectangle<float> (groupX, textArea.getCentreY() - 4.5f, 9.0f, 9.0f);
             g.setColour (dotColour);
             g.fillEllipse (dot);
-            textArea.removeFromLeft (18.0f);
+            textArea = textArea.withLeft (groupX + 18.0f);
         }
         if (trailingText.isNotEmpty())
             textArea.removeFromRight (juce::jmax (34.0f, juce::GlyphArrangement::getStringWidth (font (11.0f), trailingText) + 14.0f));
 
         g.setColour (textColour);
-        g.setFont (font (14.0f, primary || selected));
-        g.drawFittedText (text, textArea.toNearestInt(), juce::Justification::centred, 1);
+        g.setFont (textFont);
+        g.drawFittedText (text, textArea.toNearestInt(), showDot ? juce::Justification::centredLeft : juce::Justification::centred, 1);
 
         if (trailingText.isNotEmpty())
         {
