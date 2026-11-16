@@ -145,10 +145,11 @@ asset_url() {  # asset_url <release.json> <asset-name>
         | head -n 1
 }
 
-# From a `GET /releases` array, find the NEWEST non-draft prerelease and print
-# "tag<TAB>latest.json-asset-url". The API returns releases newest-first;
-# within one release object, tag_name/draft/prerelease precede the assets list,
-# so a single forward pass is enough.
+# From a `GET /releases` array, find the HIGHEST-VERSION non-draft prerelease and print
+# "tag<TAB>latest.json-asset-url". The list's order says nothing about versions (GitHub returned v0.1.0-beta.10
+# AFTER v0.1.0-beta.6, and the first entry is not the newest), so every candidate is collected and the highest
+# version wins (sort -V: beta.10 > beta.9). Within one release object, tag_name/draft/prerelease precede the
+# assets list, so a single forward pass collects them.
 find_beta_release() {  # find_beta_release <releases.json>
     awk '
         /"tag_name"[[:space:]]*:/ {
@@ -171,9 +172,9 @@ find_beta_release() {  # find_beta_release <releases.json>
             sub(/.*"browser_download_url"[[:space:]]*:[[:space:]]*"/, "", line)
             sub(/".*/, "", line)
             print tag "\t" line
-            exit
+            want = 0 # one latest.json per release
         }
-    ' "$1"
+    ' "$1" | sort -V -t "$(printf '\t')" -k1,1 | tail -n 1
 }
 
 gh_api() {  # gh_api <url> <out-file>

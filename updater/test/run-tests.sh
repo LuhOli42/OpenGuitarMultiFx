@@ -219,7 +219,7 @@ check "v1.0.0 kept (previous target)"     '[[ -d "$OPT/releases/v1.0.0" ]]'
 check "v1.2.0 kept (2nd newest)"          '[[ -d "$OPT/releases/v1.2.0" ]]'
 check "v1.3.0 kept (newest)"              '[[ -d "$OPT/releases/v1.3.0" ]]'
 
-say "8. beta channel picks newest non-draft prerelease"
+say "8. beta channel picks the HIGHEST-VERSION non-draft prerelease (beta.10 listed after beta.1)"
 # v9.9.9-beta is a draft (must be skipped); v1.4.0-beta.1 is the pick.
 # Per the contract every release's index asset is named exactly latest.json —
 # the fake server gives the beta one its own directory.
@@ -234,6 +234,19 @@ cat > "$WWW/beta/latest.json" <<EOF
   "sha256": "$sha",
   "channel": "beta",
   "published_at": "2026-10-08T00:00:00Z"
+}
+EOF
+make_pkg v1.4.0-beta.10
+mkdir -p "$WWW/beta10"
+sha10="$(awk '{print $1}' "$WWW/ogmfx-v1.4.0-beta.10-$ARCH.tar.gz.sha256")"
+cat > "$WWW/beta10/latest.json" <<EOF
+{
+  "version": "v1.4.0-beta.10",
+  "tag": "v1.4.0-beta.10",
+  "tarball_url": "http://127.0.0.1:$PORT/ogmfx-v1.4.0-beta.10-$ARCH.tar.gz",
+  "sha256": "$sha10",
+  "channel": "beta",
+  "published_at": "2026-10-09T00:00:00Z"
 }
 EOF
 # The releases LIST lives at a separate api_base: http.server can't serve
@@ -262,6 +275,16 @@ cat > "$WWW/beta-api/releases" <<EOF
     ]
   },
   {
+    "tag_name": "v1.4.0-beta.10",
+    "name": "beta 10, listed after beta.1 as GitHub did for v0.1.0-beta.10",
+    "draft": false,
+    "prerelease": true,
+    "assets": [
+      { "name": "latest.json",
+        "browser_download_url": "http://127.0.0.1:$PORT/beta10/latest.json" }
+    ]
+  },
+  {
     "tag_name": "v1.3.0",
     "name": "stable",
     "draft": false,
@@ -280,8 +303,8 @@ mv "$WWW/beta-api/releases.min" "$WWW/beta-api/releases"
 sed -i 's/^channel="stable"$/channel="beta"/' "$ETC/updater.conf"
 sed -i "s|^api_base=.*|api_base=\"http://127.0.0.1:$PORT/beta-api\"|" "$ETC/updater.conf"
 run_updater --force
-check "picked v1.4.0-beta.1 not the draft" '[[ "$(current_ver)" == v1.4.0-beta.1 ]]'
-check "service running v1.4.0-beta.1"      '[[ "$(running_ver)" == v1.4.0-beta.1 ]]'
+check "picked v1.4.0-beta.10, not the draft nor the first listed beta" '[[ "$(current_ver)" == v1.4.0-beta.10 ]]'
+check "service running v1.4.0-beta.10"     '[[ "$(running_ver)" == v1.4.0-beta.10 ]]'
 
 say "9. wrong-arch tarball is rejected"
 make_pkg v1.5.0
@@ -305,7 +328,7 @@ EOF
 sed -i 's/^channel="beta"$/channel="stable"/' "$ETC/updater.conf"
 sed -i "s|^api_base=.*|api_base=\"http://127.0.0.1:$PORT\"|" "$ETC/updater.conf"
 if run_updater --force 2>/dev/null; then bad "rejects wrong-arch tarball"; else ok "rejects wrong-arch tarball"; fi
-check "current still v1.4.0-beta.1"       '[[ "$(current_ver)" == v1.4.0-beta.1 ]]'
+check "current still v1.4.0-beta.10"      '[[ "$(current_ver)" == v1.4.0-beta.10 ]]'
 check "no v1.5.0 dir created"             '[[ ! -d "$OPT/releases/v1.5.0" ]]'
 
 printf '\n=================================\n'
