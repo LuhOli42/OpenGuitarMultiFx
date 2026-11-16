@@ -60,9 +60,12 @@ private:
     juce::String noteLetter, noteAccidental;
     int noteOctave = 0;
     float frequencyHz = 0.0f;
-    float cents = 0.0f;         // smoothed, -50..+50
-    float smoothedCents = 0.0f;
+    float cents = 0.0f;         // what is drawn: -50..+50, eased every frame so the needle glides between detector updates
+    float centsStage1 = 0.0f;   // first of two cascaded one-pole filters (a second-order ease: no visible steps, no overshoot)
+    float targetCents = 0.0f;   // latest detector reading
     float activityLevel = 0.0f; // fast attack / slow release, so the readout does not flicker between updates
+    double lastTickMs = 0.0;
+    float stripePhaseDeg = 0.0f; // strobe ring rotation
 };
 
 } // namespace openguitarmultifx

@@ -296,6 +296,23 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (footerBar);
     footerBar.onTunerTapped = [this] { showTuner(); };
+    footerBar.onTapLongPress = [this]
+    {
+        // Hold TAP: arm the learn; hold it again to give up waiting or to clear a learned pedal.
+        if (tapMidiArmed)
+            tapMidiArmed = false;
+        else if (tunerSettings.tapCc >= 0)
+        {
+            tunerSettings.tapCc = -1;
+            tunersettings::save (tunerSettings);
+        }
+        else
+        {
+            cancelOtherLearning();
+            tapMidiArmed = true;
+        }
+        refreshTapPedal();
+    };
     footerBar.onMasterEqTapped = [this] { showMasterEq(); };
     footerBar.onMasterGainChanged = [this] (float db)
     {
@@ -379,6 +396,7 @@ MainComponent::MainComponent()
 
     scenemidi::load (sceneMidi);
     tunersettings::load (tunerSettings);
+    refreshTapPedal(); // the TAP pill shows a learned pedal from launch
     expressionPedals = exppedal::load();
     refreshScenePedalDisplay();
 
@@ -2110,6 +2128,12 @@ void MainComponent::freeCcForLearning (int cc, bool learningKnob)
         tunersettings::save (tunerSettings);
         refreshTunerOverlay();
     }
+    if (tunerSettings.tapCc == cc)
+    {
+        tunerSettings.tapCc = -1;
+        tunersettings::save (tunerSettings);
+        refreshTapPedal();
+    }
     // A pedal CC collects knobs; any other CC drives exactly one, so learning onto it replaces what was there.
     if (! (learningKnob && expressionPedals.indexForCc (cc) >= 0))
         midiCcBindings.erase (cc);
@@ -2381,8 +2405,18 @@ void MainComponent::setExpressionLinkMode (int pedal)
     resized();
 }
 
+void MainComponent::refreshTapPedal()
+{
+    footerBar.setTapPedal (tunerSettings.tapCc, tapMidiArmed);
+}
+
 void MainComponent::cancelOtherLearning()
 {
+    if (tapMidiArmed)
+    {
+        tapMidiArmed = false;
+        refreshTapPedal();
+    }
     midiLearnArmedParam = nullptr;
     bypassPedalArmed = nullptr;
     if (sceneMidiArmed != scenemidi::noAction)
@@ -2708,6 +2742,28 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     {
         if (tunerStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()))
             toggleTuner();
+        return;
+    }
+
+    // Holding TAP in the footer arms this: the next stomp becomes the tap-tempo pedal.
+    if (tapMidiArmed)
+    {
+        if (ccValue >= scenemidi::pressThreshold)
+        {
+            freeCcForLearning (ccNumber);
+            tunerSettings.tapCc = ccNumber;
+            tunersettings::save (tunerSettings);
+            tapStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()); // the learning stomp must not also tap
+            tapMidiArmed = false;
+            refreshTapPedal();
+        }
+        return;
+    }
+
+    if (ccNumber == tunerSettings.tapCc)
+    {
+        if (tapStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()))
+            footerBar.pressTap();
         return;
     }
 

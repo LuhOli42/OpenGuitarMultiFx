@@ -10,12 +10,14 @@ namespace openguitarmultifx::tunersettings
     - `cc`: the footswitch CC that opens/closes the tuner (-1 = none; learned from the tuner screen).
     - `muteWhileOpen`: silence the output while the tuner is up, so the room does not hear the tuning.
     - `strobeMode`: which meter the tuner screen shows (false = needle fan, true = strobe ring).
+    - `tapCc`: the footswitch CC that taps the tempo (-1 = none; learned by holding TAP in the footer).
 */
 struct Settings
 {
     int cc = -1;
     bool muteWhileOpen = false;
     bool strobeMode = false;
+    int tapCc = -1;
 };
 
 inline juce::File settingsFile()
@@ -36,6 +38,8 @@ inline void load (Settings& settings, const juce::File& file = settingsFile())
         settings.cc = cc >= 0 && cc <= 127 ? cc : -1;
         settings.muteWhileOpen = xml->getBoolAttribute ("muteWhileOpen", false);
         settings.strobeMode = xml->getBoolAttribute ("strobeMode", false);
+        const int tap = xml->getIntAttribute ("tapCc", -1);
+        settings.tapCc = tap >= 0 && tap <= 127 ? tap : -1;
     }
 }
 
@@ -45,6 +49,7 @@ inline void save (const Settings& settings, const juce::File& file = settingsFil
     xml.setAttribute ("cc", settings.cc);
     xml.setAttribute ("muteWhileOpen", settings.muteWhileOpen);
     xml.setAttribute ("strobeMode", settings.strobeMode);
+    xml.setAttribute ("tapCc", settings.tapCc);
     file.getParentDirectory().createDirectory();
     xml.writeTo (file);
 }
