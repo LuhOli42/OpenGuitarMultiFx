@@ -52,6 +52,7 @@ TunerOverlay::TunerOverlay()
 
     needleButton.text = "Needle";
     needleButton.selectedStyle = overlaychrome::SelectedStyle::tab;
+    needleButton.chromeless = true;
     needleButton.onClick = [this]
     {
         if (! strobeMode)
@@ -66,6 +67,7 @@ TunerOverlay::TunerOverlay()
 
     strobeButton.text = "Strobe";
     strobeButton.selectedStyle = overlaychrome::SelectedStyle::tab;
+    strobeButton.chromeless = true;
     strobeButton.onClick = [this]
     {
         if (strobeMode)
@@ -155,9 +157,13 @@ void TunerOverlay::resized()
     referenceLabel.setBounds (header.removeFromRight (118).withSizeKeepingCentre (118, 48));
 
     titleLabel.setBounds (header.removeFromLeft (90));
-    header.removeFromLeft (8);
-    needleButton.setBounds (header.removeFromLeft (92).withSizeKeepingCentre (92, 48));
-    strobeButton.setBounds (header.removeFromLeft (92).withSizeKeepingCentre (92, 48));
+    header.removeFromLeft (12);
+    // Mockup .sg: one container (raised fill, line border, 3px padding, 3px gap) holding both segments
+    segBounds = header.removeFromLeft (190).withSizeKeepingCentre (190, 54).toFloat();
+    auto segInner = segBounds.reduced (3.0f);
+    needleButton.setBounds (segInner.removeFromLeft (segInner.getWidth() * 0.5f - 1.5f).toNearestInt());
+    segInner.removeFromLeft (3.0f);
+    strobeButton.setBounds (segInner.toNearestInt());
 
     auto body = getLocalBounds().withTrimmedTop (76).reduced (0, 12);
     noteBounds = body.removeFromLeft (430).reduced (24, 0).toFloat();
@@ -180,6 +186,12 @@ void TunerOverlay::paint (juce::Graphics& g)
     g.fillRoundedRectangle (pill, t.smallRadius);
     g.setColour (t.lineStrong);
     g.drawRoundedRectangle (pill.reduced (0.5f), t.smallRadius, 1.0f);
+
+    // segmented container behind Needle/Strobe (mockup .sg)
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (segBounds, t.smallRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (segBounds.reduced (0.5f), t.smallRadius, 1.0f);
 
     paintNoteBlock (g, noteBounds);
     if (strobeMode)

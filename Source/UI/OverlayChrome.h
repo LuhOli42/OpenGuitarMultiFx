@@ -75,6 +75,7 @@ public:
     bool mutedIdle = false;
     juce::Colour dotColour;
     juce::Colour borderOverride;   // when set, replaces the normal border colour (e.g. armed/red pills)
+    bool chromeless = false;       // no own fill/border — for buttons inside a shared segmented container
     juce::String trailingText;
     std::function<void()> onClick;
 
@@ -129,9 +130,11 @@ public:
                 fill = fill.brighter (0.08f);
         }
 
-        g.setColour (fill);
-        if (ghost) g.fillRoundedRectangle (bounds, radius);
-        else       g.fillRoundedRectangle (bounds, radius);
+        if (! chromeless)
+        {
+            g.setColour (fill);
+            g.fillRoundedRectangle (bounds, radius);
+        }
 
         if (selected && selectedStyle == SelectedStyle::tab && ! primary)
         {
@@ -146,14 +149,19 @@ public:
                 g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
                 g.fillRoundedRectangle (bounds.withWidth (3.0f).withX (bounds.getX() + 1.0f), 1.5f);
             }
-            else
+            else if (chromeless)
             {
-                // Mockup: a selected segment is just a lighter fill; the accent underline was an earlier style
+                // segmented container owns the chrome; a selected segment is just a lighter fill
+                g.setColour (t.raisedHigh);
+                g.fillRoundedRectangle (bounds, radius);
             }
         }
 
-        g.setColour ((borderOverride == juce::Colour() ? border : borderOverride).withAlpha (ghost ? 0.8f : 1.0f));
-        g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
+        if (! chromeless)
+        {
+            g.setColour ((borderOverride == juce::Colour() ? border : borderOverride).withAlpha (ghost ? 0.8f : 1.0f));
+            g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
+        }
 
         auto textArea = bounds.reduced (10.0f, 0.0f);
         if (showDot)

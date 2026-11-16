@@ -53,7 +53,7 @@ private:
     juce::Label titleLabel, referenceLabel;
     overlaychrome::CloseButton closeButton;
     overlaychrome::ActionButton muteButton, midiButton, needleButton, strobeButton;
-    juce::Rectangle<float> noteBounds, readoutBounds, meterBounds;
+    juce::Rectangle<float> noteBounds, readoutBounds, meterBounds, segBounds;
 
     bool active = false;
     bool strobeMode = false;
