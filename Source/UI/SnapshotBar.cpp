@@ -94,7 +94,12 @@ float SnapshotBar::effectiveCellWidth() const noexcept
     // down from the prototype's 62px to keep every letter reachable.
     const int cells = displayCount() + (addCellIndex() >= 0 ? 1 : 0);
     const float fit = ((float) getWidth() - (float) (cells - 1) * (float) cellGap) / (float) cells;
-    return juce::jmin ((float) cellWidth, juce::jmax (40.0f, fit));
+    // No 40px floor here: with 7-8 real scenes the floor overflowed the
+    // strip and pushed the "+" cell (or the last letter) off the edge.
+    // Shrinking below the tap floor is wrong too, but reachable-and-small
+    // beats invisible -- the 48px sizing is preserved by displayCount()
+    // dropping filler letters before it ever comes to this.
+    return juce::jmin ((float) cellWidth, juce::jmax (24.0f, fit));
 }
 
 int SnapshotBar::cellIndexAt (juce::Point<int> position) const
