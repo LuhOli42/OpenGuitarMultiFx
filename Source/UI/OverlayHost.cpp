@@ -1,6 +1,8 @@
 #include "OverlayHost.h"
 #include "Theme.h"
 
+#include <cmath>
+
 namespace openguitarmultifx
 {
 
@@ -17,9 +19,50 @@ void OverlayHost::pushOverlay (std::unique_ptr<juce::Component> content)
     addAndMakeVisible (*content);
     layers.push_back (std::move (content));
 
+    setInterceptsMouseClicks (true, true);
     setVisible (true);
     toFront (false);
     layOutTop();
+
+    openProgress = 0.0f;
+    lastFrameMs = 0.0;
+    applyOpenAnimation();
+    startTimerHz (60);
+}
+
+void OverlayHost::applyOpenAnimation()
+{
+    if (layers.empty())
+        return;
+    auto* top = layers.back().get();
+    const float eased = 1.0f - (1.0f - openProgress) * (1.0f - openProgress) * (1.0f - openProgress); // ease-out cubic
+    const bool fullscreen = top->getProperties().getWithDefault ("fullscreen", false);
+    top->setAlpha (eased);
+    top->setTransform (fullscreen || eased >= 1.0f ? juce::AffineTransform() : juce::AffineTransform::translation (0.0f, (1.0f - eased) * 20.0f));
+}
+
+void OverlayHost::timerCallback()
+{
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const float dt = lastFrameMs > 0.0 ? juce::jlimit (0.004f, 0.1f, (float) ((now - lastFrameMs) * 0.001)) : 1.0f / 60.0f;
+    lastFrameMs = now;
+
+    const float target = layers.empty() ? 0.0f : scrimMax;
+    if (openProgress < 1.0f)
+    {
+        openProgress = juce::jmin (1.0f, openProgress + dt / 0.15f);
+        applyOpenAnimation();
+    }
+    scrimAlpha += (1.0f - std::exp (-dt * (layers.empty() ? 26.0f : 22.0f))) * (target - scrimAlpha);
+    if (std::abs (target - scrimAlpha) < 0.004f)
+        scrimAlpha = target;
+
+    const bool settled = openProgress >= 1.0f && scrimAlpha == target;
+    if (layers.empty() && scrimAlpha <= 0.0f)
+        setVisible (false); // the scrim has faded out: nothing left to show
+    if (settled)
+        stopTimer();
+    repaint();
 }
 
 void OverlayHost::popOverlay()
@@ -27,14 +70,21 @@ void OverlayHost::popOverlay()
     if (layers.empty())
         return;
 
+    layers.back()->setTransform (juce::AffineTransform());
     removeChildComponent (layers.back().get());
     layers.pop_back();
 
     if (layers.empty())
-        setVisible (false);
+    {
+        setInterceptsMouseClicks (false, false); // still painting the fading scrim, but taps go to the app underneath
+        lastFrameMs = 0.0;
+        startTimerHz (60);
+    }
     else
     {
         layers.back()->setVisible (true);
+        layers.back()->setAlpha (1.0f);
+        openProgress = 1.0f;
         layOutTop();
     }
 
@@ -72,18 +122,20 @@ void OverlayHost::resized()
 
 void OverlayHost::paint (juce::Graphics& g)
 {
+    if (scrimAlpha > 0.0f)
+        g.fillAll (juce::Colours::black.withAlpha (scrimAlpha));
     if (layers.empty())
         return;
-
-    g.fillAll (juce::Colours::black.withAlpha (0.65f));
 
     // Card background behind the top layer, so its content doesn't have to
     // paint its own edges/shadow to read as a sheet floating over the app.
     auto* top = layers.back().get();
-    g.setColour (theme::current().surface);
-    g.fillRoundedRectangle (top->getBounds().toFloat().expanded (1.0f), 14.0f);
-    g.setColour (juce::Colours::black.withAlpha (0.5f));
-    g.drawRoundedRectangle (top->getBounds().toFloat().expanded (1.0f), 14.0f, 1.0f);
+    const auto offset = top->getTransform().getTranslationY();
+    const auto cardBounds = top->getBounds().toFloat().translated (0.0f, offset).expanded (1.0f);
+    g.setColour (theme::current().surface.withAlpha (top->getAlpha()));
+    g.fillRoundedRectangle (cardBounds, 14.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.5f * top->getAlpha()));
+    g.drawRoundedRectangle (cardBounds, 14.0f, 1.0f);
 }
 
 void OverlayHost::mouseUp (const juce::MouseEvent&)

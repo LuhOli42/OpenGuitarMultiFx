@@ -490,13 +490,17 @@ private:
     };
 
     /** Prototype .cpu pill: "CPU 23%" plus the 3px load bar. */
-    class CpuPill : public juce::Component
+    class CpuPill : public juce::Component,
+                    private juce::Timer
     {
     public:
         void setCpu (float average01, bool deviceOk);
         void paint (juce::Graphics& g) override;
     private:
-        float cpu = 0.0f;
+        void timerCallback() override;
+        float cpu = 0.0f;       // drawn value, eased toward `target` every frame
+        float target = 0.0f;    // latest reading (arrives every 50 ms)
+        double lastFrameMs = 0.0;
         bool ok = true;
     };
 
