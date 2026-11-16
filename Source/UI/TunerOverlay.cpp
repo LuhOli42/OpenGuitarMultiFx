@@ -149,8 +149,8 @@ void TunerOverlay::resized()
 
     titleLabel.setBounds (header.removeFromLeft (90));
     header.removeFromLeft (8);
-    needleButton.setBounds (header.removeFromLeft (104).withSizeKeepingCentre (104, 46));
-    strobeButton.setBounds (header.removeFromLeft (104).withSizeKeepingCentre (104, 46));
+    needleButton.setBounds (header.removeFromLeft (104).withSizeKeepingCentre (104, 48));
+    strobeButton.setBounds (header.removeFromLeft (104).withSizeKeepingCentre (104, 48));
 
     auto body = getLocalBounds().withTrimmedTop (76).reduced (0, 12);
     noteBounds = body.removeFromLeft (430).reduced (24, 0).toFloat();
@@ -307,7 +307,7 @@ void TunerOverlay::paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> b
     // The lit wedge drifts around the ring proportional to cents: its angular offset from the top
     // marker reads like the strobe disc's rotation direction and speed frozen in a frame.
     const float drift = active ? cents * 3.6f : 0.0f; // cents -> degrees of offset
-    const float wedgeCentre = 90.0f + drift;          // top = 0 deg (our convention below)
+    const float wedgeCentre = drift;                  // deg 0 is the top marker; flat drifts left, sharp right
     const bool inTune = active && std::abs (cents) <= inTuneCents;
 
     for (int i = 0; i < 72; ++i)
