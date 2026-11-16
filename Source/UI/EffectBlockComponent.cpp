@@ -222,7 +222,7 @@ void EffectBlockComponent::paint (juce::Graphics& g)
 
     if (t.blockStyle == theme::BlockStyle::glow)
     {
-        const auto ledCentre = juce::Point<float> (bounds.getX() + 9.0f, bounds.getY() + 9.0f);
+        const auto ledCentre = juce::Point<float> (bounds.getX() + 14.0f, bounds.getY() + 14.0f);
         if (bypassed)
         {
             g.setColour (t.textDim);
@@ -230,23 +230,26 @@ void EffectBlockComponent::paint (juce::Graphics& g)
         }
         else
         {
-            g.setColour (accent.withAlpha (0.30f));
-            g.fillEllipse (ledCentre.x - 8.0f, ledCentre.y - 8.0f, 16.0f, 16.0f);
-            g.setColour (accent.withAlpha (0.45f));
-            g.fillEllipse (ledCentre.x - 5.0f, ledCentre.y - 5.0f, 10.0f, 10.0f);
+            // Prototype stage .blk:before: 7px dot + box-shadow 0 0 8px accent.
+            g.setColour (accent.withAlpha (0.25f));
+            g.fillEllipse (ledCentre.x - 6.5f, ledCentre.y - 6.5f, 13.0f, 13.0f);
             g.setColour (accent);
             g.fillEllipse (ledCentre.x - 3.5f, ledCentre.y - 3.5f, 7.0f, 7.0f);
         }
     }
 
-    auto iconArea = bounds.reduced (7.0f);
-    if (t.blockStyle == theme::BlockStyle::glow)
-        iconArea = iconArea.withTrimmedLeft (8.0f);
-    auto nameArea = iconArea.removeFromBottom (24.0f);
-    iconArea.removeFromBottom (4.0f);
-
-    const float squareSize = juce::jmin (iconArea.getWidth(), iconArea.getHeight()) * 0.78f;
-    const auto squareIconArea = iconArea.withSizeKeepingCentre (squareSize, squareSize);
+    // Prototype .blk: flex column, centred group -- 48px icon, 6px gap,
+    // name (12.5px bold, ~15px line). No pinning to the block's edges.
+    const float squareSize = 34.0f;
+    const float nameH = 15.0f;
+    const float gap = 6.0f;
+    const float groupH = squareSize + gap + nameH;
+    const float groupTop = bounds.getCentreY() - groupH * 0.5f;
+    const auto squareIconArea = juce::Rectangle<float> (bounds.getCentreX() - squareSize * 0.5f,
+                                                        groupTop, squareSize, squareSize);
+    const auto nameArea = juce::Rectangle<float> (bounds.getX() + 6.0f,
+                                                  groupTop + squareSize + gap,
+                                                  bounds.getWidth() - 12.0f, nameH * 2.0f);
 
     juce::Colour iconTint;
     bool wantGlowIcon = false;
@@ -265,15 +268,30 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     {
         tintedIcon = tintIconImage (baseIcon, iconTint, 1.0f);
         tintedFor = iconTint;
-        glowIcon = wantGlowIcon ? tintIconImage (baseIcon, iconTint, 0.22f) : juce::Image();
+        if (wantGlowIcon)
+        {
+            // Prototype: drop-shadow(0 0 8px accent 55%) on the icon -- a real
+            // blurred glow, not stacked scaled copies (that's what read as
+            // a bloom blob).
+            auto tinted = tintIconImage (baseIcon, accent, 1.0f);
+            glowIcon = juce::Image (juce::Image::ARGB, tinted.getWidth(), tinted.getHeight(), true);
+            juce::Graphics glowGraphics (glowIcon);
+            juce::GlowEffect glow;
+            glow.setGlowProperties (8.0f, accent.withAlpha (0.55f));
+            glow.applyEffect (tinted, glowGraphics, 1.0f, 1.0f);
+        }
+        else
+            glowIcon = juce::Image();
     }
 
     if (glowIcon.isValid())
     {
-        g.drawImage (glowIcon, squareIconArea.expanded (10.0f), juce::RectanglePlacement::centred, false);
-        g.drawImage (glowIcon, squareIconArea.expanded (5.0f), juce::RectanglePlacement::centred, false);
+        // GlowEffect.applyEffect() already paints the icon itself on top of
+        // its own glow -- drawing tintedIcon again doubles the glyph.
+        g.drawImage (glowIcon, squareIconArea.expanded (2.0f), juce::RectanglePlacement::centred, false);
     }
-    g.drawImage (tintedIcon, squareIconArea, juce::RectanglePlacement::centred, false);
+    else
+        g.drawImage (tintedIcon, squareIconArea, juce::RectanglePlacement::centred, false);
 
     juce::String name = processor.getName();
     if (t.uppercaseLabels)
@@ -282,6 +300,7 @@ void EffectBlockComponent::paint (juce::Graphics& g)
     g.setColour (filledStyle ? iconTint : (bypassed ? t.textDim : t.text));
     g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
     g.drawFittedText (name, nameArea.toNearestInt(), juce::Justification::centred, 2, 0.8f);
+
 
     if (bypassed)
     {
