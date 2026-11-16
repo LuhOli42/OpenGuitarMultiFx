@@ -20,6 +20,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PresetSpilloverTests.cpp
   MidiLearnPresetXmlTests.cpp
   SceneMidiTests.cpp
+  ExpressionPedalTests.cpp
   BypassPedalXmlTests.cpp
   MasterEqTests.cpp
   AmpSmoothTests.cpp

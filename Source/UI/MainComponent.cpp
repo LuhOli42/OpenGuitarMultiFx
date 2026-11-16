@@ -290,6 +290,8 @@ MainComponent::MainComponent()
                 return cc;
         return -1;
     };
+    parameterPanel.getPedalLinks = [this] (juce::AudioParameterFloat* param) { return pedalLinksFor (param); };
+    parameterPanel.onTogglePedalLink = [this] (juce::AudioParameterFloat* param, int pedal) { toggleExpressionLink (param, pedal); };
     addAndMakeVisible (parameterPanel);
 
     addAndMakeVisible (footerBar);
@@ -377,6 +379,7 @@ MainComponent::MainComponent()
 
     scenemidi::load (sceneMidi);
     tunersettings::load (tunerSettings);
+    expressionPedals = exppedal::load();
     refreshScenePedalDisplay();
 
     // Kernels without the ALSA sequencer (the Cubie A7S image): read the rawmidi nodes directly, or no controller
@@ -1111,6 +1114,48 @@ void MainComponent::showSettingsPanel()
         return err;
     };
     panel->onBufferSizeChanged = [this] (int size) { return audioEngine.setBufferSize (size); };
+    panel->getMidiMappings = [this] { return describeMidiMappings(); };
+    panel->onRemoveMidiMapping = [this] (const MidiMappingRow& row) { removeMidiMapping (row); };
+    panel->getExpressionPedalStatus = [this] (int i) { return expressionPedalStatus (i); };
+    panel->onExpressionLearn = [this] (int i) { toggleExpressionLearn (i); };
+    panel->onExpressionCalibrate = [this] (int i) { toggleExpressionCalibration (i); };
+    panel->onExpressionLinkKnobs = [this, alive = aliveFlag] (int i)
+    {
+        // Close Settings after the button's click has finished (the card owns that button), then link on screen.
+        juce::MessageManager::callAsync ([this, alive, i]
+        {
+            if (! alive->load())
+                return;
+            overlayHost.popOverlay();
+            setExpressionLinkMode (i);
+        });
+    };
+    panel->onExpressionClear = [this] (int i)
+    {
+        if (i == expressionCalibrating)
+            expressionCalibrating = -1;
+        expressionPedals.pedals[(size_t) i].cc = -1;
+        expressionAuto[(size_t) i].reset();
+        exppedal::save (expressionPedals);
+    };
+    panel->onExpressionEdited = [this] (int i, const exppedal::Pedal& edited)
+    {
+        auto& pedal = expressionPedals.pedals[(size_t) i];
+        const int cc = pedal.cc; // the CC only changes through Learn/Clear
+        pedal = edited;
+        pedal.cc = cc;
+        pedal.autoOffMs = juce::jlimit (exppedal::minAutoOffMs, exppedal::maxAutoOffMs, pedal.autoOffMs);
+        if (! pedal.autoEngage)
+            expressionAuto[(size_t) i].reset();
+        exppedal::save (expressionPedals);
+    };
+    panel->onClosing = [this, alive = aliveFlag]
+    {
+        if (! alive->load())
+            return;
+        expressionLearnArmed = -1;
+        expressionCalibrating = -1;
+    };
     panel->setPerformanceMode (audioEngine.isPerformanceMode());
     panel->onPerformanceModeChanged = [this] (bool enabled)
     {
@@ -2050,21 +2095,359 @@ void MainComponent::refreshScenePedalDisplay()
     snapshotBar.setCaptionOverride (caption);
 }
 
-void MainComponent::freeCcForLearning (int cc)
+void MainComponent::freeCcForLearning (int cc, bool learningKnob)
 {
+    if (const int pedal = expressionPedals.indexForCc (cc); pedal >= 0 && ! learningKnob)
+    {
+        expressionPedals.pedals[(size_t) pedal].cc = -1;
+        expressionAuto[(size_t) pedal].reset();
+        exppedal::save (expressionPedals);
+    }
     if (tunerSettings.cc == cc)
     {
         tunerSettings.cc = -1;
         tunersettings::save (tunerSettings);
         refreshTunerOverlay();
     }
-    midiCcBindings.erase (cc);
+    // A pedal CC collects knobs; any other CC drives exactly one, so learning onto it replaces what was there.
+    if (! (learningKnob && expressionPedals.indexForCc (cc) >= 0))
+        midiCcBindings.erase (cc);
     bypassPedals.erase (cc);
     if (sceneMidi.hasCc (cc))
     {
         sceneMidi.clearCc (cc);
         scenemidi::save (sceneMidi);
         refreshScenePedalDisplay();
+    }
+}
+
+juce::String MainComponent::describeBlock (const EffectProcessor* processor) const
+{
+    if (processor == nullptr)
+        return {};
+
+    const juce::String name (processor->getName());
+    int sameName = 0, ordinal = 0;
+    for (auto& p : chain)
+        if (name == p->getName())
+        {
+            ++sameName;
+            if (p.get() == processor)
+                ordinal = sameName;
+        }
+    return sameName > 1 ? name + " #" + juce::String (ordinal) : name;
+}
+
+EffectProcessor* MainComponent::processorOwning (const juce::AudioParameterFloat* param) const
+{
+    for (auto& p : chain)
+        if (auto* group = p->getParameters())
+            for (auto* candidate : group->getParameters (true))
+                if (candidate == param)
+                    return p.get();
+    return nullptr;
+}
+
+std::vector<MidiMappingRow> MainComponent::describeMidiMappings() const
+{
+    std::vector<MidiMappingRow> rows;
+    const auto add = [this, &rows] (MidiMappingRow::Kind kind, int cc, const juce::String& type,
+                                    const juce::String& target, bool perPreset)
+    {
+        MidiMappingRow row;
+        row.kind = kind;
+        row.cc = cc;
+        row.source = "CC " + juce::String (cc);
+        if (const int pedal = expressionPedals.indexForCc (cc); pedal >= 0)
+            row.source << " - EXP " << (pedal + 1);
+        row.type = type;
+        row.target = target;
+        row.perPreset = perPreset;
+        rows.push_back (row);
+    };
+
+    for (auto& [cc, param] : midiCcBindings)
+    {
+        const auto* owner = processorOwning (param);
+        add (MidiMappingRow::Kind::knob, cc, "Knob",
+             (owner != nullptr ? describeBlock (owner) + " - " : juce::String()) + param->getName (64), true);
+        rows.back().ref = param;
+    }
+    for (auto& [cc, processor] : bypassPedals)
+        add (MidiMappingRow::Kind::blockOnOff, cc, "Block on/off", describeBlock (processor), true);
+
+    for (int action = scenemidi::previousScene; action < snapshotxml::maxSnapshots; ++action)
+        if (const int cc = sceneMidi.ccFor (action); cc >= 0)
+            add (MidiMappingRow::Kind::scene, cc, "Scene footswitch",
+                 action == scenemidi::nextScene     ? juce::String ("Next scene")
+                 : action == scenemidi::previousScene ? juce::String ("Previous scene")
+                                                      : "Scene " + snapshotxml::letterFor (action),
+                 false);
+
+    if (tunerSettings.cc >= 0)
+        add (MidiMappingRow::Kind::tuner, tunerSettings.cc, "Tuner", "Open / close the tuner", false);
+
+    std::sort (rows.begin(), rows.end(), [] (const auto& a, const auto& b) { return a.cc < b.cc; });
+    return rows;
+}
+
+void MainComponent::removeMidiMapping (const MidiMappingRow& row)
+{
+    switch (row.kind)
+    {
+        case MidiMappingRow::Kind::knob:
+            for (auto [it, end] = midiCcBindings.equal_range (row.cc); it != end; ++it)
+                if (it->second == row.ref)
+                {
+                    midiCcBindings.erase (it);
+                    break;
+                }
+            break;
+        case MidiMappingRow::Kind::blockOnOff:
+            bypassPedals.erase (row.cc);
+            refreshBypassPedalDisplay();
+            break;
+        case MidiMappingRow::Kind::scene:
+            sceneMidi.clearCc (row.cc);
+            scenemidi::save (sceneMidi);
+            refreshScenePedalDisplay();
+            break;
+        case MidiMappingRow::Kind::tuner:
+            if (tunerSettings.cc == row.cc)
+            {
+                tunerSettings.cc = -1;
+                tunersettings::save (tunerSettings);
+                refreshTunerOverlay();
+            }
+            break;
+    }
+}
+
+ExpressionPedalStatus MainComponent::expressionPedalStatus (int index) const
+{
+    ExpressionPedalStatus status;
+    if (index < 0 || index >= exppedal::numPedals)
+        return status;
+
+    status.pedal = expressionPedals.pedals[(size_t) index];
+    status.lastRaw = status.pedal.isAssigned() ? expressionLastRaw[(size_t) index] : -1;
+    status.learning = expressionLearnArmed == index;
+    status.calibrating = expressionCalibrating == index;
+    if (status.calibrating && expressionCalibrator.highest() >= 0)
+    {
+        status.calibrationLow = expressionCalibrator.lowest();
+        status.calibrationHigh = expressionCalibrator.highest();
+    }
+
+    if (status.pedal.isAssigned())
+    {
+        juce::StringArray knobs;
+        for (auto [it, end] = midiCcBindings.equal_range (status.pedal.cc); it != end; ++it)
+        {
+            const auto* owner = processorOwning (it->second);
+            knobs.add ((owner != nullptr ? describeBlock (owner) + " - " : juce::String()) + it->second->getName (64));
+        }
+        status.drives = knobs.joinIntoString (", ");
+    }
+    return status;
+}
+
+std::vector<ParameterPanel::PedalLink> MainComponent::pedalLinksFor (juce::AudioParameterFloat* param) const
+{
+    std::vector<ParameterPanel::PedalLink> links;
+    for (int i = 0; i < exppedal::numPedals; ++i)
+    {
+        const auto& pedal = expressionPedals.pedals[(size_t) i];
+        if (! pedal.isAssigned())
+            continue;
+        ParameterPanel::PedalLink link;
+        link.pedal = i;
+        link.label = "EXP " + juce::String (i + 1);
+        for (auto [it, end] = midiCcBindings.equal_range (pedal.cc); it != end; ++it)
+            link.linked = link.linked || it->second == param;
+        links.push_back (link);
+    }
+    return links;
+}
+
+void MainComponent::toggleExpressionLink (juce::AudioParameterFloat* param, int pedal)
+{
+    if (param == nullptr || pedal < 0 || pedal >= exppedal::numPedals || processorOwning (param) == nullptr)
+        return;
+    const int cc = expressionPedals.pedals[(size_t) pedal].cc;
+    if (cc < 0)
+        return;
+
+    bool wasLinked = false;
+    for (auto it = midiCcBindings.begin(); it != midiCcBindings.end();)
+    {
+        if (it->second != param)
+        {
+            ++it;
+            continue;
+        }
+        wasLinked = wasLinked || it->first == cc;
+        it = midiCcBindings.erase (it);
+    }
+    if (! wasLinked)
+    {
+        // The knob jumps to where the pedal is now, so what you hear matches the pedal from the first tap.
+        midiCcBindings.emplace (cc, param);
+        if (const int raw = expressionLastRaw[(size_t) pedal]; raw >= 0)
+            *param = param->getNormalisableRange().convertFrom0to1 (expressionPedals.pedals[(size_t) pedal].shape (raw));
+    }
+}
+
+/** The strip across the top while knobs are being linked to a pedal: says what is going on and holds Done. */
+class MainComponent::LinkBanner : public juce::Component
+{
+public:
+    LinkBanner()
+    {
+        addAndMakeVisible (doneButton);
+        doneButton.onClick = [this] { if (onDone) onDone(); };
+    }
+
+    void setText (juce::String title, juce::String detail)
+    {
+        if (title == heading && detail == subtitle)
+            return;
+        heading = std::move (title);
+        subtitle = std::move (detail);
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto& t = theme::current();
+        const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+        auto r = getLocalBounds().toFloat();
+        g.setColour (t.surface);
+        g.fillRoundedRectangle (r, t.radius);
+        g.setColour (accent);
+        g.drawRoundedRectangle (r.reduced (1.0f), t.radius, 2.0f);
+
+        auto text = getLocalBounds().reduced (20, 8);
+        text.removeFromRight (doneButton.getWidth() + 16);
+        g.setColour (accent);
+        g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
+        g.drawText (heading, text.removeFromTop (text.getHeight() / 2), juce::Justification::bottomLeft);
+        g.setColour (t.textMuted);
+        g.setFont (juce::FontOptions (14.0f));
+        g.drawText (subtitle, text, juce::Justification::topLeft);
+    }
+
+    void resized() override
+    {
+        doneButton.setBounds (getLocalBounds().reduced (10).removeFromRight (120));
+    }
+
+    std::function<void()> onDone;
+
+private:
+    juce::String heading, subtitle;
+    juce::TextButton doneButton { "Done" };
+};
+
+void MainComponent::setExpressionLinkMode (int pedal)
+{
+    if (pedal >= 0 && ! expressionPedals.pedals[(size_t) pedal].isAssigned())
+        pedal = -1;
+    expressionLinkMode = pedal;
+
+    if (linkBanner == nullptr)
+    {
+        linkBanner = std::make_unique<LinkBanner>();
+        addChildComponent (*linkBanner);
+        linkBanner->onDone = [this] { setExpressionLinkMode (-1); };
+    }
+
+    if (pedal >= 0)
+    {
+        cancelOtherLearning();
+        // Nothing to tap until a block is open: start on the first one in the chain.
+        if (selectedProcessor == nullptr && ! chain.empty())
+            selectBlock (chain.front().get());
+    }
+
+    parameterPanel.setPedalLinkMode (pedal);
+    linkBanner->setVisible (pedal >= 0);
+    if (pedal >= 0)
+    {
+        linkBanner->toFront (false);
+        overlayHost.toFront (false); // a card opened on top still covers the banner
+    }
+    resized();
+}
+
+void MainComponent::cancelOtherLearning()
+{
+    midiLearnArmedParam = nullptr;
+    bypassPedalArmed = nullptr;
+    if (sceneMidiArmed != scenemidi::noAction)
+    {
+        sceneMidiArmed = scenemidi::noAction;
+        refreshScenePedalDisplay();
+    }
+    if (tunerMidiArmed)
+    {
+        tunerMidiArmed = false;
+        refreshTunerOverlay();
+    }
+}
+
+void MainComponent::toggleExpressionLearn (int index)
+{
+    if (index < 0 || index >= exppedal::numPedals)
+        return;
+    if (expressionLearnArmed == index)
+    {
+        expressionLearnArmed = -1;
+        return;
+    }
+    cancelOtherLearning();
+    expressionCalibrating = -1;
+    expressionLearnArmed = index;
+}
+
+void MainComponent::toggleExpressionCalibration (int index)
+{
+    if (index < 0 || index >= exppedal::numPedals || ! expressionPedals.pedals[(size_t) index].isAssigned())
+        return;
+
+    if (expressionCalibrating == index)
+    {
+        // A pedal that was not moved keeps its old calibration rather than collapsing to one point.
+        if (expressionCalibrator.finish (expressionPedals.pedals[(size_t) index]))
+            exppedal::save (expressionPedals);
+        expressionCalibrating = -1;
+        return;
+    }
+
+    expressionLearnArmed = -1;
+    expressionCalibrating = index;
+    expressionCalibrator.begin();
+}
+
+void MainComponent::setExpressionBlocksOn (int index, bool on)
+{
+    const auto& pedal = expressionPedals.pedals[(size_t) index];
+    bool changed = false;
+    for (auto& [cc, param] : midiCcBindings)
+    {
+        if (cc != pedal.cc)
+            continue;
+        if (auto* processor = processorOwning (param); processor != nullptr && processor->isBypassed() == on)
+        {
+            processor->setBypassed (! on);
+            changed = true;
+        }
+    }
+    if (changed)
+    {
+        for (auto* block : blocks)
+            block->repaint();
+        refreshLiveOverlay();
     }
 }
 
@@ -2255,6 +2638,37 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         return;
     }
 
+    // Settings -> Expression -> Learn CC: the pedal's first message names its CC. Footswitch-type bindings on that CC
+    // go (a pedal sweeping through 64 would fire them); knobs already learned on it stay -- they are what it drives.
+    if (expressionLearnArmed >= 0)
+    {
+        const int pedal = expressionLearnArmed;
+        expressionLearnArmed = -1;
+        expressionPedals.assignCc (pedal, ccNumber); // first, so freeCcForLearning keeps the knobs on this CC
+        freeCcForLearning (ccNumber, true);
+        expressionAuto[(size_t) pedal].reset();
+        expressionLastRaw[(size_t) pedal] = ccValue;
+        exppedal::save (expressionPedals);
+        return;
+    }
+
+    // An expression pedal's value is calibrated and shaped once here; every knob learned on its CC gets that value.
+    const int pedalIndex = expressionPedals.indexForCc (ccNumber);
+    float pedalValue = -1.0f;
+    if (pedalIndex >= 0)
+    {
+        const auto& pedal = expressionPedals.pedals[(size_t) pedalIndex];
+        expressionLastRaw[(size_t) pedalIndex] = ccValue;
+        if (expressionCalibrating == pedalIndex)
+            expressionCalibrator.observe (ccValue);
+        pedalValue = pedal.shape (ccValue);
+
+        if (pedal.autoEngage && midiLearnArmedParam == nullptr
+            && expressionAuto[(size_t) pedalIndex].onValue (pedalValue, juce::Time::getMillisecondCounter())
+                   == exppedal::AutoEngage::Action::engage)
+            setExpressionBlocksOn (pedalIndex, true);
+    }
+
     // A scene armed for pedal learning takes the next stomp. Only a press is
     // learned: the footswitch's release (value 0) arrives right after and must
     // not bind a second, useless CC.
@@ -2318,12 +2732,12 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     // from the old one, since a CC can only ever drive one parameter).
     if (midiLearnArmedParam != nullptr)
     {
-        freeCcForLearning (ccNumber);
+        freeCcForLearning (ccNumber, true);
 
         for (auto it = midiCcBindings.begin(); it != midiCcBindings.end(); )
             it = it->second == midiLearnArmedParam ? midiCcBindings.erase (it) : std::next (it);
 
-        midiCcBindings[ccNumber] = midiLearnArmedParam;
+        midiCcBindings.emplace (ccNumber, midiLearnArmedParam);
         midiLearnArmedParam = nullptr;
         return;
     }
@@ -2343,17 +2757,13 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
         return; // likewise for an on/off pedal
     }
 
-    const auto it = midiCcBindings.find (ccNumber);
-    if (it == midiCcBindings.end())
-        return;
-
     // CC values are 0-127; convert through the parameter's own
     // NormalisableRange (not a plain linear map) so a log-skewed
     // parameter like a delay Time knob still sweeps musically under CC
     // control instead of spending most of the CC's range on one extreme.
-    auto* param = it->second;
-    const float normalised = (float) ccValue / 127.0f;
-    *param = param->getNormalisableRange().convertFrom0to1 (normalised);
+    const float normalised = pedalValue >= 0.0f ? pedalValue : (float) ccValue / 127.0f;
+    for (auto [it, end] = midiCcBindings.equal_range (ccNumber); it != end; ++it)
+        *it->second = it->second->getNormalisableRange().convertFrom0to1 (normalised);
 }
 
 void MainComponent::clearMidiBindingsFor (EffectProcessor* processor)
@@ -2792,6 +3202,25 @@ void MainComponent::restoreUndoState (const juce::XmlElement& target)
 void MainComponent::timerCallback()
 {
     refreshBypassPedalDisplay();
+
+    if (linkBanner != nullptr && expressionLinkMode >= 0)
+    {
+        const auto status = expressionPedalStatus (expressionLinkMode);
+        const auto pedalName = "EXP " + juce::String (expressionLinkMode + 1);
+        linkBanner->setText ("Linking knobs to " + pedalName + (status.drives.isNotEmpty() ? "  -  " + status.drives : juce::String()),
+                             selectedProcessor == nullptr
+                                 ? juce::String ("Tap a block on the grid, then tap the knobs this pedal should move.")
+                                 : "Tap a knob to link or unlink it. Open other blocks on the grid to add theirs. Move the pedal to try it.");
+    }
+
+    for (int i = 0; i < exppedal::numPedals; ++i)
+    {
+        const auto& pedal = expressionPedals.pedals[(size_t) i];
+        if (pedal.isAssigned() && pedal.autoEngage
+            && expressionAuto[(size_t) i].tick (juce::Time::getMillisecondCounter(), pedal.autoOffMs)
+                   == exppedal::AutoEngage::Action::disengage)
+            setExpressionBlocksOn (i, false);
+    }
     pollUndoHistory();
 
     // Re-derive device liveness every tick rather than latching it from
@@ -3040,6 +3469,8 @@ void MainComponent::GearButton::paintButton (juce::Graphics& g, bool highlighted
 void MainComponent::resized()
 {
     overlayHost.setBounds (getLocalBounds());
+    if (linkBanner != nullptr)
+        linkBanner->setBounds (getLocalBounds().removeFromTop (76).reduced (gridSide, 8));
 
     auto area = getLocalBounds();
 

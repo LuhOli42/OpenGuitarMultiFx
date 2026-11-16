@@ -1,6 +1,7 @@
 #pragma once
 
 #include "OAuthLoginDialog.h"
+#include "MidiSettingsPages.h"
 #include "OverlayChrome.h"
 #include "Theme.h"
 #include "../Tone3000/LoopbackServer.h"
@@ -22,7 +23,8 @@ namespace openguitarmultifx
     a pedalboard has exactly one settings surface, reached through the "..."
     button, not a scatter of separate dialogs). A side navigation splits it
     into Appearance (theme), Audio (interface/sample rate/buffer), Rendering
-    quality, TONE3000 account, MIDI notes, Software update and About.
+    quality, TONE3000 account, MIDI (the table of learned assignments), Expression
+    pedals, Software update and About.
     Searching/downloading models is NOT here: that stays contextual to
     whichever block is selected (see ParameterPanel and
     GearRouting.h::gearFilterForProcessorName).
@@ -37,6 +39,7 @@ class Tone3000Panel : public juce::Component,
 {
 public:
     Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updaterToUse);
+    ~Tone3000Panel() override;
 
     void resized() override;
     void paint (juce::Graphics& g) override;
@@ -79,6 +82,20 @@ public:
         which also re-shows this section and hides the button again). */
     std::function<juce::String()> onRetryDevice;
 
+    /** MIDI page: every learned assignment (polled while the page is open) and removing one of them. */
+    std::function<std::vector<MidiMappingRow>()> getMidiMappings;
+    std::function<void (const MidiMappingRow&)> onRemoveMidiMapping;
+
+    /** Expression page: the host owns the pedals (exppedal::Settings) and the incoming CCs; the page polls the status
+        and sends edits. Learn and Calibrate toggle (a second tap cancels / finishes). */
+    std::function<ExpressionPedalStatus (int)> getExpressionPedalStatus;
+    std::function<void (int)> onExpressionLearn, onExpressionClear, onExpressionCalibrate;
+    /** "Link knobs": the host closes Settings and lets you tap the knobs on screen. */
+    std::function<void (int)> onExpressionLinkKnobs;
+    std::function<void (int, const exppedal::Pedal&)> onExpressionEdited;
+    /** Settings is closing: the host drops a pending pedal learn / calibration nobody can see any more. */
+    std::function<void()> onClosing;
+
 private:
     void refreshLoginState();
     void doLogin();
@@ -96,9 +113,9 @@ private:
     juce::Viewport viewport;
     juce::Component content;
 
-    enum class Section { appearance, audio, quality, tone3000, midi, updates, about };
+    enum class Section { appearance, audio, quality, tone3000, midi, expression, updates, about };
     Section currentSection = Section::appearance;
-    juce::Component appearancePage, audioPage, qualityPage, tone3000Page, midiPage, updatesPage, aboutPage;
+    juce::Component appearancePage, audioPage, qualityPage, tone3000Page, midiPage, expressionPage, updatesPage, aboutPage;
     juce::OwnedArray<juce::Component> navButtons;
     juce::OwnedArray<juce::Component> themeCards;
     juce::Rectangle<int> navRailBounds;
@@ -161,8 +178,20 @@ private:
     double updateProgressValue = 0.0;
     juce::ProgressBar updateProgressBar { updateProgressValue };
 
-    juce::Label midiIntroLabel;
-    juce::Label midiHintLabel;
+    juce::Label midiTableLabel;
+    MidiMappingTable midiTable;
+    juce::Label expressionIntroLabel;
+    juce::Label expressionHintLabel;
+    juce::OwnedArray<ExpressionPedalEditor> expressionEditors;
+
+    // Separate from the panel's own Timer, which AppUpdater's UI starts and stops: this one runs only while the MIDI or
+    // Expression page is on screen, refreshing the table and the live pedal position.
+    struct PollTimer : juce::Timer
+    {
+        std::function<void()> tick;
+        void timerCallback() override { if (tick) tick(); }
+    } midiPoll;
+    void pollMidiPages();
     juce::Label aboutIntroLabel;
     juce::Label aboutDetailsLabel;
 

@@ -104,8 +104,8 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (10);
 
-    const char* navTitles[] = { "Appearance", "Audio", "Quality", "TONE3000", "MIDI", "Updates", "About" };
-    for (int i = 0; i < 7; ++i)
+    const char* navTitles[] = { "Appearance", "Audio", "Quality", "TONE3000", "MIDI", "Expression", "Updates", "About" };
+    for (int i = 0; i < 8; ++i)
     {
         auto* b = new juce::TextButton (navTitles[i]);
         navButtons.add (b);
@@ -116,7 +116,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
         b->onClick = [this, i] { selectSection (i); };
     }
 
-    juce::Component* pages[] = { &appearancePage, &audioPage, &qualityPage, &tone3000Page, &midiPage, &updatesPage, &aboutPage };
+    juce::Component* pages[] = { &appearancePage, &audioPage, &qualityPage, &tone3000Page, &midiPage, &expressionPage, &updatesPage, &aboutPage };
     for (auto* page : pages)
     {
         content.addAndMakeVisible (*page);
@@ -264,15 +264,42 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
 
     tone3000Page.addAndMakeVisible (statusLabel);
 
-    midiPage.addAndMakeVisible (midiIntroLabel);
-    midiIntroLabel.setFont (juce::Font (18.0f, juce::Font::bold));
-    midiIntroLabel.setText ("MIDI", juce::dontSendNotification);
-    midiPage.addAndMakeVisible (midiHintLabel);
-    midiHintLabel.setFont (juce::Font (15.0f));
-    midiHintLabel.setText ("Learn a knob: press and hold its name in the parameter drawer, then move a MIDI control.\n"
-                           "Learn a scene footswitch: press and hold the + on the snapshot strip.\n"
-                           "Program Change 1-128 recalls presets 1-128. Every available MIDI input is enabled automatically.",
-                           juce::dontSendNotification);
+    midiPage.addAndMakeVisible (midiTableLabel);
+    midiTableLabel.setFont (juce::Font (18.0f, juce::Font::bold));
+    midiTableLabel.setText ("MIDI assignments", juce::dontSendNotification);
+    midiPage.addAndMakeVisible (midiTable);
+    midiTable.onRemove = [this] (const MidiMappingRow& row)
+    {
+        if (onRemoveMidiMapping)
+            onRemoveMidiMapping (row);
+        // The tapped Remove button is one of the table's own rows: rebuild after its click handler has returned.
+        juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer<Tone3000Panel> (this)]
+        {
+            if (safeThis != nullptr)
+                safeThis->pollMidiPages();
+        });
+    };
+
+    expressionPage.addAndMakeVisible (expressionIntroLabel);
+    expressionIntroLabel.setFont (juce::Font (18.0f, juce::Font::bold));
+    expressionIntroLabel.setText ("Expression pedals", juce::dontSendNotification);
+    expressionPage.addAndMakeVisible (expressionHintLabel);
+    expressionHintLabel.setFont (juce::Font (14.0f));
+    expressionHintLabel.setText ("A pedal on your MIDI controller's EXP input. Learn its CC, calibrate heel and toe so it reaches "
+                                 "both ends, pick the curve. Auto on/off switches the blocks it drives on when you move it "
+                                 "and off after it rests at the heel (wah style). Applies to every preset.",
+                                 juce::dontSendNotification);
+    for (int i = 0; i < exppedal::numPedals; ++i)
+    {
+        auto* editor = expressionEditors.add (new ExpressionPedalEditor (i));
+        expressionPage.addAndMakeVisible (editor);
+        editor->onLearn = [this, i] { if (onExpressionLearn) onExpressionLearn (i); pollMidiPages(); };
+        editor->onClear = [this, i] { if (onExpressionClear) onExpressionClear (i); pollMidiPages(); };
+        editor->onCalibrate = [this, i] { if (onExpressionCalibrate) onExpressionCalibrate (i); pollMidiPages(); };
+        editor->onLinkKnobs = [this, i] { if (onExpressionLinkKnobs) onExpressionLinkKnobs (i); };
+        editor->onEdited = [this, i] (const exppedal::Pedal& p) { if (onExpressionEdited) onExpressionEdited (i, p); pollMidiPages(); };
+    }
+    midiPoll.tick = [this] { pollMidiPages(); };
 
     updatesPage.addAndMakeVisible (updateSectionLabel);
     updateSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
@@ -462,8 +489,9 @@ void Tone3000Panel::selectSection (int index)
         case 2: next = Section::quality;    break;
         case 3: next = Section::tone3000;   break;
         case 4: next = Section::midi;       break;
-        case 5: next = Section::updates;    break;
-        case 6: next = Section::about;      break;
+        case 5: next = Section::expression; break;
+        case 6: next = Section::updates;    break;
+        case 7: next = Section::about;      break;
         default: return;
     }
     if (currentSection == next)
@@ -471,8 +499,35 @@ void Tone3000Panel::selectSection (int index)
 
     currentSection = next;
     refreshNavButtons();
+    pollMidiPages();
     layoutContent();
     viewport.setViewPosition (0, 0);
+
+    if (currentSection == Section::midi || currentSection == Section::expression)
+        midiPoll.startTimer (100);
+    else
+        midiPoll.stopTimer();
+}
+
+Tone3000Panel::~Tone3000Panel()
+{
+    midiPoll.stopTimer();
+    if (onClosing)
+        onClosing();
+}
+
+void Tone3000Panel::pollMidiPages()
+{
+    if (currentSection == Section::midi && getMidiMappings)
+    {
+        const int before = midiTable.getIdealHeight();
+        midiTable.setRows (getMidiMappings());
+        if (midiTable.getIdealHeight() != before)
+            layoutContent();
+    }
+    if (currentSection == Section::expression && getExpressionPedalStatus)
+        for (int i = 0; i < expressionEditors.size(); ++i)
+            expressionEditors[i]->setStatus (getExpressionPedalStatus (i));
 }
 
 void Tone3000Panel::applyLabelColours()
@@ -481,7 +536,7 @@ void Tone3000Panel::applyLabelColours()
     const auto muted = [this, &t] (juce::Label& label) { label.setColour (juce::Label::textColourId, t.textMuted); };
 
     for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &statusLabel,
-                                &updateStatusLabel, &midiHintLabel, &aboutDetailsLabel, &interfaceLabel,
+                                &updateStatusLabel, &expressionHintLabel, &aboutDetailsLabel, &interfaceLabel,
                                 &currentVersionLabel, &clientIdLabel })
         muted (*label);
 }
@@ -634,8 +689,8 @@ void Tone3000Panel::layoutContent()
     const int h = layoutActivePage ({ 0, 0, w, 10000 });
     content.setSize (w, h);
 
-    juce::Component* pages[] = { &appearancePage, &audioPage, &qualityPage, &tone3000Page, &midiPage, &updatesPage, &aboutPage };
-    const int activeIndex = juce::jlimit (0, 6, (int) currentSection);
+    juce::Component* pages[] = { &appearancePage, &audioPage, &qualityPage, &tone3000Page, &midiPage, &expressionPage, &updatesPage, &aboutPage };
+    const int activeIndex = juce::jlimit (0, 7, (int) currentSection);
     for (auto* page : pages)
     {
         page->setBounds (content.getLocalBounds());
@@ -748,9 +803,21 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
         }
         case Section::midi:
         {
-            midiIntroLabel.setBounds (area.removeFromTop (26));
-            area.removeFromTop (8);
-            midiHintLabel.setBounds (area.removeFromTop (150));
+            midiTableLabel.setBounds (area.removeFromTop (26));
+            area.removeFromTop (6);
+            midiTable.setBounds (area.removeFromTop (midiTable.getIdealHeight()));
+            break;
+        }
+        case Section::expression:
+        {
+            expressionIntroLabel.setBounds (area.removeFromTop (26));
+            area.removeFromTop (6);
+            expressionHintLabel.setBounds (area.removeFromTop (60));
+            for (auto* editor : expressionEditors)
+            {
+                area.removeFromTop (18);
+                editor->setBounds (area.removeFromTop (ExpressionPedalEditor::idealHeight));
+            }
             break;
         }
         case Section::updates:
@@ -790,7 +857,9 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
         }
     }
 
-    return area.getY() - startY + 12;
+    // The page is laid out again inside exactly this height, reduced by the same 12 px top AND bottom: count both,
+    // or the last row comes out 12 px short (clipped Remove buttons on the MIDI table).
+    return area.getY() - startY + 24;
 }
 
 void Tone3000Panel::applyUpdateUiState()

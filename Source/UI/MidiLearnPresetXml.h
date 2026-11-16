@@ -8,8 +8,9 @@
 namespace openguitarmultifx::midilearnxml
 {
 
-/** CC number -> the parameter it drives. Same shape as MainComponent::midiCcBindings. */
-using Bindings = std::map<int, juce::AudioParameterFloat*>;
+/** CC number -> the parameters it drives. Same shape as MainComponent::midiCcBindings. A multimap because an
+    expression pedal's CC can drive several knobs at once; a footswitch/knob CC still holds just one. */
+using Bindings = std::multimap<int, juce::AudioParameterFloat*>;
 
 /** One parameter group per <Block> element of the preset, in the same order they appear in the XML (nullptr for a
     block that was skipped, e.g. an unknown key on load) -- a binding is stored as "block index + paramID" because the
@@ -64,7 +65,7 @@ inline Bindings read (const juce::XmlElement& presetXml, const BlockGroups& bloc
             if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*> (p))
                 if (floatParam->paramID == paramId)
                 {
-                    bindings[cc] = floatParam;
+                    bindings.emplace (cc, floatParam);
                     break;
                 }
     }

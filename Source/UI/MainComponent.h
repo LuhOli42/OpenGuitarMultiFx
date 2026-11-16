@@ -8,6 +8,8 @@
 #include "ParameterPanel.h"
 #include "PresetBadge.h"
 #include "BypassPedalXml.h"
+#include "ExpressionPedal.h"
+#include "MidiSettingsPages.h"
 #include "TunerSettings.h"
 #include "LiveTilesXml.h"
 #include "RawMidiInput.h"
@@ -184,8 +186,31 @@ private:
     void showBypassPedalMenu (EffectProcessor* processor);
     void toggleBypassPedal (EffectProcessor* processor);
     void refreshBypassPedalDisplay();
-    /** A CC drives one thing -- scene, effect on/off or knob. Called before a CC is learned onto any of them. */
-    void freeCcForLearning (int cc);
+    /** A CC drives one thing -- scene, effect on/off or knob. Called before a CC is learned onto any of them.
+        An expression pedal's CC survives a knob being learned on it (that is how a knob gets onto the pedal), but not
+        a footswitch-type binding. */
+    void freeCcForLearning (int cc, bool learningKnob = false);
+    /** Settings -> MIDI: every learned assignment, and removing one. */
+    std::vector<MidiMappingRow> describeMidiMappings() const;
+    void removeMidiMapping (const MidiMappingRow& row);
+    /** "Wah", or "Delay #2" when the chain holds more than one block of that name. */
+    juce::String describeBlock (const EffectProcessor* processor) const;
+    EffectProcessor* processorOwning (const juce::AudioParameterFloat* param) const;
+    /** Settings -> Expression. */
+    ExpressionPedalStatus expressionPedalStatus (int index) const;
+    void toggleExpressionLearn (int index);
+    void toggleExpressionCalibration (int index);
+    /** Auto-engage: switches every block with a knob learned on pedal `index`'s CC on or off. */
+    void setExpressionBlocksOn (int index, bool on);
+    void cancelOtherLearning();
+    /** Links/unlinks `param` to expression pedal `pedal` (a knob follows one controller, so its other bindings go). */
+    void toggleExpressionLink (juce::AudioParameterFloat* param, int pedal);
+    std::vector<ParameterPanel::PedalLink> pedalLinksFor (juce::AudioParameterFloat* param) const;
+    /** "Link knobs" mode: Settings closes, the banner shows, the drawer's knobs get link chips. -1 = off. */
+    void setExpressionLinkMode (int pedal);
+    int expressionLinkMode = -1;
+    class LinkBanner;
+    std::unique_ptr<LinkBanner> linkBanner;
     void refreshScenePedalDisplay();
     void copySnapshot (int from, int to);
     /** "+" on the scene bar: a new scene after the last one, holding `source`'s values (the live scene by default --
@@ -300,15 +325,22 @@ private:
     };
     std::vector<RetiredProcessor> graveyard;
 
-    // MIDI CC -> parameter mapping ("MIDI Learn", covers the expression
-    // pedal roadmap item too -- an expression pedal is just a continuous
-    // CC source from here). In-memory only, not saved into presets yet
-    // (see Source/UI/AGENTS.md decision entry). Cleared per-parameter in
+    // MIDI CC -> parameter mapping ("MIDI Learn"). An expression pedal is a
+    // continuous CC source learned onto a knob here; its calibration/curve
+    // (Settings -> Expression) is applied in handleMidiCc. Saved per preset
+    // (MidiLearnPresetXml.h). Cleared per-parameter in
     // removeEffect() so a removed block can never leave a dangling
     // AudioParameterFloat* behind in either map.
-    std::map<int, juce::AudioParameterFloat*> midiCcBindings;
+    // A multimap: an expression pedal's CC can drive several knobs; any other CC drives one (learning replaces it).
+    std::multimap<int, juce::AudioParameterFloat*> midiCcBindings;
     juce::AudioParameterFloat* midiLearnArmedParam = nullptr;
     void handleMidiCc (int ccNumber, int ccValue);
+    exppedal::Settings expressionPedals;  // global, expression_pedals.xml
+    std::array<exppedal::AutoEngage, exppedal::numPedals> expressionAuto;
+    std::array<int, exppedal::numPedals> expressionLastRaw { -1, -1 };
+    int expressionLearnArmed = -1;
+    int expressionCalibrating = -1;
+    exppedal::Calibrator expressionCalibrator;
     bypasspedal::Bindings bypassPedals;
     EffectProcessor* bypassPedalArmed = nullptr;
     scenemidi::StompDetector bypassStomps;
