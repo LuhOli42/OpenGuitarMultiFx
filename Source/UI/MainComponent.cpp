@@ -250,7 +250,7 @@ MainComponent::MainComponent()
             {
                 const int row = block->gridSlot / juce::jmax (1, chainColumns);
                 const int col = block->gridSlot % juce::jmax (1, chainColumns);
-                return "Linha " + juce::String (row + 1) + ", slot " + juce::String (col + 1);
+                return "Line " + juce::String (row + 1) + ", slot " + juce::String (col + 1);
             }
         return juce::String();
     });
@@ -540,13 +540,13 @@ juce::String MainComponent::describeRowDestinationDetail (int row) const
     const auto& routing = rowRouting[(size_t) row];
     juce::StringArray parts;
 
-    // Prototype: OUT over "1 / 2" (the physical pair), "-> L2" over "Linha 2".
+    // Prototype: OUT over "1 / 2" (the physical pair), "-> L2" over "Line 2".
     if (routing.toDevice)
         parts.add (juce::String (routing.deviceOutputPair + 1) + " / " + juce::String (routing.deviceOutputPair + 2));
 
     for (int target = 0; target < numRows; ++target)
         if (routing.toRows[(size_t) target])
-            parts.add ("Linha " + juce::String (target + 1));
+            parts.add ("Line " + juce::String (target + 1));
 
     return parts.joinIntoString (" + ");
 }
@@ -563,7 +563,7 @@ juce::String MainComponent::describeRowFeedersDetail (const std::vector<int>& fe
 {
     juce::StringArray parts;
     for (int feeder : feeders)
-        parts.add ("Linha " + juce::String (feeder + 1));
+        parts.add ("Line " + juce::String (feeder + 1));
     return parts.joinIntoString (" + ");
 }
 
@@ -581,7 +581,7 @@ void MainComponent::refreshRowEndpoints()
         // top of the incoming row(s) would be exactly the contradiction the
         // routing model avoids (per user request 2026-09-11: "quando a
         // linha tiver sendo usada por um output ela pode sumir o input +").
-        // Wording follows the prototype: "IN 1" / channel name, "L1 ->" / "Linha 1".
+        // Wording follows the prototype: "IN 1" / channel name, "L1 ->" / "Line 1".
         const auto feeders = feedersFor (row);
         if (! feeders.empty())
             rowInputBlocks[(size_t) row].setDisplay (describeRowFeeders (feeders), describeRowFeedersDetail (feeders));
@@ -3240,7 +3240,7 @@ void MainComponent::paint (juce::Graphics& g)
     g.setColour (t.line);
     g.drawLine (0.0f, (float) topBarHeight - 0.5f, (float) getWidth(), (float) topBarHeight - 0.5f, 1.0f);
 
-    // Prototype .lane .lab: "LINHA n" in 10 px dim caps, letter-spaced, just above each row's input tile.
+    // Prototype .lane .lab: "LINE n" in 10 px dim caps, letter-spaced, just above each row's input tile.
     {
         g.setColour (t.textDim);
         g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)).withExtraKerningFactor (0.1f));
@@ -3253,7 +3253,7 @@ void MainComponent::paint (juce::Graphics& g)
             const int labelY = juce::jmin (tile.getY() - 14, rowTop - 2);
             if (labelY < topBarHeight + 2)
                 continue;
-            g.drawText ("LINHA " + juce::String (row + 1), tile.getX(), labelY, 120, 12, juce::Justification::centredLeft);
+            g.drawText ("LINE " + juce::String (row + 1), tile.getX(), labelY, 120, 12, juce::Justification::centredLeft);
         }
     }
 

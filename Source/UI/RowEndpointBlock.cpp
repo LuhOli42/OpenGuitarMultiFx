@@ -27,7 +27,7 @@ void RowEndpointBlock::paint (juce::Graphics& g)
     g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, 1.0f);
 
     // Prototype .ep: a bold 13 px label over an 11 px muted detail, the pair centred as one block (gap 4).
-    // An unrouted end reads "--" / "Livre" rather than a bare "+": still tappable, but it says what it is.
+    // An unrouted end reads "--" / "Free" rather than a bare "+": still tappable, but it says what it is.
     const auto shownLabel = unrouted ? juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")) : label;
     const auto shownDetail = unrouted ? unroutedDetail : detail;
     constexpr float labelH = 16.0f, detailH = 14.0f, gap = 4.0f;

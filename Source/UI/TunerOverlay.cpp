@@ -230,7 +230,7 @@ void TunerOverlay::paintNoteBlock (juce::Graphics& g, juce::Rectangle<float> bou
     {
         g.setColour (t.textDim);
         g.setFont (juce::FontOptions (54.0f));
-        g.drawText ("play a note", noteArea.toNearestInt(), juce::Justification::centred);
+        g.drawText ("play a note", bounds.toNearestInt(), juce::Justification::centred);
     }
 }
 
@@ -238,10 +238,10 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
 {
     const auto& t = theme::current();
     // Radial fan, TU-3 style: ticks -60..+60 degrees map to -50..+50 cents.
+    const float r0 = bounds.getHeight() * 0.40f;
+    const float r1 = bounds.getHeight() * 0.84f;
+    const float cy = bounds.getBottom() - bounds.getHeight() * 0.06f;
     const float cx = bounds.getCentreX();
-    const float cy = bounds.getBottom() + 30.0f;
-    const float r0 = bounds.getHeight() * 0.42f;
-    const float r1 = bounds.getHeight() * 0.80f;
 
     const int litHalf = active ? (int) std::round (std::abs (cents) / 2.5f) : 0;
 
@@ -288,7 +288,7 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
             continue;
         const float deg = (float) label * 30.0f;
         const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
-        const float r = r1 - 10.0f;
+        const float r = r0 - 30.0f;   // inside the fan, clear of the tick tips
         const auto p = juce::Point<float> (cx + r * std::cos (a), cy + r * std::sin (a));
         const auto text = (label < 0 ? "-" : "+") + juce::String (std::abs (label) * 25);
         g.drawText (text, juce::Rectangle<float> (p.x - 24.0f, p.y - 10.0f, 48.0f, 18.0f),
