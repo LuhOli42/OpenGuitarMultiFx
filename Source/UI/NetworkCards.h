@@ -1,5 +1,6 @@
 #pragma once
 
+#include "OpenGuitarMultiFxLookAndFeel.h"
 #include "OverlayChrome.h"
 #include "Theme.h"
 #include "TouchSizing.h"
@@ -14,6 +15,26 @@ namespace openguitarmultifx
 
 namespace netcards
 {
+    /** The row of the network / device in use: an accent bar on the left, an accent outline and a "CONNECTED" pill
+        on the right, so it reads at a glance instead of as one more grey caption. Returns the space left of the pill. */
+    inline juce::Rectangle<float> paintConnectedRow (juce::Graphics& g, juce::Rectangle<float> bounds)
+    {
+        const auto& t = theme::current();
+        const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+        g.setColour (accent.withAlpha (0.14f));
+        g.fillRoundedRectangle (bounds, t.smallRadius);
+        g.setColour (accent);
+        g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 2.0f);
+        g.fillRoundedRectangle (bounds.withWidth (6.0f).reduced (0.0f, 6.0f), 3.0f);
+
+        auto pill = bounds.withTrimmedRight (90.0f).removeFromRight (128.0f).withSizeKeepingCentre (124.0f, 30.0f);
+        g.fillRoundedRectangle (pill, 15.0f);
+        g.setColour (theme::inkOn (accent));
+        g.setFont (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)));
+        g.drawText ("CONNECTED", pill.toNearestInt(), juce::Justification::centred);
+        return bounds.withRight (pill.getX() - 8.0f);
+    }
+
     /** Runs `args` (no shell), waits for it and returns stdout+stderr. Call from a worker thread only. */
     inline juce::String run (const juce::StringArray& args)
     {
@@ -187,7 +208,8 @@ private:
                 if (! duplicate)
                     found.push_back ({ f[1], f[2].getIntValue(), f[3].isNotEmpty() && f[3] != "--", f[0] == "*" });
             }
-            std::sort (found.begin(), found.end(), [] (const Network& a, const Network& b) { return a.signal > b.signal; });
+            std::sort (found.begin(), found.end(), [] (const Network& a, const Network& b)
+                       { return a.inUse != b.inUse ? a.inUse : a.signal > b.signal; }); // the one in use on top
 
             juce::MessageManager::callAsync ([safe, found = std::move (found)]() mutable
             {
@@ -263,14 +285,21 @@ private:
             g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.5f);
         }
 
-        g.setColour (t.text);
-        g.setFont (juce::Font (juce::FontOptions (22.0f)));
-        g.drawText (n.ssid, bounds.reduced (16.0f, 0.0f).withTrimmedRight (200.0f).toNearestInt(), juce::Justification::centredLeft);
+        auto textArea = bounds.withTrimmedRight (200.0f);
+        if (n.inUse)
+            textArea = netcards::paintConnectedRow (g, bounds);
 
-        g.setColour (t.textMuted);
-        g.setFont (juce::Font (juce::FontOptions (15.0f)));
-        const auto tag = juce::String (n.inUse ? "connected  " : "") + (n.secured ? "secured" : "open");
-        g.drawText (tag, bounds.withTrimmedRight (86.0f).removeFromRight (150.0f).toNearestInt(), juce::Justification::centredRight);
+        g.setColour (t.text);
+        g.setFont (juce::Font (juce::FontOptions (22.0f, n.inUse ? juce::Font::bold : juce::Font::plain)));
+        g.drawText (n.ssid, textArea.reduced (16.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft);
+
+        if (! n.inUse)
+        {
+            g.setColour (t.textMuted);
+            g.setFont (juce::Font (juce::FontOptions (15.0f)));
+            g.drawText (n.secured ? "secured" : "open", bounds.withTrimmedRight (86.0f).removeFromRight (150.0f).toNearestInt(),
+                        juce::Justification::centredRight);
+        }
 
         const int bars = n.signal >= 75 ? 4 : n.signal >= 50 ? 3 : n.signal >= 25 ? 2 : 1;
         netcards::drawBars (g, juce::Rectangle<float> (bounds.getRight() - 62.0f, bounds.getCentreY() - 14.0f, 34.0f, 28.0f),
@@ -358,6 +387,17 @@ private:
 
     void setStatus (const juce::String& text) { statusLabel.setText (text, juce::dontSendNotification); }
 
+    juce::String connectedSummary() const
+    {
+        juce::StringArray names;
+        for (const auto& d : devices)
+            if (d.connected)
+                names.add (d.name);
+        if (! names.isEmpty())
+            return "Connected to " + names.joinIntoString (", ") + " (tap to disconnect)";
+        return devices.empty() ? "No devices found" : "Nothing connected - tap a device to pair and connect";
+    }
+
     void scan()
     {
         setStatus ("Scanning for 8 s... put the device in pairing mode");
@@ -385,10 +425,11 @@ private:
             {
                 if (safe == nullptr)
                     return;
+                std::stable_sort (found.begin(), found.end(), [] (const Device& a, const Device& b) { return a.connected && ! b.connected; });
                 safe->devices = std::move (found);
                 safe->list.updateContent();
                 safe->list.repaint();
-                safe->setStatus (safe->devices.empty() ? "No devices found" : "Tap a device to pair and connect");
+                safe->setStatus (safe->connectedSummary());
             });
         });
     }
@@ -420,7 +461,9 @@ private:
                 for (auto& d : safe->devices)
                     if (d.mac == device.mac && ok)
                         d.connected = ! device.connected;
-                safe->setStatus (ok ? (device.connected ? "Disconnected " : "Connected to ") + device.name
+                std::stable_sort (safe->devices.begin(), safe->devices.end(),
+                                  [] (const Device& a, const Device& b) { return a.connected && ! b.connected; });
+                safe->setStatus (ok ? safe->connectedSummary()
                                     : "Failed: " + out.trim().fromLastOccurrenceOf ("\n", false, false).trim());
                 safe->list.repaint();
             });
@@ -440,13 +483,17 @@ private:
         g.setColour (selectedRow ? t.raisedHigh : t.raised);
         g.fillRoundedRectangle (bounds, t.smallRadius);
 
+        auto textArea = bounds.withTrimmedRight (240.0f);
+        if (d.connected)
+            textArea = netcards::paintConnectedRow (g, bounds);
+
         g.setColour (t.text);
-        g.setFont (juce::Font (juce::FontOptions (22.0f)));
-        g.drawText (d.name, bounds.reduced (16.0f, 0.0f).withTrimmedRight (240.0f).toNearestInt(), juce::Justification::centredLeft);
-        g.setColour (d.connected ? t.text : t.textMuted);
+        g.setFont (juce::Font (juce::FontOptions (22.0f, d.connected ? juce::Font::bold : juce::Font::plain)));
+        g.drawText (d.name, textArea.reduced (16.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft);
+        g.setColour (t.textMuted);
         g.setFont (juce::Font (juce::FontOptions (15.0f)));
-        g.drawText (d.connected ? "connected - tap to disconnect" : d.mac, bounds.reduced (16.0f, 0.0f).toNearestInt(),
-                    juce::Justification::centredRight);
+        if (! d.connected)
+            g.drawText (d.mac, bounds.reduced (16.0f, 0.0f).toNearestInt(), juce::Justification::centredRight);
     }
 
     void listBoxItemClicked (int row, const juce::MouseEvent&) override { toggleConnection (row); }
