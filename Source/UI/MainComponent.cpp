@@ -382,8 +382,12 @@ MainComponent::MainComponent()
     // Kernels without the ALSA sequencer (the Cubie A7S image): read the rawmidi nodes directly, or no controller
     // would ever reach MIDI Learn.
     if (RawMidiInput::isNeeded())
+    {
         rawMidi = std::make_unique<RawMidiInput> ([this] (const juce::MidiMessage& message)
                                                   { handleIncomingMidiMessage (nullptr, message); });
+        bleMidi = std::make_unique<BleMidiInput> ([this] (const juce::MidiMessage& message)
+                                                  { handleIncomingMidiMessage (nullptr, message); });
+    }
 
     // Snapshot A's colour owns the accent from launch -- no updatePresetDisplay()
     // runs this early (it would also clobber the audio-device warning above).
@@ -394,6 +398,7 @@ MainComponent::~MainComponent()
 {
     aliveFlag->store (false); // must be first -- an in-flight MIDI callAsync can still fire after this point
     rawMidi = nullptr;        // its thread calls handleIncomingMidiMessage()
+    bleMidi = nullptr;        // same
 
     for (auto& midiInput : juce::MidiInput::getAvailableDevices())
         audioEngine.getDeviceManager().removeMidiInputDeviceCallback (midiInput.identifier, this);
