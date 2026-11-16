@@ -3453,9 +3453,32 @@ void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted
 
 void MainComponent::CpuPill::setCpu (float average01, bool deviceOk)
 {
-    cpu = juce::jlimit (0.0f, 1.0f, average01);
-    ok = deviceOk;
-    repaint();
+    target = juce::jlimit (0.0f, 1.0f, average01);
+    if (ok != deviceOk)
+    {
+        ok = deviceOk;
+        repaint();
+    }
+    if (! isTimerRunning())
+        startTimerHz (60);
+}
+
+void MainComponent::CpuPill::timerCallback()
+{
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const float dt = lastFrameMs > 0.0 ? juce::jlimit (0.004f, 0.1f, (float) ((now - lastFrameMs) * 0.001)) : 1.0f / 60.0f;
+    lastFrameMs = now;
+
+    const float next = cpu + (1.0f - std::exp (-dt * 9.0f)) * (target - cpu);
+    const bool moved = std::abs (next - cpu) > 0.0004f;
+    cpu = std::abs (target - next) < 0.0004f ? target : next;
+    if (moved)
+        repaint();
+    else
+    {
+        stopTimer();
+        lastFrameMs = 0.0;
+    }
 }
 
 void MainComponent::CpuPill::paint (juce::Graphics& g)

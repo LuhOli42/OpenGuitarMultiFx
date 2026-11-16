@@ -52,7 +52,41 @@ private:
         status.store (software ? softwareRenderer : onGpu);
     }
 
-    void renderOpenGL() override { juce::OpenGLHelpers::clear (juce::Colours::black); }
+    /** Frame statistics, logged every ~10 s while the UI is actually drawing (frames are on demand, so an idle screen
+        logs nothing): how many frames, the average rate over the time the screen was moving, and the worst gap between
+        two consecutive frames -- the number that says whether motion looked smooth. */
+    void renderOpenGL() override
+    {
+        juce::OpenGLHelpers::clear (juce::Colours::black);
+
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        if (lastFrameMs > 0.0)
+        {
+            const double gap = now - lastFrameMs;
+            if (gap < 250.0) // a longer gap is the screen sitting still, not a stutter
+            {
+                activeMs += gap;
+                worstGapMs = juce::jmax (worstGapMs, gap);
+                if (gap > 25.0)
+                    ++slowFrames;
+            }
+        }
+        lastFrameMs = now;
+        ++frames;
+
+        if (now - windowStartMs > 10000.0)
+        {
+            if (windowStartMs > 0.0 && activeMs > 500.0)
+                juce::Logger::writeToLog ("GPU frames: " + juce::String (activeMs > 0.0 ? 1000.0 * (double) frames / activeMs : 0.0, 1)
+                                          + " fps while moving, worst gap " + juce::String (worstGapMs, 0) + " ms, "
+                                          + juce::String (slowFrames) + " frame(s) over 25 ms");
+            windowStartMs = now;
+            frames = 0;
+            slowFrames = 0;
+            worstGapMs = 0.0;
+            activeMs = 0.0;
+        }
+    }
     void openGLContextClosing() override {}
 
     void timerCallback() override
@@ -73,6 +107,8 @@ private:
     enum Status { pending, onGpu, softwareRenderer };
     juce::OpenGLContext context;
     std::atomic<int> status { pending };
+    double lastFrameMs = 0.0, windowStartMs = 0.0, worstGapMs = 0.0, activeMs = 0.0; // render thread only
+    int frames = 0, slowFrames = 0;
 };
 
 } // namespace openguitarmultifx

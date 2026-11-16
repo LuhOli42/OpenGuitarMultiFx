@@ -43,7 +43,8 @@ public:
     virtual void outsideTapDismissed() = 0;
 };
 
-class OverlayHost : public juce::Component
+class OverlayHost : public juce::Component,
+                    private juce::Timer
 {
 public:
     OverlayHost();
@@ -69,6 +70,16 @@ public:
 
 private:
     void layOutTop();
+    void timerCallback() override;
+    void applyOpenAnimation();
+
+    // Opening: the card fades in and rises ~20 px over 150 ms while the scrim darkens. Closing: the card goes at once
+    // (its owner is destroyed synchronously and expects that), and only the scrim fades out over ~110 ms. Everything
+    // here is a transform / alpha: no relayout per frame, so it costs the GPU next to nothing.
+    float openProgress = 1.0f;  // 0 -> 1 for the top card
+    float scrimAlpha = 0.0f;    // current darkness of the scrim, 0 .. scrimMax
+    static constexpr float scrimMax = 0.65f;
+    double lastFrameMs = 0.0;
 
     std::vector<std::unique_ptr<juce::Component>> layers;
 };
