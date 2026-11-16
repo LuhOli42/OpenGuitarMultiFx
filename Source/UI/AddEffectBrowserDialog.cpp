@@ -224,6 +224,7 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
     {
         auto& tab = railTabs[(size_t) i];
         auto* button = categoryButtons.add (new overlaychrome::ActionButton());
+        button->listTap = true; // rail scrolls by drag -- a scroll's release must not pick a category
         rail.addAndMakeVisible (*button);
         button->text = tab.label;
         button->showDot = true;
@@ -347,6 +348,7 @@ void AddEffectBrowserDialog::rebuildChips()
     for (const auto& label : labels)
     {
         auto* chip = chipButtons.add (new overlaychrome::ActionButton());
+        chip->listTap = true; // chipsViewport scrolls by drag too
         chipsBar.addAndMakeVisible (*chip);
         chip->text = label;
         chip->selectedStyle = overlaychrome::SelectedStyle::chip;

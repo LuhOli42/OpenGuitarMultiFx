@@ -76,6 +76,7 @@ public:
     juce::Colour dotColour;
     juce::Colour borderOverride;   // when set, replaces the normal border colour (e.g. armed/red pills)
     bool chromeless = false;       // no own fill/border — for buttons inside a shared segmented container
+    bool listTap = false;          // inside a drag-scrollable viewport: use the 6px threshold so a scroll's release can't fire it
     juce::String trailingText;
     std::function<void()> onClick;
 
@@ -200,7 +201,7 @@ public:
 
     void mouseUp (const juce::MouseEvent& event) override
     {
-        if (touch::wasTap (event) && onClick)
+        if ((listTap ? touch::wasListTap (event) : touch::wasTap (event)) && onClick)
             onClick();
     }
 
