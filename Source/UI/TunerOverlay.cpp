@@ -104,8 +104,8 @@ TunerOverlay::TunerOverlay()
 
     addAndMakeVisible (midiButton);
     midiButton.text = "MIDI Learn";
-    midiButton.showDot = true;
-    midiButton.dotColour = theme::current().textMuted;
+    // LED only exists when a pedal is bound or learn is armed
+    midiButton.showDot = false;
     midiButton.onClick = [this] { if (onMidiLearnTapped) onMidiLearnTapped(); };
 
     setSize (1280, 800);
@@ -127,9 +127,10 @@ void TunerOverlay::setMuteState (bool muted)
     repaint();
 }
 
-void TunerOverlay::setMidiLabel (const juce::String& text, bool armed)
+void TunerOverlay::setMidiLabel (const juce::String& text, bool armed, bool bound)
 {
     midiButton.text = text;
+    midiButton.showDot = armed || bound;
     midiButton.dotColour = armed ? flatColour : theme::current().textMuted;
     midiButton.borderOverride = armed ? flatColour : juce::Colour();
     midiButton.selected = armed;

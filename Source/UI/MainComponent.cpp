@@ -1230,9 +1230,9 @@ void MainComponent::refreshTunerOverlay()
     if (tunerMidiArmed)
         tunerOverlay->setMidiLabel ("Press the pedal...", true);
     else if (tunerSettings.cc >= 0)
-        tunerOverlay->setMidiLabel ("Pedal: CC " + juce::String (tunerSettings.cc), false);
+        tunerOverlay->setMidiLabel ("Pedal: CC " + juce::String (tunerSettings.cc), false, true);
     else
-        tunerOverlay->setMidiLabel ("MIDI LEARN", false);
+        tunerOverlay->setMidiLabel ("MIDI LEARN", false, false);
 }
 
 void MainComponent::showTuner()

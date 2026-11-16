@@ -37,7 +37,7 @@ public:
     std::function<void()> onMidiLearnTapped;
     std::function<void (bool)> onStrobeModeChanged;
     void setMuteState (bool muted);
-    void setMidiLabel (const juce::String& text, bool armed);
+    void setMidiLabel (const juce::String& text, bool armed, bool bound = false);
     void setStrobeMode (bool strobe);
 
     /** Fired from the destructor, however the overlay was dismissed -- MainComponent turns the pitch analysis back off
