@@ -28,21 +28,17 @@ namespace
     constexpr float inTuneCents = 5.0f;  // inside this, the display goes green -- the usual tolerance for a tuner
     constexpr float gaugeRangeCents = 50.0f;
 
-    struct StringTarget { const char* note; const char* octave; float frequencyHz; };
-    const StringTarget stringTargets[] = {
-        { "E", "2", 82.41f }, { "A", "2", 110.00f }, { "D", "3", 146.83f },
-        { "G", "3", 196.00f }, { "B", "3", 246.94f }, { "E", "4", 329.63f }
-    };
+    const auto inTuneColour = juce::Colour (0xff3bd68a);
+    const auto flatColour   = juce::Colour (0xffff4d6a);
+    const auto sharpColour  = juce::Colour (0xfff6c343);
 
     juce::Colour tuningColour (float cents, bool active)
     {
         if (! active)
             return theme::current().textDim;
         if (std::abs (cents) <= inTuneCents)
-            return juce::Colour (0xff35d07f);                       // in tune
-        if (std::abs (cents) <= 15.0f)
-            return juce::Colour (0xffe8b93a);                       // close
-        return OpenGuitarMultiFxLookAndFeel::getAppAccentColour();  // way off
+            return inTuneColour;
+        return cents < 0.0f ? flatColour : sharpColour;
     }
 }
 
@@ -50,11 +46,41 @@ TunerOverlay::TunerOverlay()
 {
     addAndMakeVisible (titleLabel);
     titleLabel.setText ("Tuner", juce::dontSendNotification);
-    titleLabel.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
+    titleLabel.setFont (juce::Font (juce::FontOptions (19.0f, juce::Font::bold)));
     titleLabel.setJustificationType (juce::Justification::centredLeft);
+    titleLabel.setColour (juce::Label::textColourId, theme::current().text);
+
+    needleButton.text = "Needle";
+    needleButton.selectedStyle = overlaychrome::SelectedStyle::tab;
+    needleButton.onClick = [this]
+    {
+        if (! strobeMode)
+            return;
+        strobeMode = false;
+        needleButton.selected = true;
+        strobeButton.selected = false;
+        repaint();
+        if (onStrobeModeChanged) onStrobeModeChanged (false);
+    };
+    addAndMakeVisible (needleButton);
+
+    strobeButton.text = "Strobe";
+    strobeButton.selectedStyle = overlaychrome::SelectedStyle::tab;
+    strobeButton.onClick = [this]
+    {
+        if (strobeMode)
+            return;
+        strobeMode = true;
+        needleButton.selected = false;
+        strobeButton.selected = true;
+        repaint();
+        if (onStrobeModeChanged) onStrobeModeChanged (true);
+    };
+    addAndMakeVisible (strobeButton);
+    needleButton.selected = true;
 
     referenceLabel.setJustificationType (juce::Justification::centred);
-    referenceLabel.setFont (juce::Font (juce::FontOptions (14.0f)));
+    referenceLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
     referenceLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
     referenceLabel.setText ("A = 440 Hz", juce::dontSendNotification);
     addAndMakeVisible (referenceLabel);
@@ -63,19 +89,20 @@ TunerOverlay::TunerOverlay()
     closeButton.onClick = [this] { if (onPopOverlay) onPopOverlay(); };
 
     addAndMakeVisible (muteButton);
-    muteButton.text = "Mute while tuning";
+    muteButton.text = "Mute";
     muteButton.onClick = [this]
     {
         muteButton.selected = ! muteButton.selected;
         muteButton.repaint();
+        repaint();
         if (onMuteToggled) onMuteToggled (muteButton.selected);
     };
+
     addAndMakeVisible (midiButton);
     midiButton.text = "MIDI Learn";
     midiButton.onClick = [this] { if (onMidiLearnTapped) onMidiLearnTapped(); };
 
-    setSize (1180, 780);
-
+    setSize (1280, 800);
     startTimerHz (30);
 }
 
@@ -90,6 +117,7 @@ void TunerOverlay::setMuteState (bool muted)
     muteButton.selected = muted;
     muteButton.selectedStyle = overlaychrome::SelectedStyle::chip;
     muteButton.repaint();
+    repaint();
 }
 
 void TunerOverlay::setMidiLabel (const juce::String& text, bool armed)
@@ -100,174 +128,209 @@ void TunerOverlay::setMidiLabel (const juce::String& text, bool armed)
     midiButton.repaint();
 }
 
+void TunerOverlay::setStrobeMode (bool strobe)
+{
+    strobeMode = strobe;
+    needleButton.selected = ! strobe;
+    strobeButton.selected = strobe;
+    repaint();
+}
+
 void TunerOverlay::resized()
 {
-    auto area = getLocalBounds();
-    auto header = area.removeFromTop (76).reduced (20, 0);
+    auto header = getLocalBounds().removeFromTop (76).reduced (16, 0);
     closeButton.setBounds (header.removeFromRight (52).withSizeKeepingCentre (52, 52));
-    referenceLabel.setBounds (header.removeFromRight (150).withSizeKeepingCentre (150, 48));
-    titleLabel.setBounds (header.removeFromLeft (220));
+    header.removeFromRight (8);
+    muteButton.setBounds (header.removeFromRight (110).withSizeKeepingCentre (110, 48));
+    header.removeFromRight (8);
+    midiButton.setBounds (header.removeFromRight (230).withSizeKeepingCentre (230, 48));
+    header.removeFromRight (8);
+    referenceLabel.setBounds (header.removeFromRight (120).withSizeKeepingCentre (120, 48));
 
-    auto controls = area.removeFromBottom (132).withSizeKeepingCentre (700, 64);
-    muteButton.setBounds (controls.removeFromLeft (340));
-    midiButton.setBounds (controls.removeFromRight (340));
-    const int contentHeight = 390;
-    const int topPad = juce::jmax (0, (area.getHeight() - contentHeight) / 2);
-    area.removeFromTop (topPad);
+    titleLabel.setBounds (header.removeFromLeft (90));
+    header.removeFromLeft (8);
+    needleButton.setBounds (header.removeFromLeft (104).withSizeKeepingCentre (104, 46));
+    strobeButton.setBounds (header.removeFromLeft (104).withSizeKeepingCentre (104, 46));
 
-    noteBounds = area.removeFromTop (220).toFloat();
-    readoutBounds = area.removeFromTop (56).toFloat();
-
-    auto stripArea = area.removeFromTop (112);
-    gaugeBounds = juce::Rectangle<float> (stripArea.getCentreX() - 450.0f,
-                                          stripArea.getY() + 8.0f, 900.0f, 96.0f);
+    auto body = getLocalBounds().withTrimmedTop (76).reduced (0, 12);
+    noteBounds = body.removeFromLeft (430).reduced (24, 0).toFloat();
+    meterBounds = body.reduced (40, 24).toFloat();
+    readoutBounds = noteBounds.withTrimmedTop (noteBounds.getHeight() * 0.62f);
 }
 
 void TunerOverlay::paint (juce::Graphics& g)
 {
     const auto& t = theme::current();
-    const auto green = juce::Colour (0xff3bd68a);
-    const auto colour = tuningColour (cents, active);
-
     g.fillAll (t.background);
 
-    const auto pill = referenceLabel.getBounds().toFloat();
-    if (pill.getWidth() > 0.0f)
-    {
-        g.setColour (t.raised);
-        g.fillRoundedRectangle (pill, t.smallRadius);
-        g.setColour (t.lineStrong);
-        g.drawRoundedRectangle (pill.reduced (0.5f), t.smallRadius, 1.0f);
-    }
+    g.setColour (t.surface);
+    g.fillRect (getLocalBounds().withHeight (76));
+    g.setColour (t.line);
+    g.drawHorizontalLine (75.5f, 0.0f, (float) getWidth());
 
+    const auto pill = referenceLabel.getBounds().toFloat();
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (pill, t.smallRadius);
+    g.setColour (t.lineStrong);
+    g.drawRoundedRectangle (pill.reduced (0.5f), t.smallRadius, 1.0f);
+
+    paintNoteBlock (g, noteBounds);
+    if (strobeMode)
+        paintStrobeMeter (g, meterBounds);
+    else
+        paintNeedleMeter (g, meterBounds);
+
+    if (muteButton.selected)
+    {
+        auto badge = juce::Rectangle<float> (getWidth() * 0.5f - 110.0f, getHeight() - 66.0f, 220.0f, 44.0f);
+        g.setColour (flatColour);
+        g.fillRoundedRectangle (badge, 22.0f);
+        g.setColour (juce::Colours::white);
+        g.setFont (juce::FontOptions (14.0f).withStyle ("Bold"));
+        g.drawText ("SOUND MUTED", badge.toNearestInt(), juce::Justification::centred);
+    }
+}
+
+void TunerOverlay::paintNoteBlock (juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    const auto& t = theme::current();
+    const auto colour = tuningColour (cents, active);
+
+    auto noteArea = bounds.withHeight (bounds.getHeight() * 0.6f);
     if (active)
     {
-        g.setColour (green);
-        g.setFont (juce::FontOptions ((int) (noteBounds.getHeight() * 0.72f)).withStyle ("Bold"));
+        g.setColour (inTuneColour);
+        g.setFont (juce::FontOptions ((int) (noteArea.getHeight() * 0.82f)).withStyle ("Bold"));
         const juce::String symbol = noteLetter + noteAccidental;
-        const auto symbolBounds = noteBounds.withTrimmedRight (noteBounds.getWidth() * 0.18f);
+        const auto symbolBounds = noteArea.withTrimmedRight (noteArea.getWidth() * 0.15f);
         g.drawText (symbol, symbolBounds.toNearestInt(), juce::Justification::centred);
 
         const float symbolWidth = g.getCurrentFont().getStringWidthFloat (symbol);
         g.setColour (t.textMuted);
-        g.setFont (juce::FontOptions (42.0f).withStyle ("Bold"));
+        g.setFont (juce::FontOptions (48.0f).withStyle ("Bold"));
         g.drawText (juce::String (noteOctave),
-                    juce::Rectangle<float> (symbolBounds.getCentreX() + symbolWidth * 0.52f,
-                                            noteBounds.getCentreY() - 24.0f, 90.0f, 56.0f).toNearestInt(),
+                    juce::Rectangle<float> (symbolBounds.getCentreX() + symbolWidth * 0.55f,
+                                            symbolBounds.getBottom() - 96.0f, 90.0f, 60.0f).toNearestInt(),
                     juce::Justification::centredLeft);
+
+        g.setColour (t.textMuted);
+        g.setFont (juce::FontOptions (20.0f));
+        g.drawText (juce::String (frequencyHz, 2) + " Hz",
+                    readoutBounds.withTrimmedTop (-4.0f).toNearestInt(), juce::Justification::centred);
+
+        const auto centsText = std::abs (cents) <= inTuneCents
+                                   ? juce::String ("0.0")
+                                   : (cents > 0.0f ? "+" : "") + juce::String (cents, 1);
+        g.setColour (colour);
+        g.setFont (juce::FontOptions (34.0f).withStyle ("Bold"));
+        g.drawText (centsText + " " + juce::String (juce::CharPointer_UTF8 ("\xc2\xa2")),
+                    readoutBounds.withTrimmedTop (30.0f).toNearestInt(), juce::Justification::centred);
     }
     else
     {
         g.setColour (t.textDim);
         g.setFont (juce::FontOptions (54.0f));
-        g.drawText ("play a note", noteBounds.toNearestInt(), juce::Justification::centred);
+        g.drawText ("play a note", noteArea.toNearestInt(), juce::Justification::centred);
     }
+}
 
-    if (active)
+void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    const auto& t = theme::current();
+    // Radial fan, TU-3 style: ticks -60..+60 degrees map to -50..+50 cents.
+    const float cx = bounds.getCentreX();
+    const float cy = bounds.getBottom() + 30.0f;
+    const float r0 = bounds.getHeight() * 0.42f;
+    const float r1 = bounds.getHeight() * 0.80f;
+
+    const int litHalf = active ? (int) std::round (std::abs (cents) / 2.5f) : 0;
+
+    for (int i = 0; i <= 40; ++i)
     {
-        const auto centsText = std::abs (cents) <= inTuneCents
-                                   ? juce::String ("0.0 cents")
-                                   : (cents > 0.0f ? "+" : "") + juce::String (cents, 1) + " cents";
-        g.setColour (t.textMuted);
-        g.setFont (juce::FontOptions (22.0f));
-        const auto prefix = juce::String (frequencyHz, 2) + " Hz  -  ";
-        const auto prefixWidth = g.getCurrentFont().getStringWidthFloat (prefix);
-        g.drawText (prefix, readoutBounds.toNearestInt(), juce::Justification::centred);
-        g.setColour (std::abs (cents) <= inTuneCents ? green : colour);
-        g.setFont (juce::FontOptions (24.0f).withStyle ("Bold"));
-        g.drawText (centsText,
-                    juce::Rectangle<float> (readoutBounds.getCentreX() - (prefixWidth + g.getCurrentFont().getStringWidthFloat (centsText)) * 0.5f + prefixWidth,
-                                            readoutBounds.getY(), 180.0f, readoutBounds.getHeight()).toNearestInt(),
-                    juce::Justification::centredLeft);
+        const float deg = -60.0f + (float) i * 3.0f;
+        const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
+        const auto p0 = juce::Point<float> (cx + r0 * std::cos (a), cy + r0 * std::sin (a));
+        const auto p1 = juce::Point<float> (cx + r1 * std::cos (a), cy + r1 * std::sin (a));
+        const bool centre = i == 20;
+        const bool major = (i % 4) == 0;
+        const auto q0 = centre ? p0.withY (p0.y - 14.0f) : p0;
+        const auto q1 = centre ? p1.withY (p1.y + 14.0f) : (major ? p1 : p0 + (p1 - p0) * 0.66f);
+
+        juce::Colour col = centre ? inTuneColour : t.raisedHigh;
+        float alpha = centre ? 1.0f : 0.85f;
+        if (active && ! centre)
+        {
+            // light the ticks between the centre and the needle's side
+            const int off = i - 20; // negative = flat side
+            const bool lit = cents < 0.0f ? (off >= litHalf * -1 && off <= 0)
+                                          : (off >= 0 && off <= litHalf);
+            if (lit && off != 0)
+                col = cents < 0.0f ? flatColour : sharpColour;
+        }
+        g.setColour (col.withAlpha (alpha));
+        g.drawLine ({ q0, q1 }, centre ? 10.0f : 7.0f);
     }
 
-    const float centreX = gaugeBounds.getCentreX();
-    const float halfWidth = gaugeBounds.getWidth() * 0.5f - 34.0f;
-    const float tickBase = gaugeBounds.getBottom() - 24.0f;
-
-    for (int tick = -10; tick <= 10; ++tick)
+    if (active && std::abs (cents) <= inTuneCents)
     {
-        const float value = (float) tick * 5.0f;
-        const float x = centreX + (value / gaugeRangeCents) * halfWidth;
-        const bool quarter = (tick % 5) == 0;
-        const bool major = (tick % 10) == 0;
-        const float height = major ? 58.0f : (quarter ? 36.0f : 16.0f);
-        g.setColour (major ? green.withAlpha (0.9f) : (quarter ? t.textMuted.withAlpha (0.55f) : t.lineStrong));
-        g.fillRoundedRectangle (x - (major ? 2.0f : 1.5f), tickBase - height,
-                                major ? 4.0f : 3.0f, height, 1.5f);
+        g.setColour (inTuneColour.withAlpha (0.30f));
+        const auto a = juce::MathConstants<float>::pi * -0.5f;
+        const auto p1 = juce::Point<float> (cx + (r1 + 14.0f) * std::cos (a), cy + (r1 + 14.0f) * std::sin (a));
+        const auto p0 = juce::Point<float> (cx + (r0 - 14.0f) * std::cos (a), cy + (r0 - 14.0f) * std::sin (a));
+        g.drawLine ({ p0, p1 }, 22.0f);
     }
 
-    g.setFont (juce::FontOptions (12.0f));
+    g.setFont (juce::FontOptions (14.0f));
     g.setColour (t.textDim);
     for (int label = -2; label <= 2; ++label)
     {
-        const float value = (float) label * 25.0f;
-        const float x = centreX + (value / gaugeRangeCents) * halfWidth;
-        juce::String text;
-        if (label < 0) text = "-" + juce::String ((int) -value);
-        else if (label > 0) text = "+" + juce::String ((int) value);
-        else text = "0";
-        g.drawText (text, juce::Rectangle<float> (x - 24.0f, gaugeBounds.getBottom() - 18.0f, 48.0f, 16.0f),
+        if (label == 0)
+            continue;
+        const float deg = (float) label * 30.0f;
+        const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
+        const float r = r1 - 10.0f;
+        const auto p = juce::Point<float> (cx + r * std::cos (a), cy + r * std::sin (a));
+        const auto text = (label < 0 ? "-" : "+") + juce::String (std::abs (label) * 25);
+        g.drawText (text, juce::Rectangle<float> (p.x - 24.0f, p.y - 10.0f, 48.0f, 18.0f),
                     juce::Justification::centred);
     }
+}
 
-    if (active)
+void TunerOverlay::paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    const auto& t = theme::current();
+    const float cx = bounds.getCentreX();
+    const float cy = bounds.getCentreY();
+    const float r0 = bounds.getHeight() * 0.33f;
+    const float r1 = bounds.getHeight() * 0.46f;
+
+    // The lit wedge drifts around the ring proportional to cents: its angular offset from the top
+    // marker reads like the strobe disc's rotation direction and speed frozen in a frame.
+    const float drift = active ? cents * 3.6f : 0.0f; // cents -> degrees of offset
+    const float wedgeCentre = 90.0f + drift;          // top = 0 deg (our convention below)
+    const bool inTune = active && std::abs (cents) <= inTuneCents;
+
+    for (int i = 0; i < 72; ++i)
     {
-        const float x = centreX + juce::jlimit (-1.0f, 1.0f, cents / gaugeRangeCents) * halfWidth;
-        g.setColour (green.withAlpha (0.18f));
-        g.fillRoundedRectangle (x - 12.0f, tickBase - 88.0f, 24.0f, 100.0f, 8.0f);
-        g.setColour (green.withAlpha (0.35f));
-        g.fillEllipse (x - 16.0f, tickBase - 4.0f, 32.0f, 32.0f);
-        g.setColour (green);
-        g.fillRoundedRectangle (x - 4.0f, tickBase - 82.0f, 8.0f, 88.0f, 4.0f);
-        g.fillEllipse (x - 10.0f, tickBase + 2.0f, 20.0f, 20.0f);
+        const float deg = (float) i * 5.0f;
+        const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
+        const auto p0 = juce::Point<float> (cx + r0 * std::cos (a), cy + r0 * std::sin (a));
+        const auto p1 = juce::Point<float> (cx + r1 * std::cos (a), cy + r1 * std::sin (a));
+
+        float diff = std::fmod (deg - wedgeCentre + 540.0f, 360.0f) - 180.0f;
+        const bool lit = active && ! inTune && std::abs (diff) <= 30.0f;
+        g.setColour (lit ? (cents < 0.0f ? flatColour : sharpColour) : t.raisedHigh.withAlpha (0.85f));
+        g.drawLine ({ p0, p1 }, 9.0f);
     }
 
-    const int tileW = 120, tileH = 86, gap = 12;
-    const int totalW = 6 * tileW + 5 * gap;
-    int nearestString = -1;
-    float nearestCents = 1000.0f;
-    if (active && frequencyHz > 0.0f)
-    {
-        for (int i = 0; i < 6; ++i)
-        {
-            const float off = 1200.0f * std::log2 (frequencyHz / stringTargets[i].frequencyHz);
-            if (std::abs (off) < std::abs (nearestCents))
-            {
-                nearestCents = off;
-                nearestString = i;
-            }
-        }
-        if (std::abs (nearestCents) > gaugeRangeCents)
-            nearestString = -1;
-    }
-
-    const int firstX = (getWidth() - totalW) / 2;
-    const int tileY = getHeight() - 28 - tileH;
-    for (int i = 0; i < 6; ++i)
-    {
-        const auto tile = juce::Rectangle<float> ((float) (firstX + i * (tileW + gap)), (float) tileY,
-                                                  (float) tileW, (float) tileH);
-        const bool on = i == nearestString;
-        const bool ok = on && std::abs (nearestCents) <= inTuneCents;
-        g.setColour (t.raised);
-        g.fillRoundedRectangle (tile, t.radius);
-        g.setColour (on ? green : t.line);
-        g.drawRoundedRectangle (tile.reduced (0.5f), t.radius, on ? 2.0f : 1.0f);
-        if (on)
-        {
-            g.setColour (green.withAlpha (0.16f));
-            g.drawRoundedRectangle (tile.expanded (2.0f).reduced (1.0f), t.radius + 2.0f, 2.0f);
-        }
-
-        g.setColour (on ? green : t.text);
-        g.setFont (juce::FontOptions (26.0f).withStyle ("Bold"));
-        g.drawText (stringTargets[i].note, tile.withTrimmedBottom (34.0f).toNearestInt(), juce::Justification::centred);
-        g.setColour (ok ? green : t.textMuted);
-        g.setFont (juce::FontOptions (11.0f));
-        g.drawText (juce::String (stringTargets[i].note) + stringTargets[i].octave,
-                    tile.withTrimmedTop (tileH - 30).toNearestInt(), juce::Justification::centred);
-    }
+    // fixed top marker: the "zero" the wedge settles under when the note locks
+    const auto a = juce::MathConstants<float>::pi * -0.5f;
+    const auto m0 = juce::Point<float> (cx + (r0 - 14.0f) * std::cos (a), cy + (r0 - 14.0f) * std::sin (a));
+    const auto m1 = juce::Point<float> (cx + (r1 + 14.0f) * std::cos (a), cy + (r1 + 14.0f) * std::sin (a));
+    g.setColour (inTuneColour.withAlpha (0.30f));
+    g.drawLine ({ m0, m1 }, 24.0f);
+    g.setColour (inTuneColour);
+    g.drawLine ({ m0, m1 }, 12.0f);
 }
 
 void TunerOverlay::timerCallback()

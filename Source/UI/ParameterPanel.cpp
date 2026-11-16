@@ -1590,7 +1590,7 @@ void ParameterPanel::BypassSwitch::paintButton (juce::Graphics& g, bool highligh
     // Prototype: a quiet 12 px caption in the muted colour whatever the state -- the switch itself carries on/off.
     g.setColour (t.textMuted);
     g.setFont (juce::Font (12.0f, juce::Font::plain));
-    g.drawText (t.uppercaseLabels ? "LIGADO" : "Ligado", juce::Rectangle<float> (bounds.getX(), bounds.getY(), 44.0f, bounds.getHeight()),
+    g.drawText (t.uppercaseLabels ? "ON" : "On", juce::Rectangle<float> (bounds.getX(), bounds.getY(), 44.0f, bounds.getHeight()),
                 juce::Justification::centredLeft);
 
     const auto track = juce::Rectangle<float> (bounds.getX() + 52.0f, bounds.getCentreY() - 18.0f, 66.0f, 36.0f);

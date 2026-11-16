@@ -12,10 +12,10 @@ namespace openguitarmultifx
 /**
     A chromatic tuner: one note at a time, whatever note it is.
 
-    This replaced a six-string polyphonic overlay (2026-09-21, user request: "deixar só o q identifica uma nota, mas ele
-    ser bom pra pegar de qualquer frequência"). Chromatic means there is no tuning profile to pick or keep in sync -- the
-    detector reports a frequency and this names the nearest note, so it tunes any instrument, any tuning, including the
-    low strings the old one could not reach at all (its analysis floor was 70 Hz, above B0/E1/F#1/A1/B1).
+    Two meter styles, picked from the header's segmented control: a radial cents fan
+    (needle) and a strobe ring whose lit wedge drifts while the note is off. The MIDI
+    Learn button (a footswitch that opens and closes the tuner) and the Mute toggle live
+    in the header; MainComponent owns the state and the learning.
 */
 class TunerOverlay : public juce::Component,
                      private juce::Timer
@@ -27,18 +27,18 @@ public:
     void resized() override;
     void paint (juce::Graphics& g) override;
 
-    /** Polled at 20 Hz while this overlay is open. Wired to AudioEngine::getDetectedFrequencyHz(); 0 means no pitch. */
+    /** Polled at 30 Hz while this overlay is open. Wired to AudioEngine::getDetectedFrequencyHz(); 0 means no pitch. */
     std::function<float()> getFrequencyHz;
 
     /** Wired by whoever hosts this to OverlayHost::popOverlay. */
     std::function<void()> onPopOverlay;
 
-    /** The MUTE toggle (silence the output while the tuner is open) and the MIDI Learn button (a footswitch that opens
-        and closes the tuner) live on this screen; MainComponent owns the state and the learning. */
     std::function<void (bool)> onMuteToggled;
     std::function<void()> onMidiLearnTapped;
+    std::function<void (bool)> onStrobeModeChanged;
     void setMuteState (bool muted);
     void setMidiLabel (const juce::String& text, bool armed);
+    void setStrobeMode (bool strobe);
 
     /** Fired from the destructor, however the overlay was dismissed -- MainComponent turns the pitch analysis back off
         with it (AudioEngine::setTunerActive()). */
@@ -46,13 +46,17 @@ public:
 
 private:
     void timerCallback() override;
+    void paintNoteBlock (juce::Graphics& g, juce::Rectangle<float> bounds);
+    void paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> bounds);
+    void paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> bounds);
 
-    juce::Label titleLabel, hintLabel, referenceLabel;
+    juce::Label titleLabel, referenceLabel;
     overlaychrome::CloseButton closeButton;
-    overlaychrome::ActionButton muteButton, midiButton;
-    juce::Rectangle<float> gaugeBounds, noteBounds, readoutBounds;
+    overlaychrome::ActionButton muteButton, midiButton, needleButton, strobeButton;
+    juce::Rectangle<float> noteBounds, readoutBounds, meterBounds;
 
     bool active = false;
+    bool strobeMode = false;
     juce::String noteLetter, noteAccidental;
     int noteOctave = 0;
     float frequencyHz = 0.0f;

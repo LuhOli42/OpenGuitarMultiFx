@@ -1230,9 +1230,9 @@ void MainComponent::refreshTunerOverlay()
     if (tunerMidiArmed)
         tunerOverlay->setMidiLabel ("Press the pedal...", true);
     else if (tunerSettings.cc >= 0)
-        tunerOverlay->setMidiLabel ("Pedal: CC " + juce::String (tunerSettings.cc) + " (tap to clear)", false);
+        tunerOverlay->setMidiLabel ("Pedal: CC " + juce::String (tunerSettings.cc), false);
     else
-        tunerOverlay->setMidiLabel ("MIDI Learn: tuner pedal", false);
+        tunerOverlay->setMidiLabel ("MIDI LEARN", false);
 }
 
 void MainComponent::showTuner()
@@ -1248,6 +1248,12 @@ void MainComponent::showTuner()
         tunerSettings.muteWhileOpen = mute;
         tunersettings::save (tunerSettings);
         applyTunerMute (mute);
+    };
+    overlay->setStrobeMode (tunerSettings.strobeMode);
+    overlay->onStrobeModeChanged = [this] (bool strobe)
+    {
+        tunerSettings.strobeMode = strobe;
+        tunersettings::save (tunerSettings);
     };
     overlay->onMidiLearnTapped = [this]
     {

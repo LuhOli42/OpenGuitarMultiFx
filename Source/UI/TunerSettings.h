@@ -9,11 +9,13 @@ namespace openguitarmultifx::tunersettings
     Global tuner settings (not per preset -- like scene_midi.xml, they describe the rig on the floor):
     - `cc`: the footswitch CC that opens/closes the tuner (-1 = none; learned from the tuner screen).
     - `muteWhileOpen`: silence the output while the tuner is up, so the room does not hear the tuning.
+    - `strobeMode`: which meter the tuner screen shows (false = needle fan, true = strobe ring).
 */
 struct Settings
 {
     int cc = -1;
     bool muteWhileOpen = false;
+    bool strobeMode = false;
 };
 
 inline juce::File settingsFile()
@@ -33,6 +35,7 @@ inline void load (Settings& settings, const juce::File& file = settingsFile())
         const int cc = xml->getIntAttribute ("cc", -1);
         settings.cc = cc >= 0 && cc <= 127 ? cc : -1;
         settings.muteWhileOpen = xml->getBoolAttribute ("muteWhileOpen", false);
+        settings.strobeMode = xml->getBoolAttribute ("strobeMode", false);
     }
 }
 
@@ -41,6 +44,7 @@ inline void save (const Settings& settings, const juce::File& file = settingsFil
     juce::XmlElement xml ("Tuner");
     xml.setAttribute ("cc", settings.cc);
     xml.setAttribute ("muteWhileOpen", settings.muteWhileOpen);
+    xml.setAttribute ("strobeMode", settings.strobeMode);
     file.getParentDirectory().createDirectory();
     xml.writeTo (file);
 }
