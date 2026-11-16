@@ -100,4 +100,17 @@ mkdir -p "$install_root/releases" "$state_dir" \
 # and it has to happen after the `current` swap, not before.
 "$systemctl" enable ogmfx.service || die "failed to enable ogmfx.service"
 
+# ---------------------------------------------------------------------------
+# Cubie A7S device tuning (audio IRQ on core 6, system on cores 0-5, irqbalance and mpris-proxy off, thermal
+# guard). Re-applied on every update so a release can never undo it; ogmfx-device-tuning.sh skips non-Cubie
+# machines. Best effort: a failure here must not abort an otherwise good install.
+# ---------------------------------------------------------------------------
+if [ -d device ] && [ "$(uname -m)" = aarch64 ] && [ -e /sys/devices/system/cpu/cpu7 ]; then
+    ( cd device && find . -type f | while read -r f; do
+          install -D -m "$(stat -c %a "$f")" "$f" "/${f#./}" || true
+      done ) && "$systemctl" daemon-reload \
+      && /usr/local/sbin/ogmfx-device-tuning.sh --now \
+      || log "device tuning failed (non-fatal)"
+fi
+
 log "installed $(cat VERSION 2>/dev/null || echo unknown release)"

@@ -1,0 +1,11 @@
+[Unit]
+Description=OGMFX: USB audio interrupt on fast core 6
+After=sysinit.target systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/ogmfx-audio-irq.sh
+
+[Install]
+WantedBy=multi-user.target
