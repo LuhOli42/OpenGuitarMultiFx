@@ -49,9 +49,20 @@ inline void enableDragScroll (juce::Viewport& viewport)
     the tap on the device while a mouse on a desktop passes. Anything that
     fires "on tap" should use this instead.
 */
-inline bool wasTap (const juce::MouseEvent& event)
+inline bool wasTap (const juce::MouseEvent& event, float maxDistance = 16.0f)
 {
-    return event.getDistanceFromDragStart() <= 16.0f;
+    return event.getDistanceFromDragStart() <= maxDistance;
+}
+
+/**
+    Rows/tiles inside a drag-scrollable viewport need a tighter tap
+    threshold than wasTap(): kiosk viewports start panning at ~8px, so
+    any distance past that means the release was the end of a scroll,
+    not a tap on the item.
+*/
+inline bool wasListTap (const juce::MouseEvent& event)
+{
+    return wasTap (event, 6.0f);
 }
 
 } // namespace openguitarmultifx::touch

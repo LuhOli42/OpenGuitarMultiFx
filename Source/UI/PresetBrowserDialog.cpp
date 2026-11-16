@@ -91,7 +91,7 @@ void PresetBrowserDialog::PresetTile::mouseUp (const juce::MouseEvent& event)
         return;
     }
 
-    if (! wasLongPress && touch::wasTap (event) && onTap)
+    if (! wasLongPress && touch::wasListTap (event) && onTap)
         onTap();
 }
 
