@@ -50,6 +50,8 @@ namespace openguitarmultifx
     whenever the chain viewport scrolls -- see resized()'s comment on why
     it can scroll at all (drawer-open padding) and the bug that motivated
     this, fixed 2026-09-11. */
+class AddEffectBrowserDialog;
+
 class ChainViewport : public juce::Viewport
 {
 public:
@@ -315,6 +317,7 @@ private:
 
     EffectRegistry registry;
     EffectProbeStore probeStore; // before addEffectPool: the pool is joined first
+    std::unique_ptr<AddEffectBrowserDialog> addEffectBrowser; // built once, shown again and again; after registry/probeStore, so it dies first
     juce::ThreadPool addEffectPool { 1 }; // declared after `registry`: joined first on destruction
     AudioEngine audioEngine;
     Tone3000Manager tone3000;

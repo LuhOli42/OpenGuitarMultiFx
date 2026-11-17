@@ -63,6 +63,11 @@ public:
         then centred and clamped to fit inside this host. */
     void pushOverlay (std::unique_ptr<juce::Component> content);
 
+    /** Same, for a card its owner keeps alive: popOverlay() only takes it off the screen. A card that is the same every
+        time (the Add Effect browser) is built ONCE and reused, instead of building dozens of components, and painting them
+        for the first time, on every open. The owner resets its state before pushing and must outlive the host's use of it. */
+    void pushPersistent (juce::Component& content);
+
     /** Removes the top layer, revealing whatever was under it (or hides
         the whole host if that was the last one). Safe to call with an
         empty stack (a no-op). */
@@ -90,7 +95,12 @@ private:
     static constexpr float scrimMax = 0.78f;
     double lastFrameMs = 0.0;
 
-    std::vector<std::unique_ptr<juce::Component>> layers;
+    using Layer = std::unique_ptr<juce::Component, void (*) (juce::Component*)>;
+    static void destroyCard (juce::Component* c) { delete c; }
+    static void keepCard (juce::Component*) {}
+    void pushLayer (Layer layer);
+
+    std::vector<Layer> layers;
 };
 
 } // namespace openguitarmultifx

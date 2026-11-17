@@ -18,11 +18,21 @@ OverlayHost::OverlayHost()
 
 void OverlayHost::pushOverlay (std::unique_ptr<juce::Component> content)
 {
+    pushLayer (Layer (content.release(), &destroyCard));
+}
+
+void OverlayHost::pushPersistent (juce::Component& content)
+{
+    pushLayer (Layer (&content, &keepCard));
+}
+
+void OverlayHost::pushLayer (Layer layer)
+{
     if (! layers.empty())
         layers.back()->setVisible (false); // only the top card is interactive/visible
 
-    addAndMakeVisible (*content);
-    layers.push_back (std::move (content));
+    addAndMakeVisible (*layer);
+    layers.push_back (std::move (layer));
 
     setInterceptsMouseClicks (true, true);
     overlayCoversApp().store (true, std::memory_order_relaxed);
