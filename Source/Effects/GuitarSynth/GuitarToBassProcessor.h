@@ -1,7 +1,6 @@
 #pragma once
 
-#include "PhaseVocoderShifter.h"
-#include "SpliceShifter.h"
+#include "HybridShifter.h"
 #include "SynthEffect.h"
 
 namespace openguitarmultifx
@@ -27,15 +26,7 @@ public:
 private:
     juce::AudioParameterFloat *octaves, *mode, *voicing, *tone, *body, *grit, *squash, *guitarBlend;
     double fs = 48000.0;
-    void resetHybrid();
-    gs::SpliceShifter shifter;
-    gs::PhaseVocoderShifter poly;
-    int lastMode = -1;
-    gs::EnvelopeFollower onsetFast, onsetSlow;
-    int sinceOnset = 0, alignAt = 960, handoffAt = 2880, refractory = 1440;
-    bool aligned = false, wasRising = false;
-    double polyWeight = 0.0, fadeUp = 0.001, fadeDown = 0.005;
-    double pM = 0.0, pP = 0.0, pX = 0.0, compGain = 1.0, powA = 0.999, compA = 0.99;
+    gs::HybridShifter shifter;
     gs::EnvelopeFollower comp;
     mt::Biquad hp, shelf, toneLp[2], pick, blendLp;
     double lastShape = -1.0;

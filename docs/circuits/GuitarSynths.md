@@ -14,6 +14,7 @@ decay envelope — behavioural (the 1981 unit's full drawing was not used part b
 **Maestro Brassmaster BB-1** (`BrassmasterStyleSynth`, Philpott redraw): Q1 preamp (Bass Volume = dry), Sensitivity into
 Q2's gain, Q3 phase splitter, **transformer and 1N4001 bridge** (Harmonic Hi = rectified octave up; Low = the clipped
 signal un-rectified), Brass 1 / Brass 2 RC band-pass voicings around Q5, Brass Volume. The transistor stage's saturation is
-modelled as its rail limit (linear, then a knee), not a tanh.
+modelled as its rail limit (linear, then a knee), not a tanh. Oversampled (2x eco, 4x balanced, 8x high): the clip and
+the bridge at the base rate folded a 1 kHz note's harmonics back at −13 dB inharmonic; 2x −46 dB, 4x −64 dB.
 
 The VCF is a 2-pole TPT state-variable low-pass (`PitchParts.h::Vcf`), safe while swept.

@@ -13,6 +13,9 @@ namespace
     // Whammy intervals (semitones), the classic pedal's modes.
     constexpr double whammyIntervals[9] { 24.0, 12.0, 7.0, 5.0, -2.0, -12.0, -24.0, 0.25, -0.25 };
     const juce::StringArray whammyNames { "+2 Oct", "+1 Oct", "+5th", "+4th", "-2nd", "-1 Oct", "-2 Oct", "Detune +", "Detune -" };
+    const juce::StringArray modeNames { "MONO", "POLY", "HYBRID" };
+    constexpr double pogRatios[4] { 0.25, 0.5, 2.0, 4.0 };
+    constexpr double organRatios[3] { 0.5, 2.0, 2.9966 }; // 16', 4', 2 2/3'
 }
 
 double AlgorithmicPitchProcessor::Shifter::process (const EnsembleDelay& line, double ratio, double w) noexcept
@@ -50,6 +53,7 @@ AlgorithmicPitchProcessor::AlgorithmicPitchProcessor (AlgorithmicPitch k) : kind
             knobs[2] = add (p + "_sub1", "-1 Oct", 0.5f);
             knobs[3] = add (p + "_up1", "+1 Oct", 0.4f);
             knobs[4] = add (p + "_up2", "+2 Oct", 0.0f);
+            knobs[5] = add (p + "_mode", "Mode", 2.0f, 3, modeNames);
             break;
         case AlgorithmicPitch::whammy:
             knobs[0] = add (p + "_interval", "Interval", 1.0f, 9, whammyNames);
@@ -61,6 +65,7 @@ AlgorithmicPitchProcessor::AlgorithmicPitchProcessor (AlgorithmicPitch k) : kind
             knobs[1] = add (p + "_organ", "Organ", 0.7f);
             knobs[2] = add (p + "_mod", "Mod", 0.4f);
             knobs[3] = add (p + "_click", "Click", 0.4f);
+            knobs[4] = add (p + "_mode", "Mode", 2.0f, 3, modeNames);
             break;
         case AlgorithmicPitch::monoSynth:
             knobs[0] = add (p + "_wave", "Wave", 0.0f, 2, { "Saw", "Square" });
@@ -111,6 +116,9 @@ void AlgorithmicPitchProcessor::prepare (double newSampleRate, int, int)
         ch.analyser.prepare (newSampleRate, 600.0, 3, 0.3, 0.1);
         ch.tone.prepare (newSampleRate, 5000.0);
     }
+    if (usesVoices())
+        for (auto& v : voices)
+            v.prepare (newSampleRate);
     smoothedPosition.reset (newSampleRate, 0.03);
     smoothedPosition.setCurrentAndTargetValue (kind == AlgorithmicPitch::whammy ? knobs[1]->get() : 0.0f);
     reset();
@@ -128,6 +136,9 @@ void AlgorithmicPitchProcessor::reset()
         ch.tone.reset();
         ch.env = ch.oscPhase = ch.freq = ch.click = ch.lastLevel = ch.modPhase = 0.0;
     }
+    for (auto& v : voices)
+        v.reset();
+    voiceOn.fill (false);
     trackedHz = 0.0;
 }
 
@@ -141,33 +152,52 @@ void AlgorithmicPitchProcessor::process (juce::AudioBuffer<float>& buffer)
     if (kind == AlgorithmicPitch::whammy)
         smoothedPosition.setTargetValue (knobs[1]->get());
     const double envA = 1.0 - std::exp (-1.0 / (0.006 * sampleRate));
+    const int mode = usesVoices() ? juce::roundToInt (knobs[kind == AlgorithmicPitch::pog ? 5 : 4]->get()) : 0;
+    std::array<double, 4> pogLevels {};
+    if (kind == AlgorithmicPitch::pog)
+        for (size_t v = 0; v < 4; ++v)
+        {
+            pogLevels[v] = knobs[v + 1]->get();
+            const bool on = pogLevels[v] > 0.001;
+            if (on && ! voiceOn[v])
+                voices[v].reset(); // an idle voice was not fed: restart it from silence
+            voiceOn[v] = on;
+        }
 
     for (int i = 0; i < numSamples; ++i)
     {
         const double position = smoothedPosition.getNextValue();
+        // Poly Octave / Organ Machine: the shifted voices, once on the mono sum (every channel gets the same)
+        double shifted = 0.0;
+        if (usesVoices())
+        {
+            const float mono = numChannels > 1 ? 0.5f * (buffer.getReadPointer (0)[i] + buffer.getReadPointer (1)[i]) : buffer.getReadPointer (0)[i];
+            if (kind == AlgorithmicPitch::pog)
+            {
+                for (size_t v = 0; v < 4; ++v)
+                    if (voiceOn[v])
+                        shifted += pogLevels[v] * voices[v].process (mono, pogRatios[v], mode);
+            }
+            else
+            {
+                shifted = 0.8 * voices[0].process (mono, organRatios[0], mode) + 0.7 * voices[1].process (mono, organRatios[1], mode)
+                          + 0.45 * voices[2].process (mono, organRatios[2], mode);
+            }
+        }
         for (int c = 0; c < numChannels; ++c)
         {
             auto& ch = channels[(size_t) c];
             auto* data = buffer.getWritePointer (c);
             const double x = data[i];
-            ch.line.push ((float) x);
+            if (kind == AlgorithmicPitch::whammy)
+                ch.line.push ((float) x);
             double out = x;
 
             switch (kind)
             {
                 case AlgorithmicPitch::pog:
-                {
-                    static constexpr double ratios[4] { 0.25, 0.5, 2.0, 4.0 };
-                    double sum = 2.0 * knobs[0]->get() * x;
-                    for (int v = 0; v < 4; ++v)
-                    {
-                        const double lvl = knobs[(size_t) v + 1]->get();
-                        if (lvl > 0.001)
-                            sum += 2.0 * lvl * ch.shifters[(size_t) v].process (ch.line, ratios[v], v < 2 ? 2.0 * w : w);
-                    }
-                    out = 0.5 * sum;
+                    out = knobs[0]->get() * x + shifted;
                     break;
-                }
                 case AlgorithmicPitch::whammy:
                 {
                     const double semis = whammyIntervals[juce::jlimit (0, 8, juce::roundToInt (knobs[0]->get()))] * position;
@@ -179,8 +209,7 @@ void AlgorithmicPitchProcessor::process (juce::AudioBuffer<float>& buffer)
                 case AlgorithmicPitch::organ:
                 {
                     // Drawbars: 16' (sub), 8' (dry), 4' (octave), 2 2/3' (the 19th, an octave + a fifth).
-                    const double drawbars = 0.8 * ch.shifters[0].process (ch.line, 0.5, 2.0 * w) + 0.6 * x
-                                            + 0.7 * ch.shifters[1].process (ch.line, 2.0, w) + 0.45 * ch.shifters[2].process (ch.line, 2.9966, w);
+                    const double drawbars = shifted + 0.6 * x;
                     // Key click: a short burst on each new attack.
                     const double level = std::abs (x);
                     ch.env += envA * (level - ch.env);

@@ -1,8 +1,17 @@
 # Algorithmic pitch / synth effects
 
-Processor: `Source/Effects/Pitch/AlgorithmicPitchProcessor.{h,cpp}`. Shifting voices: a delay line read by two taps
-sweeping a 40 ms window (80 ms for downward voices) at (1 − ratio) × real time, sin²-crossfaded — polyphonic, ~one window
-of latency, the usual granular smear on chords.
+Processor: `Source/Effects/Pitch/AlgorithmicPitchProcessor.{h,cpp}`.
+
+Poly Octave and Organ Machine voices: `gs::HybridShifter` (`Source/Effects/GuitarSynth/HybridShifter.h`, the
+Guitar-to-Bass engines, see `docs/GuitarSynth.md`) run once on the mono sum, picked by **Mode**:
+- MONO: `SpliceShifter` (correlation-chosen splices; going up the tap catches the input and jumps J back), ~5-15 ms,
+  exact on single notes.
+- POLY: `PhaseVocoderShifter`, every note of a chord in tune, ~32 ms.
+- HYBRID (default): each attack from MONO, then a phase-aligned crossfade into POLY.
+
+They replaced a fixed 40 ms two-tap granular shifter, which warbled at the window rate and pulled the +1 oct of a 220 Hz
+note to ~420 Hz. Measured on sines (220 Hz / 1 kHz, every voice and mode): pitch exact, inharmonic energy ≤ −38 dB
+(MONO ≤ −78 dB). The Whammy still uses the granular shifter (40 ms window, 80 ms down).
 
 | Key | What it is |
 |---|---|

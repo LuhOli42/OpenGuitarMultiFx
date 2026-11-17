@@ -29,7 +29,7 @@ Notes an octave apart share partials and can merge into one slot.
 ## Guitar-to-Bass
 Fixed ratio 0.5 (down 1) or 0.25 (down 2), no pitch tracker, so the whole waveform -- chords included -- moves.
 Mode picks the shifter:
-- MONO (`SpliceShifter.h`, ~8 ms): resampling read tap, jumps of 10..40 ms chosen by normalised correlation so the
+- MONO (`SpliceShifter.h`, ~8 ms; also shifts up, used by Poly Octave / Organ Machine): resampling read tap, jumps of 10..40 ms chosen by normalised correlation so the
   splices land where the input repeats itself, cross-faded. Single notes and power chords within ~3 cents; the
   third of a chord lands ~14 cents sharp one octave down and close voicings smear two octaves down.
 - POLY (`PhaseVocoderShifter.h`, ~32 ms synthesis latency, ~41 ms median onset): phase vocoder with identity

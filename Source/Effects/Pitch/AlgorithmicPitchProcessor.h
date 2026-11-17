@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Effects/EffectProcessor.h"
+#include "Effects/GuitarSynth/HybridShifter.h"
 #include "Effects/Modulation/Chorus/EnsembleDelay.h"
 #include "PitchParts.h"
 
@@ -18,10 +19,11 @@ enum class AlgorithmicPitch
 };
 
 /**
-    Pitch effects that are algorithms (docs/circuits/AlgorithmicPitch.md). The shifting voices are time-domain: two
-    taps sweeping a short window of a delay line at (1 - ratio) times real time, sin^2-crossfaded -- polyphonic (chords
-    survive, with the usual granular smear), latency ~one window. The Mono Synth tracks the pitch the way analog guitar
-    synths did: low-pass, level-tracking comparator, period measurement.
+    Pitch effects that are algorithms (docs/circuits/AlgorithmicPitch.md). The Poly Octave and Organ Machine voices are
+    gs::HybridShifter (Mode: MONO splice shifter, POLY phase vocoder, or HYBRID: MONO attack into POLY), run once on the
+    mono sum. The Whammy's voice is time-domain: two taps sweeping a short window of a delay line at (1 - ratio) times
+    real time, sin^2-crossfaded. The Mono Synth tracks the pitch the way analog guitar synths did: low-pass,
+    level-tracking comparator, period measurement.
 */
 class AlgorithmicPitchProcessor : public EffectProcessor
 {
@@ -60,8 +62,12 @@ private:
     juce::AudioParameterFloat* add (const juce::String& id, const juce::String& name, float def, int positions = 0,
                                     juce::StringArray labels = {});
 
+    bool usesVoices() const noexcept { return kind == AlgorithmicPitch::pog || kind == AlgorithmicPitch::organ; }
+
     AlgorithmicPitch kind;
     std::array<Channel, 2> channels;
+    std::array<gs::HybridShifter, 4> voices;
+    std::array<bool, 4> voiceOn {};
     std::unique_ptr<juce::AudioProcessorParameterGroup> parameters;
     std::array<juce::AudioParameterFloat*, 8> knobs {};
     juce::SmoothedValue<float> smoothedPosition;

@@ -798,7 +798,8 @@ void registerBuiltInEffects (EffectRegistry& registry)
     registry.registerType ("MicroSynthStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<GuitarSynthProcessor> (GuitarSynthModel::microSynth), 68000.0), -12.11f); }, "Synth");
     registry.registerType ("BassMicroSynthStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<GuitarSynthProcessor> (GuitarSynthModel::bassMicroSynth), 68000.0), -8.63f); }, "Synth");
     registry.registerType ("GuitarSynthStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<GuitarSynthProcessor> (GuitarSynthModel::guitarSynth), 68000.0), -14.00f); }, "Synth");
-    registry.registerType ("BrassmasterStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (std::make_unique<GuitarSynthProcessor> (GuitarSynthModel::brassmaster), 75000.0), -2.51f); }, "Synth");
+    registry.markQualityDependent ("BrassmasterStyleSynth");
+    registry.registerType ("BrassmasterStyleSynth", EffectRegistry::Category::pitch, [] { return trimmed (pickupLoaded (oversampled<GuitarSynthProcessor> (Orders { 1, 2, 3 }, GuitarSynthModel::brassmaster), 75000.0), -2.51f); }, "Synth");
     registry.registerType ("PolyOctave", EffectRegistry::Category::pitch, [] { return std::make_unique<AlgorithmicPitchProcessor> (AlgorithmicPitch::pog); }, "Pitch");
     registry.registerType ("Whammy", EffectRegistry::Category::pitch, [] { return std::make_unique<AlgorithmicPitchProcessor> (AlgorithmicPitch::whammy); }, "Pitch");
     registry.registerType ("OrganMachine", EffectRegistry::Category::pitch, [] { return std::make_unique<AlgorithmicPitchProcessor> (AlgorithmicPitch::organ); }, "Synth");

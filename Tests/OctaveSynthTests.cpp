@@ -226,6 +226,7 @@ public:
 
         // amp: the test level (0.3 = a hot pickup). cpuLimit: 5% of a core, except the octave fuzzes: full netlists that the
         // alias table (docs/circuits/OctaveFuzzes.md) keeps at 2x even in Eco, like the Fuzz Face / Tone Bender / Big Muff.
+        // The Organ Machine runs three MONO + POLY shifters (gs::HybridShifter) in its default HYBRID mode, ~9% here.
         struct Case { const char* key; double expectHz; std::vector<std::pair<const char*, float>> settings; double amp = 0.3; double cpuLimit = 5.0; };
         const std::vector<Case> cases {
             { "OctaviaStyleFuzz", 440.0, {}, 0.3, 12.0 },
@@ -240,8 +241,13 @@ public:
             { "GuitarSynthStyleSynth", 110.0, { { "_guitar", 0.0f }, { "_square", 0.0f }, { "_start", 1.0f }, { "_stop", 1.0f } } },
             { "BrassmasterStyleSynth", 440.0, { { "_bass", 0.0f } } },
             { "PolyOctave", 110.0, { { "_dry", 0.0f }, { "_up1", 0.0f } } },
+            { "PolyOctave", 110.0, { { "_dry", 0.0f }, { "_up1", 0.0f }, { "_mode", 0.0f } } },
+            { "PolyOctave", 110.0, { { "_dry", 0.0f }, { "_up1", 0.0f }, { "_mode", 1.0f } } },
+            { "PolyOctave", 440.0, { { "_dry", 0.0f }, { "_sub1", 0.0f }, { "_up1", 1.0f }, { "_mode", 0.0f } } },
+            { "PolyOctave", 440.0, { { "_dry", 0.0f }, { "_sub1", 0.0f }, { "_up1", 1.0f }, { "_mode", 1.0f } } },
+            { "PolyOctave", 440.0, { { "_dry", 0.0f }, { "_sub1", 0.0f }, { "_up1", 1.0f } } },
             { "Whammy", 440.0, {} },
-            { "OrganMachine", 220.0, {} },
+            { "OrganMachine", 220.0, {}, 0.3, 15.0 },
             { "MonoSynth", 220.0, { { "_mix", 1.0f } } } };
 
         for (const auto& cs : cases)
