@@ -734,7 +734,7 @@ void PresetBrowserDialog::rebuildSetlistTiles (const std::vector<PresetLibrary::
         setlistStage.presetName = current.isEmpty() ? "--" : current;
         setlistStage.nextText = "Next: " + members[0]->name;
         setlistStage.isCurrent = false;
-        stageMemberName = members[0]->name;
+        stageMemberName = current; // the card shows the loaded preset; its gestures act on it
     }
     else
     {
