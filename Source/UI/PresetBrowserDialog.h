@@ -71,6 +71,9 @@ public:
     /** Whichever preset is loaded right now (drawn highlighted). */
     std::function<juce::String()> getCurrentPresetName;
 
+    /** `--window-snapshot` hook: presets | presets-bank | presets-setlist. */
+    void previewScreen (const juce::String& which);
+
 private:
     /** One grid cell. Tap = onTap; press-and-hold (~550ms, same duration as
         ParameterPanel's long-press labels) or right-click = onMenu. An
@@ -80,10 +83,13 @@ private:
     {
     public:
         juce::String name;
-        juce::String heading;   // top line: preset number / slot / setlist position
+        juce::String heading;   // top line: preset number / "SLOT n" / setlist position
+        juce::String tag;       // top-right pill (first tag)
         juce::String subline;   // bottom line: tags, or setlist position info
+        juce::Array<juce::Colour> dots; // scene accent bars along the bottom
         bool isCurrent = false;
         bool isEmpty = false;
+        bool bankLayout = false; // big name + footswitch circle, .bk style
 
         std::function<void()> onTap;
         std::function<void()> onMenu;
@@ -110,6 +116,44 @@ private:
         /** Lays the tiles out across `width` and returns the height they
             occupy -- the caller then sizes this component to it. */
         int layoutForWidth (int width);
+    };
+
+    /** `.tabs` container chrome behind the mode buttons (prototype header). */
+    class TabStrip : public juce::Component
+    {
+    public:
+        void paint (juce::Graphics& g) override;
+    };
+
+    /** `.field`-styled "Setlist: name" box (setlist selector row). */
+    class SetlistField : public juce::Component
+    {
+    public:
+        juce::String setlistName;
+        void paint (juce::Graphics& g) override;
+    };
+
+    /** Setlist stage card: "4 of 9" / giant name / "Next: X" (prototype body).
+        Tap = load the shown member; press-and-hold or right-click = its tile
+        menu (reorder/remove), same gestures as PresetTile. */
+    class SetlistStage : public juce::Component,
+                         private juce::Timer
+    {
+    public:
+        juce::String positionText;
+        juce::String presetName;
+        juce::String nextText;
+        bool isCurrent = false;
+
+        std::function<void()> onTap;
+        std::function<void()> onMenu;
+
+        void paint (juce::Graphics& g) override;
+        void mouseDown (const juce::MouseEvent& event) override;
+        void mouseUp (const juce::MouseEvent& event) override;
+
+    private:
+        void timerCallback() override;
     };
 
     enum class Mode { all, bank, setlist };
@@ -140,6 +184,7 @@ private:
     void showAddToSetlistMenu (const juce::String& presetName);
     void showAssignToBankMenu (const juce::String& presetName);
     void refreshTagFilter();
+    void layoutTagChips();
     juce::String currentPresetName() const;
 
     juce::Label titleLabel;
@@ -148,9 +193,15 @@ private:
     overlaychrome::ActionButton setlistModeButton { "Setlists" };
     overlaychrome::ActionButton newPresetButton { "New", overlaychrome::ButtonKind::primary };
 
+    // Header tabs
+    TabStrip tabStrip;
+
     // All-mode filter row
     juce::TextEditor searchField;
-    juce::ComboBox tagBox;
+    juce::Viewport chipsViewport;   // horizontal scroll when tags overflow
+    juce::Component chipsContent;
+    juce::OwnedArray<overlaychrome::ActionButton> tagChips;
+    juce::String selectedTag;
 
     // Bank-mode selector row
     overlaychrome::ActionButton bankPrevButton { "<" }; // "<"
@@ -160,12 +211,15 @@ private:
     juce::OwnedArray<PresetTile> bankTiles;
 
     // Setlist-mode selector row
+    // Setlist-mode selector row + stage
     overlaychrome::ActionButton setlistPrevButton { "<" };
     overlaychrome::ActionButton setlistNextButton { ">" };
-    juce::Label setlistLabel;
+    SetlistField setlistField;
     overlaychrome::ActionButton setlistMenuButton { "..." }; // "..."
-    overlaychrome::ActionButton stepPrevButton { "Prev" };
-    overlaychrome::ActionButton stepNextButton { "Next" };
+    overlaychrome::ActionButton stepPrevButton { "<  Previous" };
+    overlaychrome::ActionButton stepNextButton { "Next  >" };
+    SetlistStage setlistStage;
+    juce::String stageMemberName; // setlist member the stage card currently shows
 
     juce::Viewport gridViewport;
     TileGrid tileGrid;

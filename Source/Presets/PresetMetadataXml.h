@@ -132,6 +132,30 @@ inline void writeSetlists (juce::XmlElement& presetXml, const std::vector<Setlis
     }
 }
 
+/** Per-scene accent colours saved in the preset's <Snapshots> element:
+        one hex string ("ffrrggbb") per <Snapshot index colour="...">, empty
+        entries meaning "default for that slot". Also reports the saved live
+        index so the browser tile can letter the preset ("12C") like the top
+        bar's badge does. UI-only metadata -- this reader is additive, nothing
+        is ever written. */
+inline juce::StringArray readSnapshotColours (const juce::XmlElement& presetXml, int& liveIndex)
+{
+    liveIndex = 0;
+    juce::StringArray colours;
+    if (auto* snapshotsXml = presetXml.getChildByName ("Snapshots"))
+    {
+        liveIndex = snapshotsXml->getIntAttribute ("current", 0);
+        for (auto* snapshotXml : snapshotsXml->getChildWithTagNameIterator ("Snapshot"))
+        {
+            const int index = snapshotXml->getIntAttribute ("index");
+            while (colours.size() <= index)
+                colours.add ({});
+            colours.set (index, snapshotXml->getStringAttribute ("colour"));
+        }
+    }
+    return colours;
+}
+
 /** Carries the organisational metadata from a previously-saved preset file
     into the fresh XML about to replace it. MainComponent::buildPresetXml()
     only captures the SOUND (blocks, routing, MIDI Learn) -- a resave would

@@ -87,7 +87,7 @@ private:
     // here is a transform / alpha: no relayout per frame, so it costs the GPU next to nothing.
     float openProgress = 1.0f;  // 0 -> 1 for the top card
     float scrimAlpha = 0.0f;    // current darkness of the scrim, 0 .. scrimMax
-    static constexpr float scrimMax = 0.65f;
+    static constexpr float scrimMax = 0.78f;
     double lastFrameMs = 0.0;
 
     std::vector<std::unique_ptr<juce::Component>> layers;

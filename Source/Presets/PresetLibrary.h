@@ -37,6 +37,8 @@ public:
         juce::StringArray tags;
         presetmeta::BankSlot bankSlot;      // .bank < 0 = not in any bank
         std::vector<presetmeta::SetlistMember> setlists;
+        juce::StringArray snapshotColours;  // hex per scene, empty = default
+        int snapshotCurrent = 0;            // saved live scene index
 
         bool isInSetlist (const juce::String& setlist) const;
     };
