@@ -30,15 +30,14 @@ void OverlayHost::pushOverlay (std::unique_ptr<juce::Component> content)
     toFront (false);
     layOutTop();
 
-    openProgress = 0.0f;
+    // No animation: the card and its scrim appear in one frame. The fade/rise took 150 ms at 5-25 fps on the board and
+    // started by rendering the whole card into a temporary texture (one ~200 ms frame) and dropping it at the end (another).
+    openProgress = 1.0f;
+    scrimAlpha = scrimMax;
     lastFrameMs = 0.0;
-    // While the card fades and rises it is drawn ONCE into a texture and that texture is moved/faded each frame; without
-    // this the transparency forces the GPU to redraw every row of a big card (the Add Effect list) on every frame. The
-    // buffering is dropped when the animation ends, so the live card is exactly as before.
-    if (! content_isFullscreen (*layers.back()))
-        layers.back()->setBufferedToImage (true);
     applyOpenAnimation();
-    startTimerHz (60);
+    stopTimer();
+    repaint();
 }
 
 void OverlayHost::applyOpenAnimation()
@@ -91,9 +90,11 @@ void OverlayHost::popOverlay()
     if (layers.empty())
     {
         overlayCoversApp().store (false, std::memory_order_relaxed);
-        setInterceptsMouseClicks (false, false); // still painting the fading scrim, but taps go to the app underneath
+        setInterceptsMouseClicks (false, false);
+        scrimAlpha = 0.0f;
         lastFrameMs = 0.0;
-        startTimerHz (60);
+        stopTimer();
+        setVisible (false); // the scrim goes with the last card, at once
     }
     else
     {
