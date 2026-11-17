@@ -39,3 +39,8 @@ patch_file("${m}/opengl/juce_OpenGLHelpers.cpp"
   "   #if JUCE_OPENGL_LINUX_EGL\n    return (void*) eglGetProcAddress (functionName);\n   #else\n    return (void*) glXGetProcAddress ((const GLubyte*) functionName);\n   #endif\n")
 
 configure_file("${CMAKE_CURRENT_LIST_DIR}/juce-egl/juce_OpenGL_linux_egl.h" "${m}/native/juce_OpenGL_linux_egl.h" COPYONLY)
+
+# Remember what each frame repainted, so the swap can present only that (see egl_damage in juce_OpenGL_linux_egl.h).
+patch_file("${m}/opengl/juce_OpenGLContext.cpp"
+  "        validArea = currentAreaAndScale.area;\n\n        if (! invalid.isEmpty())\n"
+  "        validArea = currentAreaAndScale.area;\n\n       #if JUCE_OPENGL_LINUX_EGL\n        egl_damage::add (invalid, currentAreaAndScale.area.getHeight());\n       #endif\n\n        if (! invalid.isEmpty())\n")

@@ -85,6 +85,42 @@ private:
 // OpenGuitarMultiFx: EGL + OpenGL ES backend for X11 (replaces the GLX one). The Radxa Cubie A7S's PowerVR BXM only
 // exposes OpenGL ES through EGL -- its Xorg has no hardware GLX (Mesa falls back to llvmpipe) -- so the stock GLX
 // context would render in software. Built when JUCE_OPENGL_LINUX_EGL=1; see cmake/JuceEglPatch.cmake.
+/** The area JUCE repainted since the last eglSwapBuffers, in GL's bottom-left pixel coordinates. The board's GPU and its
+    display are different DRM devices (card1 PowerVR, card0 sunxi display engine), so every swap COPIES the presented area
+    to the screen's memory: a whole 1920x1200 frame (9 MB) per swap, even for a pill that changed. Telling EGL what really
+    changed (eglSwapBuffersWithDamage) makes that copy proportional to the change. Filled by a hook JuceEglPatch.cmake
+    adds to OpenGLContext's paintComponent(). */
+namespace egl_damage
+{
+    inline std::mutex& mutex()                { static std::mutex m; return m; }
+    inline RectangleList<int>& pending()      { static RectangleList<int> r; return r; }
+
+    inline void add (const RectangleList<int>& invalid, int frameBufferHeight)
+    {
+        const std::lock_guard<std::mutex> lock (mutex());
+        for (const auto& r : invalid)
+            pending().add (Rectangle<int> (r.getX(), frameBufferHeight - r.getBottom(), r.getWidth(), r.getHeight()));
+    }
+
+    /** Takes what accumulated: x, y, w, h per rectangle (at most 8: more are merged into their bounding box). */
+    inline std::vector<EGLint> take()
+    {
+        const std::lock_guard<std::mutex> lock (mutex());
+        RectangleList<int> list;
+        list.swapWith (pending());
+        std::vector<EGLint> out;
+        if (list.getNumRectangles() > 8)
+        {
+            const auto b = list.getBounds();
+            list.clear();
+            list.add (b);
+        }
+        for (const auto& r : list)
+            out.insert (out.end(), { (EGLint) r.getX(), (EGLint) r.getY(), (EGLint) r.getWidth(), (EGLint) r.getHeight() });
+        return out;
+    }
+}
+
 namespace egl_linux
 {
     inline EGLDisplay getDisplay()
@@ -321,6 +357,28 @@ public:
 
     void swapBuffers()
     {
+        using SwapWithDamage = EGLBoolean (*) (EGLDisplay, EGLSurface, EGLint*, EGLint);
+        static const SwapWithDamage swapWithDamage = [this] () -> SwapWithDamage
+        {
+            const char* extensions = eglQueryString (eglDisplay, EGL_EXTENSIONS);
+            const bool has = extensions != nullptr && (std::strstr (extensions, "EGL_KHR_swap_buffers_with_damage") != nullptr
+                                                        || std::strstr (extensions, "EGL_EXT_swap_buffers_with_damage") != nullptr);
+            Logger::writeToLog (String ("EGL swap with damage: ") + (has ? "supported" : "not supported (whole-frame swaps)"));
+            if (! has)
+                return nullptr;
+            auto* fn = eglGetProcAddress ("eglSwapBuffersWithDamageKHR");
+            if (fn == nullptr)
+                fn = eglGetProcAddress ("eglSwapBuffersWithDamageEXT");
+            return (SwapWithDamage) fn;
+        }();
+
+        if (swapWithDamage != nullptr)
+        {
+            auto rects = egl_damage::take();
+            if (! rects.empty() && swapWithDamage (eglDisplay, surface, rects.data(), (EGLint) (rects.size() / 4)) == EGL_TRUE)
+                return;
+        }
+
         eglSwapBuffers (eglDisplay, surface);
     }
 

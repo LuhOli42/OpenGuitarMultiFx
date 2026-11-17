@@ -14,6 +14,30 @@
 namespace openguitarmultifx
 {
 
+/** Diagnostic (OGMFX_GL_PROBE=1): a black window with ONE small square moving -- same window, same GPU backend, nothing
+    else. If the board's GPU is still busy with this, the per-frame cost is in the backend, not in the UI tree. */
+class GlProbe : public juce::Component, private juce::Timer
+{
+public:
+    GlProbe() { setOpaque (true); startTimerHz (60); }
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colours::black);
+        g.setColour (juce::Colours::limegreen);
+        g.fillRect (box);
+    }
+private:
+    void timerCallback() override
+    {
+        const auto old = box;
+        x = (x + 6) % juce::jmax (1, getWidth() - 64);
+        box = juce::Rectangle<int> (x, getHeight() / 2, 64, 64);
+        repaint (old.getUnion (box));
+    }
+    int x = 0;
+    juce::Rectangle<int> box { 0, 0, 64, 64 };
+};
+
 class MainWindow : public juce::DocumentWindow
 {
 public:
@@ -27,7 +51,10 @@ public:
         // title bar is a plausible source of an unexpected close signal
         // (unconfirmed, but it's the natural thing to rule out first).
         setUsingNativeTitleBar (false);
-        setContentOwned (new MainComponent(), true);
+        if (juce::SystemStats::getEnvironmentVariable ("OGMFX_GL_PROBE", {}).isNotEmpty())
+            setContentOwned (new GlProbe(), true);
+        else
+            setContentOwned (new MainComponent(), true);
         setResizable (true, false);
         centreWithSize (getWidth(), getHeight());
         setVisible (true);
