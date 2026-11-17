@@ -167,6 +167,34 @@ void PresetBrowserDialog::SetlistField::paint (juce::Graphics& g)
     g.drawFittedText (setlistName, area, juce::Justification::centredLeft, 1);
 }
 
+void PresetBrowserDialog::SetlistStage::mouseDown (const juce::MouseEvent&)
+{
+    startTimer (longPressMs);
+}
+
+void PresetBrowserDialog::SetlistStage::mouseUp (const juce::MouseEvent& event)
+{
+    const bool wasLongPress = ! isTimerRunning();
+    stopTimer();
+
+    if (event.mods.isPopupMenu())
+    {
+        if (onMenu)
+            onMenu();
+        return;
+    }
+
+    if (! wasLongPress && touch::wasTap (event) && onTap)
+        onTap();
+}
+
+void PresetBrowserDialog::SetlistStage::timerCallback()
+{
+    stopTimer();
+    if (onMenu)
+        onMenu();
+}
+
 void PresetBrowserDialog::SetlistStage::paint (juce::Graphics& g)
 {
     const auto& t = theme::current();
@@ -282,7 +310,27 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
     overlaychrome::drawSearchFieldChrome (searchField);
     searchField.onTextChange = [this] { rebuildTiles(); };
 
-    addAndMakeVisible (chipsBar);
+    chipsViewport.setScrollBarsShown (false, false);
+    chipsViewport.setViewedComponent (&chipsContent, false);
+    touch::enableDragScroll (chipsViewport);
+    addAndMakeVisible (chipsViewport);
+
+    // The stage card behaves like the removed member tiles: tap loads the
+    // shown member, long-press/right-click opens its reorder/remove menu.
+    setlistStage.onTap = [this]
+    {
+        if (stageMemberName.isNotEmpty() && onPresetChosen)
+            onPresetChosen (stageMemberName);
+    };
+    setlistStage.onMenu = [this]
+    {
+        for (auto& e : library.entries())
+            if (e.name == stageMemberName)
+            {
+                showTileMenu (e);
+                return;
+            }
+    };
     addAndMakeVisible (setlistField);
     addAndMakeVisible (setlistStage);
 
@@ -447,9 +495,21 @@ void PresetBrowserDialog::refreshTagFilter()
     {
         auto* chip = tagChips.add (new overlaychrome::ActionButton (tag.isEmpty() ? "All tags" : tag));
         chip->selectedStyle = overlaychrome::SelectedStyle::chip;
+        chip->listTap = true; // chips live in a drag-scroll viewport
         chip->selected = (tag == selectedTag);
-        chip->onClick = [this, tag] { selectedTag = tag; refreshTagFilter(); rebuildTiles(); };
-        chipsBar.addAndMakeVisible (*chip);
+        // Flip selection in place -- rebuilding this array inside a chip's own
+        // onClick would delete the button mid-callback.
+        chip->onClick = [this, tag]
+        {
+            selectedTag = tag;
+            for (auto* c : tagChips)
+            {
+                c->selected = (c->text == (tag.isEmpty() ? "All tags" : tag));
+                c->repaint();
+            }
+            rebuildTiles();
+        };
+        chipsContent.addAndMakeVisible (*chip);
     };
     addChip ({});
     for (auto& tag : library.allTags())
@@ -459,17 +519,17 @@ void PresetBrowserDialog::refreshTagFilter()
 
 void PresetBrowserDialog::layoutTagChips()
 {
-    if (chipsBar.getWidth() <= 0)
+    if (chipsViewport.getWidth() <= 0)
         return;
     const auto font = overlaychrome::font (13.0f);
-    auto row = chipsBar.getLocalBounds().withSizeKeepingCentre (chipsBar.getWidth(), 40);
-    int x = row.getX();
+    int x = 0;
     for (auto* chip : tagChips)
     {
         const auto w = juce::GlyphArrangement::getStringWidth (font, chip->text) + 32;
-        chip->setBounds (x, row.getY(), w, 40);
+        chip->setBounds (x, 0, w, 40);
         x += w + 8;
     }
+    chipsContent.setSize (juce::jmax (x, chipsViewport.getWidth()), 40);
 }
 
 void PresetBrowserDialog::configureTile (PresetTile& tile, const PresetLibrary::Entry& entry, const juce::String& heading)
@@ -503,7 +563,7 @@ void PresetBrowserDialog::rebuildTiles()
     const bool setlistVisible = (mode == Mode::setlist);
 
     searchField.setVisible (allVisible);
-    chipsBar.setVisible (allVisible);
+    chipsViewport.setVisible (allVisible);
     bankPrevButton.setVisible (bankVisible);
     bankNextButton.setVisible (bankVisible);
     bankLabel.setVisible (bankVisible);
@@ -657,15 +717,24 @@ void PresetBrowserDialog::rebuildSetlistTiles (const std::vector<PresetLibrary::
             liveIndex = i;
             break;
         }
-    if (liveIndex < 0)
-        liveIndex = 0;
-
     if (members.empty())
     {
         setlistStage.positionText = {};
         setlistStage.presetName = "--";
         setlistStage.nextText = {};
         setlistStage.isCurrent = false;
+        stageMemberName = {};
+    }
+    else if (liveIndex < 0)
+    {
+        // The loaded preset isn't a member: don't dress member[0] up as
+        // "current", and keep Next consistent with stepSetlist (which loads
+        // members[0] when current isn't in the list).
+        setlistStage.positionText = "-- of " + juce::String ((int) members.size());
+        setlistStage.presetName = current.isEmpty() ? "--" : current;
+        setlistStage.nextText = "Next: " + members[0]->name;
+        setlistStage.isCurrent = false;
+        stageMemberName = members[0]->name;
     }
     else
     {
@@ -675,6 +744,7 @@ void PresetBrowserDialog::rebuildSetlistTiles (const std::vector<PresetLibrary::
         setlistStage.presetName = m->name;
         setlistStage.nextText = "Next: " + next->name;
         setlistStage.isCurrent = true;
+        stageMemberName = m->name;
     }
     setlistStage.repaint();
 
@@ -857,7 +927,7 @@ void PresetBrowserDialog::resized()
 
     if (mode == Mode::all)
     {
-        chipsBar.setBounds (selectorRow);
+        chipsViewport.setBounds (selectorRow);
         layoutTagChips();
     }
     else if (mode == Mode::bank)

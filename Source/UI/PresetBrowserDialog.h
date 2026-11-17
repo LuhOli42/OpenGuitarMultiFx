@@ -133,15 +133,27 @@ private:
         void paint (juce::Graphics& g) override;
     };
 
-    /** Setlist stage card: "4 of 9" / giant name / "Next: X" (prototype body). */
-    class SetlistStage : public juce::Component
+    /** Setlist stage card: "4 of 9" / giant name / "Next: X" (prototype body).
+        Tap = load the shown member; press-and-hold or right-click = its tile
+        menu (reorder/remove), same gestures as PresetTile. */
+    class SetlistStage : public juce::Component,
+                         private juce::Timer
     {
     public:
         juce::String positionText;
         juce::String presetName;
         juce::String nextText;
         bool isCurrent = false;
+
+        std::function<void()> onTap;
+        std::function<void()> onMenu;
+
         void paint (juce::Graphics& g) override;
+        void mouseDown (const juce::MouseEvent& event) override;
+        void mouseUp (const juce::MouseEvent& event) override;
+
+    private:
+        void timerCallback() override;
     };
 
     enum class Mode { all, bank, setlist };
@@ -186,7 +198,8 @@ private:
 
     // All-mode filter row
     juce::TextEditor searchField;
-    juce::Component chipsBar;
+    juce::Viewport chipsViewport;   // horizontal scroll when tags overflow
+    juce::Component chipsContent;
     juce::OwnedArray<overlaychrome::ActionButton> tagChips;
     juce::String selectedTag;
 
@@ -206,6 +219,7 @@ private:
     overlaychrome::ActionButton stepPrevButton { "<  Previous" };
     overlaychrome::ActionButton stepNextButton { "Next  >" };
     SetlistStage setlistStage;
+    juce::String stageMemberName; // setlist member the stage card currently shows
 
     juce::Viewport gridViewport;
     TileGrid tileGrid;
