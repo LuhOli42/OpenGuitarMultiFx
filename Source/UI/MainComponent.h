@@ -485,8 +485,13 @@ private:
         enum class Glyph { chevronLeft, chevronRight, undo, redo, live, wifi, bluetooth };
         explicit IconButton (Glyph glyphIn) : juce::Button ({}) , glyph (glyphIn) {}
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
+
+        /** A small, non-interactive status icon: no fill or border, dim until `lit`, then the app accent. */
+        void setStatusOnly (bool statusOnlyIn) { statusOnly = statusOnlyIn; setInterceptsMouseClicks (! statusOnlyIn, ! statusOnlyIn); repaint(); }
+        void setLit (bool litIn) { if (lit != litIn) { lit = litIn; repaint(); } }
     private:
         Glyph glyph;
+        bool statusOnly = false, lit = false;
     };
 
     /** Prototype .cpu pill: "CPU 23%" plus the 3px load bar. */
@@ -504,6 +509,19 @@ private:
         bool ok = true;
     };
 
+    /** "TEMP 72°" plus a bar: the hottest thermal zone of the board (the Cubie has no heatsink, so this is the number to
+        watch). Amber from 85 C, red from 95 C -- where the thermal guard starts capping the clocks. Hidden when the machine
+        exposes no thermal zones (a desktop). */
+    class TempPill : public juce::Component
+    {
+    public:
+        void setCelsius (float c);
+        void paint (juce::Graphics& g) override;
+    private:
+        float celsius = 0.0f;
+    };
+    static float readHottestZoneCelsius();
+
     IconButton presetPrevButton { IconButton::Glyph::chevronLeft };
     IconButton presetNextButton { IconButton::Glyph::chevronRight };
     IconButton undoButton { IconButton::Glyph::undo };
@@ -512,6 +530,14 @@ private:
     void pollUndoHistory();
     void restoreUndoState (const juce::XmlElement& target);
     CpuPill cpuPill;
+    TempPill tempPill;
+    bool wifiConnected = false, bluetoothConnected = false;
+    int connectionPollCounter = 0;
+    void openWifiCard();
+    void openBluetoothCard();
+    static bool readWifiConnected();
+    static bool readBluetoothConnected();
+    int tempPollCounter = 0;
     /** The retry action shown while no audio device is open -- see timerCallback()/resized(). */
     juce::TextButton retryAudioButton { "Retry" };
 

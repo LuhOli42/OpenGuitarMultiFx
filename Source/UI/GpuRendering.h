@@ -4,6 +4,9 @@
 #include <juce_opengl/juce_opengl.h>
 
 #include <atomic>
+#include <cxxabi.h>
+#include <cstdlib>
+#include <typeinfo>
 
 namespace openguitarmultifx
 {
@@ -16,6 +19,42 @@ namespace openguitarmultifx
     software rasteriser (llvmpipe/softpipe), the app logs it and quits with an error, so a CPU-drawn UI is never
     mistaken for the GPU one. OGMFX_GL=0 runs on the CPU renderer on purpose (desktop debugging, a broken driver).
 */
+/** Writes every press and release the app really receives to the log: where, and which component took it. When a part of
+    the screen stops answering, the log says whether the click never reached the app (X level: nothing is logged) or
+    reached the wrong component (the class name shows which). One short line per press/release. */
+class MouseEventLog : private juce::MouseListener
+{
+public:
+    MouseEventLog() { juce::Desktop::getInstance().addGlobalMouseListener (this); }
+    ~MouseEventLog() override { juce::Desktop::getInstance().removeGlobalMouseListener (this); }
+
+private:
+    static juce::String nameOf (const juce::Component* c)
+    {
+        if (c == nullptr)
+            return "none";
+        int status = 0;
+        char* demangled = abi::__cxa_demangle (typeid (*c).name(), nullptr, nullptr, &status);
+        juce::String name (demangled != nullptr ? demangled : typeid (*c).name());
+        std::free (demangled);
+        return name.fromLastOccurrenceOf ("::", false, false);
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const auto screen = e.getScreenPosition();
+        juce::Logger::writeToLog ("Mouse down (" + juce::String (screen.x) + "," + juce::String (screen.y) + ") on "
+                                  + nameOf (e.originalComponent) + " <- " + nameOf (e.eventComponent));
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        juce::Logger::writeToLog ("Mouse up   (" + juce::String (e.getScreenPosition().x) + "," + juce::String (e.getScreenPosition().y)
+                                  + ") moved " + juce::String ((int) e.getDistanceFromDragStart()) + " px in "
+                                  + juce::String ((int) e.getLengthOfMousePress()) + " ms on " + nameOf (e.originalComponent));
+    }
+};
+
 class GpuRendering : private juce::OpenGLRenderer,
                      private juce::Timer
 {
@@ -27,6 +66,7 @@ public:
             juce::Logger::writeToLog ("GPU rendering: off (OGMFX_GL=0)");
             return;
         }
+        mouseLog = std::make_unique<MouseEventLog>();
         context.setRenderer (this);
         context.setComponentPaintingEnabled (true);
         context.setContinuousRepainting (false);
@@ -105,6 +145,7 @@ private:
     }
 
     enum Status { pending, onGpu, softwareRenderer };
+    std::unique_ptr<MouseEventLog> mouseLog;
     juce::OpenGLContext context;
     std::atomic<int> status { pending };
     double lastFrameMs = 0.0, windowStartMs = 0.0, worstGapMs = 0.0, activeMs = 0.0; // render thread only

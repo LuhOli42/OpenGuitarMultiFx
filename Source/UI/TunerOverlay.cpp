@@ -304,8 +304,16 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
     // so the glow grows tick by tick smoothly instead of jumping a whole tick at a time.
     const float sweepTicks = active ? std::abs (cents) / 2.5f : 0.0f;
 
+    drawStaticLayer (g, bounds, false); // unlit ticks + labels, drawn once
+
     for (int i = 0; i <= 40; ++i)
     {
+        if (i == 20)
+            continue; // the centre tick is part of the static layer
+        const int offCheck = i - 20;
+        const bool sideCheck = cents < 0.0f ? offCheck < 0 : offCheck > 0;
+        if (! active || ! sideCheck || sweepTicks - (float) (std::abs (offCheck) - 1) <= 0.0f)
+            continue; // an unlit tick is already in the static layer
         const float deg = -60.0f + (float) i * 3.0f;
         const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
         const auto p0 = juce::Point<float> (cx + r0 * std::cos (a), cy + r0 * std::sin (a));
@@ -353,6 +361,30 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
         g.drawLine ({ base, tip }, 5.0f);
     }
 
+}
+
+void TunerOverlay::paintNeedleStatic (juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    const auto& t = theme::current();
+    const float r0 = bounds.getHeight() * 0.40f;
+    const float r1 = bounds.getHeight() * 0.84f;
+    const float cy = bounds.getBottom() - bounds.getHeight() * 0.06f;
+    const float cx = bounds.getCentreX();
+
+    for (int i = 0; i <= 40; ++i)
+    {
+        const float deg = -60.0f + (float) i * 3.0f;
+        const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
+        const auto p0 = juce::Point<float> (cx + r0 * std::cos (a), cy + r0 * std::sin (a));
+        const auto p1 = juce::Point<float> (cx + r1 * std::cos (a), cy + r1 * std::sin (a));
+        const bool centre = i == 20;
+        const bool major = (i % 4) == 0;
+        const auto q0 = centre ? p0.withY (p0.y - 14.0f) : p0;
+        const auto q1 = centre ? p1.withY (p1.y + 14.0f) : (major ? p1 : p0 + (p1 - p0) * 0.66f);
+        g.setColour ((centre ? inTuneColour : t.raisedHigh).withAlpha (centre ? 1.0f : 0.85f));
+        g.drawLine ({ q0, q1 }, centre ? 10.0f : 7.0f);
+    }
+
     g.setFont (juce::FontOptions (14.0f));
     g.setColour (t.textDim);
     for (int label = -2; label <= 2; ++label)
@@ -369,6 +401,44 @@ void TunerOverlay::paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> b
     }
 }
 
+void TunerOverlay::paintStrobeStatic (juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    const auto& t = theme::current();
+    const float cx = bounds.getCentreX();
+    const float cy = bounds.getCentreY();
+    const float r0 = bounds.getHeight() * 0.33f;
+    const float r1 = bounds.getHeight() * 0.46f;
+    g.setColour (t.raisedHigh.withAlpha (0.85f));
+    for (int i = 0; i < 72; ++i)
+    {
+        const auto a = juce::MathConstants<float>::pi * ((float) i * 5.0f - 90.0f) / 180.0f;
+        g.drawLine ({ cx + r0 * std::cos (a), cy + r0 * std::sin (a), cx + r1 * std::cos (a), cy + r1 * std::sin (a) }, 9.0f);
+    }
+}
+
+void TunerOverlay::drawStaticLayer (juce::Graphics& g, juce::Rectangle<float> bounds, bool strobe)
+{
+    const auto& t = theme::current();
+    const auto layerBounds = bounds.expanded (32.0f).getSmallestIntegerContainer();
+    const juce::uint32 key = t.raisedHigh.getARGB() * 31u ^ t.textDim.getARGB();
+    if (staticLayer.isNull() || layerBounds != staticLayerBounds || strobe != staticLayerStrobe || key != staticLayerThemeKey)
+    {
+        constexpr float scale = 2.0f; // twice the logical size, so it stays sharp under the app's UI scale
+        staticLayer = juce::Image (juce::Image::ARGB, juce::jmax (1, (int) (layerBounds.getWidth() * scale)),
+                                   juce::jmax (1, (int) (layerBounds.getHeight() * scale)), true);
+        juce::Graphics lg (staticLayer);
+        lg.addTransform (juce::AffineTransform::translation ((float) -layerBounds.getX(), (float) -layerBounds.getY()).scaled (scale));
+        if (strobe)
+            paintStrobeStatic (lg, bounds);
+        else
+            paintNeedleStatic (lg, bounds);
+        staticLayerBounds = layerBounds;
+        staticLayerStrobe = strobe;
+        staticLayerThemeKey = key;
+    }
+    g.drawImage (staticLayer, layerBounds.toFloat());
+}
+
 void TunerOverlay::paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> bounds)
 {
     const auto& t = theme::current();
@@ -381,20 +451,22 @@ void TunerOverlay::paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> b
     // and stand still when the note is in tune. `stripePhaseDeg` is advanced every frame by the timer, so the ring keeps
     // moving smoothly between detector updates.
     const bool inTune = active && std::abs (cents) <= inTuneCents;
+    drawStaticLayer (g, bounds, true); // the dark ring, drawn once
     constexpr int segments = 72;
     constexpr float bandDeg = 30.0f; // 6 lit bands, 6 dark
-    for (int i = 0; i < segments; ++i)
+    if (active && ! inTune)
     {
-        const float deg = (float) i * (360.0f / segments);
-        const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
-        const auto p0 = juce::Point<float> (cx + r0 * std::cos (a), cy + r0 * std::sin (a));
-        const auto p1 = juce::Point<float> (cx + r1 * std::cos (a), cy + r1 * std::sin (a));
-
-        const float band = std::fmod (deg - stripePhaseDeg + 720.0f, 2.0f * bandDeg);
-        const bool litBand = active && ! inTune && band < bandDeg;
         const float fade = juce::jlimit (0.0f, 1.0f, std::abs (cents) / 12.0f); // faint when nearly in tune
-        g.setColour (litBand ? t.raisedHigh.interpolatedWith (flatColour, fade) : t.raisedHigh.withAlpha (0.85f));
-        g.drawLine ({ p0, p1 }, 9.0f);
+        g.setColour (t.raisedHigh.interpolatedWith (flatColour, fade));
+        for (int i = 0; i < segments; ++i)
+        {
+            const float deg = (float) i * (360.0f / segments);
+            const float band = std::fmod (deg - stripePhaseDeg + 720.0f, 2.0f * bandDeg);
+            if (band >= bandDeg)
+                continue; // a dark band: the static ring already shows it
+            const auto a = juce::MathConstants<float>::pi * (deg - 90.0f) / 180.0f;
+            g.drawLine ({ cx + r0 * std::cos (a), cy + r0 * std::sin (a), cx + r1 * std::cos (a), cy + r1 * std::sin (a) }, 9.0f);
+        }
     }
 
     // fixed top marker: the "zero" the wedge settles under when the note locks

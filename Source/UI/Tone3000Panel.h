@@ -73,6 +73,8 @@ public:
     /** Performance mode toggle (Audio page): MainComponent applies it to the engine, saves it and rebuilds the graph. */
     std::function<void (bool)> onPerformanceModeChanged;
     std::function<void (bool)> onSendModeChanged;
+    /** Settings > Connections: open the Wi-Fi / Bluetooth cards (the top bar only shows their connected state). */
+    std::function<void()> onOpenWifi, onOpenBluetooth;
     void setSendMode (bool enabled);
     void setPerformanceMode (bool enabled);
 
@@ -113,9 +115,9 @@ private:
     juce::Viewport viewport;
     juce::Component content;
 
-    enum class Section { appearance, audio, quality, tone3000, midi, expression, updates, about };
+    enum class Section { appearance, audio, connections, quality, tone3000, midi, expression, updates, about };
     Section currentSection = Section::appearance;
-    juce::Component appearancePage, audioPage, qualityPage, tone3000Page, midiPage, expressionPage, updatesPage, aboutPage;
+    juce::Component appearancePage, audioPage, connectionsPage, qualityPage, tone3000Page, midiPage, expressionPage, updatesPage, aboutPage;
     juce::OwnedArray<juce::Component> navButtons;
     juce::OwnedArray<juce::Component> themeCards;
     juce::Rectangle<int> navRailBounds;
@@ -154,6 +156,9 @@ private:
     juce::Label sendSectionLabel { {}, "Parallel delay/reverb send" };
     juce::Label sendHintLabel;
     juce::TextButton sendButton { "Off" };
+    juce::Label connectionsSectionLabel { {}, "Wi-Fi and Bluetooth" };
+    juce::Label connectionsHintLabel;
+    juce::TextButton wifiOpenButton { "Wi-Fi" }, bluetoothOpenButton { "Bluetooth" };
     juce::OwnedArray<juce::TextButton> bufferButtons;
     juce::Array<int> bufferValues;
     int currentBuffer = 0;

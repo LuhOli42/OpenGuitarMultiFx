@@ -50,6 +50,17 @@ private:
     void paintNeedleMeter (juce::Graphics& g, juce::Rectangle<float> bounds);
     void paintStrobeMeter (juce::Graphics& g, juce::Rectangle<float> bounds);
 
+    // What never changes between frames (the unlit ticks / ring and the cent labels) is drawn ONCE into an image and
+    // that image is drawn every frame; only the lit ticks, the needle and the markers are drawn live. Roughly 100 line
+    // strokes and text per frame were what made the tuner stutter on the board.
+    void paintNeedleStatic (juce::Graphics& g, juce::Rectangle<float> bounds);
+    void paintStrobeStatic (juce::Graphics& g, juce::Rectangle<float> bounds);
+    void drawStaticLayer (juce::Graphics& g, juce::Rectangle<float> bounds, bool strobe);
+    juce::Image staticLayer;
+    juce::Rectangle<int> staticLayerBounds;
+    bool staticLayerStrobe = false;
+    juce::uint32 staticLayerThemeKey = 0;
+
     juce::Label titleLabel, referenceLabel;
     overlaychrome::CloseButton closeButton;
     overlaychrome::ActionButton muteButton, midiButton, needleButton, strobeButton;

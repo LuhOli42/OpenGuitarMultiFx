@@ -30,6 +30,10 @@ patch_file("${m}/juce_opengl.cpp"
   " #include \"native/juce_OpenGL_linux.h\"\n"
   " #if JUCE_OPENGL_LINUX_EGL\n  #include \"native/juce_OpenGL_linux_egl.h\"\n #else\n  #include \"native/juce_OpenGL_linux.h\"\n #endif\n")
 
+patch_file("${m}/juce_opengl.cpp"
+  " #if JUCE_OPENGL_LINUX_EGL\n  #include <EGL/egl.h>\n #else"
+  " #if JUCE_OPENGL_LINUX_EGL\n  #include <EGL/egl.h>\n  #include <dlfcn.h>\n #else")
+
 patch_file("${m}/opengl/juce_OpenGLHelpers.cpp"
   "    return (void*) glXGetProcAddress ((const GLubyte*) functionName);\n"
   "   #if JUCE_OPENGL_LINUX_EGL\n    return (void*) eglGetProcAddress (functionName);\n   #else\n    return (void*) glXGetProcAddress ((const GLubyte*) functionName);\n   #endif\n")

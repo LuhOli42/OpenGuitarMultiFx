@@ -232,6 +232,7 @@ ParameterPanel::ParameterPanel()
     knobGridHost.addChildComponent (graphicEqPanel);
     addAndMakeVisible (knobViewport);
     knobViewport.setViewedComponent (&knobGridHost, false);
+    knobGridHost.setBufferedToImage (true); // the knobs' content is cached as a texture: scrolling the panel slides it, a turning knob repaints only itself
     touch::enableDragScroll (knobViewport);
     knobViewport.setScrollBarsShown (true, false);
 
@@ -520,6 +521,10 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
                                                            juce::Slider::NoTextBox);
             row.slider->setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
                                              juce::MathConstants<float>::pi * 2.75f, true);
+            // The knob panel is a finger-draggable Viewport (touch::enableDragScroll). Without this flag a drag that
+            // starts ON a knob also scrolls the panel under the finger, so the knob sees (almost) no movement and the
+            // value never changes. A drag on a knob turns it; a drag in the space between knobs scrolls the panel.
+            row.slider->setViewportIgnoreDragFlag (true);
             row.slider->setColour (accentColourId, effectAccent);
             row.slider->setColour (juce::Slider::rotarySliderFillColourId, effectAccent);
             row.slider->setColour (juce::Slider::thumbColourId, effectAccent);

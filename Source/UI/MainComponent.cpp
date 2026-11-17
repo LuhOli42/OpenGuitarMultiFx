@@ -176,6 +176,8 @@ MainComponent::MainComponent()
         presetBadge.setDisplayTypeface (laf->getExtraBoldTypeface());
 
     addAndMakeVisible (cpuPill);
+    tempPill.setVisible (readHottestZoneCelsius() > 0.0f); // desktops have no thermal zones
+    addChildComponent (tempPill);
 
     addAndMakeVisible (settingsButton);
     settingsButton.onClick = [this] { showSettingsPanel(); };
@@ -183,20 +185,16 @@ MainComponent::MainComponent()
     addAndMakeVisible (liveButton);
     liveButton.onClick = [this] { showLive(); };
 
+    // Wi-Fi / Bluetooth: the top bar only shows whether something is connected (small, not tappable); the screens that
+    // manage them live in Settings > Connections.
     addAndMakeVisible (wifiButton);
-    wifiButton.onClick = [this]
-    {
-        auto card = std::make_unique<WifiCard>();
-        card->onPopOverlay = [this] { overlayHost.popOverlay(); };
-        overlayHost.pushOverlay (std::move (card));
-    };
+    wifiButton.setStatusOnly (true);
     addAndMakeVisible (bluetoothButton);
-    bluetoothButton.onClick = [this]
-    {
-        auto card = std::make_unique<BluetoothCard>();
-        card->onPopOverlay = [this] { overlayHost.popOverlay(); };
-        overlayHost.pushOverlay (std::move (card));
-    };
+    bluetoothButton.setStatusOnly (true);
+    wifiConnected = readWifiConnected();
+    bluetoothConnected = readBluetoothConnected();
+    wifiButton.setLit (wifiConnected);
+    bluetoothButton.setLit (bluetoothConnected);
 
     addChildComponent (retryAudioButton);
     retryAudioButton.onClick = [this]
@@ -295,6 +293,15 @@ MainComponent::MainComponent()
     addAndMakeVisible (parameterPanel);
 
     addAndMakeVisible (footerBar);
+
+    // The UI is drawn on the GPU, which re-renders the whole component tree on every frame: ANY animation anywhere
+    // (the footer meters never stop) made the board redraw every row, label and icon of the chain and the knob panel
+    // 30-60 times a second, enough to saturate a little core and starve the touch queue. These big, mostly still
+    // regions are kept as textures instead: painted once, drawn as a few quads per frame, and re-painted only in the
+    // part that actually changes (a knob turning, a block lighting up). For the scrolling grid it is the CONTENT that is
+    // cached (chainContainer), not the viewport: a scroll then just slides a ready texture instead of invalidating it.
+    for (auto* region : std::initializer_list<juce::Component*> { &chainContainer, &snapshotBar, &presetBadge })
+        region->setBufferedToImage (true);
     footerBar.onTunerTapped = [this] { showTuner(); };
     footerBar.onTapLongPress = [this]
     {
@@ -1191,6 +1198,8 @@ void MainComponent::showSettingsPanel()
         sendModeFile().replaceWithText (enabled ? "on" : "off");
         rebuildSignalGraph();
     };
+    panel->onOpenWifi = [this] { openWifiCard(); };
+    panel->onOpenBluetooth = [this] { openBluetoothCard(); };
     panel->onRetryDevice = [this, rawPanel]
     {
         const auto err = audioEngine.retryDevice();
@@ -3293,6 +3302,19 @@ void MainComponent::timerCallback()
     }
 
     cpuPill.setCpu (audioDeviceOk ? (float) audioEngine.getCurrentCpuUsage() : 0.0f, audioDeviceOk);
+    if (++connectionPollCounter >= 40) // every ~2 s, two cheap sysfs reads (no process is started)
+    {
+        connectionPollCounter = 0;
+        wifiConnected = readWifiConnected();
+        bluetoothConnected = readBluetoothConnected();
+        wifiButton.setLit (wifiConnected);
+        bluetoothButton.setLit (bluetoothConnected);
+    }
+    if (tempPill.isVisible() && ++tempPollCounter >= 20) // every ~1 s: a sysfs read, nothing to hurry
+    {
+        tempPollCounter = 0;
+        tempPill.setCelsius (readHottestZoneCelsius());
+    }
 
     footerBar.setLevels (audioEngine.getInputLevel(), audioEngine.getOutputLevel());
 
@@ -3374,17 +3396,22 @@ void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted
     const auto& t = theme::current();
     const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
 
-    g.setColour (down ? t.raisedHigh : t.raised);
-    g.fillRoundedRectangle (bounds, t.smallRadius);
-    g.setColour (t.line);
-    g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
-    if (highlighted && isEnabled())
+    if (! statusOnly)
     {
-        g.setColour (t.lineStrong.withAlpha (0.6f));
-        g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 1.0f);
+        g.setColour (down ? t.raisedHigh : t.raised);
+        g.fillRoundedRectangle (bounds, t.smallRadius);
+        g.setColour (t.line);
+        g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
+        if (highlighted && isEnabled())
+        {
+            g.setColour (t.lineStrong.withAlpha (0.6f));
+            g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 1.0f);
+        }
     }
 
     juce::Colour ink = (glyph == Glyph::chevronLeft || glyph == Glyph::chevronRight) ? t.textMuted : t.text;
+    if (statusOnly)
+        ink = lit ? OpenGuitarMultiFxLookAndFeel::getAppAccentColour() : t.textDim.withAlpha (0.55f);
     if (! isEnabled())
         ink = ink.withAlpha (0.45f);
     g.setColour (ink);
@@ -3516,6 +3543,90 @@ void MainComponent::CpuPill::paint (juce::Graphics& g)
     g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * cpu), 1.5f);
 }
 
+void MainComponent::openWifiCard()
+{
+    auto card = std::make_unique<WifiCard>();
+    card->onPopOverlay = [this] { overlayHost.popOverlay(); };
+    overlayHost.pushOverlay (std::move (card));
+}
+
+void MainComponent::openBluetoothCard()
+{
+    auto card = std::make_unique<BluetoothCard>();
+    card->onPopOverlay = [this] { overlayHost.popOverlay(); };
+    overlayHost.pushOverlay (std::move (card));
+}
+
+bool MainComponent::readWifiConnected()
+{
+   #if JUCE_LINUX
+    // A wireless interface whose link is up (associated to an access point).
+    for (const auto& iface : juce::File ("/sys/class/net").findChildFiles (juce::File::findDirectories, false))
+        if (iface.getChildFile ("wireless").isDirectory() && iface.getChildFile ("operstate").loadFileAsString().trim() == "up")
+            return true;
+   #endif
+    return false;
+}
+
+bool MainComponent::readBluetoothConnected()
+{
+   #if JUCE_LINUX
+    // BlueZ exposes every live connection as /sys/class/bluetooth/hciN:<handle>.
+    for (const auto& entry : juce::File ("/sys/class/bluetooth").findChildFiles (juce::File::findFilesAndDirectories, false))
+        if (entry.getFileName().containsChar (':'))
+            return true;
+   #endif
+    return false;
+}
+
+float MainComponent::readHottestZoneCelsius()
+{
+    float hottest = 0.0f;
+   #if JUCE_LINUX
+    for (int zone = 0; zone < 8; ++zone)
+    {
+        const juce::File f ("/sys/class/thermal/thermal_zone" + juce::String (zone) + "/temp");
+        if (f.existsAsFile())
+            hottest = juce::jmax (hottest, (float) f.loadFileAsString().trim().getIntValue() / 1000.0f);
+    }
+   #endif
+    return hottest;
+}
+
+void MainComponent::TempPill::setCelsius (float c)
+{
+    if (std::abs (c - celsius) < 0.5f)
+        return;
+    celsius = c;
+    repaint();
+}
+
+void MainComponent::TempPill::paint (juce::Graphics& g)
+{
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.line);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
+
+    const auto colour = celsius >= 95.0f ? juce::Colour (0xffff4d6a) : celsius >= 85.0f ? juce::Colour (0xffffb020) : juce::Colour (0xff3bd68a);
+    auto textArea = bounds.reduced (12.0f, 10.0f);
+    g.setColour (t.textMuted);
+    g.setFont (juce::FontOptions (10.0f));
+    g.drawText ("TEMP", textArea.removeFromLeft (34.0f).toNearestInt(), juce::Justification::centredLeft);
+    g.setColour (celsius >= 85.0f ? colour : t.text);
+    g.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+    g.drawText (juce::String (juce::roundToInt (celsius)) + juce::String (juce::CharPointer_UTF8 ("\xc2\xb0")), textArea.toNearestInt(),
+                juce::Justification::centredLeft);
+
+    const auto bar = juce::Rectangle<float> (bounds.getX() + 12.0f, bounds.getBottom() - 11.0f, bounds.getWidth() - 24.0f, 3.0f);
+    g.setColour (t.raisedHigh);
+    g.fillRoundedRectangle (bar, 1.5f);
+    g.setColour (colour);
+    g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, (celsius - 40.0f) / 65.0f)), 1.5f); // 40..105 C
+}
+
 void MainComponent::GearButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     const auto& t = theme::current();
@@ -3579,11 +3690,20 @@ void MainComponent::resized()
     };
     placeRight (settingsButton, touch::minTapTarget, touch::minTapTarget);
     placeRight (cpuPill, 108, 52);
+    if (tempPill.isVisible())
+        placeRight (tempPill, 108, 52);
     if (retryAudioButton.isVisible())
         placeRight (retryAudioButton, 72, touch::minTapTarget);
     placeRight (liveButton, touch::minTapTarget, touch::minTapTarget);
-    placeRight (bluetoothButton, touch::minTapTarget, touch::minTapTarget);
-    placeRight (wifiButton, touch::minTapTarget, touch::minTapTarget);
+    {
+        // The two status icons share one narrow column, Wi-Fi above Bluetooth.
+        constexpr int iconSize = 24, iconGap = 4, columnWidth = 26;
+        rightX -= columnWidth;
+        const int columnTop = topY + (controlH - (2 * iconSize + iconGap)) / 2;
+        wifiButton.setBounds (rightX + (columnWidth - iconSize) / 2, columnTop, iconSize, iconSize);
+        bluetoothButton.setBounds (rightX + (columnWidth - iconSize) / 2, columnTop + iconSize + iconGap, iconSize, iconSize);
+        rightX -= 12;
+    }
     placeRight (redoButton, touch::minTapTarget, touch::minTapTarget);
     placeRight (undoButton, touch::minTapTarget, touch::minTapTarget);
 
