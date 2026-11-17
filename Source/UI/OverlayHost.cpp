@@ -25,6 +25,7 @@ void OverlayHost::pushOverlay (std::unique_ptr<juce::Component> content)
     layers.push_back (std::move (content));
 
     setInterceptsMouseClicks (true, true);
+    overlayCoversApp().store (true, std::memory_order_relaxed);
     setVisible (true);
     toFront (false);
     layOutTop();
@@ -89,6 +90,7 @@ void OverlayHost::popOverlay()
 
     if (layers.empty())
     {
+        overlayCoversApp().store (false, std::memory_order_relaxed);
         setInterceptsMouseClicks (false, false); // still painting the fading scrim, but taps go to the app underneath
         lastFrameMs = 0.0;
         startTimerHz (60);

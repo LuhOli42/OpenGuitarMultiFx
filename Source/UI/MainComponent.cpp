@@ -452,9 +452,30 @@ MainComponent::~MainComponent()
     audioEngine.stop(); // must happen before chain's processors are destroyed by the member destructors below
 }
 
-void MainComponent::addEffect (const juce::String& registryName, int targetGridSlot, int cabSelection)
+void MainComponent::addEffectAsync (const juce::String& registryName, int targetGridSlot, int cabSelection)
 {
-    auto processor = registry.create (registryName);
+    addEffectPool.addJob ([this, registryName, targetGridSlot, cabSelection, alive = aliveFlag]
+    {
+        auto processor = registry.create (registryName);
+        if (processor == nullptr)
+            return;
+        const auto sampleRate = audioEngine.getCurrentSampleRate();
+        const auto blockSize = audioEngine.getCurrentBlockSize();
+        if (sampleRate > 0.0 && blockSize > 0)
+            processor->prepareIfNeeded (sampleRate, blockSize, 2); // the graph's own prepare then finds it ready
+        juce::MessageManager::callAsync ([this, registryName, targetGridSlot, cabSelection, alive,
+                                          p = std::make_shared<std::unique_ptr<EffectProcessor>> (std::move (processor))]
+        {
+            if (alive->load())
+                addEffect (registryName, targetGridSlot, cabSelection, std::move (*p));
+        });
+    });
+}
+
+void MainComponent::addEffect (const juce::String& registryName, int targetGridSlot, int cabSelection,
+                               std::unique_ptr<EffectProcessor> ready)
+{
+    auto processor = ready != nullptr ? std::move (ready) : registry.create (registryName);
     if (processor == nullptr)
         return;
 
@@ -1090,7 +1111,7 @@ void MainComponent::showAddEffectMenu (int targetGridSlot)
             if (overlayHost.topLayer() == browser.getComponent())
                 overlayHost.popOverlay();
 
-            addEffect (key, targetGridSlot, cabOn ? 1 : 0);
+            addEffectAsync (key, targetGridSlot, cabOn ? 1 : 0);
         });
     };
     dialog->onPopOverlay = [this, browser]

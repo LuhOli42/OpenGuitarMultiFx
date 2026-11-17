@@ -1,5 +1,6 @@
 #include "FooterBar.h"
 #include "Theme.h"
+#include "OverlayHost.h"
 #include <cmath>
 #include "OpenGuitarMultiFxLookAndFeel.h"
 
@@ -211,7 +212,8 @@ void FooterBar::timerCallback()
     outLevel = newOut;
     // Repaint only when a bar has moved by about 1.5 px: with nothing playing the footer costs no frames at all.
     const float pixels = juce::jmax (1.0f, inMeterBounds.getWidth());
-    if (std::abs (inLevel - inDrawn) * pixels >= 1.5f || std::abs (outLevel - outDrawn) * pixels >= 1.5f)
+    if (! overlayCoversApp().load (std::memory_order_relaxed)
+        && std::abs (inLevel - inDrawn) * pixels >= 1.5f || std::abs (outLevel - outDrawn) * pixels >= 1.5f)
     {
         inDrawn = inLevel;
         outDrawn = outLevel;

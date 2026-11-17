@@ -66,7 +66,9 @@ public:
             juce::Logger::writeToLog ("GPU rendering: off (OGMFX_GL=0)");
             return;
         }
-        mouseLog = std::make_unique<MouseEventLog>();
+        // One log line per touch is a disk write on the UI thread (an SD card on the board): opt-in only.
+        if (juce::SystemStats::getEnvironmentVariable ("OGMFX_LOG_MOUSE", {}).isNotEmpty())
+            mouseLog = std::make_unique<MouseEventLog>();
         context.setRenderer (this);
         context.setComponentPaintingEnabled (true);
         context.setContinuousRepainting (false);
