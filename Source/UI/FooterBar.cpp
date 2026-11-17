@@ -75,6 +75,8 @@ FooterBar::FooterBar()
         g.strokePath (curve, juce::PathStrokeType (2.5f));
     };
 
+    for (auto* b : { &tunerButton, &eqButton, &tapButton })
+        b->setBufferedToImage (true); // static cells: one texture each, re-rendered only when their text changes
     addAndMakeVisible (tapButton);
     tapButton.onClick = [this] { tapTempo(); };
     tapButton.onLongPress = [this] { if (onTapLongPress) onTapLongPress(); };
@@ -190,7 +192,7 @@ void FooterBar::setLevels (float inLevelIn, float outLevelIn)
     inTarget = juce::jlimit (0.0f, 1.0f, inLevelIn);
     outTarget = juce::jlimit (0.0f, 1.0f, outLevelIn);
     if (! isTimerRunning())
-        startTimerHz (60);
+        startTimerHz (30); // a level bar needs no more; every repaint is a GPU frame
 }
 
 void FooterBar::timerCallback()
@@ -205,11 +207,16 @@ void FooterBar::timerCallback()
         return shown + (1.0f - std::exp (-dt * rate)) * (target - shown);
     };
     const float newIn = ease (inLevel, inTarget), newOut = ease (outLevel, outTarget);
-    const bool moved = std::abs (newIn - inLevel) > 0.0005f || std::abs (newOut - outLevel) > 0.0005f;
     inLevel = newIn;
     outLevel = newOut;
-    if (moved)
+    // Repaint only when a bar has moved by about 1.5 px: with nothing playing the footer costs no frames at all.
+    const float pixels = juce::jmax (1.0f, inMeterBounds.getWidth());
+    if (std::abs (inLevel - inDrawn) * pixels >= 1.5f || std::abs (outLevel - outDrawn) * pixels >= 1.5f)
+    {
+        inDrawn = inLevel;
+        outDrawn = outLevel;
         repaint (inMeterBounds.getUnion (outMeterBounds).expanded (4.0f).getSmallestIntegerContainer());
+    }
 }
 
 void FooterBar::resized()

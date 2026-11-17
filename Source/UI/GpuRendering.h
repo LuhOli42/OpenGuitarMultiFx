@@ -116,9 +116,11 @@ private:
 
         if (now - windowStartMs > 10000.0)
         {
-            if (windowStartMs > 0.0 && activeMs > 500.0)
-                juce::Logger::writeToLog ("GPU frames: " + juce::String (activeMs > 0.0 ? 1000.0 * (double) frames / activeMs : 0.0, 1)
-                                          + " fps while moving, worst gap " + juce::String (worstGapMs, 0) + " ms, "
+            // every window with at least one frame, idle ones included: "3 frames in 10 s" is a screen that stays still
+            if (windowStartMs > 0.0 && frames > 0)
+                juce::Logger::writeToLog ("GPU frames: " + juce::String (frames) + " in 10 s ("
+                                          + juce::String (activeMs > 500.0 ? 1000.0 * (double) frames / activeMs : 0.0, 1)
+                                          + " fps while moving), worst gap " + juce::String (worstGapMs, 0) + " ms, "
                                           + juce::String (slowFrames) + " frame(s) over 25 ms");
             windowStartMs = now;
             frames = 0;

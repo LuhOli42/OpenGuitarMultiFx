@@ -75,6 +75,9 @@ public:
     std::function<void (bool)> onSendModeChanged;
     /** Settings > Connections: open the Wi-Fi / Bluetooth cards (the top bar only shows their connected state). */
     std::function<void()> onOpenWifi, onOpenBluetooth;
+    /** Settings > Audio > System monitor: show / hide the live panel (core clocks and busy-%, GPU busy-%, temperature). */
+    std::function<void (bool)> onSystemMonitorChanged;
+    void setSystemMonitor (bool shown);
     void setSendMode (bool enabled);
     void setPerformanceMode (bool enabled);
 
@@ -159,6 +162,9 @@ private:
     juce::Label connectionsSectionLabel { {}, "Wi-Fi and Bluetooth" };
     juce::Label connectionsHintLabel;
     juce::TextButton wifiOpenButton { "Wi-Fi" }, bluetoothOpenButton { "Bluetooth" };
+    juce::Label monitorSectionLabel { {}, "System monitor" };
+    juce::Label monitorHintLabel;
+    juce::TextButton monitorButton { "Off" };
     juce::OwnedArray<juce::TextButton> bufferButtons;
     juce::Array<int> bufferValues;
     int currentBuffer = 0;

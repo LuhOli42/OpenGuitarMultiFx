@@ -33,6 +33,11 @@ namespace
                    .getChildFile ("performance_mode.txt");
     }
 
+    juce::File systemMonitorFile_()
+    {
+        return performanceModeFile().getSiblingFile ("system_monitor.txt");
+    }
+
     juce::File sendModeFile()
     {
         return performanceModeFile().getSiblingFile ("send_mode.txt");
@@ -179,6 +184,16 @@ MainComponent::MainComponent()
     tempPill.setVisible (readHottestZoneCelsius() > 0.0f); // desktops have no thermal zones
     addChildComponent (tempPill);
 
+    // Live clocks / busy-% of the slow cores, fast cores and GPU, drawn over the UI. Off until asked for: Settings > Audio >
+    // System monitor, or a tap on the TEMP pill (remembered in system_monitor.txt).
+    tempPill.onTap = [this] { setSystemMonitorShown (! systemMonitor.isVisible()); };
+    addChildComponent (systemMonitor);
+    {
+        const auto saved = systemMonitorFile().existsAsFile() ? systemMonitorFile().loadFileAsString().trim() : juce::String ("off");
+        if (tempPill.isVisible() && saved == "on") // only where there are thermal zones (the board)
+            systemMonitor.setRunning (true);
+    }
+
     addAndMakeVisible (settingsButton);
     settingsButton.onClick = [this] { showSettingsPanel(); };
 
@@ -300,7 +315,10 @@ MainComponent::MainComponent()
     // regions are kept as textures instead: painted once, drawn as a few quads per frame, and re-painted only in the
     // part that actually changes (a knob turning, a block lighting up). For the scrolling grid it is the CONTENT that is
     // cached (chainContainer), not the viewport: a scroll then just slides a ready texture instead of invalidating it.
-    for (auto* region : std::initializer_list<juce::Component*> { &chainContainer, &snapshotBar, &presetBadge })
+    for (auto* region : std::initializer_list<juce::Component*> { &chainContainer, &snapshotBar, &presetBadge,
+                                                                  &presetPrevButton, &presetNextButton, &undoButton, &redoButton,
+                                                                  &liveButton, &settingsButton, &wifiButton, &bluetoothButton,
+                                                                  &cpuPill, &tempPill })
         region->setBufferedToImage (true);
     footerBar.onTunerTapped = [this] { showTuner(); };
     footerBar.onTapLongPress = [this]
@@ -1198,6 +1216,8 @@ void MainComponent::showSettingsPanel()
         sendModeFile().replaceWithText (enabled ? "on" : "off");
         rebuildSignalGraph();
     };
+    panel->setSystemMonitor (systemMonitor.isVisible());
+    panel->onSystemMonitorChanged = [this] (bool shown) { setSystemMonitorShown (shown); };
     panel->onOpenWifi = [this] { openWifiCard(); };
     panel->onOpenBluetooth = [this] { openBluetoothCard(); };
     panel->onRetryDevice = [this, rawPanel]
@@ -3499,9 +3519,15 @@ void MainComponent::CpuPill::timerCallback()
     const float next = cpu + (1.0f - std::exp (-dt * 9.0f)) * (target - cpu);
     const bool moved = std::abs (next - cpu) > 0.0004f;
     cpu = std::abs (target - next) < 0.0004f ? target : next;
-    if (moved)
+    // A frame only when what is drawn actually changes: the whole-number % or the bar's width in pixels.
+    const int percent = juce::roundToInt (cpu * 100.0f), barPx = juce::roundToInt (cpu * (float) juce::jmax (1, getWidth() - 24));
+    if (percent != shownPercent || barPx != shownBarPx)
+    {
+        shownPercent = percent;
+        shownBarPx = barPx;
         repaint();
-    else
+    }
+    if (! moved)
     {
         stopTimer();
         lastFrameMs = 0.0;
@@ -3577,6 +3603,16 @@ bool MainComponent::readBluetoothConnected()
             return true;
    #endif
     return false;
+}
+
+juce::File MainComponent::systemMonitorFile() { return systemMonitorFile_(); }
+
+void MainComponent::setSystemMonitorShown (bool shown)
+{
+    systemMonitor.setRunning (shown);
+    systemMonitorFile().getParentDirectory().createDirectory();
+    systemMonitorFile().replaceWithText (shown ? "on" : "off");
+    resized();
 }
 
 float MainComponent::readHottestZoneCelsius()
@@ -3689,6 +3725,9 @@ void MainComponent::resized()
         rightX -= 12;
     };
     placeRight (settingsButton, touch::minTapTarget, touch::minTapTarget);
+    systemMonitor.setBounds (juce::Rectangle<int> (getWidth() - gridSide - SystemMonitor::preferredWidth,
+                                                   topY + controlH + 14, SystemMonitor::preferredWidth, SystemMonitor::preferredHeight));
+    systemMonitor.toFront (false);
     placeRight (cpuPill, 108, 52);
     if (tempPill.isVisible())
         placeRight (tempPill, 108, 52);

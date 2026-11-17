@@ -239,6 +239,22 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
                            "the dry signal stays instant and only the echoes/tail arrive about 5 ms late. Ignored while Performance mode is on.",
                            juce::dontSendNotification);
 
+    audioPage.addAndMakeVisible (monitorSectionLabel);
+    monitorSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
+    audioPage.addAndMakeVisible (monitorButton);
+    monitorButton.setClickingTogglesState (true);
+    monitorButton.onClick = [this]
+    {
+        monitorButton.setButtonText (monitorButton.getToggleState() ? "On" : "Off");
+        if (onSystemMonitorChanged)
+            onSystemMonitorChanged (monitorButton.getToggleState());
+    };
+    audioPage.addAndMakeVisible (monitorHintLabel);
+    monitorHintLabel.setFont (juce::Font (14.0f));
+    monitorHintLabel.setText ("A live panel over the screen: clock and busy-% of the slow cores (interface) and the fast cores "
+                              "(audio), the GPU's busy-%, and the temperature. Tap the TEMP pill in the top bar to hide it too.",
+                              juce::dontSendNotification);
+
     connectionsPage.addAndMakeVisible (connectionsSectionLabel);
     connectionsSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
     connectionsPage.addAndMakeVisible (wifiOpenButton);
@@ -396,6 +412,12 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
     resized();
 }
 
+void Tone3000Panel::setSystemMonitor (bool shown)
+{
+    monitorButton.setToggleState (shown, juce::dontSendNotification);
+    monitorButton.setButtonText (shown ? "On" : "Off");
+}
+
 void Tone3000Panel::setSendMode (bool enabled)
 {
     sendButton.setToggleState (enabled, juce::dontSendNotification);
@@ -548,7 +570,7 @@ void Tone3000Panel::applyLabelColours()
     const auto& t = theme::current();
     const auto muted = [this, &t] (juce::Label& label) { label.setColour (juce::Label::textColourId, t.textMuted); };
 
-    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &connectionsHintLabel, &statusLabel,
+    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &monitorHintLabel, &connectionsHintLabel, &statusLabel,
                                 &updateStatusLabel, &expressionHintLabel, &aboutDetailsLabel, &interfaceLabel,
                                 &currentVersionLabel, &clientIdLabel })
         muted (*label);
@@ -794,6 +816,12 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
             sendButton.setBounds (area.removeFromTop (touch::minTapTarget).removeFromLeft (110));
             area.removeFromTop (6);
             sendHintLabel.setBounds (area.removeFromTop (60));
+            area.removeFromTop (14);
+            monitorSectionLabel.setBounds (area.removeFromTop (26));
+            area.removeFromTop (6);
+            monitorButton.setBounds (area.removeFromTop (touch::minTapTarget).removeFromLeft (110));
+            area.removeFromTop (6);
+            monitorHintLabel.setBounds (area.removeFromTop (60));
             break;
         }
         case Section::connections:
