@@ -1,5 +1,6 @@
 #include "FooterBar.h"
 #include "Theme.h"
+#include "ThermalEconomy.h"
 #include <cmath>
 #include "OpenGuitarMultiFxLookAndFeel.h"
 
@@ -197,6 +198,8 @@ void FooterBar::setLevels (float inLevelIn, float outLevelIn)
 
 void FooterBar::timerCallback()
 {
+    if (thermal::economy().load (std::memory_order_relaxed) && (economyTick++ & 1) != 0)
+        return; // hot: the meters draw every other frame
     const double now = juce::Time::getMillisecondCounterHiRes();
     const float dt = lastFrameMs > 0.0 ? juce::jlimit (0.004f, 0.1f, (float) ((now - lastFrameMs) * 0.001)) : 1.0f / 60.0f;
     lastFrameMs = now;

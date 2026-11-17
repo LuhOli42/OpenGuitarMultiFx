@@ -3344,7 +3344,9 @@ void MainComponent::timerCallback()
     if (tempPill.isVisible() && ++tempPollCounter >= 20) // every ~1 s: a sysfs read, nothing to hurry
     {
         tempPollCounter = 0;
-        tempPill.setCelsius (readHottestZoneCelsius());
+        const float hottestNow = readHottestZoneCelsius();
+        tempPill.setCelsius (hottestNow);
+        thermal::update (hottestNow);
     }
 
     footerBar.setLevels (audioEngine.getInputLevel(), audioEngine.getOutputLevel());

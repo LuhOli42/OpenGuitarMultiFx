@@ -5,6 +5,8 @@
 #include "Theme.h"
 #include "TouchSizing.h"
 
+#include "ThermalEconomy.h"
+
 #include <cmath>
 
 namespace openguitarmultifx
@@ -519,7 +521,8 @@ void TunerOverlay::timerCallback()
     // The strobe ring turns at a speed proportional to how far off the note is, and stands still when in tune.
     stripePhaseDeg = std::fmod (stripePhaseDeg + (active ? cents : 0.0f) * 9.0f * dt + 360.0f, 360.0f);
 
-    repaint (getLocalBounds().withTrimmedTop (76)); // the header never changes between frames
+    if (! thermal::economy().load (std::memory_order_relaxed) || (economyTick++ & 1) == 0) // hot: every other frame
+        repaint (getLocalBounds().withTrimmedTop (76)); // the header never changes between frames
 }
 
 } // namespace openguitarmultifx

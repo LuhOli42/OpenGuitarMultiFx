@@ -15,6 +15,7 @@
 #include "RawMidiInput.h"
 #include "BleMidiInput.h"
 #include "SystemMonitor.h"
+#include "ThermalEconomy.h"
 #include "NetworkCards.h"
 #include "SceneMidi.h"
 #include "SnapshotBar.h"

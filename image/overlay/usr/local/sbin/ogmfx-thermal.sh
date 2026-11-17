@@ -3,7 +3,6 @@
 # factory 60 C trips (those pin every core at 416 MHz the whole time, audible as crackles). The kernel's own
 # non-critical trips sit at 105 C; this loop caps BOTH clusters (big cpu6-7, little cpu0-5 -- the UI/GL thread runs
 # there) in steps as the hottest zone climbs, and releases one step at a time with 4 C of hysteresis.
-#   level 0 <96 C: full speed | 1 >=96: big 1.4 GHz | 2 >=100: big 1.0, little 1.2 | 3 >=104: both 780 MHz | 4 >=107: both 416 MHz
 set_trips() {
   for z in /sys/class/thermal/thermal_zone[0-6]; do
     for t in $z/trip_point_*_temp; do
@@ -30,12 +29,15 @@ cap() { # $1 big kHz, $2 little kHz (this thermal level's caps)
 }
 BIG=$(cat /sys/devices/system/cpu/cpu6/cpufreq/cpuinfo_max_freq)
 LIT=1014000 # little cores (UI / GL thread): ceiling 1.0 GHz -- they should run near their limit, not idle at 1.8 GHz
+# One die: the GPU, the little cores (the UI) and the fast cores (the audio) share the heat. The UI pays first, the audio last:
+#   level 1 >=94 C: little cores 780 MHz        | level 2 >=98: little 416, big 1.4 GHz
+#   level 3 >=102 C: little 416, big 1.0 GHz    | level 4 >=106: everything 416 MHz
 apply() {
   case $1 in
-    0) cap $BIG $LIT ;; 1) cap 1404000 $LIT ;; 2) cap 1014000 $LIT ;; 3) cap 780000 780000 ;; 4) cap 416000 416000 ;;
+    0) cap $BIG $LIT ;; 1) cap $BIG 780000 ;; 2) cap 1404000 416000 ;; 3) cap 1014000 416000 ;; 4) cap 416000 416000 ;;
   esac
 }
-up() { case $1 in 1) echo 96000;; 2) echo 100000;; 3) echo 104000;; 4) echo 107000;; esac; }
+up() { case $1 in 1) echo 94000;; 2) echo 98000;; 3) echo 102000;; 4) echo 106000;; esac; }
 level=0; apply 0; lastcfg=$(slow_cfg)
 while true; do
   set_trips

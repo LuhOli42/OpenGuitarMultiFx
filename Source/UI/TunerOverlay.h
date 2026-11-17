@@ -76,6 +76,7 @@ private:
     float targetCents = 0.0f;   // latest detector reading
     float activityLevel = 0.0f; // fast attack / slow release, so the readout does not flicker between updates
     double lastTickMs = 0.0;
+    unsigned economyTick = 0;
     float stripePhaseDeg = 0.0f; // strobe ring rotation
 };
 

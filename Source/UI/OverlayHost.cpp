@@ -1,5 +1,6 @@
 #include "OverlayHost.h"
 #include "Theme.h"
+#include "ThermalEconomy.h"
 
 #include <cmath>
 
@@ -29,12 +30,12 @@ void OverlayHost::pushOverlay (std::unique_ptr<juce::Component> content)
     toFront (false);
     layOutTop();
 
-    openProgress = 0.0f;
+    openProgress = thermal::economy().load (std::memory_order_relaxed) ? 1.0f : 0.0f; // hot: no fade, the card just appears
     lastFrameMs = 0.0;
     // While the card fades and rises it is drawn ONCE into a texture and that texture is moved/faded each frame; without
     // this the transparency forces the GPU to redraw every row of a big card (the Add Effect list) on every frame. The
     // buffering is dropped when the animation ends, so the live card is exactly as before.
-    if (! content_isFullscreen (*layers.back()))
+    if (openProgress < 1.0f && ! content_isFullscreen (*layers.back()))
         layers.back()->setBufferedToImage (true);
     applyOpenAnimation();
     startTimerHz (60);
