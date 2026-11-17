@@ -3346,7 +3346,7 @@ void MainComponent::timerCallback()
         tempPollCounter = 0;
         const float hottestNow = readHottestZoneCelsius();
         tempPill.setCelsius (hottestNow);
-        thermal::update (hottestNow);
+        thermal::update (hottestNow, thermal::readGpuBusyPercent());
     }
 
     footerBar.setLevels (audioEngine.getInputLevel(), audioEngine.getOutputLevel());
