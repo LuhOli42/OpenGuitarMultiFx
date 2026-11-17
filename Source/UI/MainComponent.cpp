@@ -1540,6 +1540,25 @@ void MainComponent::showMasterEq()
     overlayHost.pushOverlay (std::move (dialog));
 }
 
+void MainComponent::openOverlayForSnapshot (const juce::String& screen)
+{
+    if (screen.startsWith ("presets"))
+    {
+        showPresetsPanel();
+        if (auto* browser = dynamic_cast<PresetBrowserDialog*> (overlayHost.topLayer()))
+            browser->previewScreen (screen);
+        return;
+    }
+    if (screen == "tuner")
+        showTuner();
+    else if (screen == "eq")
+        showMasterEq();
+    else if (screen == "settings")
+        showSettingsPanel();
+    else if (screen == "live")
+        showLive();
+}
+
 void MainComponent::showPresetsPanel()
 {
     auto dialog = std::make_unique<PresetBrowserDialog> (presetLibrary);

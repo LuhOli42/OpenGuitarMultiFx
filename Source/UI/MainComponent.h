@@ -88,6 +88,10 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
 
+    /** `--window-snapshot <file> <screen>` hook: opens one overlay screen
+        (presets | tuner | eq | settings | live) before the off-screen render. */
+    void openOverlayForSnapshot (const juce::String& screen);
+
 private:
     /** targetGridSlot is a grid cell (row*chainColumns+col), not an array
         index -- see EffectBlockComponent::gridSlot's comment. < 0 (the

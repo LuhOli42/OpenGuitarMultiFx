@@ -73,6 +73,9 @@ public:
     bool showDot = false;
     bool leftAccent = false;
     bool mutedIdle = false;
+    /** Inside a `.tabs` strip: idle buttons are chromeless; selected gets a
+        raised fill + accent underline bar (mockup's `box-shadow:inset 0 -3px`). */
+    bool flatTab = false;
     juce::Colour dotColour;
     juce::Colour borderOverride;   // when set, replaces the normal border colour (e.g. armed/red pills)
     bool chromeless = false;       // no own fill/border — for buttons inside a shared segmented container
@@ -131,13 +134,31 @@ public:
                 fill = fill.brighter (0.08f);
         }
 
-        if (! chromeless)
+        if (flatTab && ! primary)
+        {
+            // .tabs-strip member: chromeless when idle, raised fill + accent
+            // underline bar when selected (mockup `.tabs button.on`).
+            if (selected)
+            {
+                g.setColour (t.id == theme::Id::boldBlocks
+                                 ? OpenGuitarMultiFxLookAndFeel::getAppAccentColour()
+                                 : t.raisedHigh);
+                g.fillRoundedRectangle (bounds, radius);
+                textColour = t.id == theme::Id::boldBlocks ? juce::Colours::black : t.text;
+                if (t.id != theme::Id::boldBlocks)
+                {
+                    g.setColour (OpenGuitarMultiFxLookAndFeel::getAppAccentColour());
+                    g.fillRoundedRectangle (bounds.removeFromBottom (3.0f).reduced (4.0f, 0.0f), 1.5f);
+                }
+            }
+        }
+        else if (! chromeless)
         {
             g.setColour (fill);
             g.fillRoundedRectangle (bounds, radius);
         }
 
-        if (selected && selectedStyle == SelectedStyle::tab && ! primary)
+        if (selected && ! flatTab && selectedStyle == SelectedStyle::tab && ! primary)
         {
             if (t.id == theme::Id::boldBlocks)
             {
@@ -160,7 +181,7 @@ public:
             }
         }
 
-        if (! chromeless)
+        if (! chromeless && ! flatTab)
         {
             g.setColour ((borderOverride == juce::Colour() ? border : borderOverride).withAlpha (ghost ? 0.8f : 1.0f));
             g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);

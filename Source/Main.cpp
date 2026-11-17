@@ -146,14 +146,21 @@ public:
         juce::LookAndFeel::setDefaultLookAndFeel (lookAndFeel.get());
 
         juce::Logger::writeToLog ("initialise() -- creating MainWindow");
-        // `--window-snapshot <file.png>`: build the main screen OFF-screen (no window), give its async start-up ~3 s,
-        // render it at the target's 1280x800 to <file> and quit -- for comparing against docs/ui/prototype.html
-        // without grabbing the desktop.
+        // `--window-snapshot <file.png> [screen]`: build the main screen OFF-screen (no window), give its
+        // async start-up ~3 s, render it at the target's 1280x800 to <file> and quit -- for comparing
+        // against docs/ui/prototype.html without grabbing the desktop. The optional screen name opens
+        // that overlay before the shot: presets | tuner | eq | settings.
         if (const int at = args.indexOf ("--window-snapshot"); at >= 0 && at + 1 < args.size())
         {
             const juce::File out (args[at + 1].unquoted());
+            const juce::String screen = at + 2 < args.size() ? args[at + 2].unquoted() : juce::String();
             snapshotComponent = std::make_unique<MainComponent>();
             snapshotComponent->setSize (1280, 800);
+            juce::Timer::callAfterDelay (2500, [this, screen]
+            {
+                if (auto* mc = dynamic_cast<MainComponent*> (snapshotComponent.get()))
+                    mc->openOverlayForSnapshot (screen);
+            });
             juce::Timer::callAfterDelay (3000, [this, out]
             {
                 const auto image = snapshotComponent->createComponentSnapshot (snapshotComponent->getLocalBounds(), true, 1.0f);

@@ -32,6 +32,7 @@ std::vector<PresetLibrary::Entry> PresetLibrary::entries() const
         e.tags = presetmeta::readTags (*xml);
         e.bankSlot = presetmeta::readBankSlot (*xml);
         e.setlists = presetmeta::readSetlists (*xml);
+        e.snapshotColours = presetmeta::readSnapshotColours (*xml, e.snapshotCurrent);
         result.push_back (std::move (e));
     }
 

@@ -3,14 +3,13 @@
 #include "Theme.h"
 
 #include "TouchSizing.h"
+#include "SnapshotPresetXml.h"
 
 namespace openguitarmultifx
 {
 
 namespace
 {
-    juce::Colour cardBackground() { return theme::current().surface; }
-    juce::Colour tileBackground() { return theme::current().raised; }
     constexpr int tileGap = 12;
     constexpr int longPressMs = 550; // same duration ParameterPanel's LongPressLabel uses for MIDI Learn
 }
@@ -24,53 +23,88 @@ void PresetBrowserDialog::PresetTile::paint (juce::Graphics& g)
     const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
     const auto bounds = getLocalBounds().toFloat();
     const bool boldCurrent = isCurrent && t.id == theme::Id::boldBlocks && ! isEmpty;
+    const auto ink = boldCurrent ? juce::Colours::black : t.text;
+    const auto inkMuted = boldCurrent ? juce::Colours::black.withAlpha (0.62f) : t.textMuted;
+
+    g.setColour (boldCurrent ? accent : (isEmpty ? t.surface : t.raised));
+    g.fillRoundedRectangle (bounds, t.radius);
+
+    // .pt.cur -- accent border + solid 2px ring outside it (mockup box-shadow spread)
+    if (isCurrent && ! boldCurrent && ! isEmpty)
+    {
+        g.setColour (accent);
+        g.drawRoundedRectangle (bounds.expanded (2.0f).reduced (1.0f), t.radius + 2.0f, 2.0f);
+    }
+    g.setColour (isCurrent && ! isEmpty ? accent : (isEmpty ? t.lineStrong : t.line));
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, isCurrent && ! isEmpty ? 2.0f : 1.0f);
+
+    auto area = bounds.reduced (14.0f, 12.0f);
+    const auto headingArea = area.removeFromTop (18.0f);
+
+    if (heading.isNotEmpty())
+    {
+        g.setColour (inkMuted);
+        g.setFont (overlaychrome::font (12.0f, true));
+        g.drawFittedText (heading, headingArea.toNearestInt(), juce::Justification::centredLeft, 1);
+    }
+
+    // .tg -- first tag as a pill top-right
+    if (tag.isNotEmpty() && ! bankLayout)
+    {
+        const auto tagFont = overlaychrome::font (10.0f);
+        const auto tagW = juce::GlyphArrangement::getStringWidth (tagFont, tag) + 14.0f;
+        auto headingCopy = headingArea;
+        const auto tagArea = headingCopy.removeFromRight (tagW).withSizeKeepingCentre (tagW, 16.0f);
+        g.setColour (boldCurrent ? juce::Colours::black.withAlpha (0.25f) : t.raisedHigh);
+        g.fillRoundedRectangle (tagArea, 6.0f);
+        g.setColour (inkMuted);
+        g.setFont (tagFont);
+        g.drawFittedText (tag, tagArea.toNearestInt(), juce::Justification::centred, 1);
+    }
 
     if (isEmpty)
     {
-        g.setColour (t.surface);
-        g.fillRoundedRectangle (bounds, t.radius);
-        g.setColour (t.lineStrong);
-        g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, 1.0f);
-        if (heading.isNotEmpty())
-        {
-            g.setColour (t.textMuted);
-            g.setFont (overlaychrome::font (12.0f, true));
-            g.drawFittedText (heading, bounds.toNearestInt().removeFromTop (24), juce::Justification::centred, 1);
-        }
         g.setColour (t.textDim);
-        g.setFont (28.0f);
-        g.drawText ("+", bounds.toNearestInt(), juce::Justification::centred);
+        g.setFont (overlaychrome::font (bankLayout ? 22.0f : 28.0f, bankLayout));
+        g.drawText (bankLayout ? "+ Assign" : "+", bounds.toNearestInt(), juce::Justification::centred);
         return;
     }
 
-    g.setColour (boldCurrent ? accent : t.raised);
-    g.fillRoundedRectangle (bounds, t.radius);
-
-    if (isCurrent && ! boldCurrent)
+    if (bankLayout)
     {
-        g.setColour (accent.withAlpha (0.18f));
-        g.drawRoundedRectangle (bounds.expanded (2.0f).reduced (1.0f), t.radius + 2.0f, 2.0f);
+        // .bk -- name 22px, footswitch circle bottom-centre
+        g.setColour (ink);
+        g.setFont (overlaychrome::font (22.0f, true));
+        g.drawFittedText (name, area.toNearestInt().withTrimmedBottom (52), juce::Justification::centredLeft, 1);
+
+        const auto circle = juce::Rectangle<float> (40.0f, 40.0f).withCentre ({ bounds.getCentreX(), bounds.getBottom() - 32.0f });
+        g.setColour (t.lineStrong);
+        g.drawEllipse (circle, 3.0f);
+        return;
     }
-    g.setColour (isCurrent ? accent : t.line);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, isCurrent ? 2.0f : 1.0f);
 
-    auto area = bounds.reduced (14.0f, 12.0f);
-    const auto bottomArea = area.removeFromBottom (16.0f);
-    const auto headingArea = area.removeFromTop (18.0f);
-
-    g.setColour (boldCurrent ? juce::Colours::black.withAlpha (0.62f) : t.textMuted);
-    g.setFont (overlaychrome::font (12.0f, true));
-    g.drawFittedText (heading, headingArea.toNearestInt(), juce::Justification::centredLeft, 1);
-
-    g.setColour (boldCurrent ? juce::Colours::black : t.text);
+    // .pt -- name under the heading, scene dots pinned to the bottom
+    area.removeFromTop (6.0f);
+    g.setColour (ink);
     g.setFont (overlaychrome::font (17.0f, true));
-    g.drawFittedText (name, area.toNearestInt(), juce::Justification::centredLeft, 2);
+    g.drawFittedText (name, area.toNearestInt().withTrimmedBottom (18.0f), juce::Justification::centredLeft, 2);
 
     if (subline.isNotEmpty())
     {
-        g.setColour (boldCurrent ? juce::Colours::black.withAlpha (0.68f) : t.textMuted);
+        g.setColour (inkMuted);
         g.setFont (overlaychrome::font (11.0f));
-        g.drawFittedText (subline, bottomArea.toNearestInt(), juce::Justification::centredLeft, 1);
+        g.drawFittedText (subline, area.toNearestInt().removeFromBottom (14.0f), juce::Justification::centredLeft, 1);
+    }
+
+    if (! dots.isEmpty())
+    {
+        const auto dotRow = juce::Rectangle<float> (bounds.getX() + 14.0f, bounds.getBottom() - 18.0f,
+                                                    bounds.getWidth() - 28.0f, 5.0f);
+        for (int i = 0; i < dots.size() && i < 8; ++i)
+        {
+            g.setColour (dots[i]);
+            g.fillRoundedRectangle (dotRow.getX() + i * 18.0f, dotRow.getY(), 14.0f, 5.0f, 3.0f);
+        }
     }
 }
 
@@ -100,6 +134,72 @@ void PresetBrowserDialog::PresetTile::timerCallback()
     stopTimer();
     if (onMenu)
         onMenu();
+}
+
+//==============================================================================
+// TabStrip / SetlistField / SetlistStage
+//==============================================================================
+void PresetBrowserDialog::TabStrip::paint (juce::Graphics& g)
+{
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.lineStrong);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.smallRadius, 1.0f);
+}
+
+void PresetBrowserDialog::SetlistField::paint (juce::Graphics& g)
+{
+    const auto& t = theme::current();
+    const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (t.raised);
+    g.fillRoundedRectangle (bounds, t.smallRadius);
+    g.setColour (t.lineStrong);
+    g.drawRoundedRectangle (bounds, t.smallRadius, 1.0f);
+    auto area = bounds.reduced (14.0f, 0.0f).toNearestInt();
+    g.setFont (overlaychrome::font (14.0f));
+    g.setColour (t.textMuted);
+    g.drawFittedText ("Setlist:", area, juce::Justification::centredLeft, 1);
+    area.removeFromLeft (juce::GlyphArrangement::getStringWidth (overlaychrome::font (14.0f), "Setlist:") + 8);
+    g.setFont (overlaychrome::font (14.0f, true));
+    g.setColour (t.text);
+    g.drawFittedText (setlistName, area, juce::Justification::centredLeft, 1);
+}
+
+void PresetBrowserDialog::SetlistStage::paint (juce::Graphics& g)
+{
+    const auto& t = theme::current();
+    const auto accent = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+    const auto bounds = getLocalBounds().toFloat();
+    const bool boldCurrent = isCurrent && t.id == theme::Id::boldBlocks;
+    const auto ink = boldCurrent ? juce::Colours::black : t.text;
+    const auto inkMuted = boldCurrent ? juce::Colours::black.withAlpha (0.62f) : t.textMuted;
+
+    g.setColour (boldCurrent ? accent : t.raised);
+    g.fillRoundedRectangle (bounds, t.radius);
+    if (isCurrent && ! boldCurrent)
+    {
+        g.setColour (accent);
+        g.drawRoundedRectangle (bounds.expanded (2.0f).reduced (1.0f), t.radius + 2.0f, 2.0f);
+    }
+    g.setColour (isCurrent ? accent : t.line);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), t.radius, isCurrent ? 2.0f : 1.0f);
+
+    // centred group: position above, giant name, "Next:" below
+    const auto groupH = 22.0f + 68.0f + 26.0f;
+    auto group = bounds.reduced (0.0f, (bounds.getHeight() - groupH) * 0.5f);
+    g.setColour (inkMuted);
+    g.setFont (overlaychrome::font (12.0f, true));
+    g.drawFittedText (positionText, group.removeFromTop (22.0f).toNearestInt(), juce::Justification::centred, 1);
+
+    g.setColour (ink);
+    g.setFont (overlaychrome::font (56.0f, true));
+    g.drawFittedText (presetName, group.removeFromTop (68.0f).toNearestInt(), juce::Justification::centred, 1);
+
+    g.setColour (inkMuted);
+    g.setFont (overlaychrome::font (14.0f));
+    g.drawFittedText (nextText, group.removeFromTop (26.0f).toNearestInt(), juce::Justification::centred, 1);
 }
 
 //==============================================================================
@@ -156,28 +256,35 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
     titleLabel.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
     titleLabel.setJustificationType (juce::Justification::centredLeft);
 
+    addAndMakeVisible (tabStrip);
     auto setupModeButton = [this] (overlaychrome::ActionButton& button, Mode buttonMode)
     {
-        addAndMakeVisible (button);
+        tabStrip.addAndMakeVisible (button);
         button.selectedStyle = overlaychrome::SelectedStyle::tab;
         button.mutedIdle = true;
+        button.flatTab = true;
         button.selected = mode == buttonMode;
         button.onClick = [this, buttonMode] { setMode (buttonMode); };
     };
+    // "+ New" leads the strip like the mockup's `.tabs` row
+    newPresetButton.selectedStyle = overlaychrome::SelectedStyle::none;
+    newPresetButton.mutedIdle = true;
+    newPresetButton.flatTab = true;
+    newPresetButton.kind = overlaychrome::ButtonKind::normal;
+    tabStrip.addAndMakeVisible (newPresetButton);
+    newPresetButton.onClick = [this] { if (onNewRequested) onNewRequested(); };
     setupModeButton (allModeButton, Mode::all);
     setupModeButton (bankModeButton, Mode::bank);
     setupModeButton (setlistModeButton, Mode::setlist);
-
-    addAndMakeVisible (newPresetButton);
-    newPresetButton.onClick = [this] { if (onNewRequested) onNewRequested(); };
 
     addAndMakeVisible (searchField);
     searchField.setTextToShowWhenEmpty ("Search presets...", theme::current().textMuted);
     overlaychrome::drawSearchFieldChrome (searchField);
     searchField.onTextChange = [this] { rebuildTiles(); };
 
-    addAndMakeVisible (tagBox);
-    tagBox.onChange = [this] { rebuildTiles(); };
+    addAndMakeVisible (chipsBar);
+    addAndMakeVisible (setlistField);
+    addAndMakeVisible (setlistStage);
 
     addAndMakeVisible (bankPrevButton);
     bankPrevButton.onClick = [this] { currentBank = juce::jmax (0, currentBank - 1); rebuildTiles(); };
@@ -185,7 +292,7 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
     bankNextButton.onClick = [this] { ++currentBank; rebuildTiles(); };
     addAndMakeVisible (bankLabel);
     bankLabel.setJustificationType (juce::Justification::centred);
-    bankLabel.setFont (juce::Font (17.0f, juce::Font::bold));
+    bankLabel.setFont (overlaychrome::font (22.0f, true));
 
     auto setupSizeButton = [this] (overlaychrome::ActionButton& button, int size)
     {
@@ -215,9 +322,7 @@ PresetBrowserDialog::PresetBrowserDialog (PresetLibrary& libraryToUse)
         currentSetlist = names[i < 0 || i >= names.size() - 1 ? 0 : i + 1];
         rebuildTiles();
     };
-    addAndMakeVisible (setlistLabel);
-    setlistLabel.setJustificationType (juce::Justification::centred);
-    setlistLabel.setFont (juce::Font (17.0f, juce::Font::bold));
+    setlistField.setlistName = {};
 
     addAndMakeVisible (setlistMenuButton);
     setlistMenuButton.onClick = [this]
@@ -306,6 +411,17 @@ juce::String PresetBrowserDialog::currentPresetName() const
     return getCurrentPresetName != nullptr ? getCurrentPresetName() : juce::String {};
 }
 
+void PresetBrowserDialog::previewScreen (const juce::String& which)
+{
+    if (which == "presets-bank")
+    {
+        currentBank = 2; // the seeded/browsed bank in docs comparisons
+        setMode (Mode::bank);
+    }
+    else if (which == "presets-setlist")
+        setMode (Mode::setlist);
+}
+
 void PresetBrowserDialog::setMode (Mode newMode)
 {
     mode = newMode;
@@ -326,27 +442,53 @@ void PresetBrowserDialog::refresh()
 
 void PresetBrowserDialog::refreshTagFilter()
 {
-    const auto selectedTag = tagBox.getSelectedId() > 1 ? tagBox.getText() : juce::String {};
-    tagBox.clear (juce::dontSendNotification);
-    tagBox.addItem ("All tags", 1);
-
-    int itemId = 1, idToSelect = 1;
-    for (auto& tag : library.allTags())
+    tagChips.clear (true);
+    auto addChip = [this] (const juce::String& tag)
     {
-        tagBox.addItem (tag, ++itemId);
-        if (tag == selectedTag)
-            idToSelect = itemId;
+        auto* chip = tagChips.add (new overlaychrome::ActionButton (tag.isEmpty() ? "All tags" : tag));
+        chip->selectedStyle = overlaychrome::SelectedStyle::chip;
+        chip->selected = (tag == selectedTag);
+        chip->onClick = [this, tag] { selectedTag = tag; refreshTagFilter(); rebuildTiles(); };
+        chipsBar.addAndMakeVisible (*chip);
+    };
+    addChip ({});
+    for (auto& tag : library.allTags())
+        addChip (tag);
+    layoutTagChips();
+}
+
+void PresetBrowserDialog::layoutTagChips()
+{
+    if (chipsBar.getWidth() <= 0)
+        return;
+    const auto font = overlaychrome::font (13.0f);
+    auto row = chipsBar.getLocalBounds().withSizeKeepingCentre (chipsBar.getWidth(), 40);
+    int x = row.getX();
+    for (auto* chip : tagChips)
+    {
+        const auto w = juce::GlyphArrangement::getStringWidth (font, chip->text) + 32;
+        chip->setBounds (x, row.getY(), w, 40);
+        x += w + 8;
     }
-    tagBox.setSelectedId (idToSelect, juce::dontSendNotification);
 }
 
 void PresetBrowserDialog::configureTile (PresetTile& tile, const PresetLibrary::Entry& entry, const juce::String& heading)
 {
     tile.name = entry.name;
     tile.heading = heading;
-    tile.subline = entry.tags.joinIntoString ("  ");
+    tile.tag = entry.tags.isEmpty() ? juce::String {} : entry.tags[0];
+    tile.subline = {};
     tile.isCurrent = (entry.name == currentPresetName());
     tile.isEmpty = false;
+
+    // .dots -- one accent bar per saved scene, defaulting like the top bar
+    tile.dots.clear();
+    for (int i = 0; i < entry.snapshotColours.size(); ++i)
+    {
+        const auto hex = entry.snapshotColours[i];
+        tile.dots.add (hex.isNotEmpty() ? juce::Colour::fromString ("ff" + hex)
+                                        : snapshotxml::defaultColourFor (i));
+    }
 }
 
 void PresetBrowserDialog::rebuildTiles()
@@ -361,7 +503,7 @@ void PresetBrowserDialog::rebuildTiles()
     const bool setlistVisible = (mode == Mode::setlist);
 
     searchField.setVisible (allVisible);
-    tagBox.setVisible (allVisible);
+    chipsBar.setVisible (allVisible);
     bankPrevButton.setVisible (bankVisible);
     bankNextButton.setVisible (bankVisible);
     bankLabel.setVisible (bankVisible);
@@ -369,10 +511,11 @@ void PresetBrowserDialog::rebuildTiles()
     bankSize8Button.setVisible (bankVisible);
     setlistPrevButton.setVisible (setlistVisible);
     setlistNextButton.setVisible (setlistVisible);
-    setlistLabel.setVisible (setlistVisible);
+    setlistField.setVisible (setlistVisible);
     setlistMenuButton.setVisible (setlistVisible);
     stepPrevButton.setVisible (setlistVisible);
     stepNextButton.setVisible (setlistVisible);
+    setlistStage.setVisible (setlistVisible);
 
     bankTiles.clear (true);
     tileGrid.clearTiles();
@@ -381,11 +524,12 @@ void PresetBrowserDialog::rebuildTiles()
 
     if (allVisible)
     {
-        const auto selectedTag = tagBox.getSelectedId() > 1 ? tagBox.getText() : juce::String {};
         const auto names = library.search (searchField.getText(), selectedTag);
         for (auto& e : allEntries)
             if (names.contains (e.name))
-                configureTile (tileGrid.addTile(), e, "#" + juce::String (e.number));
+                configureTile (tileGrid.addTile(), e,
+                               juce::String (e.number).paddedLeft ('0', 2)
+                                   + snapshotxml::letterFor (e.snapshotCurrent));
 
         emptyStateLabel.setText (allEntries.empty() ? "No presets saved yet."
                                  : names.isEmpty()   ? "No presets match."
@@ -435,16 +579,17 @@ void PresetBrowserDialog::rebuildBankTiles (const std::vector<PresetLibrary::Ent
                 break;
             }
 
+        tile->bankLayout = true;
         if (occupant == nullptr)
         {
             tile->isEmpty = true;
             tile->name = {};
-            tile->heading = "Slot " + juce::String (slot + 1);
+            tile->heading = "SLOT " + juce::String (slot + 1);
             tile->onTap = [this, stored] { showSlotPicker (stored.bank, stored.slot); };
         }
         else
         {
-            configureTile (*tile, *occupant, juce::String (slot + 1));
+            configureTile (*tile, *occupant, "SLOT " + juce::String (slot + 1));
             const auto presetName = occupant->name;
             tile->onTap = [this, presetName] { if (onPresetChosen) onPresetChosen (presetName); };
             tile->onMenu = [this, presetName]
@@ -471,7 +616,8 @@ void PresetBrowserDialog::rebuildSetlistTiles (const std::vector<PresetLibrary::
     if (names.isEmpty())
     {
         currentSetlist.clear();
-        setlistLabel.setText ("No setlists", juce::dontSendNotification);
+        setlistField.setlistName = "--";
+        setlistField.repaint();
         emptyStateLabel.setText ("No setlists yet -- add a preset to one from its tile menu (long-press).",
                                  juce::dontSendNotification);
         return;
@@ -480,7 +626,8 @@ void PresetBrowserDialog::rebuildSetlistTiles (const std::vector<PresetLibrary::
     if (! names.contains (currentSetlist))
         currentSetlist = names[0];
 
-    setlistLabel.setText (currentSetlist, juce::dontSendNotification);
+    setlistField.setlistName = currentSetlist;
+    setlistField.repaint();
 
     // Members in (index, preset number) order -- the same ordering
     // PresetLibrary::setlistMembers computes, redone over the shared scan.
@@ -501,11 +648,38 @@ void PresetBrowserDialog::rebuildSetlistTiles (const std::vector<PresetLibrary::
         return ai != bi ? ai < bi : a->number < b->number;
     });
 
-    int position = 0;
-    for (auto* e : members)
-        configureTile (tileGrid.addTile(), *e, juce::String (++position));
+    // .stg -- stage card: "n of N" + giant name + "Next: X" (prototype layout)
+    const auto current = currentPresetName();
+    int liveIndex = -1;
+    for (int i = 0; i < (int) members.size(); ++i)
+        if (members[(size_t) i]->name == current)
+        {
+            liveIndex = i;
+            break;
+        }
+    if (liveIndex < 0)
+        liveIndex = 0;
 
-    emptyStateLabel.setText (tileGrid.tiles.isEmpty() ? "This setlist is empty." : juce::String {},
+    if (members.empty())
+    {
+        setlistStage.positionText = {};
+        setlistStage.presetName = "--";
+        setlistStage.nextText = {};
+        setlistStage.isCurrent = false;
+    }
+    else
+    {
+        auto* m = members[(size_t) liveIndex];
+        auto* next = members[(size_t) ((liveIndex + 1) % (int) members.size())];
+        setlistStage.positionText = juce::String (liveIndex + 1) + " of " + juce::String ((int) members.size());
+        setlistStage.presetName = m->name;
+        setlistStage.nextText = "Next: " + next->name;
+        setlistStage.isCurrent = true;
+    }
+    setlistStage.repaint();
+
+    // tapping the big card loads the shown preset; long-press still opens the menu
+    emptyStateLabel.setText (members.empty() ? "This setlist is empty." : juce::String {},
                              juce::dontSendNotification);
 }
 
@@ -654,21 +828,23 @@ void PresetBrowserDialog::showTileMenu (const PresetLibrary::Entry& entry)
 
 void PresetBrowserDialog::resized()
 {
-    auto area = getLocalBounds();
-    auto header = area.removeFromTop (76).reduced (20, 0);
+    // .card{padding:20px} -- everything insets 20px from the card edges
+    auto area = getLocalBounds().reduced (20);
+    auto header = area.removeFromTop (76);
 
     closeButton.setBounds (header.removeFromRight (52).withSizeKeepingCentre (52, 52));
     titleLabel.setBounds (header.removeFromLeft (150));
 
-    auto placeTab = [&header] (overlaychrome::ActionButton& button, int width)
+    // .tabs -- the four buttons live inside one bordered strip (4px padding, 4px gaps)
+    auto stripArea = header.removeFromLeft (88 + 84 + 102 + 118 + 3 * 4 + 8);
+    tabStrip.setBounds (stripArea.withSizeKeepingCentre (stripArea.getWidth(), 56));
+    auto strip = tabStrip.getLocalBounds().reduced (4);
+    for (auto* b : { &newPresetButton, &allModeButton, &bankModeButton, &setlistModeButton })
     {
-        button.setBounds (header.removeFromLeft (width).withSizeKeepingCentre (width, 48));
-        header.removeFromLeft (8);
-    };
-    placeTab (newPresetButton, 88);
-    placeTab (allModeButton, 84);
-    placeTab (bankModeButton, 102);
-    placeTab (setlistModeButton, 118);
+        const int w = b == &newPresetButton ? 88 : b == &allModeButton ? 84 : b == &bankModeButton ? 102 : 118;
+        b->setBounds (strip.removeFromLeft (w).withSizeKeepingCentre (w, 40));
+        strip.removeFromLeft (4);
+    }
 
     if (searchField.isVisible())
     {
@@ -681,7 +857,8 @@ void PresetBrowserDialog::resized()
 
     if (mode == Mode::all)
     {
-        tagBox.setBounds (selectorRow);
+        chipsBar.setBounds (selectorRow);
+        layoutTagChips();
     }
     else if (mode == Mode::bank)
     {
@@ -696,18 +873,15 @@ void PresetBrowserDialog::resized()
     }
     else
     {
-        stepNextButton.setBounds (selectorRow.removeFromRight (132).withSizeKeepingCentre (132, 48));
+        // .field "Setlist: name" + ... menu pill at the right
+        setlistMenuButton.setBounds (selectorRow.removeFromRight (48).withSizeKeepingCentre (48, 40));
         selectorRow.removeFromRight (8);
-        stepPrevButton.setBounds (selectorRow.removeFromRight (132).withSizeKeepingCentre (132, 48));
-        selectorRow.removeFromRight (16);
-
-        setlistMenuButton.setBounds (selectorRow.removeFromRight (48).withSizeKeepingCentre (48, 48));
-        selectorRow.removeFromRight (8);
-
-        setlistPrevButton.setBounds (selectorRow.removeFromLeft (48).withSizeKeepingCentre (48, 48));
-        setlistNextButton.setBounds (selectorRow.removeFromLeft (48).withSizeKeepingCentre (48, 48));
+        // keep cycling setlists available but compact, inside the field row
+        setlistPrevButton.setBounds (selectorRow.removeFromLeft (48).withSizeKeepingCentre (48, 40));
+        selectorRow.removeFromLeft (4);
+        setlistNextButton.setBounds (selectorRow.removeFromLeft (48).withSizeKeepingCentre (48, 40));
         selectorRow.removeFromLeft (8);
-        setlistLabel.setBounds (selectorRow);
+        setlistField.setBounds (selectorRow.withTrimmedTop (6).withTrimmedBottom (6));
     }
 
     body.removeFromTop (8);
@@ -720,7 +894,19 @@ void PresetBrowserDialog::resized()
     overlaychrome::drawSearchFieldChrome (nameField);
     body.removeFromBottom (10);
 
-    if (mode == Mode::bank)
+    if (mode == Mode::setlist)
+    {
+        gridViewport.setVisible (false);
+        for (auto* tile : bankTiles)
+            tile->setVisible (false);
+
+        // .stg -- 180px buttons centred against the card, giant card in the middle
+        stepPrevButton.setBounds (body.removeFromLeft (180).withSizeKeepingCentre (180, 48));
+        stepNextButton.setBounds (body.removeFromRight (180).withSizeKeepingCentre (180, 48));
+        setlistStage.setBounds (body.reduced (16, 0));
+        emptyStateLabel.setBounds (body);
+    }
+    else if (mode == Mode::bank)
     {
         gridViewport.setVisible (false);
         const int n = juce::jmax (1, bankTiles.size());
@@ -755,7 +941,10 @@ void PresetBrowserDialog::resized()
 void PresetBrowserDialog::paint (juce::Graphics& g)
 {
     overlaychrome::paintCardBackground (g, getLocalBounds().toFloat());
-    overlaychrome::drawHeaderDivider (g, juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 76.0f));
+    overlaychrome::drawHeaderDivider (g, juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 96.0f));
+    // .foot{border-top}
+    g.setColour (theme::current().line);
+    g.drawLine (20.0f, (float) getHeight() - 96.0f, (float) getWidth() - 20.0f, (float) getHeight() - 96.0f, 1.0f);
 }
 
 } // namespace openguitarmultifx
