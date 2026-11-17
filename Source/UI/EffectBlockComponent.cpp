@@ -28,8 +28,12 @@ bool EffectBlockComponent::showsHeadOnlyIcon() const
 
 void EffectBlockComponent::refreshIconVariant()
 {
-    if (showsHeadOnlyIcon() != paintedHeadOnly)
+    const bool headOnly = showsHeadOnlyIcon();
+    if (headOnly != paintedHeadOnly)
+    {
+        paintedHeadOnly = headOnly; // settle: MainComponent's 50 ms timer calls this, and a stale flag meant a repaint every tick, forever
         repaint();
+    }
 }
 
 void EffectBlockComponent::setSelected (bool shouldBeSelected)
