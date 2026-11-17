@@ -89,6 +89,7 @@ private:
     float inLevel = 0.0f, outLevel = 0.0f;           // what is drawn (eased every frame)
     float inTarget = 0.0f, outTarget = 0.0f;         // latest reading from the engine (arrives ~20 times a second)
     double lastFrameMs = 0.0;
+    float inDrawn = -1.0f, outDrawn = -1.0f; // the levels the screen shows right now
     double bpm = 120.0;
     double lastTapMs = 0.0;
     std::vector<double> recentTapIntervalsMs;

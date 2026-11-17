@@ -380,8 +380,8 @@ private:
             EGL_GREEN_SIZE,      format.greenBits,
             EGL_BLUE_SIZE,       format.blueBits,
             EGL_ALPHA_SIZE,      0, // the X window is opaque; an alpha channel only narrows the matching configs
-            EGL_DEPTH_SIZE,      format.depthBufferBits,
-            EGL_STENCIL_SIZE,    format.stencilBufferBits,
+            EGL_DEPTH_SIZE,      0, // the UI is flat 2D: no depth buffer (a tile-based GPU pays memory bandwidth for one)
+            EGL_STENCIL_SIZE,    0,
             EGL_SAMPLE_BUFFERS,  multisample ? 1 : 0,
             EGL_SAMPLES,         multisample ? format.multisamplingLevel : 0,
             EGL_NONE

@@ -14,6 +14,7 @@
 #include "LiveTilesXml.h"
 #include "RawMidiInput.h"
 #include "BleMidiInput.h"
+#include "SystemMonitor.h"
 #include "NetworkCards.h"
 #include "SceneMidi.h"
 #include "SnapshotBar.h"
@@ -505,6 +506,7 @@ private:
         void timerCallback() override;
         float cpu = 0.0f;       // drawn value, eased toward `target` every frame
         float target = 0.0f;    // latest reading (arrives every 50 ms)
+        int shownPercent = -1, shownBarPx = -1;
         double lastFrameMs = 0.0;
         bool ok = true;
     };
@@ -517,6 +519,8 @@ private:
     public:
         void setCelsius (float c);
         void paint (juce::Graphics& g) override;
+        std::function<void()> onTap; // toggles the live SystemMonitor
+        void mouseUp (const juce::MouseEvent& e) override { if (touch::wasTap (e) && onTap) onTap(); }
     private:
         float celsius = 0.0f;
     };
@@ -531,6 +535,8 @@ private:
     void restoreUndoState (const juce::XmlElement& target);
     CpuPill cpuPill;
     TempPill tempPill;
+    SystemMonitor systemMonitor;
+    static juce::File systemMonitorFile();
     bool wifiConnected = false, bluetoothConnected = false;
     int connectionPollCounter = 0;
     void openWifiCard();
