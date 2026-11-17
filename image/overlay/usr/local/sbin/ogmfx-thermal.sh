@@ -17,10 +17,10 @@ cap() { # $1 big kHz, $2 little kHz
   for c in 0 1 2 3 4 5; do echo $2 > /sys/devices/system/cpu/cpu$c/cpufreq/scaling_max_freq 2>/dev/null; done
 }
 BIG=$(cat /sys/devices/system/cpu/cpu6/cpufreq/cpuinfo_max_freq)
-LIT=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq)
+LIT=1014000 # little cores (UI / GL thread): ceiling 1.0 GHz -- they should run near their limit, not idle at 1.8 GHz
 apply() {
   case $1 in
-    0) cap $BIG $LIT ;; 1) cap 1404000 $LIT ;; 2) cap 1014000 1196000 ;; 3) cap 780000 780000 ;; 4) cap 416000 416000 ;;
+    0) cap $BIG $LIT ;; 1) cap 1404000 $LIT ;; 2) cap 1014000 $LIT ;; 3) cap 780000 780000 ;; 4) cap 416000 416000 ;;
   esac
 }
 up() { case $1 in 1) echo 96000;; 2) echo 100000;; 3) echo 104000;; 4) echo 107000;; esac; }

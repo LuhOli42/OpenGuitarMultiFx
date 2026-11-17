@@ -12,12 +12,12 @@
 systemctl disable --now irqbalance.service >/dev/null 2>&1
 systemctl mask irqbalance.service >/dev/null 2>&1
 systemctl --global mask mpris-proxy.service >/dev/null 2>&1
-systemctl enable ogmfx-audio-irq.service ogmfx-thermal.service >/dev/null 2>&1
+systemctl enable ogmfx-audio-irq.service ogmfx-thermal.service ogmfx-power.service >/dev/null 2>&1
 
 if [ "${1:-}" = "--now" ]; then
     pkill -x mpris-proxy 2>/dev/null
     systemctl daemon-reexec 2>/dev/null
-    systemctl restart ogmfx-audio-irq.service ogmfx-thermal.service 2>/dev/null
+    systemctl restart ogmfx-audio-irq.service ogmfx-thermal.service ogmfx-power.service 2>/dev/null
 fi
 echo "ogmfx-device-tuning: applied"
 exit 0

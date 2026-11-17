@@ -1,0 +1,11 @@
+[Unit]
+Description=OGMFX: CPU/DDR/NPU power policy (near-70% busy rule)
+After=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/ogmfx-power.sh
+
+[Install]
+WantedBy=multi-user.target
