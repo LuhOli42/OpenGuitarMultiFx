@@ -184,20 +184,13 @@ MainComponent::MainComponent()
     tempPill.setVisible (readHottestZoneCelsius() > 0.0f); // desktops have no thermal zones
     addChildComponent (tempPill);
 
-    // Live clocks / busy-% of the slow cores, fast cores and GPU, drawn over the UI. On by default while the power policy is
-    // being tuned; tap the TEMP pill to hide or show it (remembered in system_monitor.txt).
-    tempPill.onTap = [this]
-    {
-        const bool show = ! systemMonitor.isVisible();
-        systemMonitor.setRunning (show);
-        systemMonitorFile().getParentDirectory().createDirectory();
-        systemMonitorFile().replaceWithText (show ? "on" : "off");
-        resized();
-    };
+    // Live clocks / busy-% of the slow cores, fast cores and GPU, drawn over the UI. Off until asked for: Settings > Audio >
+    // System monitor, or a tap on the TEMP pill (remembered in system_monitor.txt).
+    tempPill.onTap = [this] { setSystemMonitorShown (! systemMonitor.isVisible()); };
     addChildComponent (systemMonitor);
     {
-        const auto saved = systemMonitorFile().existsAsFile() ? systemMonitorFile().loadFileAsString().trim() : juce::String ("on");
-        if (tempPill.isVisible() && saved != "off") // only where there are thermal zones (the board)
+        const auto saved = systemMonitorFile().existsAsFile() ? systemMonitorFile().loadFileAsString().trim() : juce::String ("off");
+        if (tempPill.isVisible() && saved == "on") // only where there are thermal zones (the board)
             systemMonitor.setRunning (true);
     }
 
@@ -1223,6 +1216,8 @@ void MainComponent::showSettingsPanel()
         sendModeFile().replaceWithText (enabled ? "on" : "off");
         rebuildSignalGraph();
     };
+    panel->setSystemMonitor (systemMonitor.isVisible());
+    panel->onSystemMonitorChanged = [this] (bool shown) { setSystemMonitorShown (shown); };
     panel->onOpenWifi = [this] { openWifiCard(); };
     panel->onOpenBluetooth = [this] { openBluetoothCard(); };
     panel->onRetryDevice = [this, rawPanel]
@@ -3611,6 +3606,14 @@ bool MainComponent::readBluetoothConnected()
 }
 
 juce::File MainComponent::systemMonitorFile() { return systemMonitorFile_(); }
+
+void MainComponent::setSystemMonitorShown (bool shown)
+{
+    systemMonitor.setRunning (shown);
+    systemMonitorFile().getParentDirectory().createDirectory();
+    systemMonitorFile().replaceWithText (shown ? "on" : "off");
+    resized();
+}
 
 float MainComponent::readHottestZoneCelsius()
 {

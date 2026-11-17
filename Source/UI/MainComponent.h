@@ -537,6 +537,7 @@ private:
     TempPill tempPill;
     SystemMonitor systemMonitor;
     static juce::File systemMonitorFile();
+    void setSystemMonitorShown (bool shown);
     bool wifiConnected = false, bluetoothConnected = false;
     int connectionPollCounter = 0;
     void openWifiCard();
