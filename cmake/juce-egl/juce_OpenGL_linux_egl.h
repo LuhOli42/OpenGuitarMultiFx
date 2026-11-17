@@ -90,6 +90,13 @@ private:
     to the screen's memory: a whole 1920x1200 frame (9 MB) per swap, even for a pill that changed. Telling EGL what really
     changed (eglSwapBuffersWithDamage) makes that copy proportional to the change. Filled by a hook JuceEglPatch.cmake
     adds to OpenGLContext's paintComponent(). */
+/** Diagnostics only: OGMFX_GL_NOCOPY=1 skips the per-frame copy of the cached framebuffer to the window, so a swap-only
+    frame can be measured on its own (the picture stays black). */
+namespace egl_debug
+{
+    inline bool noCopy() { static const bool v = std::getenv ("OGMFX_GL_NOCOPY") != nullptr; return v; }
+}
+
 namespace egl_damage
 {
     inline std::mutex& mutex()                { static std::mutex m; return m; }
@@ -372,14 +379,41 @@ public:
             return (SwapWithDamage) fn;
         }();
 
+        // Where the time of a frame goes: how long the swap itself blocks, and how much area it presents. Logged every
+        // 10 s ("EGL swaps: ...") so the board can be read while it is simply used.
+        static double sumMs = 0.0, maxMs = 0.0, lastLogMs = Time::getMillisecondCounterHiRes();
+        static int swaps = 0, damaged = 0, whole = 0;
+        static double areaSum = 0.0;
+
+        const auto t0 = Time::getMillisecondCounterHiRes();
+        bool usedDamage = false;
         if (swapWithDamage != nullptr)
         {
             auto rects = egl_damage::take();
-            if (! rects.empty() && swapWithDamage (eglDisplay, surface, rects.data(), (EGLint) (rects.size() / 4)) == EGL_TRUE)
-                return;
+            if (! rects.empty())
+            {
+                for (size_t i = 0; i + 3 < rects.size(); i += 4)
+                    areaSum += (double) rects[i + 2] * (double) rects[i + 3];
+                usedDamage = swapWithDamage (eglDisplay, surface, rects.data(), (EGLint) (rects.size() / 4)) == EGL_TRUE;
+            }
         }
+        if (! usedDamage)
+            eglSwapBuffers (eglDisplay, surface);
 
-        eglSwapBuffers (eglDisplay, surface);
+        const auto t1 = Time::getMillisecondCounterHiRes();
+        sumMs += t1 - t0;
+        maxMs = jmax (maxMs, t1 - t0);
+        ++swaps;
+        usedDamage ? ++damaged : ++whole;
+        if (t1 - lastLogMs > 10000.0 && swaps > 0)
+        {
+            Logger::writeToLog ("EGL swaps: " + String (swaps) + " in 10 s, swap blocks avg " + String (sumMs / swaps, 1)
+                                + " ms (max " + String (maxMs, 1) + "), with damage " + String (damaged) + ", whole-frame " + String (whole)
+                                + ", avg presented area " + String ((int) (damaged > 0 ? areaSum / damaged : 0.0)) + " px");
+            sumMs = maxMs = areaSum = 0.0;
+            swaps = damaged = whole = 0;
+            lastLogMs = t1;
+        }
     }
 
     void updateWindowPosition (Rectangle<int> newBounds)

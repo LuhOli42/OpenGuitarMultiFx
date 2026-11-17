@@ -44,3 +44,8 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/juce-egl/juce_OpenGL_linux_egl.h" "${m
 patch_file("${m}/opengl/juce_OpenGLContext.cpp"
   "        validArea = currentAreaAndScale.area;\n\n        if (! invalid.isEmpty())\n"
   "        validArea = currentAreaAndScale.area;\n\n       #if JUCE_OPENGL_LINUX_EGL\n        egl_damage::add (invalid, currentAreaAndScale.area.getHeight());\n       #endif\n\n        if (! invalid.isEmpty())\n")
+
+# Diagnostic: let OGMFX_GL_NOCOPY=1 skip the full-window copy of the cached framebuffer (measures the swap alone).
+patch_file("${m}/opengl/juce_OpenGLContext.cpp"
+  "    void drawComponentBuffer()\n    {\n"
+  "    void drawComponentBuffer()\n    {\n       #if JUCE_OPENGL_LINUX_EGL\n        if (egl_debug::noCopy())\n            return;\n       #endif\n")
