@@ -383,9 +383,11 @@ MainComponent::MainComponent()
     for (int row = 0; row < numRows; ++row)
     {
         addAndMakeVisible (rowInputBlocks[(size_t) row]);
+        rowInputBlocks[(size_t) row].setBufferedToImage (true); // static pill: one texture
         rowInputBlocks[(size_t) row].onClicked = [this, row] { showRowInputMenu (row); };
 
         addAndMakeVisible (rowOutputBlocks[(size_t) row]);
+        rowOutputBlocks[(size_t) row].setBufferedToImage (true);
         rowOutputBlocks[(size_t) row].onClicked = [this, row] { showRowOutputMenu (row); };
     }
     refreshRowEndpoints();
@@ -408,6 +410,7 @@ MainComponent::MainComponent()
     // parameterPanel.refresh()) are all cheap enough not to mind running
     // 4x more often.
     startTimer (50);
+    addEffectPool.addJob ([this] { probeStore.warm (registry); }); // the Add Effect browser's icon sources, built once
 
     // Program Change -> preset switching (Phase 5). Every currently
     // available MIDI input, not just one picked in a settings screen --
@@ -1082,7 +1085,7 @@ void MainComponent::showAddEffectMenu (int targetGridSlot)
     // + live search) -- the nested juce::PopupMenu it replaced couldn't fit
     // ~120 effects on a touchscreen. Categories are registry metadata
     // (EffectRegistry::categoryForKey), so this dialog needs no name table.
-    auto dialog = std::make_unique<AddEffectBrowserDialog> (registry);
+    auto dialog = std::make_unique<AddEffectBrowserDialog> (registry, probeStore);
 
     juce::Component::SafePointer<AddEffectBrowserDialog> browser (dialog.get());
     auto choiceMade = std::make_shared<std::atomic<bool>> (false);
@@ -3551,37 +3554,26 @@ void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted
 
 void MainComponent::CpuPill::setCpu (float average01, bool deviceOk)
 {
-    target = juce::jlimit (0.0f, 1.0f, average01);
     if (ok != deviceOk)
     {
         ok = deviceOk;
         repaint();
     }
-    if (! isTimerRunning())
-        startTimerHz (60);
-}
 
-void MainComponent::CpuPill::timerCallback()
-{
+    // The reading arrives every 50 ms and always wobbles; drawing every change (and easing it at 60 fps) cost a whole GPU
+    // frame each time -- ~20 frames a second on an idle screen. The number is a gauge to glance at: twice a second, no easing.
     const double now = juce::Time::getMillisecondCounterHiRes();
-    const float dt = lastFrameMs > 0.0 ? juce::jlimit (0.004f, 0.1f, (float) ((now - lastFrameMs) * 0.001)) : 1.0f / 60.0f;
+    if (now - lastFrameMs < 500.0)
+        return;
     lastFrameMs = now;
 
-    const float next = cpu + (1.0f - std::exp (-dt * 9.0f)) * (target - cpu);
-    const bool moved = std::abs (next - cpu) > 0.0004f;
-    cpu = std::abs (target - next) < 0.0004f ? target : next;
-    // A frame only when what is drawn actually changes: the whole-number % or the bar's width in pixels.
+    cpu = juce::jlimit (0.0f, 1.0f, average01);
     const int percent = juce::roundToInt (cpu * 100.0f), barPx = juce::roundToInt (cpu * (float) juce::jmax (1, getWidth() - 24));
     if (percent != shownPercent || barPx != shownBarPx)
     {
         shownPercent = percent;
         shownBarPx = barPx;
         repaint();
-    }
-    if (! moved)
-    {
-        stopTimer();
-        lastFrameMs = 0.0;
     }
 }
 

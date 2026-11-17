@@ -23,6 +23,7 @@
 #include "UndoHistory.h"
 #include "SnapshotPresetXml.h"
 #include "../EffectRegistry.h"
+#include "EffectProbeStore.h"
 #include "../Engine/AudioEngine.h"
 #include "../Presets/PresetManager.h"
 #include "../Presets/PresetLibrary.h"
@@ -313,6 +314,7 @@ private:
     void syncChainScrollBar();
 
     EffectRegistry registry;
+    EffectProbeStore probeStore; // before addEffectPool: the pool is joined first
     juce::ThreadPool addEffectPool { 1 }; // declared after `registry`: joined first on destruction
     AudioEngine audioEngine;
     Tone3000Manager tone3000;
@@ -505,16 +507,13 @@ private:
     };
 
     /** Prototype .cpu pill: "CPU 23%" plus the 3px load bar. */
-    class CpuPill : public juce::Component,
-                    private juce::Timer
+    class CpuPill : public juce::Component
     {
     public:
         void setCpu (float average01, bool deviceOk);
         void paint (juce::Graphics& g) override;
     private:
-        void timerCallback() override;
-        float cpu = 0.0f;       // drawn value, eased toward `target` every frame
-        float target = 0.0f;    // latest reading (arrives every 50 ms)
+        float cpu = 0.0f;       // drawn value, refreshed at most twice a second
         int shownPercent = -1, shownBarPx = -1;
         double lastFrameMs = 0.0;
         bool ok = true;
