@@ -153,6 +153,7 @@ public:
     /** Sample rates the OPEN device supports (empty when no device is open) and the one it is running at (0 when stopped). Control thread. */
     juce::Array<double> getAvailableSampleRates() const;
     double getCurrentSampleRate() const noexcept { return sampleRate.load (std::memory_order_relaxed); }
+    int getCurrentBlockSize() const noexcept { return blockSize.load (std::memory_order_relaxed); }
 
     /** Control thread. Restarts the device at `newRate` (audio is interrupted for a moment), re-prepares the running graph for it, and
         remembers the choice for the next launch. Returns an empty string on success, otherwise why it failed (the previous rate is restored). */

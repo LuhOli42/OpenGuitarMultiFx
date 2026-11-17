@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
@@ -42,6 +43,14 @@ public:
         it only if it's still on top afterwards. */
     virtual void outsideTapDismissed() = 0;
 };
+
+/** True while a popup card covers the app. What sits underneath is dimmed and unreachable, so its live meters stop asking
+    for GPU frames (every frame re-draws the whole tree, popup included). */
+inline std::atomic<bool>& overlayCoversApp() noexcept
+{
+    static std::atomic<bool> value { false };
+    return value;
+}
 
 class OverlayHost : public juce::Component,
                     private juce::Timer

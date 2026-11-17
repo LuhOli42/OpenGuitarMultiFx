@@ -96,7 +96,11 @@ private:
     /** `cabSelection` >= 0 writes the processor's `*_cab` page-2 selector before
         the block goes live (the add-effect browser's 'Amp'/'Amp + Cab' rows);
         -1 leaves the parameter's own default. */
-    void addEffect (const juce::String& registryName, int targetGridSlot = -1, int cabSelection = -1);
+    void addEffect (const juce::String& registryName, int targetGridSlot = -1, int cabSelection = -1,
+                    std::unique_ptr<EffectProcessor> ready = nullptr);
+    /** Builds and prepares the processor on a worker thread (the amps and circuit models take long on the slow cores), then
+        hands it to addEffect() on the message thread, so the UI keeps animating meanwhile. */
+    void addEffectAsync (const juce::String& registryName, int targetGridSlot, int cabSelection);
     void removeEffect (EffectProcessor* processor);
     void handleBlockDragEnded (EffectBlockComponent& block);
     void selectBlock (EffectProcessor* processor);
@@ -305,6 +309,7 @@ private:
     void syncChainScrollBar();
 
     EffectRegistry registry;
+    juce::ThreadPool addEffectPool { 1 }; // declared after `registry`: joined first on destruction
     AudioEngine audioEngine;
     Tone3000Manager tone3000;
 

@@ -8,6 +8,7 @@
 #include "UI/ParameterPanel.h"
 #include "UI/TouchSizing.h"
 
+#include <vector>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace openguitarmultifx
@@ -171,6 +172,20 @@ public:
             keyboardManager = std::make_unique<OnScreenKeyboardManager>();
         mainWindow = std::make_unique<MainWindow> (getApplicationName() + " -- cheapCortex");
         juce::Logger::writeToLog ("initialise() -- MainWindow created and visible");
+
+       #if JUCE_LINUX
+        // Code is paged in from the SD card the first time a path runs (the first use of each effect). Read the whole
+        // executable once, in the background and at idle priority, so every page sits in the page cache from then on.
+        juce::Thread::launch (juce::Thread::Priority::background, []
+        {
+            juce::FileInputStream in (juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+            if (! in.openedOk())
+                return;
+            std::vector<char> chunk (1 << 20);
+            while (in.read (chunk.data(), (int) chunk.size()) > 0)
+                juce::Thread::sleep (2);
+        });
+       #endif
     }
 
     void systemRequestedQuit() override
