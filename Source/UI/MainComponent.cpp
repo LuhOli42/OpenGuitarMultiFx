@@ -295,6 +295,14 @@ MainComponent::MainComponent()
     addAndMakeVisible (parameterPanel);
 
     addAndMakeVisible (footerBar);
+
+    // The UI is drawn on the GPU, which re-renders the whole component tree on every frame: ANY animation anywhere
+    // (the footer meters never stop) made the board redraw every row, label and icon of the chain and the knob panel
+    // 30-60 times a second, enough to saturate a little core and starve the touch queue. These big, mostly still
+    // regions are kept as textures instead: painted once, drawn as a few quads per frame, and re-painted only in the
+    // part that actually changes (a knob turning, a block lighting up).
+    for (auto* region : std::initializer_list<juce::Component*> { &chainViewport, &parameterPanel, &snapshotBar, &presetBadge })
+        region->setBufferedToImage (true);
     footerBar.onTunerTapped = [this] { showTuner(); };
     footerBar.onTapLongPress = [this]
     {
@@ -3460,7 +3468,7 @@ void MainComponent::CpuPill::setCpu (float average01, bool deviceOk)
         repaint();
     }
     if (! isTimerRunning())
-        startTimerHz (60);
+        startTimerHz (30);
 }
 
 void MainComponent::CpuPill::timerCallback()

@@ -6,6 +6,11 @@
 namespace openguitarmultifx
 {
 
+namespace
+{
+    bool content_isFullscreen (const juce::Component& c) { return (bool) c.getProperties().getWithDefault ("fullscreen", false); }
+}
+
 OverlayHost::OverlayHost()
 {
     setVisible (false); // nothing to show until the first pushOverlay()
@@ -26,6 +31,11 @@ void OverlayHost::pushOverlay (std::unique_ptr<juce::Component> content)
 
     openProgress = 0.0f;
     lastFrameMs = 0.0;
+    // While the card fades and rises it is drawn ONCE into a texture and that texture is moved/faded each frame; without
+    // this the transparency forces the GPU to redraw every row of a big card (the Add Effect list) on every frame. The
+    // buffering is dropped when the animation ends, so the live card is exactly as before.
+    if (! content_isFullscreen (*layers.back()))
+        layers.back()->setBufferedToImage (true);
     applyOpenAnimation();
     startTimerHz (60);
 }
@@ -52,6 +62,8 @@ void OverlayHost::timerCallback()
     {
         openProgress = juce::jmin (1.0f, openProgress + dt / 0.15f);
         applyOpenAnimation();
+        if (openProgress >= 1.0f && ! layers.empty())
+            layers.back()->setBufferedToImage (false);
     }
     scrimAlpha += (1.0f - std::exp (-dt * (layers.empty() ? 26.0f : 22.0f))) * (target - scrimAlpha);
     if (std::abs (target - scrimAlpha) < 0.004f)
@@ -71,6 +83,7 @@ void OverlayHost::popOverlay()
         return;
 
     layers.back()->setTransform (juce::AffineTransform());
+    layers.back()->setBufferedToImage (false);
     removeChildComponent (layers.back().get());
     layers.pop_back();
 
@@ -84,6 +97,7 @@ void OverlayHost::popOverlay()
     {
         layers.back()->setVisible (true);
         layers.back()->setAlpha (1.0f);
+        layers.back()->setBufferedToImage (false);
         openProgress = 1.0f;
         layOutTop();
     }

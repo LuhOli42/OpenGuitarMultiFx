@@ -190,7 +190,7 @@ void FooterBar::setLevels (float inLevelIn, float outLevelIn)
     inTarget = juce::jlimit (0.0f, 1.0f, inLevelIn);
     outTarget = juce::jlimit (0.0f, 1.0f, outLevelIn);
     if (! isTimerRunning())
-        startTimerHz (60);
+        startTimerHz (30); // 30 is plenty for a level bar; each frame re-renders the GPU scene
 }
 
 void FooterBar::timerCallback()

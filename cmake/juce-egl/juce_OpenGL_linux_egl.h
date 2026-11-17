@@ -188,6 +188,11 @@ public:
                                                                    0, depth, InputOutput, visual,
                                                                    CWBorderPixel | CWColormap | CWEventMask, &swa);
 
+        // The GL window sits over the whole UI but must never take part in pointer hit-testing: give it an EMPTY input
+        // shape (XShape, ShapeInput) so every press, drag and touch-emulated click goes to the window below it -- the app's
+        // own. Without this the GPU-drawn UI sometimes lost clicks (bottom of the screen: knobs, switches, footer).
+        makeInputTransparent (embeddedWindow);
+
         peerListener.emplace (component, embeddedWindow);
 
         X11Symbols::getInstance()->xMapWindow (display, embeddedWindow);
@@ -214,6 +219,42 @@ public:
                 while (X11Symbols::getInstance()->xCheckWindowEvent (display, embeddedWindow, embeddedWindowEventMask, &event) == True) {}
             }
         }
+    }
+
+    /** Gives the GL window an empty input shape and CHECKS it took (the X server is asked back); returns true when the
+        window is verifiably input-transparent. Called on creation and again after every resize/move, so it can never
+        silently stop holding. */
+    bool makeInputTransparent (Window w)
+    {
+        // libXext is not linked by JUCE (its X11 symbols are dlopen'd), so the XShape calls are looked up the same way.
+        using ShapeCombineRectangles = void (*) (::Display*, Window, int, int, int, void*, int, int, int);
+        using ShapeGetRectangles = void* (*) (::Display*, Window, int, int*, int*);
+        static void* lib = dlopen ("libXext.so.6", RTLD_LAZY | RTLD_GLOBAL);
+        if (lib == nullptr)
+            return false;
+
+        auto combine = (ShapeCombineRectangles) dlsym (lib, "XShapeCombineRectangles");
+        auto getRects = (ShapeGetRectangles) dlsym (lib, "XShapeGetRectangles");
+        if (combine == nullptr || getRects == nullptr)
+            return false;
+
+        constexpr int shapeInput = 2, shapeSet = 0, unsorted = 0;
+        combine (display, w, shapeInput, 0, 0, nullptr, 0, shapeSet, unsorted);
+        X11Symbols::getInstance()->xSync (display, False);
+
+        int count = -1, ordering = 0;
+        void* rects = getRects (display, w, shapeInput, &count, &ordering);
+        if (rects != nullptr)
+            X11Symbols::getInstance()->xFree (rects);
+
+        const bool ok = count == 0; // an empty region comes back with no rectangles
+        if (! ok || ! loggedInputShape)
+        {
+            juce::Logger::writeToLog (ok ? "GPU window: input shape empty -- clicks and touches reach the app"
+                                         : "GPU window: input shape NOT empty (" + juce::String (count) + " rect) -- re-applying");
+            loggedInputShape = ok;
+        }
+        return ok;
     }
 
     InitResult initialiseOnRenderThread (OpenGLContext& c)
@@ -293,6 +334,7 @@ public:
                                                       physicalBounds.getX(), physicalBounds.getY(),
                                                       (unsigned int) jmax (1, physicalBounds.getWidth()),
                                                       (unsigned int) jmax (1, physicalBounds.getHeight()));
+        makeInputTransparent (embeddedWindow); // cheap, and keeps the guarantee across every resize
     }
 
     bool setSwapInterval (int numFramesPerSwap)
@@ -362,6 +404,7 @@ private:
     std::optional<PeerListener> peerListener;
 
     int swapFrames = 0;
+    bool loggedInputShape = false;
     Rectangle<int> bounds;
     void* contextToShareWith;
 
