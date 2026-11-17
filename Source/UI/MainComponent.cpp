@@ -1216,6 +1216,17 @@ void MainComponent::showSettingsPanel()
         sendModeFile().replaceWithText (enabled ? "on" : "off");
         rebuildSignalGraph();
     };
+    {
+        const auto saved = performanceModeFile().getSiblingFile ("slow_clock.txt");
+        panel->setSlowClock (saved.existsAsFile() ? saved.loadFileAsString().trim().getIntValue() : 0);
+    }
+    panel->onSlowClockChanged = [] (int mhz)
+    {
+        // The thermal guard (a root service on the board) reads this file once a second and applies it.
+        const auto file = performanceModeFile().getSiblingFile ("slow_clock.txt");
+        file.getParentDirectory().createDirectory();
+        file.replaceWithText (mhz == 416 || mhz == 780 ? juce::String (mhz) : juce::String ("auto"));
+    };
     panel->setSystemMonitor (systemMonitor.isVisible());
     panel->onSystemMonitorChanged = [this] (bool shown) { setSystemMonitorShown (shown); };
     panel->onOpenWifi = [this] { openWifiCard(); };

@@ -359,7 +359,7 @@ void SignalGraph::LaneWorker::run()
     // denormal-heavy tails (reverb, filters) are 10-100x slower without
     // it, and this thread runs the same DSP.
     const juce::ScopedNoDenormals noDenormals;
-    cpuaffinity::pinThisThreadToAudio(); // lane workers do the audio thread's DSP: same fast cores (CpuAffinity.h)
+    cpuaffinity::pinThisThreadToAudioSlot (slot + 1); // its own fast core, never stacked on the audio callback's (slot 0) -- CpuAffinity.h
 
     auto seen = graph.jobEpoch.load (std::memory_order_acquire);
 
@@ -538,7 +538,7 @@ void SignalGraph::stopPipelineWorker()
 void SignalGraph::PipeWorker::run()
 {
     const juce::ScopedNoDenormals noDenormals;
-    cpuaffinity::pinThisThreadToAudio();
+    cpuaffinity::pinThisThreadToAudioSlot (1); // the performance-mode / send worker owns the second fast core
 
     auto& processors = graph.lanes[(size_t) graph.pipeLane].processors;
     int next = 0;

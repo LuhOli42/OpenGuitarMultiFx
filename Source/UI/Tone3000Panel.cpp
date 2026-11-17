@@ -239,6 +239,25 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
                            "the dry signal stays instant and only the echoes/tail arrive about 5 ms late. Ignored while Performance mode is on.",
                            juce::dontSendNotification);
 
+    audioPage.addAndMakeVisible (slowClockSectionLabel);
+    slowClockSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
+    {
+        const struct { juce::TextButton* button; int mhz; } slowChoices[] = { { &slowAutoButton, 0 }, { &slow416Button, 416 }, { &slow780Button, 780 } };
+        for (const auto& c : slowChoices)
+        {
+            audioPage.addAndMakeVisible (*c.button);
+            c.button->setClickingTogglesState (true);
+            c.button->setRadioGroupId (4702);
+            c.button->onClick = [this, mhz = c.mhz] { if (onSlowClockChanged) onSlowClockChanged (mhz); };
+        }
+    }
+    audioPage.addAndMakeVisible (slowClockHintLabel);
+    slowClockHintLabel.setFont (juce::Font (14.0f));
+    slowClockHintLabel.setText ("Locks the six slow cores (the interface and the drawing) at one clock. The processor only has fixed "
+                                "steps: 416 is the lowest, 780 the next. Lower = cooler, but the interface needs about 600 MHz of one core "
+                                "while it animates, so 416 can stutter. Auto = follows the load (ceiling 1 GHz).",
+                                juce::dontSendNotification);
+
     audioPage.addAndMakeVisible (monitorSectionLabel);
     monitorSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
     audioPage.addAndMakeVisible (monitorButton);
@@ -412,6 +431,13 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
     resized();
 }
 
+void Tone3000Panel::setSlowClock (int mhz)
+{
+    slowAutoButton.setToggleState (mhz != 416 && mhz != 780, juce::dontSendNotification);
+    slow416Button.setToggleState (mhz == 416, juce::dontSendNotification);
+    slow780Button.setToggleState (mhz == 780, juce::dontSendNotification);
+}
+
 void Tone3000Panel::setSystemMonitor (bool shown)
 {
     monitorButton.setToggleState (shown, juce::dontSendNotification);
@@ -570,7 +596,7 @@ void Tone3000Panel::applyLabelColours()
     const auto& t = theme::current();
     const auto muted = [this, &t] (juce::Label& label) { label.setColour (juce::Label::textColourId, t.textMuted); };
 
-    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &monitorHintLabel, &connectionsHintLabel, &statusLabel,
+    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &monitorHintLabel, &slowClockHintLabel, &connectionsHintLabel, &statusLabel,
                                 &updateStatusLabel, &expressionHintLabel, &aboutDetailsLabel, &interfaceLabel,
                                 &currentVersionLabel, &clientIdLabel })
         muted (*label);
@@ -816,6 +842,19 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
             sendButton.setBounds (area.removeFromTop (touch::minTapTarget).removeFromLeft (110));
             area.removeFromTop (6);
             sendHintLabel.setBounds (area.removeFromTop (60));
+            area.removeFromTop (14);
+            slowClockSectionLabel.setBounds (area.removeFromTop (26));
+            area.removeFromTop (6);
+            {
+                auto row = area.removeFromTop (touch::minTapTarget);
+                slowAutoButton.setBounds (row.removeFromLeft (110));
+                row.removeFromLeft (8);
+                slow416Button.setBounds (row.removeFromLeft (130));
+                row.removeFromLeft (8);
+                slow780Button.setBounds (row.removeFromLeft (130));
+            }
+            area.removeFromTop (6);
+            slowClockHintLabel.setBounds (area.removeFromTop (92));
             area.removeFromTop (14);
             monitorSectionLabel.setBounds (area.removeFromTop (26));
             area.removeFromTop (6);

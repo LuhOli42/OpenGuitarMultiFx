@@ -204,12 +204,13 @@ private:
             // Fits Linux's 15-char comm limit -- a longer name makes
             // pthread_setname_np fail silently and the workers show up
             // as the process name in ps/top instead.
-            : juce::Thread ("SigGraphLane" + juce::String (index)), graph (owningGraph) {}
+            : juce::Thread ("SigGraphLane" + juce::String (index)), graph (owningGraph), slot (index) {}
 
         void run() override;
 
     private:
         SignalGraph& graph;
+        int slot; // which audio core this worker owns (worker 0 -> slot 1, because slot 0 is the audio callback)
     };
 
     void processImpl (juce::AudioBuffer<float>& buffer);
