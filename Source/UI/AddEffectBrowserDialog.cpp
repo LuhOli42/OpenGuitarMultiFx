@@ -157,6 +157,7 @@ AddEffectBrowserDialog::EffectRow& AddEffectBrowserDialog::RowList::addRow()
 {
     auto* row = rows.add (new EffectRow());
     addAndMakeVisible (*row);
+    row->setBufferedToImage (true); // each row is painted once and scrolled as a texture (GPU-drawn UI: see MainComponent)
     row->onTap = [this, row]
     {
         if (onRowTap)

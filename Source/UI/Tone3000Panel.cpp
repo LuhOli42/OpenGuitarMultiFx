@@ -104,8 +104,8 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (10);
 
-    const char* navTitles[] = { "Appearance", "Audio", "Quality", "TONE3000", "MIDI", "Expression", "Updates", "About" };
-    for (int i = 0; i < 8; ++i)
+    const char* navTitles[] = { "Appearance", "Audio", "Connections", "Quality", "TONE3000", "MIDI", "Expression", "Updates", "About" };
+    for (int i = 0; i < 9; ++i)
     {
         auto* b = new juce::TextButton (navTitles[i]);
         navButtons.add (b);
@@ -116,7 +116,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
         b->onClick = [this, i] { selectSection (i); };
     }
 
-    juce::Component* pages[] = { &appearancePage, &audioPage, &qualityPage, &tone3000Page, &midiPage, &expressionPage, &updatesPage, &aboutPage };
+    juce::Component* pages[] = { &appearancePage, &audioPage, &connectionsPage, &qualityPage, &tone3000Page, &midiPage, &expressionPage, &updatesPage, &aboutPage };
     for (auto* page : pages)
     {
         content.addAndMakeVisible (*page);
@@ -238,6 +238,18 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     sendHintLabel.setText ("Runs the delays and reverbs at the end of a single-row chain on the second fast core, as a send: "
                            "the dry signal stays instant and only the echoes/tail arrive about 5 ms late. Ignored while Performance mode is on.",
                            juce::dontSendNotification);
+
+    connectionsPage.addAndMakeVisible (connectionsSectionLabel);
+    connectionsSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
+    connectionsPage.addAndMakeVisible (wifiOpenButton);
+    wifiOpenButton.onClick = [this] { if (onOpenWifi) onOpenWifi(); };
+    connectionsPage.addAndMakeVisible (bluetoothOpenButton);
+    bluetoothOpenButton.onClick = [this] { if (onOpenBluetooth) onOpenBluetooth(); };
+    connectionsPage.addAndMakeVisible (connectionsHintLabel);
+    connectionsHintLabel.setFont (juce::Font (14.0f));
+    connectionsHintLabel.setText ("Pick a network or pair a device (a MIDI controller, headphones). The top bar only lights up the "
+                                  "Wi-Fi and Bluetooth icons while something is connected.",
+                                  juce::dontSendNotification);
 
     tone3000Page.addAndMakeVisible (tone3000SectionLabel);
     tone3000SectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
@@ -485,13 +497,14 @@ void Tone3000Panel::selectSection (int index)
     switch (index)
     {
         case 0: next = Section::appearance; break;
-        case 1: next = Section::audio;      break;
-        case 2: next = Section::quality;    break;
-        case 3: next = Section::tone3000;   break;
-        case 4: next = Section::midi;       break;
-        case 5: next = Section::expression; break;
-        case 6: next = Section::updates;    break;
-        case 7: next = Section::about;      break;
+        case 1: next = Section::audio;       break;
+        case 2: next = Section::connections; break;
+        case 3: next = Section::quality;     break;
+        case 4: next = Section::tone3000;    break;
+        case 5: next = Section::midi;        break;
+        case 6: next = Section::expression;  break;
+        case 7: next = Section::updates;     break;
+        case 8: next = Section::about;       break;
         default: return;
     }
     if (currentSection == next)
@@ -535,7 +548,7 @@ void Tone3000Panel::applyLabelColours()
     const auto& t = theme::current();
     const auto muted = [this, &t] (juce::Label& label) { label.setColour (juce::Label::textColourId, t.textMuted); };
 
-    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &statusLabel,
+    for (juce::Label* label : { &themeHintLabel, &qualityHintLabel, &rateHintLabel, &bufferHintLabel, &perfHintLabel, &sendHintLabel, &connectionsHintLabel, &statusLabel,
                                 &updateStatusLabel, &expressionHintLabel, &aboutDetailsLabel, &interfaceLabel,
                                 &currentVersionLabel, &clientIdLabel })
         muted (*label);
@@ -689,8 +702,8 @@ void Tone3000Panel::layoutContent()
     const int h = layoutActivePage ({ 0, 0, w, 10000 });
     content.setSize (w, h);
 
-    juce::Component* pages[] = { &appearancePage, &audioPage, &qualityPage, &tone3000Page, &midiPage, &expressionPage, &updatesPage, &aboutPage };
-    const int activeIndex = juce::jlimit (0, 7, (int) currentSection);
+    juce::Component* pages[] = { &appearancePage, &audioPage, &connectionsPage, &qualityPage, &tone3000Page, &midiPage, &expressionPage, &updatesPage, &aboutPage };
+    const int activeIndex = juce::jlimit (0, 8, (int) currentSection);
     for (auto* page : pages)
     {
         page->setBounds (content.getLocalBounds());
@@ -781,6 +794,18 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
             sendButton.setBounds (area.removeFromTop (touch::minTapTarget).removeFromLeft (110));
             area.removeFromTop (6);
             sendHintLabel.setBounds (area.removeFromTop (60));
+            break;
+        }
+        case Section::connections:
+        {
+            connectionsSectionLabel.setBounds (area.removeFromTop (26));
+            area.removeFromTop (10);
+            auto row = area.removeFromTop (touch::minTapTarget + 8);
+            wifiOpenButton.setBounds (row.removeFromLeft (200));
+            row.removeFromLeft (12);
+            bluetoothOpenButton.setBounds (row.removeFromLeft (200));
+            area.removeFromTop (8);
+            connectionsHintLabel.setBounds (area.removeFromTop (70));
             break;
         }
         case Section::tone3000:

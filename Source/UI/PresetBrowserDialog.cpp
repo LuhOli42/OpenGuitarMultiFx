@@ -114,6 +114,7 @@ PresetBrowserDialog::PresetTile& PresetBrowserDialog::TileGrid::addTile()
 {
     auto* tile = tiles.add (new PresetTile());
     addAndMakeVisible (*tile);
+    tile->setBufferedToImage (true); // painted once, scrolled as a texture
     tile->onTap = [this, tile]
     {
         if (onTileTap)
