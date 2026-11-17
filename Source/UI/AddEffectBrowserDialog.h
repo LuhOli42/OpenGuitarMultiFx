@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../EffectRegistry.h"
+#include "EffectProbeStore.h"
 
 #include "OverlayChrome.h"
 
@@ -41,7 +42,7 @@ namespace openguitarmultifx
 class AddEffectBrowserDialog : public juce::Component
 {
 public:
-    explicit AddEffectBrowserDialog (EffectRegistry& registryToUse);
+    AddEffectBrowserDialog (EffectRegistry& registryToUse, EffectProbeStore& probeStoreToUse);
 
     void resized() override;
     void paint (juce::Graphics& g) override;
@@ -127,7 +128,7 @@ private:
     // the next Add Effect opens on the overdrives). For the app's lifetime; message thread only.
     static inline int lastTab = 0;
     static inline juce::String lastSubcategory;
-    std::map<juce::String, std::unique_ptr<EffectProcessor>> probes;
+    EffectProbeStore& probeStore;
     std::map<EffectRegistry::Category, int> counts;
 
     juce::Label titleLabel;

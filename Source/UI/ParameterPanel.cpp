@@ -232,6 +232,7 @@ ParameterPanel::ParameterPanel()
     knobGridHost.addChildComponent (graphicEqPanel);
     addAndMakeVisible (knobViewport);
     knobViewport.setViewedComponent (&knobGridHost, false);
+    setBufferedToImage (true); // the panel's own chrome (rounded card, glow paths, tabs) is a texture too, not re-tessellated every frame
     knobGridHost.setBufferedToImage (true); // the knobs' content is cached as a texture: scrolling the panel slides it, a turning knob repaints only itself
     touch::enableDragScroll (knobViewport);
     knobViewport.setScrollBarsShown (true, false);

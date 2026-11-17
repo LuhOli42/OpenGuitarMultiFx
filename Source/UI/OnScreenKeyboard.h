@@ -266,9 +266,17 @@ private:
 
     void show (juce::TextEditor& editor)
     {
-        auto* top = editor.getTopLevelComponent();
-        if (top == nullptr)
+        auto* window = editor.getTopLevelComponent();
+        if (window == nullptr)
             return;
+
+        // The GPU renderer is attached to the window's CONTENT, not to the window: anything added to the window itself
+        // is never drawn (the GL surface covers it) yet still takes the touches -- an invisible keyboard that also
+        // swallowed the bottom half of the screen. Host the keyboard inside the content so it is drawn with the rest.
+        auto* top = window;
+        if (auto* resizable = dynamic_cast<juce::ResizableWindow*> (window))
+            if (auto* content = resizable->getContentComponent())
+                top = content;
 
         target = &editor;
         if (keyboard.getParentComponent() != top)

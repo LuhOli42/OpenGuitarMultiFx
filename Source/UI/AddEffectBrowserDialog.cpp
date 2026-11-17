@@ -180,8 +180,8 @@ int AddEffectBrowserDialog::RowList::layoutForWidth (int width)
 //==============================================================================
 // AddEffectBrowserDialog
 //==============================================================================
-AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse)
-    : registry (registryToUse)
+AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse, EffectProbeStore& probeStoreToUse)
+    : registry (registryToUse), probeStore (probeStoreToUse)
 {
     for (auto& key : registry.getRegisteredNames())
         ++counts[registry.categoryForKey (key)];
@@ -308,10 +308,7 @@ int AddEffectBrowserDialog::tabForRow (const EffectRow& row) const
 
 const EffectProcessor* AddEffectBrowserDialog::probeForKey (const juce::String& key)
 {
-    auto& probe = probes[key];
-    if (probe == nullptr)
-        probe = registry.create (key);
-    return probe.get();
+    return probeStore.get (registry, key);
 }
 
 void AddEffectBrowserDialog::selectTab (int tabIndex)
