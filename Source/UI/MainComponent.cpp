@@ -300,8 +300,9 @@ MainComponent::MainComponent()
     // (the footer meters never stop) made the board redraw every row, label and icon of the chain and the knob panel
     // 30-60 times a second, enough to saturate a little core and starve the touch queue. These big, mostly still
     // regions are kept as textures instead: painted once, drawn as a few quads per frame, and re-painted only in the
-    // part that actually changes (a knob turning, a block lighting up).
-    for (auto* region : std::initializer_list<juce::Component*> { &chainViewport, &parameterPanel, &snapshotBar, &presetBadge })
+    // part that actually changes (a knob turning, a block lighting up). For the scrolling grid it is the CONTENT that is
+    // cached (chainContainer), not the viewport: a scroll then just slides a ready texture instead of invalidating it.
+    for (auto* region : std::initializer_list<juce::Component*> { &chainContainer, &snapshotBar, &presetBadge })
         region->setBufferedToImage (true);
     footerBar.onTunerTapped = [this] { showTuner(); };
     footerBar.onTapLongPress = [this]
@@ -3468,7 +3469,7 @@ void MainComponent::CpuPill::setCpu (float average01, bool deviceOk)
         repaint();
     }
     if (! isTimerRunning())
-        startTimerHz (30);
+        startTimerHz (60);
 }
 
 void MainComponent::CpuPill::timerCallback()
