@@ -12,9 +12,21 @@ set_trips() {
     done
   done
 }
-cap() { # $1 big kHz, $2 little kHz
+# Settings > Audio > Slow cores clock writes 416 or 780 (MHz) here; anything else = auto (ondemand up to the ceiling below).
+SLOW_CFG=/var/lib/ogmfx/.config/OpenGuitarMultiFx/slow_clock.txt
+slow_cfg() { case "$(cat $SLOW_CFG 2>/dev/null)" in 416) echo 416000;; 780) echo 780000;; *) echo auto;; esac; }
+cap() { # $1 big kHz, $2 little kHz (this thermal level's caps)
   for c in 6 7; do echo $1 > /sys/devices/system/cpu/cpu$c/cpufreq/scaling_max_freq 2>/dev/null; done
-  for c in 0 1 2 3 4 5; do echo $2 > /sys/devices/system/cpu/cpu$c/cpufreq/scaling_max_freq 2>/dev/null; done
+  cfg=$(slow_cfg)
+  if [ "$cfg" = auto ]; then M=$2; m=416000
+  else M=$cfg; [ $2 -lt $M ] && M=$2; m=$M # locked: floor = ceiling (a hot level may still pull the lock down)
+  fi
+  # the little cluster shares one policy; floor down first, then the ceiling, then the floor -- min must never exceed max
+  for c in 0 1 2 3 4 5; do
+    echo 416000 > /sys/devices/system/cpu/cpu$c/cpufreq/scaling_min_freq 2>/dev/null
+    echo $M > /sys/devices/system/cpu/cpu$c/cpufreq/scaling_max_freq 2>/dev/null
+    echo $m > /sys/devices/system/cpu/cpu$c/cpufreq/scaling_min_freq 2>/dev/null
+  done
 }
 BIG=$(cat /sys/devices/system/cpu/cpu6/cpufreq/cpuinfo_max_freq)
 LIT=1014000 # little cores (UI / GL thread): ceiling 1.0 GHz -- they should run near their limit, not idle at 1.8 GHz
@@ -24,9 +36,10 @@ apply() {
   esac
 }
 up() { case $1 in 1) echo 96000;; 2) echo 100000;; 3) echo 104000;; 4) echo 107000;; esac; }
-level=0; apply 0
+level=0; apply 0; lastcfg=$(slow_cfg)
 while true; do
   set_trips
+  cfgnow=$(slow_cfg); [ "$cfgnow" != "$lastcfg" ] && { lastcfg=$cfgnow; apply $level; echo "ogmfx-thermal: slow cores clock -> $cfgnow"; }
   m=0; for z in /sys/class/thermal/thermal_zone[0-6]/temp; do v=$(cat $z); [ $v -gt $m ] && m=$v; done
   new=$level
   while [ $new -lt 4 ] && [ $m -ge $(up $((new + 1))) ]; do new=$((new + 1)); done

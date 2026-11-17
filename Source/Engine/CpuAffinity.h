@@ -24,6 +24,8 @@ struct Masks
 {
     cpu_set_t audio {}, ui {};
     bool hasAudio = false, hasUi = false;
+    int audioCpus[CPU_SETSIZE] {}; // the audio CPU ids in ascending order, for one-core-per-thread pinning
+    int audioCount = 0;
 };
 
 inline Masks& masks()
@@ -55,9 +57,27 @@ inline void init()
 {
     auto& m = masks();
     m.hasAudio = parse (juce::SystemStats::getEnvironmentVariable ("OGMFX_AUDIO_CPUS", {}), m.audio);
+    m.audioCount = 0;
+    for (int c = 0; c < CPU_SETSIZE && m.audioCount < CPU_SETSIZE; ++c)
+        if (CPU_ISSET (c, &m.audio))
+            m.audioCpus[m.audioCount++] = c;
     m.hasUi = parse (juce::SystemStats::getEnvironmentVariable ("OGMFX_UI_CPUS", {}), m.ui);
     if (m.hasUi)
         sched_setaffinity (0, sizeof (cpu_set_t), &m.ui); // this thread, and every thread it creates from now on
+}
+
+/** Pins the CALLING thread to ONE audio core: slot 0 is the first fast core, slot 1 the second, and so on (wrapping when there
+    are more threads than cores). The audio callback is slot 0 and each parallel worker gets the next slot, so parallelised
+    effects always run on different cores instead of leaving it to the scheduler (which may stack two on one core). */
+inline void pinThisThreadToAudioSlot (int slot) noexcept
+{
+    const auto& m = masks();
+    if (! m.hasAudio || m.audioCount <= 0)
+        return;
+    cpu_set_t one;
+    CPU_ZERO (&one);
+    CPU_SET (m.audioCpus[(slot % m.audioCount + m.audioCount) % m.audioCount], &one);
+    sched_setaffinity (0, sizeof (cpu_set_t), &one);
 }
 
 /** Pins the CALLING thread to the audio CPUs. One syscall, no allocation: safe from the first audio callback. */
@@ -70,6 +90,7 @@ inline void pinThisThreadToAudio() noexcept
 #else
 inline void init() {}
 inline void pinThisThreadToAudio() noexcept {}
+inline void pinThisThreadToAudioSlot (int) noexcept {}
 #endif
 
 } // namespace openguitarmultifx::cpuaffinity
