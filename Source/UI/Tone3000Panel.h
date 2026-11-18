@@ -194,6 +194,22 @@ private:
     juce::TextButton logoutButton { "Log out" };
     juce::Label statusLabel;
 
+    // Login on the device itself (no browser, no keyboard): the panel shows a short code and tone3000.com/activate, the
+    // user signs in on a phone, and the panel polls until TONE3000 hands over the tokens (Tone3000Manager::beginDeviceLogin).
+    void doDeviceLogin();
+    void pollDeviceLogin();
+    void stopDeviceLogin();
+    juce::Label deviceCodeLabel;
+    Tone3000Manager::DeviceLogin deviceLogin;
+    double deviceLoginStartMs = 0.0;
+    int deviceLoginIntervalSec = 5;
+    bool devicePollInFlight = false;
+    struct DeviceLoginTimer : juce::Timer
+    {
+        std::function<void()> tick;
+        void timerCallback() override { if (tick) tick(); }
+    } deviceLoginPoll;
+
     juce::Label updateSectionLabel { {}, "Software update" };
     juce::Label currentVersionLabel;
     juce::TextButton checkUpdateButton { "Check for update" };

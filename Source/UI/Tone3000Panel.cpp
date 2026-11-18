@@ -313,6 +313,11 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     logoutButton.onClick = [this] { manager.logOut(); refreshLoginState(); };
 
     tone3000Page.addAndMakeVisible (statusLabel);
+    tone3000Page.addChildComponent (deviceCodeLabel);
+    deviceCodeLabel.setFont (juce::Font (juce::FontOptions (38.0f, juce::Font::bold)));
+    deviceCodeLabel.setJustificationType (juce::Justification::centredLeft);
+    deviceCodeLabel.setColour (juce::Label::textColourId, theme::current().text);
+    deviceLoginPoll.tick = [this] { pollDeviceLogin(); };
 
     midiPage.addAndMakeVisible (midiTableLabel);
     midiTableLabel.setFont (juce::Font (18.0f, juce::Font::bold));
@@ -592,6 +597,7 @@ void Tone3000Panel::resetForOpen()
 void Tone3000Panel::cardHidden()
 {
     midiPoll.stopTimer();
+    stopDeviceLogin();
     if (onClosing)
         onClosing();
 }
@@ -672,6 +678,13 @@ void Tone3000Panel::refreshLoginState()
 
 void Tone3000Panel::doLogin()
 {
+    // The panel has no browser and no keyboard: log in from a phone with a short code instead.
+    if (touch::kioskMode())
+    {
+        doDeviceLogin();
+        return;
+    }
+
     const auto authorizeUrl = manager.beginLogin();
 
     if (authorizeUrl.isEmpty())
@@ -701,6 +714,101 @@ void Tone3000Panel::doLogin()
 
     loopback.stop();
     doLoginEmbedded (authorizeUrl);
+}
+
+void Tone3000Panel::stopDeviceLogin()
+{
+    deviceLoginPoll.stopTimer();
+    devicePollInFlight = false;
+    if (deviceCodeLabel.isVisible())
+    {
+        deviceCodeLabel.setVisible (false);
+        layoutContent();
+    }
+}
+
+void Tone3000Panel::doDeviceLogin()
+{
+    stopDeviceLogin();
+    if (! manager.hasClientId())
+    {
+        statusLabel.setText ("Set your client_id first.", juce::dontSendNotification);
+        return;
+    }
+
+    statusLabel.setText ("Asking TONE3000 for a login code...", juce::dontSendNotification);
+    manager.beginDeviceLogin ([safe = juce::Component::SafePointer<Tone3000Panel> (this)]
+                              (bool ok, Tone3000Manager::DeviceLogin login, juce::String error)
+    {
+        if (safe == nullptr)
+            return;
+        if (! ok)
+        {
+            safe->statusLabel.setText (error, juce::dontSendNotification);
+            return;
+        }
+
+        safe->deviceLogin = login;
+        safe->deviceLoginStartMs = juce::Time::getMillisecondCounterHiRes();
+        safe->deviceLoginIntervalSec = login.intervalSec;
+        safe->deviceCodeLabel.setText (login.userCode, juce::dontSendNotification);
+        safe->deviceCodeLabel.setVisible (true);
+        const auto where = login.verificationUri.replace ("https://www.", {}).replace ("https://", {});
+        safe->statusLabel.setText ("On your phone open " + where + " and type this code. This screen finishes by itself once you sign in.",
+                                   juce::dontSendNotification);
+        safe->layoutContent();
+        safe->deviceLoginPoll.startTimer (juce::jmax (1, login.intervalSec) * 1000);
+    });
+}
+
+void Tone3000Panel::pollDeviceLogin()
+{
+    if (devicePollInFlight)
+        return;
+
+    if ((juce::Time::getMillisecondCounterHiRes() - deviceLoginStartMs) / 1000.0 > (double) deviceLogin.expiresInSec)
+    {
+        stopDeviceLogin();
+        statusLabel.setText ("The code expired. Tap Log in for a new one.", juce::dontSendNotification);
+        return;
+    }
+
+    devicePollInFlight = true;
+    manager.pollDeviceLogin (deviceLogin, [safe = juce::Component::SafePointer<Tone3000Panel> (this)]
+                                          (Tone3000Manager::DevicePoll result, juce::String error)
+    {
+        if (safe == nullptr)
+            return;
+        safe->devicePollInFlight = false;
+
+        using P = Tone3000Manager::DevicePoll;
+        switch (result)
+        {
+            case P::pending:
+                break;
+            case P::slowDown:
+                safe->deviceLoginIntervalSec += 5; // RFC 8628: back off by 5 s and keep going
+                safe->deviceLoginPoll.startTimer (safe->deviceLoginIntervalSec * 1000);
+                break;
+            case P::done:
+                safe->stopDeviceLogin();
+                safe->statusLabel.setText ("Logged in.", juce::dontSendNotification);
+                safe->refreshLoginState();
+                break;
+            case P::denied:
+                safe->stopDeviceLogin();
+                safe->statusLabel.setText ("The login was declined on the phone.", juce::dontSendNotification);
+                break;
+            case P::expired:
+                safe->stopDeviceLogin();
+                safe->statusLabel.setText ("The code expired. Tap Log in for a new one.", juce::dontSendNotification);
+                break;
+            case P::failed:
+                safe->stopDeviceLogin();
+                safe->statusLabel.setText (error.isNotEmpty() ? error : juce::String ("Login failed."), juce::dontSendNotification);
+                break;
+        }
+    });
 }
 
 void Tone3000Panel::finishLogin (const juce::StringPairArray& params)
@@ -916,6 +1024,11 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
             loginButton.setBounds (loginRow.removeFromLeft (130));
             logoutButton.setBounds (loginRow.getX(), loginRow.getY(), 130, loginRow.getHeight());
             area.removeFromTop (10);
+            if (deviceCodeLabel.isVisible())
+            {
+                deviceCodeLabel.setBounds (area.removeFromTop (52));
+                area.removeFromTop (6);
+            }
             statusLabel.setBounds (area.removeFromTop (64));
             break;
         }
