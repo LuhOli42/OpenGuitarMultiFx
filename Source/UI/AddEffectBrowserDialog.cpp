@@ -291,6 +291,29 @@ AddEffectBrowserDialog::AddEffectBrowserDialog (EffectRegistry& registryToUse, E
     setSize (1180, 780);
 }
 
+void AddEffectBrowserDialog::resetForOpen()
+{
+    const bool hadSearch = ! searchField.isEmpty();
+    searchField.setText ({}, false);
+
+    const int wantedTab = (lastTab >= 0 && lastTab < (int) railTabs.size()) ? lastTab : 0;
+    const auto wantedSub = registry.subcategoriesForCategory (railTabs[(size_t) wantedTab].category).contains (lastSubcategory)
+                               ? lastSubcategory : juce::String();
+    if (hadSearch || wantedTab != selectedTab || wantedSub != selectedSubcategory)
+    {
+        selectedTab = wantedTab;
+        selectedSubcategory = wantedSub;
+        for (int i = 0; i < categoryButtons.size(); ++i)
+        {
+            categoryButtons[i]->selected = i == selectedTab;
+            categoryButtons[i]->repaint();
+        }
+        rebuildChips();
+        rebuildRows();
+    }
+    gridViewport.setViewPosition (0, 0);
+}
+
 int AddEffectBrowserDialog::tabForRow (const EffectRow& row) const
 {
     const auto category = registry.categoryForKey (row.key);

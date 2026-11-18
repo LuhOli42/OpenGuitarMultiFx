@@ -100,6 +100,9 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
 
     addAndMakeVisible (viewport);
     viewport.setViewedComponent (&content, false);
+    // The page in view is cached as one texture: a scroll slides it instead of re-painting every label, button and toggle on each
+    // frame (the lists of effects/presets already do this per row; this page was the slow scroll). Hidden pages are not drawn.
+    content.setBufferedToImage (true);
     touch::enableDragScroll (viewport);
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (10);

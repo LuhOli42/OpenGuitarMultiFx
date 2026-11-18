@@ -411,6 +411,11 @@ MainComponent::MainComponent()
     // 4x more often.
     startTimer (50);
     addEffectPool.addJob ([this] { probeStore.warm (registry); }); // the Add Effect browser's icon sources, built once
+    juce::Timer::callAfterDelay (4000, [this, alive = aliveFlag]
+    {
+        if (alive->load() && addEffectBrowser == nullptr)
+            addEffectBrowser = std::make_unique<AddEffectBrowserDialog> (registry, probeStore); // ready before the first tap on a "+"
+    });
 
     // Program Change -> preset switching (Phase 5). Every currently
     // available MIDI input, not just one picked in a settings screen --
@@ -1081,52 +1086,45 @@ void MainComponent::handleBlockDragEnded (EffectBlockComponent& blockComp)
 
 void MainComponent::showAddEffectMenu (int targetGridSlot)
 {
-    // The real picker is an OverlayHost card now (category rail + tile grid
-    // + live search) -- the nested juce::PopupMenu it replaced couldn't fit
-    // ~120 effects on a touchscreen. Categories are registry metadata
-    // (EffectRegistry::categoryForKey), so this dialog needs no name table.
-    auto dialog = std::make_unique<AddEffectBrowserDialog> (registry, probeStore);
+    // The real picker is an OverlayHost card (category rail + tile grid + live search). It is the same every time, so it is
+    // built ONCE (a few seconds after start, or here if you are faster) and shown again, instead of constructing dozens of
+    // components and painting every row for the first time on each open. Categories are registry metadata
+    // (EffectRegistry::categoryForKey), so the dialog needs no name table.
+    if (addEffectBrowser == nullptr)
+        addEffectBrowser = std::make_unique<AddEffectBrowserDialog> (registry, probeStore);
 
-    juce::Component::SafePointer<AddEffectBrowserDialog> browser (dialog.get());
+    auto* dialog = addEffectBrowser.get();
+    dialog->resetForOpen();
     auto choiceMade = std::make_shared<std::atomic<bool>> (false);
 
-    // The pop is deferred one message-loop tick: popOverlay() destroys the
-    // card, and freeing a std::function's storage while it is still running
-    // (tile -> grid -> dialog -> this callback) is UB. The deferred side
-    // guards on three things: aliveFlag (window may close before the tick
-    // runs -- same pattern as the MIDI callbacks below), `browser` (null
-    // once the card is dismissed by an outside tap, which invalidates the
-    // pending choice), and topLayer() (popOverlay() removes the TOP layer,
-    // so it only runs while this browser is still the top card).
-    dialog->onEffectChosen = [this, targetGridSlot, browser, choiceMade] (juce::String key, bool cabOn)
+    // The pop is deferred one message-loop tick: freeing a std::function's storage while it is still running
+    // (tile -> grid -> dialog -> this callback) is UB. The deferred side guards on aliveFlag (the window may close before
+    // the tick runs) and on the dialog still being the top card (an outside tap dismissed it: the pending choice is void).
+    dialog->onEffectChosen = [this, targetGridSlot, dialog, choiceMade] (juce::String key, bool cabOn)
     {
-        // The card stays on screen until the deferred pop -- a second tile
-        // tap in the same tick must not schedule a second addEffect.
+        // The card stays on screen until the deferred pop -- a second tile tap in the same tick must not schedule a
+        // second addEffect.
         if (choiceMade->exchange (true))
             return;
 
-        juce::MessageManager::callAsync ([this, key = std::move (key), targetGridSlot, cabOn,
-                                        browser, alive = aliveFlag]
+        juce::MessageManager::callAsync ([this, key = std::move (key), targetGridSlot, cabOn, dialog, alive = aliveFlag]
         {
-            if (! alive->load() || browser == nullptr)
+            if (! alive->load() || overlayHost.topLayer() != dialog)
                 return;
 
-            if (overlayHost.topLayer() == browser.getComponent())
-                overlayHost.popOverlay();
-
+            overlayHost.popOverlay();
             addEffectAsync (key, targetGridSlot, cabOn ? 1 : 0);
         });
     };
-    dialog->onPopOverlay = [this, browser]
+    dialog->onPopOverlay = [this, dialog]
     {
-        juce::MessageManager::callAsync ([this, browser, alive = aliveFlag]
+        juce::MessageManager::callAsync ([this, dialog, alive = aliveFlag]
         {
-            if (alive->load() && browser != nullptr
-                && overlayHost.topLayer() == browser.getComponent())
+            if (alive->load() && overlayHost.topLayer() == dialog)
                 overlayHost.popOverlay();
         });
     };
-    overlayHost.pushOverlay (std::move (dialog));
+    overlayHost.pushPersistent (*dialog);
 }
 
 juce::File MainComponent::getModelsDirectory()

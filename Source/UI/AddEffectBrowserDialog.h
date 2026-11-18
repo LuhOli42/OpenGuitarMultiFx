@@ -44,6 +44,10 @@ class AddEffectBrowserDialog : public juce::Component
 public:
     AddEffectBrowserDialog (EffectRegistry& registryToUse, EffectProbeStore& probeStoreToUse);
 
+    /** The dialog is built once and shown again and again: back to how a fresh one looks -- empty search, the tab and chip the
+        last effect was added from, list at the top. Only rebuilds the rows if something differs. */
+    void resetForOpen();
+
     void resized() override;
     void paint (juce::Graphics& g) override;
 
