@@ -23,6 +23,14 @@ constexpr int pedalRowHeight = 52;
 constexpr int confirmMs = 3000; // an armed two-tap action falls back after this
 
 using overlaychrome::font;
+
+// Every closing action pops (destroys) this card, its buttons and the Actions holding the callback while the
+// callback still runs: call a stack copy, like ChoiceCard does, and touch nothing of the card afterwards.
+void callDetached (const std::function<void()>& f)
+{
+    if (auto copy = f)
+        copy();
+}
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -196,7 +204,7 @@ SnapshotEditorCard::SnapshotEditorCard (bool isNewScene, Actions act)
     titleLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (titleLabel);
 
-    closeButton.onClick = [this] { if (actions.onClose) actions.onClose(); };
+    closeButton.onClick = [this] { callDetached (actions.onClose); };
     addAndMakeVisible (closeButton);
 
     nameEditor.setFont (font (18.0f));
@@ -247,10 +255,10 @@ SnapshotEditorCard::SnapshotEditorCard (bool isNewScene, Actions act)
             return;
         }
         stopTimer();
-        if (actions.onRemove) actions.onRemove();
+        callDetached (actions.onRemove);
     };
-    cancelButton.onClick = [this] { if (actions.onCancelNew) actions.onCancelNew(); };
-    doneButton.onClick = [this] { if (actions.onClose) actions.onClose(); };
+    cancelButton.onClick = [this] { callDetached (actions.onCancelNew); };
+    doneButton.onClick = [this] { callDetached (actions.onClose); };
 
     addChildComponent (removeButton);
     addChildComponent (cancelButton);

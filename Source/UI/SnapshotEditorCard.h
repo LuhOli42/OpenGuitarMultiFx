@@ -64,7 +64,7 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
     void visibilityChanged() override;
-    void outsideTapDismissed() override { if (actions.onClose) actions.onClose(); }
+    void outsideTapDismissed() override { if (auto close = actions.onClose) close(); }
 
     // Re-reads State and updates every control.
     void refresh();

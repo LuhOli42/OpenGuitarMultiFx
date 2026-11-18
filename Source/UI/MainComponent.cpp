@@ -2074,9 +2074,9 @@ void MainComponent::showSnapshotEditor (int index, int newFromScene)
 
     actions.onCancelNew = [this, index, source]
     {
-        const int back = *source;
+        const int back = *source, dropped = index; // the pop below destroys this lambda's captures
         overlayHost.popOverlay();
-        removeSnapshot (index);
+        removeSnapshot (dropped);
         selectSnapshot (juce::jlimit (0, snapshotCount - 1, back));
     };
 
@@ -2124,8 +2124,9 @@ void MainComponent::showSnapshotEditor (int index, int newFromScene)
 
     actions.onRemove = [this, index]
     {
+        const int removed = index; // the pop below destroys this lambda's captures
         overlayHost.popOverlay();
-        removeSnapshot (index);
+        removeSnapshot (removed);
     };
 
     overlayHost.pushOverlay (std::make_unique<SnapshotEditorCard> (isNew, std::move (actions)));
