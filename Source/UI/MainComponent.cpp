@@ -1246,14 +1246,18 @@ void MainComponent::showSettingsPanel()
     };
     {
         const auto saved = performanceModeFile().getSiblingFile ("slow_clock.txt");
-        panel->setSlowClock (saved.existsAsFile() ? saved.loadFileAsString().trim().getIntValue() : 0);
+        const auto text = saved.existsAsFile() ? saved.loadFileAsString().trim() : juce::String();
+        panel->setSlowClock (text == "full" ? Tone3000Panel::cpuFull : text == "max" ? Tone3000Panel::cpuMax : text.getIntValue());
     }
     panel->onSlowClockChanged = [] (int mhz)
     {
         // The thermal guard (a root service on the board) reads this file once a second and applies it.
         const auto file = performanceModeFile().getSiblingFile ("slow_clock.txt");
         file.getParentDirectory().createDirectory();
-        file.replaceWithText (mhz == 416 || mhz == 780 ? juce::String (mhz) : juce::String ("auto"));
+        file.replaceWithText (mhz == 416 || mhz == 780       ? juce::String (mhz)
+                              : mhz == Tone3000Panel::cpuFull ? juce::String ("full")
+                              : mhz == Tone3000Panel::cpuMax  ? juce::String ("max")
+                                                              : juce::String ("auto"));
     };
     panel->setSystemMonitor (systemMonitor.isVisible());
     panel->onSystemMonitorChanged = [this] (bool shown) { setSystemMonitorShown (shown); };

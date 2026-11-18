@@ -245,7 +245,9 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     audioPage.addAndMakeVisible (slowClockSectionLabel);
     slowClockSectionLabel.setFont (juce::Font (18.0f, juce::Font::bold));
     {
-        const struct { juce::TextButton* button; int mhz; } slowChoices[] = { { &slowAutoButton, 0 }, { &slow416Button, 416 }, { &slow780Button, 780 } };
+        const struct { juce::TextButton* button; int mhz; } slowChoices[] = { { &slowAutoButton, cpuAuto }, { &slowFullButton, cpuFull },
+                                                                             { &slowMaxButton, cpuMax }, { &slow780Button, 780 },
+                                                                             { &slow416Button, 416 } };
         for (const auto& c : slowChoices)
         {
             audioPage.addAndMakeVisible (*c.button);
@@ -256,9 +258,10 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     }
     audioPage.addAndMakeVisible (slowClockHintLabel);
     slowClockHintLabel.setFont (juce::Font (14.0f));
-    slowClockHintLabel.setText ("Locks the six slow cores (the interface and the drawing) at one clock. The processor only has fixed "
-                                "steps: 416 is the lowest, 780 the next. Lower = cooler, but the interface needs about 600 MHz of one core "
-                                "while it animates, so 416 can stutter. Auto = follows the load (ceiling 1 GHz).",
+    slowClockHintLabel.setText ("Auto: the six slow cores (interface and drawing) follow the load up to 1 GHz. Full: up to their "
+                                "maximum, 1.8 GHz. Max: every core locked at its maximum (1.8 GHz slow, 2.0 GHz fast) - only with good "
+                                "cooling. 780 / 416 MHz lock the slow cores lower and cooler (416 can stutter). Above 96 C the board "
+                                "always slows itself down, whatever is chosen here.",
                                 juce::dontSendNotification);
 
     audioPage.addAndMakeVisible (monitorSectionLabel);
@@ -444,7 +447,9 @@ void Tone3000Panel::showSampleRates (const juce::Array<double>& rates, double cu
 
 void Tone3000Panel::setSlowClock (int mhz)
 {
-    slowAutoButton.setToggleState (mhz != 416 && mhz != 780, juce::dontSendNotification);
+    slowAutoButton.setToggleState (mhz != 416 && mhz != 780 && mhz != cpuFull && mhz != cpuMax, juce::dontSendNotification);
+    slowFullButton.setToggleState (mhz == cpuFull, juce::dontSendNotification);
+    slowMaxButton.setToggleState (mhz == cpuMax, juce::dontSendNotification);
     slow416Button.setToggleState (mhz == 416, juce::dontSendNotification);
     slow780Button.setToggleState (mhz == 780, juce::dontSendNotification);
 }
@@ -908,14 +913,14 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
             area.removeFromTop (6);
             {
                 auto row = area.removeFromTop (touch::minTapTarget);
-                slowAutoButton.setBounds (row.removeFromLeft (110));
-                row.removeFromLeft (8);
-                slow416Button.setBounds (row.removeFromLeft (130));
-                row.removeFromLeft (8);
-                slow780Button.setBounds (row.removeFromLeft (130));
+                for (auto* button : { &slowAutoButton, &slowFullButton, &slowMaxButton, &slow780Button, &slow416Button })
+                {
+                    button->setBounds (row.removeFromLeft (button == &slow780Button || button == &slow416Button ? 120 : 96));
+                    row.removeFromLeft (8);
+                }
             }
             area.removeFromTop (6);
-            slowClockHintLabel.setBounds (area.removeFromTop (92));
+            slowClockHintLabel.setBounds (area.removeFromTop (112));
             area.removeFromTop (14);
             monitorSectionLabel.setBounds (area.removeFromTop (26));
             area.removeFromTop (6);
