@@ -1,11 +1,10 @@
 #pragma once
 
-#include "OAuthLoginDialog.h"
 #include "MidiSettingsPages.h"
 #include "OverlayChrome.h"
 #include "OverlayHost.h"
+#include "QrCodeView.h"
 #include "Theme.h"
-#include "../Tone3000/LoopbackServer.h"
 #include "../EffectRegistry.h"
 #include "../Tone3000/Tone3000Manager.h"
 #include "../Updater/AppUpdater.h"
@@ -114,13 +113,9 @@ public:
 
 private:
     void refreshLoginState();
-    void doLogin();
-    void doLoginEmbedded (const juce::String& authorizeUrl);
-    void finishLogin (const juce::StringPairArray& redirectParams);
 
     Tone3000Manager& manager;
     AppUpdater& updater;
-    LoopbackServer loopback; // system-browser login path; idle unless a login is pending
 
     // Scrollable surface: the sections below no longer fit the card at its
     // OverlayHost-clamped height (the Software update controls pushed it
@@ -193,6 +188,25 @@ private:
     juce::TextButton loginButton { "Log in" };
     juce::TextButton logoutButton { "Log out" };
     juce::Label statusLabel;
+
+    // The only login (no web page inside the app): the panel shows a QR code of the activation link plus the short code,
+    // the user signs in on a phone, and the panel polls until TONE3000 hands over the tokens (Tone3000Manager::beginDeviceLogin).
+    // On a desktop "Open in this computer's browser" launches the same link in the system browser instead.
+    void doDeviceLogin();
+    void pollDeviceLogin();
+    void stopDeviceLogin();
+    juce::Label deviceCodeLabel;
+    QrCodeView deviceQr;
+    juce::TextButton openHereButton { "Open in this computer's browser" };
+    Tone3000Manager::DeviceLogin deviceLogin;
+    double deviceLoginStartMs = 0.0;
+    int deviceLoginIntervalSec = 5;
+    bool devicePollInFlight = false;
+    struct DeviceLoginTimer : juce::Timer
+    {
+        std::function<void()> tick;
+        void timerCallback() override { if (tick) tick(); }
+    } deviceLoginPoll;
 
     juce::Label updateSectionLabel { {}, "Software update" };
     juce::Label currentVersionLabel;

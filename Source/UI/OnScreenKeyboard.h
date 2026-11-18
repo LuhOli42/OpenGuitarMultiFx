@@ -19,9 +19,6 @@ namespace openguitarmultifx
     Keys never take keyboard focus (setMouseClickGrabsKeyboardFocus (false)), so the editor keeps its caret while
     the keys are tapped; text goes in through insertTextAtCaret()/keyPressed(), which is what a hardware keyboard
     ends up calling anyway (onTextChange, onReturnKey and friends fire normally).
-
-    Not covered: a WebBrowserComponent (the TONE3000 login page) -- its fields live in a separate WebKit process
-    that this component cannot type into.
 */
 class OnScreenKeyboard : public juce::Component
 {

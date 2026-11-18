@@ -144,22 +144,6 @@ public:
             return;
         }
 
-#if JUCE_LINUX
-        // JUCE's WebBrowserComponent runs WebKitGTK in a child process
-        // (this same executable, re-exec'd) that calls
-        // gdk_set_allowed_backends("x11") and embeds via XEmbed into
-        // JUCE's X11 window. If the session also exports
-        // GDK_BACKEND=wayland (KDE Plasma Wayland does here), the two
-        // contradict, gtk_init in the child dies with "cannot open
-        // display", and the login pane stays blank -- reproduced with a
-        // bare WebBrowserComponent app, fixed by GDK_BACKEND=x11 alone.
-        // Overwrite (1), not don't-overwrite: the inherited value is
-        // exactly the problem. Only this process's GTK use is affected,
-        // and JUCE itself talks plain Xlib (XWayland), never GDK. See
-        // Source/Tone3000/AGENTS.md's decision log.
-        setenv ("GDK_BACKEND", "x11", 1);
-#endif
-
         // A real log file, independent of however stdout/stderr get
         // captured through distrobox/podman -- so "why did it close" is
         // answerable after the fact instead of guessed at.
