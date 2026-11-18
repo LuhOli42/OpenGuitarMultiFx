@@ -202,6 +202,8 @@ SnapshotEditorCard::SnapshotEditorCard (bool isNewScene, Actions act)
     nameEditor.setFont (font (18.0f));
     nameEditor.setTextToShowWhenEmpty ("Clean, Lead, Solo...", theme::current().textDim);
     nameEditor.setInputRestrictions (24);
+    nameEditor.setJustification (juce::Justification::centredLeft);
+    nameEditor.setIndents (14, 0);
     overlaychrome::drawSearchFieldChrome (nameEditor);
     nameEditor.setText (state.name, juce::dontSendNotification);
     // Live: the scene cell in the top bar follows each keystroke.
@@ -252,7 +254,6 @@ SnapshotEditorCard::SnapshotEditorCard (bool isNewScene, Actions act)
 
     addChildComponent (removeButton);
     addChildComponent (cancelButton);
-    removeButton.setVisible (! isNew);
     cancelButton.setVisible (isNew);
     addAndMakeVisible (doneButton);
 
@@ -378,10 +379,7 @@ void SnapshotEditorCard::refresh()
     for (auto* row : pedalRows)
         row->refresh();
 
-    removeButton.kind = state.scenes.size() > 1 ? overlaychrome::ButtonKind::danger
-                                                : overlaychrome::ButtonKind::ghost;
-    removeButton.setEnabled (state.scenes.size() > 1);
-    removeButton.repaint();
+    removeButton.setVisible (! isNew && state.scenes.size() > 1); // a preset always keeps one scene
 
     repaint();
 }

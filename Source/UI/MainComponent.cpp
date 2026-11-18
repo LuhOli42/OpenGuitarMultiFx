@@ -1586,7 +1586,12 @@ void MainComponent::openOverlayForSnapshot (const juce::String& screen)
     else if (screen == "live")
         showLive();
     else if (screen == "scene")
-        showSnapshotEditor (currentSnapshot, -1);
+    {
+        addSnapshot (0);
+        addSnapshot (0);
+        selectSnapshot (0);
+        showSnapshotEditor (0, -1);
+    }
     else if (screen == "scene-new")
     {
         addSnapshot (currentSnapshot);
