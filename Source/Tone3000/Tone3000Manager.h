@@ -65,6 +65,24 @@ public:
     void completeLogin (const juce::String& code, const juce::String& state,
                          std::function<void (bool success, juce::String error)> onComplete);
 
+    /** Login for a device with no browser and no keyboard (RFC 8628, TONE3000's "Device Authorization"): the device asks
+        for a short code, shows it with tone3000.com/activate, and the user signs in on a phone. No redirect, no PKCE: only
+        the publishable key. Tokens come from the same /oauth/token endpoint, so refresh works as usual. */
+    struct DeviceLogin
+    {
+        juce::String deviceCode;      // secret, never shown
+        juce::String userCode;        // "BCDF-GHJK"
+        juce::String verificationUri; // https://www.tone3000.com/activate
+        int expiresInSec = 600;
+        int intervalSec = 5;          // minimum seconds between polls
+    };
+    void beginDeviceLogin (std::function<void (bool ok, DeviceLogin login, juce::String error)> onResult);
+
+    enum class DevicePoll { pending, slowDown, done, denied, expired, failed };
+    /** One poll of the token endpoint (call every `intervalSec`, +5 s after slowDown). onResult on the message thread;
+        `done` means the tokens are stored and isLoggedIn() is true. */
+    void pollDeviceLogin (const DeviceLogin& login, std::function<void (DevicePoll result, juce::String error)> onResult);
+
     /** gear/format values are exactly the strings TONE3000's API uses (verified
         against their docs, not guessed): gear one of "amp", "amp-cab", "pedal",
         "outboard", "cab", "space", "experimental"; format one of "nam", "ir",

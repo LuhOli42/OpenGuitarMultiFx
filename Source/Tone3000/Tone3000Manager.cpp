@@ -321,6 +321,108 @@ void Tone3000Manager::completeLogin (const juce::String& code, const juce::Strin
     });
 }
 
+void Tone3000Manager::beginDeviceLogin (std::function<void (bool, DeviceLogin, juce::String)> onResult)
+{
+    if (clientId.isEmpty())
+    {
+        onResult (false, {}, "Set your client_id first.");
+        return;
+    }
+
+    const auto form = "client_id=" + juce::URL::addEscapeChars (clientId, true);
+
+    runInBackground ([this, form, onResult] (std::shared_ptr<std::atomic<bool>> alive)
+    {
+        const auto result = httpPostForm (apiBase + "/oauth/device_authorization", form);
+
+        if (! alive->load())
+            return;
+
+        DeviceLogin login;
+        juce::String error;
+        const auto parsed = juce::JSON::parse (result.body);
+
+        if (! result.ok)
+        {
+            const auto code = parsed.getProperty ("error", {}).toString();
+            error = "TONE3000 refused the login request (HTTP " + juce::String (result.statusCode)
+                    + (code.isNotEmpty() ? ", " + code : juce::String()) + ").";
+        }
+        else if (auto* obj = parsed.getDynamicObject())
+        {
+            login.deviceCode = obj->getProperty ("device_code").toString();
+            login.userCode = obj->getProperty ("user_code").toString();
+            login.verificationUri = obj->getProperty ("verification_uri").toString();
+            if (obj->hasProperty ("expires_in"))
+                login.expiresInSec = juce::jmax (30, (int) obj->getProperty ("expires_in"));
+            if (obj->hasProperty ("interval"))
+                login.intervalSec = juce::jlimit (1, 60, (int) obj->getProperty ("interval"));
+            if (login.deviceCode.isEmpty() || login.userCode.isEmpty())
+                error = "TONE3000 sent no login code.";
+        }
+        else
+            error = "TONE3000 sent an unreadable answer.";
+
+        juce::MessageManager::callAsync ([alive, onResult, login, error]
+        {
+            if (alive->load())
+                onResult (error.isEmpty(), login, error);
+        });
+    });
+}
+
+void Tone3000Manager::pollDeviceLogin (const DeviceLogin& login, std::function<void (DevicePoll, juce::String)> onResult)
+{
+    const auto form = "grant_type=" + juce::URL::addEscapeChars ("urn:ietf:params:oauth:grant-type:device_code", true)
+                      + "&device_code=" + juce::URL::addEscapeChars (login.deviceCode, true)
+                      + "&client_id=" + juce::URL::addEscapeChars (clientId, true);
+
+    runInBackground ([this, form, onResult] (std::shared_ptr<std::atomic<bool>> alive)
+    {
+        const auto result = httpPostForm (apiBase + "/oauth/token", form);
+
+        if (! alive->load())
+            return;
+
+        DevicePoll outcome = DevicePoll::failed;
+        juce::String error, newAccess, newRefresh;
+        const auto parsed = juce::JSON::parse (result.body);
+
+        if (result.ok)
+        {
+            newAccess = parsed.getProperty ("access_token", {}).toString();
+            newRefresh = parsed.getProperty ("refresh_token", {}).toString();
+            if (newAccess.isNotEmpty())
+                outcome = DevicePoll::done;
+            else
+                error = "Token response had no access_token.";
+        }
+        else
+        {
+            const auto code = parsed.getProperty ("error", {}).toString();
+            if (code == "authorization_pending")      outcome = DevicePoll::pending;
+            else if (code == "slow_down")             outcome = DevicePoll::slowDown;
+            else if (code == "access_denied")         outcome = DevicePoll::denied;
+            else if (code == "expired_token")         outcome = DevicePoll::expired;
+            else if (result.statusCode == 0)          { outcome = DevicePoll::pending; } // no connection right now: keep trying until the code expires
+            else error = "Login failed (HTTP " + juce::String (result.statusCode) + (code.isNotEmpty() ? ", " + code : juce::String()) + ").";
+        }
+
+        juce::MessageManager::callAsync ([this, alive, onResult, outcome, error, newAccess, newRefresh]
+        {
+            if (! alive->load())
+                return;
+            if (outcome == DevicePoll::done)
+            {
+                accessToken = newAccess;
+                refreshToken = newRefresh;
+                savePersistedAuth();
+            }
+            onResult (outcome, error);
+        });
+    });
+}
+
 void Tone3000Manager::searchTones (const juce::String& query, const juce::String& gearFilter,
                                     const juce::String& architectureFilter,
                                     std::function<void (bool, std::vector<Tone>, juce::String)> onComplete)
