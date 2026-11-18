@@ -143,6 +143,9 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (presetBadge);
     presetBadge.onClicked = [this] { showPresetsPanel(); };
+    addAndMakeVisible (presetSaveButton);
+    presetSaveButton.setTitle ("Save preset");
+    presetSaveButton.onClick = [this] { quickSavePreset(); };
 
     // The A-H snapshot strip: tap a letter to recall that snapshot (see
     // selectSnapshot()). Shown from the start -- an unsaved chain still has
@@ -316,7 +319,7 @@ MainComponent::MainComponent()
     // part that actually changes (a knob turning, a block lighting up). For the scrolling grid it is the CONTENT that is
     // cached (chainContainer), not the viewport: a scroll then just slides a ready texture instead of invalidating it.
     for (auto* region : std::initializer_list<juce::Component*> { &chainContainer, &snapshotBar, &presetBadge,
-                                                                  &presetPrevButton, &presetNextButton, &undoButton, &redoButton,
+                                                                  &presetPrevButton, &presetNextButton, &presetSaveButton, &undoButton, &redoButton,
                                                                   &liveButton, &settingsButton, &wifiButton, &bluetoothButton,
                                                                   &cpuPill, &tempPill })
         region->setBufferedToImage (true);
@@ -2983,6 +2986,20 @@ void MainComponent::savePresetAs (const juce::String& name)
     updatePresetDisplay();
 }
 
+void MainComponent::quickSavePreset()
+{
+    if (currentPresetName.isEmpty())
+    {
+        showPresetsPanel(); // nothing loaded yet: it needs a name first
+        return;
+    }
+
+    savePresetAs (currentPresetName);
+    presetDirty = false; // the periodic check would only notice in up to 500 ms
+    updatePresetDisplay();
+    presetSaveButton.flashTick();
+}
+
 void MainComponent::updatePresetDisplay()
 {
     presetBadge.setNumber (currentPresetNumber);
@@ -3023,6 +3040,8 @@ void MainComponent::updatePresetDisplay()
                                   ? currentPresetName + (presetDirty ? " *" : juce::String())
                                   : "No preset loaded";
     presetBadge.setPresetText (presetName, subtitle);
+    presetSaveButton.setLit (currentPresetName.isNotEmpty() && presetDirty);
+    presetSaveButton.repaint(); // its lit colour is the scene accent, which may just have changed
     applySnapshotAccent();
     resized(); // snapshotCount can change the scene strip's width
     refreshLiveOverlay();
@@ -3505,6 +3524,12 @@ void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted
     }
 
     juce::Colour ink = (glyph == Glyph::chevronLeft || glyph == Glyph::chevronRight) ? t.textMuted : t.text;
+    if (! statusOnly && (lit || tick))
+    {
+        ink = OpenGuitarMultiFxLookAndFeel::getAppAccentColour();
+        g.setColour (ink);
+        g.drawRoundedRectangle (bounds.reduced (1.0f), t.smallRadius, 2.0f);
+    }
     if (statusOnly)
         ink = lit ? OpenGuitarMultiFxLookAndFeel::getAppAccentColour() : t.textDim.withAlpha (0.55f);
     if (! isEnabled())
@@ -3516,8 +3541,31 @@ void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted
     const juce::PathStrokeType stroke (2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
     juce::Path path;
 
+    if (tick)
+    {
+        path.startNewSubPath (c.x - arm * 0.8f, c.y);
+        path.lineTo (c.x - arm * 0.2f, c.y + arm * 0.6f);
+        path.lineTo (c.x + arm * 0.9f, c.y - arm * 0.6f);
+        g.strokePath (path, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        return;
+    }
+
     switch (glyph)
     {
+        case Glyph::save:
+        {
+            // Floppy disk: body with the top-right corner cut, shutter on top, label below.
+            const float h = arm * 1.05f;
+            path.startNewSubPath (c.x - h, c.y - h);
+            path.lineTo (c.x + h * 0.55f, c.y - h);
+            path.lineTo (c.x + h, c.y - h * 0.55f);
+            path.lineTo (c.x + h, c.y + h);
+            path.lineTo (c.x - h, c.y + h);
+            path.closeSubPath();
+            path.addRectangle (c.x - h * 0.5f, c.y - h, h * 0.9f, h * 0.6f);
+            path.addRoundedRectangle (c.x - h * 0.6f, c.y + h * 0.15f, h * 1.2f, h * 0.85f, 1.5f);
+            break;
+        }
         case Glyph::chevronLeft:
             path.startNewSubPath (c.x + arm * 0.55f, c.y - arm);
             path.lineTo (c.x - arm * 0.55f, c.y);
@@ -3571,6 +3619,20 @@ void MainComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted
     }
 
     g.strokePath (path, stroke);
+}
+
+void MainComponent::IconButton::flashTick()
+{
+    tick = true;
+    repaint();
+    juce::Timer::callAfterDelay (1200, [safe = juce::Component::SafePointer<IconButton> (this)]
+    {
+        if (safe != nullptr)
+        {
+            safe->tick = false;
+            safe->repaint();
+        }
+    });
 }
 
 void MainComponent::CpuPill::setCpu (float average01, bool deviceOk)
@@ -3773,8 +3835,10 @@ void MainComponent::resized()
     int x = gridSide;
     presetPrevButton.setBounds (x, topY, 48, controlH);
     x += 48 + 12;
-    presetBadge.setBounds (x, topY, 300, controlH);
-    x += 300 + 12;
+    presetBadge.setBounds (x, topY, 248, controlH);
+    x += 248 + 8;
+    presetSaveButton.setBounds (x, topY, 48, controlH);
+    x += 48 + 12;
     presetNextButton.setBounds (x, topY, 48, controlH);
     x += 48 + 12;
 
