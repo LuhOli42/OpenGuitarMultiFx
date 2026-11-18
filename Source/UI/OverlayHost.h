@@ -33,6 +33,16 @@ namespace openguitarmultifx
     the same thing as tapping the card's own Cancel button, including any
     side effects that path has. Cards that don't implement it (or don't
     consume the tap) get the host's plain pop, unchanged. */
+class PersistentCard
+{
+public:
+    virtual ~PersistentCard() = default;
+
+    /** A card that is built once and shown again (pushPersistent) is not destroyed when it is taken off the screen, so
+        whatever its destructor did on closing (stop timers, drop a pending learn) goes here instead. */
+    virtual void cardHidden() = 0;
+};
+
 class OutsideTapAware
 {
 public:

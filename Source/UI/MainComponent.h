@@ -51,6 +51,9 @@ namespace openguitarmultifx
     it can scroll at all (drawer-open padding) and the bug that motivated
     this, fixed 2026-09-11. */
 class AddEffectBrowserDialog;
+class Tone3000Panel;
+class MasterEqDialog;
+class PresetBrowserDialog;
 
 class ChainViewport : public juce::Viewport
 {
@@ -317,7 +320,6 @@ private:
 
     EffectRegistry registry;
     EffectProbeStore probeStore; // before addEffectPool: the pool is joined first
-    std::unique_ptr<AddEffectBrowserDialog> addEffectBrowser; // built once, shown again and again; after registry/probeStore, so it dies first
     juce::ThreadPool addEffectPool { 1 }; // declared after `registry`: joined first on destruction
     AudioEngine audioEngine;
     Tone3000Manager tone3000;
@@ -583,6 +585,12 @@ private:
     // search, installed-model list) is a card drawn on top of this window
     // instead -- see OverlayHost and AGENT.md's UI/UX Design Philosophy.
     OverlayHost overlayHost;
+    // Cards built once and shown again (OverlayHost::pushPersistent): an open is a show, not a build + first paint.
+    // Declared LAST so they are destroyed first, while the manager, updater, library and registry they use are alive.
+    std::unique_ptr<Tone3000Panel> settingsPanel;
+    std::unique_ptr<MasterEqDialog> masterEqDialog;
+    std::unique_ptr<PresetBrowserDialog> presetBrowser;
+    std::unique_ptr<AddEffectBrowserDialog> addEffectBrowser;
 };
 
 } // namespace openguitarmultifx

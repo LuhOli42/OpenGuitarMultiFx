@@ -1148,7 +1148,10 @@ void MainComponent::showSettingsPanel()
     // contextual to whichever block is selected. See Tone3000Panel.h and
     // AGENT.md's UI/UX Design Philosophy for why this is a card pushed onto
     // overlayHost rather than a separate OS window.
-    auto panel = std::make_unique<Tone3000Panel> (tone3000, appUpdater);
+    // Built once and shown again (a fresh build + first paint of nine pages was the slow open); the state is re-pushed below.
+    if (settingsPanel == nullptr)
+        settingsPanel = std::make_unique<Tone3000Panel> (tone3000, appUpdater);
+    auto* panel = settingsPanel.get();
     panel->onPushOverlay = [this] (std::unique_ptr<juce::Component> c) { overlayHost.pushOverlay (std::move (c)); };
     panel->onPopOverlay  = [this] { overlayHost.popOverlay(); };
     panel->onQualityChanged = [this] (EffectRegistry::OversamplingQuality q) { applyRenderQuality (q); };
@@ -1171,7 +1174,7 @@ void MainComponent::showSettingsPanel()
     // The return value only reports whether the REQUESTED rate applied (Settings
     // shows it) -- a failed switch can still leave a device open, and timerCallback
     // re-derives audioDeviceOk from the device itself every tick regardless.
-    auto* rawPanel = panel.get();
+    auto* rawPanel = panel;
     panel->onSampleRateChanged = [this, rawPanel] (double rate)
     {
         const auto err = audioEngine.setSampleRate (rate);
@@ -1270,7 +1273,8 @@ void MainComponent::showSettingsPanel()
     panel->showBufferSizes (audioEngine.getAvailableBufferSizes(), audioEngine.getCurrentBufferSize(), audioEngine.getCurrentSampleRate());
     panel->showInterface (audioEngine.describeInterface());
 
-    overlayHost.pushOverlay (std::move (panel));
+    panel->resetForOpen();
+    overlayHost.pushPersistent (*panel);
 }
 
 void MainComponent::applyRenderQuality (EffectRegistry::OversamplingQuality quality)
@@ -1543,7 +1547,9 @@ void MainComponent::showLiveTileMenu (int slot)
 
 void MainComponent::showMasterEq()
 {
-    auto dialog = std::make_unique<MasterEqDialog>();
+    if (masterEqDialog == nullptr)
+        masterEqDialog = std::make_unique<MasterEqDialog>();
+    auto* dialog = masterEqDialog.get();
     dialog->setBands (audioEngine.getMasterEqBands());
     dialog->getSampleRate = [this] { return audioEngine.getCurrentSampleRate(); };
     dialog->onPopOverlay = [this] { overlayHost.popOverlay(); };
@@ -1559,7 +1565,7 @@ void MainComponent::showMasterEq()
         masterBusSaveCountdown = 10; // debounced save in timerCallback
     };
 
-    overlayHost.pushOverlay (std::move (dialog));
+    overlayHost.pushPersistent (*dialog);
 }
 
 void MainComponent::openOverlayForSnapshot (const juce::String& screen)
@@ -1583,8 +1589,10 @@ void MainComponent::openOverlayForSnapshot (const juce::String& screen)
 
 void MainComponent::showPresetsPanel()
 {
-    auto dialog = std::make_unique<PresetBrowserDialog> (presetLibrary);
-    auto* browser = dialog.get(); // for callbacks that reopen the card's own dialogs
+    if (presetBrowser == nullptr)
+        presetBrowser = std::make_unique<PresetBrowserDialog> (presetLibrary);
+    auto* dialog = presetBrowser.get();
+    auto* browser = dialog; // for callbacks that reopen the card's own dialogs
 
     dialog->getCurrentPresetName = [this] { return currentPresetName; };
 
@@ -1800,7 +1808,7 @@ void MainComponent::showPresetsPanel()
     // so rebuild once more now that every callback exists -- otherwise the
     // loaded preset's tile opens unhighlighted.
     dialog->refresh();
-    overlayHost.pushOverlay (std::move (dialog));
+    overlayHost.pushPersistent (*dialog);
 }
 
 void MainComponent::closePresetCardsAndReopenList()
