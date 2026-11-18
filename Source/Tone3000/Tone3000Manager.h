@@ -11,7 +11,7 @@ namespace openguitarmultifx
 {
 
 /**
-    TONE3000 login (OAuth 2.0 + PKCE), tone search, and model download.
+    TONE3000 login (OAuth 2.0 device flow), tone search, and model download.
 
     Strictly a control-thread component: the audio thread never touches it,
     and per ARCHITECTURE.md the integration stays OPTIONAL -- the product
@@ -22,20 +22,15 @@ namespace openguitarmultifx
     official API docs and their example client repo), so this can't be
     hardcoded. Set it with setClientId(), or export TONE3000_CLIENT_ID.
 
-    No client secret is used, and none is needed: PKCE exists precisely so
-    that a public/native client like this never holds one. TONE3000's
-    t3k_cs_... secret key is documented as server-only -- if you ever find
-    yourself wanting to embed it here, that's a bug.
+    No client secret is used, and none is needed: the device flow below is
+    meant for public clients that can't keep one. TONE3000's t3k_cs_...
+    secret key is documented as server-only -- if you ever find yourself
+    wanting to embed it here, that's a bug.
 
-    Login itself is NOT done here: this class only builds the authorize URL
-    and validates/exchanges the code once the UI hands it back (see
-    beginLogin()/completeLogin()). There's no system-browser launch and no
-    local HTTP listener -- the UI shows the authorize page in an embedded
-    WebBrowserComponent (Source/UI/OAuthLoginDialog) and intercepts
-    navigation to the redirect URI itself. That's not a PC-only shortcut:
-    it's the only login flow that also works on the final target (a
-    touchscreen device with no browser installed at all), and it happens to
-    be TONE3000's own documented recommendation for native apps.
+    Login is the device flow only (beginDeviceLogin/pollDeviceLogin): the
+    UI shows a QR code + short code and the user signs in on a phone. The app
+    never shows a web page itself -- there is no WebBrowserComponent and no
+    local HTTP listener (both removed 2026-11-18, see Source/Tone3000/AGENTS.md).
 */
 class Tone3000Manager
 {
@@ -50,29 +45,16 @@ public:
     bool isLoggedIn() const;
     void logOut();
 
-    /** Builds the authorize URL and remembers the PKCE verifier/state needed to
-        complete login. Empty string if no client_id is set. The caller (UI) is
-        responsible for showing this URL and detecting navigation to
-        getRedirectUri() (see OAuthLoginDialog). */
-    juce::String beginLogin();
-
-    juce::String getRedirectUri() const { return redirectUri; }
-
-    /** Call once the UI has intercepted a navigation to getRedirectUri() and
-        pulled `code`/`state` out of its query string. Validates state against
-        what beginLogin() generated, then exchanges the code for tokens.
-        onComplete fires on the message thread. */
-    void completeLogin (const juce::String& code, const juce::String& state,
-                         std::function<void (bool success, juce::String error)> onComplete);
-
-    /** Login for a device with no browser and no keyboard (RFC 8628, TONE3000's "Device Authorization"): the device asks
-        for a short code, shows it with tone3000.com/activate, and the user signs in on a phone. No redirect, no PKCE: only
-        the publishable key. Tokens come from the same /oauth/token endpoint, so refresh works as usual. */
+    /** The only login (RFC 8628, TONE3000's "Device Authorization"): the app asks for a short code and shows it as a QR
+        code of verificationUriComplete plus the code in text; the user signs in on a phone (or any browser) and the app
+        polls until TONE3000 hands over the tokens. No browser in the app, no redirect, no PKCE: only the publishable key.
+        Tokens come from the same /oauth/token endpoint, so refresh works as usual. */
     struct DeviceLogin
     {
         juce::String deviceCode;      // secret, never shown
         juce::String userCode;        // "BCDF-GHJK"
         juce::String verificationUri; // https://www.tone3000.com/activate
+        juce::String verificationUriComplete; // the same page with the code filled in (what the QR code holds)
         int expiresInSec = 600;
         int intervalSec = 5;          // minimum seconds between polls
     };
@@ -169,9 +151,6 @@ private:
     juce::String clientId;
     juce::String accessToken, refreshToken;
 
-    // Set by beginLogin(), consumed and cleared by completeLogin().
-    juce::String pendingVerifier, pendingState;
-    const juce::String redirectUri = "http://127.0.0.1:17872/callback"; // never actually connected to -- see class comment
 
     std::shared_ptr<std::atomic<bool>> aliveFlag = std::make_shared<std::atomic<bool>> (true);
 };

@@ -15,7 +15,7 @@ This file exists to give context to an AI agent (Claude Code or otherwise) openi
 | Realtime engine | `Source/Engine/AGENTS.md` | `AudioEngine`, `SignalGraph`, `ParameterManager`, the `DeferredReclaimer` atomic-swap primitive |
 | Effects | `Source/Effects/AGENTS.md` | `EffectProcessor` base contract + every pedal/NAM/cab subclass, `EffectRegistry` |
 | UI | `Source/UI/AGENTS.md` | Dev-facing chain builder (largest area, 27 files) — pulled forward from Phase 7 |
-| TONE3000 | `Source/Tone3000/AGENTS.md` | OAuth2+PKCE login, tone search/download — optional, pluggable module |
+| TONE3000 | `Source/Tone3000/AGENTS.md` | OAuth2 device-flow login (QR code), tone search/download — optional, pluggable module |
 | Presets | `Source/Presets/AGENTS.md` | Preset file I/O + stable numbering |
 
 `Tests/` has no dedicated node (8 files, ~3.7k tokens, no responsibility shift beyond "test the thing above it") — see its one binding convention under Contracts below.
@@ -82,7 +82,7 @@ Final target is a ~10" touchscreen operated with a fingertip — this governs si
 ## Global Pitfalls
 
 - This dev machine is a 16-core/~7.5GB-RAM box on an immutable distro (Bazzite/Fedora Atomic) — an unbounded `cmake --build --parallel` once hard-crashed it building the NAM engine. `scripts/build.sh` and `scripts/cross-build.sh` default jobs to `min(nproc, MemAvailable/2GB)` (~1 GB RSS per heavy TU, so ~2-3 on this box; `BUILD_JOBS` env var overrides); don't drop that cap casually.
-- JUCE dev headers (ALSA, X11, FreeType, curl, webkit2gtk) come from a `distrobox` container (`juce-dev`) on this immutable host, not the host package manager — `scripts/build.sh` auto-detects and uses it if present.
+- JUCE dev headers (ALSA, X11, FreeType, curl; webkit2gtk only for JUCE's own juceaide configure, the app no longer uses it) come from a `distrobox` container (`juce-dev`) on this immutable host, not the host package manager — `scripts/build.sh` auto-detects and uses it if present.
 - `nam_core` requires `OBJECT` (never `STATIC`) library linkage and an exact pinned Eigen commit (not the `3.4.1` tag) — see `Source/Effects/AGENTS.md` for why; both are easy to "clean up" incorrectly by someone who didn't hit the original bugs.
 
 ## Boundaries

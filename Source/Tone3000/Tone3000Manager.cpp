@@ -1,7 +1,5 @@
 #include "Tone3000Manager.h"
 
-#include "Pkce.h"
-
 #include <juce_events/juce_events.h> // MessageManager::callAsync
 
 namespace openguitarmultifx
@@ -227,100 +225,6 @@ bool Tone3000Manager::httpDownloadToFile (const juce::String& url,
     return true;
 }
 
-juce::String Tone3000Manager::beginLogin()
-{
-    if (clientId.isEmpty())
-        return {};
-
-    pendingVerifier = pkce::randomUrlSafeString();
-    pendingState = pkce::randomUrlSafeString (16);
-    const auto challenge = pkce::codeChallengeFromVerifier (pendingVerifier);
-
-    juce::URL authorize (apiBase + "/oauth/authorize");
-    authorize = authorize.withParameter ("client_id", clientId)
-                          .withParameter ("redirect_uri", redirectUri)
-                          .withParameter ("response_type", "code")
-                          .withParameter ("code_challenge", challenge)
-                          .withParameter ("code_challenge_method", "S256")
-                          .withParameter ("state", pendingState);
-
-    return authorize.toString (true);
-}
-
-void Tone3000Manager::completeLogin (const juce::String& code, const juce::String& state,
-                                      std::function<void (bool, juce::String)> onComplete)
-{
-    if (state != pendingState)
-    {
-        // Mismatched state means this redirect didn't come from the
-        // authorize request we started -- treat it as hostile and drop it.
-        onComplete (false, "OAuth state mismatch -- login aborted.");
-        return;
-    }
-
-    if (code.isEmpty())
-    {
-        onComplete (false, "No authorization code in the redirect.");
-        return;
-    }
-
-    const auto verifier = pendingVerifier;
-    pendingVerifier.clear();
-    pendingState.clear();
-
-    const auto form = "grant_type=authorization_code"
-                       "&code=" + juce::URL::addEscapeChars (code, true)
-                       + "&code_verifier=" + juce::URL::addEscapeChars (verifier, true)
-                       + "&redirect_uri=" + juce::URL::addEscapeChars (redirectUri, true)
-                       + "&client_id=" + juce::URL::addEscapeChars (clientId, true);
-
-    runInBackground ([this, form, onComplete] (std::shared_ptr<std::atomic<bool>> alive)
-    {
-        const auto result = httpPostForm (apiBase + "/oauth/token", form);
-
-        if (! alive->load())
-            return;
-
-        juce::String error;
-        juce::String newAccess, newRefresh;
-
-        if (! result.ok)
-        {
-            error = "Token exchange failed (HTTP " + juce::String (result.statusCode) + ").";
-        }
-        else
-        {
-            const auto parsed = juce::JSON::parse (result.body);
-
-            if (auto* obj = parsed.getDynamicObject())
-            {
-                newAccess = obj->getProperty ("access_token").toString();
-                newRefresh = obj->getProperty ("refresh_token").toString();
-            }
-
-            if (newAccess.isEmpty())
-                error = "Token response had no access_token.";
-        }
-
-        juce::MessageManager::callAsync ([this, alive, onComplete, error, newAccess, newRefresh]
-        {
-            if (! alive->load())
-                return;
-
-            if (error.isNotEmpty())
-            {
-                onComplete (false, error);
-                return;
-            }
-
-            accessToken = newAccess;
-            refreshToken = newRefresh;
-            savePersistedAuth();
-            onComplete (true, {});
-        });
-    });
-}
-
 void Tone3000Manager::beginDeviceLogin (std::function<void (bool, DeviceLogin, juce::String)> onResult)
 {
     if (clientId.isEmpty())
@@ -353,6 +257,11 @@ void Tone3000Manager::beginDeviceLogin (std::function<void (bool, DeviceLogin, j
             login.deviceCode = obj->getProperty ("device_code").toString();
             login.userCode = obj->getProperty ("user_code").toString();
             login.verificationUri = obj->getProperty ("verification_uri").toString();
+            login.verificationUriComplete = obj->getProperty ("verification_uri_complete").toString();
+            if (login.verificationUri.isEmpty())
+                login.verificationUri = "https://www.tone3000.com/activate";
+            if (login.verificationUriComplete.isEmpty()) // the QR then opens the page and the code is typed by hand
+                login.verificationUriComplete = login.verificationUri;
             if (obj->hasProperty ("expires_in"))
                 login.expiresInSec = juce::jmax (30, (int) obj->getProperty ("expires_in"));
             if (obj->hasProperty ("interval"))

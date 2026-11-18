@@ -82,11 +82,13 @@ RUNTIME_PACKAGES=(
     xserver-xorg-core xserver-xorg-input-libinput xinit x11-xserver-utils
     dbus libpam-systemd
     # JUCE runtime (juce_gui_basics/extra, juce_audio_devices ALSA, network,
-    # juce_opengl, WebBrowserComponent -- see docs/Phase6Plan.md risks: build
-    # with JUCE_WEB_BROWSER=0 drops the webkit line).
+    # juce_opengl). No GTK/WebKit: the app is built with JUCE_WEB_BROWSER=0
+    # (TONE3000 login is a QR code signed in on a phone).
     libfreetype6 libfontconfig1 fonts-dejavu-core
     libx11-6 libxext6 libxinerama1 libxrandr2 libxcursor1 libxrender1 libxcomposite1
-    libgl1 libcurl4 libgtk-3-0 libwebkit2gtk-4.0-37
+    libgl1 libcurl4
+    # GIO/D-Bus for BLE MIDI (BleMidiInput.h talks to BlueZ through it)
+    libglib2.0-0
     # Bring-up / benchmark helpers (ARCHITECTURE.md section G): cyclictest, temps.
     rt-tests lm-sensors usbutils
 )

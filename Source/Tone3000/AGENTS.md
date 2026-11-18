@@ -1,8 +1,8 @@
 # Tone3000
 
 ## Purpose
-Owns: TONE3000 integration — OAuth2+PKCE login, tone search, model download (`Tone3000Manager`), and the routing table from a TONE3000 (gear, format) pair to a local folder + `EffectRegistry` role (`GearRouting.h`).
-Does not own: the UI around it (`Source/UI/Tone3000Panel`, `Tone3000SearchDialog`, `OAuthLoginDialog`) or where downloaded files get loaded into the chain (`Source/Effects/NAMProcessor`, `IRLoaderProcessor`).
+Owns: TONE3000 integration — OAuth2 device-flow login (RFC 8628, QR code), tone search, model download (`Tone3000Manager`), and the routing table from a TONE3000 (gear, format) pair to a local folder + `EffectRegistry` role (`GearRouting.h`).
+Does not own: the UI around it (`Source/UI/Tone3000Panel`, `Tone3000SearchDialog`, `QrCodeView`) or where downloaded files get loaded into the chain (`Source/Effects/NAMProcessor`, `IRLoaderProcessor`).
 
 This entire module is **optional** — the product works fully with models loaded manually from disk. Never couple a core product feature to it (see root AGENTS.md).
 
@@ -14,8 +14,8 @@ This entire module is **optional** — the product works fully with models loade
 | (gear, format) → folder/registry-role/extension mapping | `GearRouting.h::routeFor` |
 | Which TONE3000 `gears` value a block's contextual search should use | `GearRouting.h::gearFilterForProcessorName` |
 | Login/search/download implementation | `Tone3000Manager.{h,cpp}` |
-| PKCE verifier/challenge/state generation | `Pkce.h` |
-| One-shot local HTTP listener catching the system-browser OAuth redirect | `LoopbackServer.{h,cpp}` (used by `Tone3000Panel::doLogin`) |
+| Login screen (QR + code, polling, desktop "open in this computer's browser") | `Source/UI/Tone3000Panel.cpp::doDeviceLogin/pollDeviceLogin` |
+| QR drawing | `Source/UI/QrCodeView.h` (encoder: `ThirdParty/qrcodegen`, Nayuki v1.8.0, MIT) |
 
 ### Key Relationships
 - `Tone3000/` → `Effects/` (one-directional): `GearRouting.h` names `EffectRegistry` roles (`"NeuralAmp"`, `"Cab"`, ...) but never includes/depends on the concrete processor classes.
@@ -24,7 +24,7 @@ This entire module is **optional** — the product works fully with models loade
 ## Public API
 | Export | Used By | Change Impact |
 |--------|---------|---------------|
-| `Tone3000Manager::beginLogin/completeLogin` | `Tone3000Panel` | Manager itself neither launches a browser nor listens: the panel opens the system browser + `LoopbackServer` first, and falls back to `OAuthLoginDialog` (embedded `WebBrowserComponent`, intercepts navigation to `getRedirectUri()`) when that's unavailable |
+| `Tone3000Manager::beginDeviceLogin/pollDeviceLogin` | `Tone3000Panel` | The only login path. `DeviceLogin::verificationUriComplete` is what the QR holds (falls back to the bare `verificationUri` if TONE3000 omits it, then the code must be typed). The panel polls every `intervalSec`, +5 s on `slow_down`; a lost connection counts as `pending` until the code expires |
 | `Tone3000Manager::searchTones/downloadModel/downloadFirstModelForTone` | `Tone3000SearchDialog`, `ParameterPanel` | All callbacks fire on the message thread |
 | `GearRouting::routeFor(gear, format)` | Download flow, deciding save folder + auto-created block type | `format` is load-bearing: `"nam"`→NAM engine only, `"ir"`→convolution only; other formats (`aida-x`/`aa-snapshot`/`proteus`) return `supported=false` — UI must refuse the download, not hand the engine an unparseable file |
 
@@ -43,8 +43,9 @@ This entire module is **optional** — the product works fully with models loade
 ## Decisions
 | Decision | Why | Rejected |
 |----------|-----|----------|
-| Embedded `WebBrowserComponent` login as the browserless-device path (now the FALLBACK, see the 2026-09-19 row below), instead of only system browser + loopback listener | Final target is a touchscreen device with no browser installed at all; this is also TONE3000's own documented recommendation for native apps | Dropping the system-browser path entirely (done in `52bb680`, reverted as the desktop default 2026-09-19) |
-| No client secret anywhere, only PKCE | `t3k_cs_...` is documented server-only; embedding it here is a bug by definition. There is no shared/demo `client_id` — each deployment needs its own publishable `t3k_pub_...` (verified against official docs + example client) | Embedding a shared client secret |
+| **Login is the device flow only, shown as a QR code + the short code, on every platform (2026-11-18).** The app has no web browser at all: `OAuthLoginDialog`, `LoopbackServer`, `Pkce.h` and `beginLogin/completeLogin` were deleted, the app builds with `JUCE_WEB_BROWSER=0` and no longer links GTK/WebKitGTK (the device image dropped `libgtk-3-0`/`libwebkit2gtk`), and the `GDK_BACKEND=x11` override in `Main.cpp` is gone. On a desktop the same link can also be opened with "Open in this computer's browser" (`launchInDefaultBrowser`, then polling as usual: no redirect, no listener) | User asked for QR login and no web browser in the app. TONE3000 documents `verification_uri_complete` + "render it as a QR code" for exactly this. Also removes the blank-WebKit-pane bug class below and a large dependency from the device | Keeping the embedded pane or the loopback redirect as a desktop fallback |
+| _Superseded 2026-11-18 (this row and the rows below about the embedded pane / loopback / GDK_BACKEND are history):_ Embedded `WebBrowserComponent` login as the browserless-device path (now the FALLBACK, see the 2026-09-19 row below), instead of only system browser + loopback listener | Final target is a touchscreen device with no browser installed at all; this is also TONE3000's own documented recommendation for native apps | Dropping the system-browser path entirely (done in `52bb680`, reverted as the desktop default 2026-09-19) |
+| No client secret anywhere (was PKCE, now the device flow) | `t3k_cs_...` is documented server-only; embedding it here is a bug by definition. There is no shared/demo `client_id` — each deployment needs its own publishable `t3k_pub_...` (verified against official docs + example client) | Embedding a shared client secret |
 | Two separate TONE3000 searches for "amp" vs "amp-cab" gear, on request | Different things to go looking for even though `NAMProcessor` loads either through the identical code path | One merged amp/amp-cab search |
 | `architecture` filter passed explicitly when A2 results are wanted | Per TONE3000's docs, omitting it means "A1 + Custom, EXCLUDING A2" — there is no confirmed single value meaning "everything" | Assuming omitted = "all architectures" |
 | **Desktop login goes through the SYSTEM browser + `LoopbackServer` first (2026-09-19); the embedded `WebBrowserComponent` is only the fallback** (`Tone3000Panel::doLogin` tries `loopback.start(17872)` + `launchInDefaultBrowser()`, falls back to `OAuthLoginDialog` if either is unavailable, i.e. on the browserless touchscreen target). `LoopbackServer` is the class deleted in `52bb680`, restored with one real bug fixed: `read(..., false)` returns 0 if the request is still in flight right after `accept()`, so callbacks were dropped -- it now waits with `waitUntilReady` first, ignores probes/favicon requests (404) and only consumes its one shot on a `/callback` request carrying `code` or `error`. Verified end to end on the host: real login completed, tokens saved | The embedded pane is STILL blank when the app runs directly on the host (Bazzite, WebKitGTK 2.52.5): the `--juce-gtkwebkitfork-child` process is simply gone with no stderr output, cause not found (a gdb follow-fork attempt only caught the unrelated startup `gsettings` fork). Reproducing needs the host, NOT the `juce-dev` container -- see the row below | Keeping the embedded pane as the only login path on a desktop that already has a browser signed in to TONE3000; the user also remembered (correctly) that login needed no such screen before `52bb680` |
@@ -65,12 +66,13 @@ This entire module is **optional** — the product works fully with models loade
 
 ## Pitfalls
 - Omitting the `architecture` search parameter does **not** mean "all architectures" — it silently excludes A2 results. Passing `"2"` explicitly then excludes A1/Custom in turn (one value, not a combinable list like `gears`).
-- `redirectUri` (`http://127.0.0.1:17872/callback`) is never actually connected to — it's purely the string matched against embedded-browser navigation events, a holdover naming from the earlier loopback-server design. Don't try to stand up a listener on that port.
+- The QR is always black-on-white with a 4-module quiet zone and whole-pixel modules (`QrCodeView`): don't theme it, phone cameras read inverted or blurred codes badly.
 - A stale-search race existed where an out-of-order API response could overwrite newer search results — `Tone3000SearchDialog` now clears results immediately on a new search and guards against overwriting with a stale response (commit `0050b30`); any new search UI must preserve this guard.
 
 ## Boundaries
 
 ### Never
-- Add a client secret to this module — PKCE means it should never need one.
+- Add a client secret to this module — the device flow is for public clients and never needs one.
+- Bring back an in-app web page (`WebBrowserComponent`) for login.
 - Call anything in `Tone3000Manager` from the audio thread.
 - Couple a core (non-optional) product feature to this module's availability.

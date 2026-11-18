@@ -307,7 +307,7 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     };
 
     tone3000Page.addAndMakeVisible (loginButton);
-    loginButton.onClick = [this] { doLogin(); };
+    loginButton.onClick = [this] { doDeviceLogin(); };
 
     tone3000Page.addAndMakeVisible (logoutButton);
     logoutButton.onClick = [this] { manager.logOut(); refreshLoginState(); };
@@ -317,6 +317,9 @@ Tone3000Panel::Tone3000Panel (Tone3000Manager& managerToUse, AppUpdater& updater
     deviceCodeLabel.setFont (juce::Font (juce::FontOptions (38.0f, juce::Font::bold)));
     deviceCodeLabel.setJustificationType (juce::Justification::centredLeft);
     deviceCodeLabel.setColour (juce::Label::textColourId, theme::current().text);
+    tone3000Page.addChildComponent (deviceQr);
+    tone3000Page.addChildComponent (openHereButton);
+    openHereButton.onClick = [this] { juce::URL (deviceLogin.verificationUriComplete).launchInDefaultBrowser(); };
     deviceLoginPoll.tick = [this] { pollDeviceLogin(); };
 
     midiPage.addAndMakeVisible (midiTableLabel);
@@ -676,46 +679,6 @@ void Tone3000Panel::refreshLoginState()
                               juce::dontSendNotification);
 }
 
-void Tone3000Panel::doLogin()
-{
-    // The panel has no browser and no keyboard: log in from a phone with a short code instead.
-    if (touch::kioskMode())
-    {
-        doDeviceLogin();
-        return;
-    }
-
-    const auto authorizeUrl = manager.beginLogin();
-
-    if (authorizeUrl.isEmpty())
-    {
-        statusLabel.setText ("Set your client_id first.", juce::dontSendNotification);
-        return;
-    }
-
-    const auto redirectPort = juce::URL (manager.getRedirectUri()).getPort();
-
-    const bool listening = loopback.start (redirectPort, [safeThis = juce::Component::SafePointer<Tone3000Panel> (this)]
-                                                          (const juce::StringPairArray& params)
-    {
-        juce::MessageManager::callAsync ([safeThis, params]
-        {
-            if (safeThis != nullptr)
-                safeThis->finishLogin (params);
-        });
-    });
-
-    if (listening && juce::URL (authorizeUrl).launchInDefaultBrowser())
-    {
-        statusLabel.setText ("Finish logging in in your browser, then come back here.",
-                             juce::dontSendNotification);
-        return;
-    }
-
-    loopback.stop();
-    doLoginEmbedded (authorizeUrl);
-}
-
 void Tone3000Panel::stopDeviceLogin()
 {
     deviceLoginPoll.stopTimer();
@@ -723,6 +686,9 @@ void Tone3000Panel::stopDeviceLogin()
     if (deviceCodeLabel.isVisible())
     {
         deviceCodeLabel.setVisible (false);
+        deviceQr.setVisible (false);
+        openHereButton.setVisible (false);
+        loginButton.setButtonText ("Log in");
         layoutContent();
     }
 }
@@ -753,8 +719,14 @@ void Tone3000Panel::doDeviceLogin()
         safe->deviceLoginIntervalSec = login.intervalSec;
         safe->deviceCodeLabel.setText (login.userCode, juce::dontSendNotification);
         safe->deviceCodeLabel.setVisible (true);
+        safe->deviceQr.setText (login.verificationUriComplete);
+        safe->deviceQr.setVisible (true);
+        // A desktop has a browser of its own; the panel (kiosk) has none, so there the phone is the only way.
+        safe->openHereButton.setVisible (! touch::kioskMode());
+        safe->loginButton.setButtonText ("New code");
         const auto where = login.verificationUri.replace ("https://www.", {}).replace ("https://", {});
-        safe->statusLabel.setText ("On your phone open " + where + " and type this code. This screen finishes by itself once you sign in.",
+        safe->statusLabel.setText ("Scan the code with your phone and sign in to TONE3000 (or open " + where
+                                   + " and type the code). This screen finishes by itself.",
                                    juce::dontSendNotification);
         safe->layoutContent();
         safe->deviceLoginPoll.startTimer (juce::jmax (1, login.intervalSec) * 1000);
@@ -809,51 +781,6 @@ void Tone3000Panel::pollDeviceLogin()
                 break;
         }
     });
-}
-
-void Tone3000Panel::finishLogin (const juce::StringPairArray& params)
-{
-    const auto code = params["code"];
-    const auto state = params["state"];
-    const auto oauthError = params["error"];
-
-    if (oauthError.isNotEmpty())
-    {
-        statusLabel.setText ("Authorization denied: " + oauthError, juce::dontSendNotification);
-        return;
-    }
-
-    statusLabel.setText ("Completing login...", juce::dontSendNotification);
-
-    manager.completeLogin (code, state, [this] (bool success, juce::String error)
-    {
-        statusLabel.setText (success ? "Logged in." : error, juce::dontSendNotification);
-        refreshLoginState();
-    });
-}
-
-void Tone3000Panel::doLoginEmbedded (const juce::String& authorizeUrl)
-{
-    auto dialog = std::make_unique<OAuthLoginDialog> (authorizeUrl, manager.getRedirectUri());
-    auto* dialogPtr = dialog.get();
-
-    dialogPtr->onRedirectReached = [this] (const juce::StringPairArray& params)
-    {
-        if (onPopOverlay)
-            onPopOverlay();
-
-        finishLogin (params);
-    };
-
-    dialogPtr->onCancelled = [this]
-    {
-        if (onPopOverlay)
-            onPopOverlay();
-        statusLabel.setText ("Login cancelled.", juce::dontSendNotification);
-    };
-
-    if (onPushOverlay)
-        onPushOverlay (std::move (dialog));
 }
 
 void Tone3000Panel::resized()
@@ -1026,8 +953,17 @@ int Tone3000Panel::layoutActivePage (juce::Rectangle<int> bounds)
             area.removeFromTop (10);
             if (deviceCodeLabel.isVisible())
             {
-                deviceCodeLabel.setBounds (area.removeFromTop (52));
-                area.removeFromTop (6);
+                // QR on the left, the code to type and the desktop-only button beside it.
+                auto row = area.removeFromTop (220);
+                deviceQr.setBounds (row.removeFromLeft (220));
+                row.removeFromLeft (16);
+                deviceCodeLabel.setBounds (row.removeFromTop (52));
+                if (openHereButton.isVisible())
+                {
+                    row.removeFromTop (8);
+                    openHereButton.setBounds (row.removeFromTop (touch::minTapTarget).withWidth (juce::jmin (row.getWidth(), 300)));
+                }
+                area.removeFromTop (10);
             }
             statusLabel.setBounds (area.removeFromTop (64));
             break;

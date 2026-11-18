@@ -141,7 +141,7 @@ OpenGuitarMultiFx/
 │   │   ├── ModelValidator.{h,cpp}
 │   │   └── ModelLoader.{h,cpp}          # loads off the audio thread, hands off via atomic swap
 │   ├── Tone3000/
-│   │   └── Tone3000Manager.{h,cpp}      # OAuth2+PKCE, search, download — optional/pluggable module
+│   │   └── Tone3000Manager.{h,cpp}      # OAuth2 device flow (QR login), search, download — optional/pluggable module
 │   ├── Presets/
 │   │   └── PresetManager.{h,cpp}        # JSON serialization, double-buffered swap
 │   ├── UI/
@@ -211,7 +211,7 @@ Tone3000Manager  →  ModelRepository  →  ModelValidator  →  ModelLoader  �
   search, download)    + cache)            format)             the audio thread)  into the Signal Graph)
 ```
 
-Authentication via OAuth 2.0 + PKCE (public `client_id` + server-side secret key), as officially documented by TONE3000. Relevant endpoints: `/tones`, `/models`, `/makes`, `/tags`, with a 100 req/min rate limit. **Pending item to resolve before committing product marketing/architecture to it:** the public terms don't explicitly distinguish a "software app" from an "embedded hardware device" — direct contact with `support@tone3000.com` is a prerequisite, not optional. That's why `Tone3000Manager` is designed as a pluggable, optional module: the product works in full without it (models loaded manually from a `.nam` file).
+Authentication via the OAuth 2.0 Device Authorization Grant (RFC 8628, public `client_id` only), as officially documented by TONE3000: the app shows a QR code + short code and the user signs in on a phone, so the device needs no web browser. Relevant endpoints: `/tones`, `/models`, `/makes`, `/tags`, with a 100 req/min rate limit. **Pending item to resolve before committing product marketing/architecture to it:** the public terms don't explicitly distinguish a "software app" from an "embedded hardware device" — direct contact with `support@tone3000.com` is a prerequisite, not optional. That's why `Tone3000Manager` is designed as a pluggable, optional module: the product works in full without it (models loaded manually from a `.nam` file).
 
 **Model Repository:**
 

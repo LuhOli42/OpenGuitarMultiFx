@@ -402,20 +402,22 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/SnapshotEditorCard.cpp
   Source/UI/Tone3000Panel.cpp
   Source/UI/Tone3000SearchDialog.cpp
-  Source/UI/OAuthLoginDialog.cpp
-  Source/Tone3000/LoopbackServer.cpp
   Source/Tone3000/Tone3000Manager.cpp
   Source/Updater/AppUpdater.cpp
+  ThirdParty/qrcodegen/qrcodegen.cpp
 )
 
-target_include_directories(OpenGuitarMultiFx PRIVATE Source)
+# ThirdParty/qrcodegen: Nayuki's QR Code generator v1.8.0 (MIT, LICENSE.txt
+# there), two files vendored as-is -- draws the TONE3000 login QR code.
+target_include_directories(OpenGuitarMultiFx PRIVATE Source ThirdParty/qrcodegen)
 
-# JUCE_WEB_BROWSER=1: TONE3000 login renders in an embedded WebBrowserComponent
-# (WebKitGTK on Linux, already available -- webkit2gtk-4.1 was found during the
-# juceaide configure step regardless), never a separate system browser process.
+# JUCE_WEB_BROWSER=0: the app shows no web page at all -- TONE3000 login is a
+# QR code + short code signed in on a phone (device flow, see
+# Source/Tone3000/AGENTS.md), so neither GTK nor WebKitGTK is compiled in or
+# linked (they were only there for the old embedded login pane).
 # Curl is needed for TONE3000's REST calls (Tone3000Manager).
 target_compile_definitions(OpenGuitarMultiFx PRIVATE
-  JUCE_WEB_BROWSER=1
+  JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=1
   OGMFX_VERSION="${OGMFX_VERSION}"
 )
@@ -424,15 +426,11 @@ target_compile_definitions(OpenGuitarMultiFx PRIVATE
 # it. Without this, the link fails with undefined references to curl_*.
 find_package(CURL REQUIRED)
 
-# juce_gui_extra.cpp needs GTK/WebKitGTK headers for WebBrowserComponent on
-# Linux. JUCE's CMake resolves these for its own juceaide helper build, but
-# not for consumer targets -- without this, compiling juce_gui_extra.cpp
-# fails with "gtk/gtk.h: No such file or directory". Same pattern as the
-# CURL::libcurl fix above: ask pkg-config directly rather than assume JUCE
-# wires it up.
+# GIO (glib's D-Bus client): BLE MIDI talks to BlueZ through it
+# (Source/UI/BleMidiInput.h). It used to come in through GTK3/WebKitGTK;
+# with those gone it must be asked for by name.
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
-pkg_check_modules(WEBKIT2GTK REQUIRED IMPORTED_TARGET webkit2gtk-4.1)
+pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
 
 # No LTO: this is a dev-iteration build, and link-time optimization roughly
 # doubles peak memory during the final link (confirmed: it was spawning 20
@@ -459,8 +457,7 @@ target_link_libraries(OpenGuitarMultiFx PRIVATE
   OpenGuitarMultiFx_Icons
   OpenGuitarMultiFx_IRs
   CURL::libcurl
-  PkgConfig::GTK3
-  PkgConfig::WEBKIT2GTK
+  PkgConfig::GIO
   EGL
   GLESv2
 )
