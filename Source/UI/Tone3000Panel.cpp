@@ -573,6 +573,29 @@ void Tone3000Panel::selectSection (int index)
         midiPoll.stopTimer();
 }
 
+void Tone3000Panel::resetForOpen()
+{
+    selectSection (0);
+    refreshThemeCards();
+    refreshThemeHint();
+    using Q = EffectRegistry::OversamplingQuality;
+    const auto quality = EffectRegistry::getOversamplingQuality();
+    ecoButton.setToggleState (quality == Q::eco, juce::dontSendNotification);
+    normalButton.setToggleState (quality == Q::balanced, juce::dontSendNotification);
+    highButton.setToggleState (quality == Q::high, juce::dontSendNotification);
+    refreshQualityHint();
+    refreshLoginState();
+    applyUpdateUiState();
+    viewport.setViewPosition (0, 0);
+}
+
+void Tone3000Panel::cardHidden()
+{
+    midiPoll.stopTimer();
+    if (onClosing)
+        onClosing();
+}
+
 Tone3000Panel::~Tone3000Panel()
 {
     midiPoll.stopTimer();

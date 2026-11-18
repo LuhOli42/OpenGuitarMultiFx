@@ -3,6 +3,7 @@
 #include "OAuthLoginDialog.h"
 #include "MidiSettingsPages.h"
 #include "OverlayChrome.h"
+#include "OverlayHost.h"
 #include "Theme.h"
 #include "../Tone3000/LoopbackServer.h"
 #include "../EffectRegistry.h"
@@ -35,6 +36,7 @@ namespace openguitarmultifx
     window instead.
 */
 class Tone3000Panel : public juce::Component,
+                      public PersistentCard,
                       private juce::Timer
 {
 public:
@@ -45,6 +47,12 @@ public:
     void paint (juce::Graphics& g) override;
     void lookAndFeelChanged() override;
     void timerCallback() override;
+
+    /** Built once and shown again (OverlayHost::pushPersistent): back to how a fresh panel looks -- first section, the
+        current theme/quality/login/update state, scrolled to the top. The host also re-pushes the device state (rates...). */
+    void resetForOpen();
+    /** Taken off the screen: what the destructor used to do on closing. */
+    void cardHidden() override;
 
     /** Wired by whoever hosts this panel to OverlayHost::pushOverlay/popOverlay. */
     std::function<void (std::unique_ptr<juce::Component>)> onPushOverlay;

@@ -212,9 +212,12 @@ void FooterBar::timerCallback()
     outLevel = newOut;
     // Repaint only when a bar has moved by about 1.5 px: with nothing playing the footer costs no frames at all.
     const float pixels = juce::jmax (1.0f, inMeterBounds.getWidth());
-    if (! overlayCoversApp().load (std::memory_order_relaxed)
-        && std::abs (inLevel - inDrawn) * pixels >= 1.5f || std::abs (outLevel - outDrawn) * pixels >= 1.5f)
+    const bool moved = std::abs (inLevel - inDrawn) * pixels >= 1.5f || std::abs (outLevel - outDrawn) * pixels >= 1.5f;
+    // ~12 frames a second is plenty for a level bar: with a guitar plugged in the level always wobbles, and drawing every
+    // wobble at 30 fps kept the whole UI and GPU busy on an idle screen (the board, with no heatsink, paid in heat).
+    if (moved && ! overlayCoversApp().load (std::memory_order_relaxed) && now - lastMeterFrameMs >= 80.0)
     {
+        lastMeterFrameMs = now;
         inDrawn = inLevel;
         outDrawn = outLevel;
         repaint (inMeterBounds.getUnion (outMeterBounds).expanded (4.0f).getSmallestIntegerContainer());

@@ -94,6 +94,9 @@ void OverlayHost::popOverlay()
 
     layers.back()->setTransform (juce::AffineTransform());
     layers.back()->setBufferedToImage (false);
+    if (layers.back().get_deleter() == &keepCard)
+        if (auto* persistent = dynamic_cast<PersistentCard*> (layers.back().get()))
+            persistent->cardHidden();
     removeChildComponent (layers.back().get());
     layers.pop_back();
 
