@@ -152,6 +152,7 @@ private:
             const int lo = i > 0 ? (peaks[(size_t) i - 1] + p) / 2 + 1 : 0;
             const int hi = i + 1 < numPeaks ? (p + peaks[(size_t) i + 1]) / 2 : bins - 1;
             const int q = (int) std::lround (p * ratio);
+            if (q >= bins - 1) continue; // shifted past Nyquist
             double phq = acc[(size_t) q] + ratio * trueFreq[(size_t) p] * hop;
             if (align)
             {

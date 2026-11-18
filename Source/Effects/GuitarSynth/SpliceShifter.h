@@ -9,7 +9,7 @@
 namespace openguitarmultifx::gs
 {
 
-/** Fixed-ratio pitch shifter for going DOWN (ratio < 1) that needs no pitch tracker, so chords shift as cleanly as
+/** Fixed-ratio pitch shifter (down, ratio < 1, or up, ratio > 1) that needs no pitch tracker, so chords shift as cleanly as
     single notes and the pitch is exactly the input times the ratio (bends and vibrato included).
 
     One read tap walks the input history at `ratio` samples per sample, so the delay grows; once it has grown by J the
@@ -18,6 +18,9 @@ namespace openguitarmultifx::gs
     decimated copy and refined at full rate. For a single note that is a whole number of periods (an inaudible
     splice); for a chord it is the chord's common period when there is one, the best partial match when there is not.
     The delay never exceeds J plus a few samples, so the latency is J/2 on average (about 5-15 ms).
+    Going up the tap catches up with the input instead; just before it would reach it, it jumps J samples back (same
+    choice of J, the crossfade starting early enough that neither tap reaches the input), so the latency is the
+    crossfade's (ratio - 1) x its length plus J/2.
 
     Cost per sample: one or two cubic reads plus a few multiplies; one search of ~30k multiply-adds per splice
     (25-50 splices per second). No allocation after prepare(). */
@@ -73,14 +76,19 @@ public:
             out = gA * out + gB * read (tapB);
             tapB += ratio;
             fadePos += fadeInc;
-            if (fadePos >= 1.0) { fading = false; tapA = tapB; }
+            if (fadePos >= 1.0) { fading = false; tapA = tapB - ratio; } // tapA += ratio below brings it to tapB
         }
         tapA += ratio;
         if (fading) return (float) out;
 
         const double delay = now - tapA;
+        if (ratio > 1.0)
+        {
+            spliceUp (now, delay, ratio);
+            return (float) out;
+        }
         if (pendingJ <= 0.0 && delay >= jMin + kGuard && delay >= corrLen + kGuard)
-            pendingJ = chooseJump (now, ratio);
+            pendingJ = chooseJump ((int64_t) std::floor (tapA));
         if (pendingJ > 0.0 && delay >= pendingJ + kGuard)
         {
             tapB = tapA + pendingJ;
@@ -128,10 +136,38 @@ private:
         return ab / std::sqrt (aa2 * bb + 1e-24);
     }
 
-    /** Picks the jump: the shortest lag in [jMin, jMax] whose correlation is within 0.04 of the best one. */
-    double chooseJump (double now, double)
+    /** Going up: once the tap is within a crossfade of the input, picks J on the audio just behind the tap (the input
+        ahead of it is not there yet) and starts the crossfade to J samples back, short enough to end kGuard behind. */
+    void spliceUp (double now, double delay, double ratio)
     {
-        const auto anchor = (int64_t) std::floor (tapA);
+        const double rise = ratio - 1.0;
+        if (delay < kGuard) // a reset or a ratio change left the tap at the input
+        {
+            tapA = now - kGuard - rise * 0.012 * fs;
+            pendingJ = 0.0;
+            return;
+        }
+        if (pendingJ <= 0.0)
+        {
+            if (delay > kGuard + rise * 0.012 * fs + 1.0)
+                return;
+            pendingJ = chooseJump (juce::jmin ((int64_t) std::floor (tapA), (int64_t) now - (int64_t) kGuard - corrLen));
+            upFade = juce::jmin ((lastScore > 0.85 ? 0.006 : 0.012) * fs, 0.8 * pendingJ / rise);
+            upPowerLaw = juce::jlimit (0.0, 1.0, (0.8 - lastScore) / 0.5);
+        }
+        if (delay > kGuard + rise * upFade + 1.0)
+            return;
+        tapB = tapA - pendingJ;
+        fading = true;
+        fadePos = 0.0;
+        fadeInc = 1.0 / juce::jmax (16.0, juce::jmin (upFade, (delay - kGuard) / rise));
+        powerLaw = upPowerLaw;
+        pendingJ = 0.0;
+    }
+
+    /** Picks the jump: the shortest lag in [jMin, jMax] whose correlation is within 0.04 of the best one. */
+    double chooseJump (int64_t anchor)
+    {
         const int64_t dAnchor = anchor / dec;
         const int dn = juce::jmax (4, corrLen / dec);
         const int lo = (int) std::ceil (jMin / dec), hi = (int) std::floor (jMax / dec);
@@ -168,7 +204,6 @@ private:
         const double den = s[0] - 2.0 * s[1] + s[2];
         const double frac = den < -1e-12 ? juce::jlimit (-0.5, 0.5, 0.5 * (s[0] - s[2]) / den) : 0.0;
         lastScore = top;
-        juce::ignoreUnused (now);
         return (double) bestLag + frac;
     }
 
@@ -177,7 +212,7 @@ private:
     int dec = 4;
     mt::Biquad aa[2];
     int64_t written = 0;
-    double tapA = 0.0, tapB = 0.0, fadePos = 0.0, fadeInc = 0.0, powerLaw = 0.0, pendingJ = 0.0;
+    double tapA = 0.0, tapB = 0.0, fadePos = 0.0, fadeInc = 0.0, powerLaw = 0.0, pendingJ = 0.0, upFade = 0.0, upPowerLaw = 0.0;
     bool fading = false;
     double jMin = 480.0, jMax = 1920.0;
     int corrLen = 384;
