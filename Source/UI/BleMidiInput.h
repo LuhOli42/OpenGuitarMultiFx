@@ -22,7 +22,7 @@ namespace openguitarmultifx
     On a normal Linux, BlueZ's MIDI plugin turns a BLE MIDI controller into an ALSA sequencer port and juce::MidiInput
     sees it. The Cubie A7S kernel has no sequencer (see RawMidiInput), so a paired controller connected but its notes
     went nowhere. This class does the plugin's job itself: every few seconds it lists BlueZ's objects, (re)connects
-    paired devices that offer the BLE MIDI service, subscribes to the MIDI I/O characteristic's notifications
+    paired or trusted devices that offer the BLE MIDI service, subscribes to the MIDI I/O characteristic's notifications
     (StartNotify) and decodes them with BleMidiParser. Devices are paired from the app's Bluetooth screen; nothing
     here pairs or trusts anything.
 
@@ -113,12 +113,15 @@ private:
         {
             if (GVariant* device = g_variant_lookup_value (interfaces, "org.bluez.Device1", G_VARIANT_TYPE ("a{sv}")))
             {
-                gboolean paired = FALSE, connected = FALSE;
+                gboolean paired = FALSE, trusted = FALSE, connected = FALSE;
                 g_variant_lookup (device, "Paired", "b", &paired);
+                g_variant_lookup (device, "Trusted", "b", &trusted);
                 g_variant_lookup (device, "Connected", "b", &connected);
-                // A paired MIDI controller that is switched on but not connected: ask BlueZ to connect it (a BLE
-                // device does not reconnect by itself). One attempt per device every 10 s at most.
-                if (paired && ! connected && hasMidiService (device))
+                // A known MIDI controller that is switched on but not connected: ask BlueZ to connect it (a BLE
+                // device does not reconnect by itself). One attempt per device every 10 s at most. Trusted counts:
+                // some controllers (M-Vave Chocolate) connect without bonding, so they stay Paired=no forever, and
+                // only the app's Bluetooth screen ever trusts a device.
+                if ((paired || trusted) && ! connected && hasMidiService (device))
                 {
                     auto& last = lastConnectAttempt[path];
                     if (last == 0 || now - last > 10000)

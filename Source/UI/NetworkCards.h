@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BluetoothPairingAgent.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "OverlayChrome.h"
 #include "Theme.h"
@@ -7,6 +8,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdio>
 #include <functional>
 #include <vector>
 
@@ -24,6 +26,25 @@ namespace netcards
         auto output = process.readAllProcessOutput();
         process.waitForProcessToFinish (30000);
         return output;
+    }
+
+    /** Powers the Bluetooth adapter on. A soft rfkill block makes BlueZ refuse ("Failed to set power on"); the app
+        runs as root on the board, so it lifts the block (systemd-rfkill then saves the unblocked state for the next
+        boot) and retries once. Call from a worker thread only. */
+    inline bool bluetoothPowerOn()
+    {
+        if (run ({ "bluetoothctl", "power", "on" }).containsIgnoreCase ("succeeded"))
+            return true;
+        for (const auto& dir : juce::File ("/sys/class/rfkill").findChildFiles (juce::File::findDirectories, false))
+            if (dir.getChildFile ("type").loadFileAsString().trim() == "bluetooth"
+                && dir.getChildFile ("soft").loadFileAsString().trim() == "1")
+                if (auto* f = std::fopen (dir.getChildFile ("soft").getFullPathName().toRawUTF8(), "w")) // sysfs: no temp+rename
+                {
+                    std::fputs ("0", f);
+                    std::fclose (f);
+                }
+        juce::Thread::sleep (500);
+        return run ({ "bluetoothctl", "power", "on" }).containsIgnoreCase ("succeeded");
     }
 
     /** One `nmcli -t` line -> fields. nmcli escapes ':' (and '\') inside a value with a backslash. */
@@ -534,7 +555,15 @@ private:
         juce::Component::SafePointer<BluetoothCard> safe (this);
         juce::Thread::launch ([safe]
         {
-            netcards::run ({ "bluetoothctl", "power", "on" });
+            if (! netcards::bluetoothPowerOn())
+            {
+                juce::MessageManager::callAsync ([safe]
+                {
+                    if (safe != nullptr)
+                        safe->setStatus ("Bluetooth is switched off (blocked) and could not be turned on");
+                });
+                return;
+            }
             netcards::run ({ "bluetoothctl", "--timeout", "8", "scan", "on" });
 
             const auto connected = netcards::run ({ "bluetoothctl", "devices", "Connected" });
@@ -598,9 +627,18 @@ private:
                 out = netcards::run ({ "bluetoothctl", "disconnect", device.mac });
             else
             {
-                netcards::run ({ "bluetoothctl", "--timeout", "20", "pair", device.mac });
-                netcards::run ({ "bluetoothctl", "trust", device.mac });
-                out = netcards::run ({ "bluetoothctl", "--timeout", "20", "connect", device.mac });
+                // The board is never pairable and has no pairing agent on its own (ogmfx-device-tuning.sh), so
+                // nobody can pair with it from the audience; both exist only for the pairing the user asked for
+                // here. BlueZ's PairableTimeout closes the window too if this thread never gets to "pairable off".
+                {
+                    BluetoothPairingAgent agent;
+                    netcards::run ({ "bluetoothctl", "pairable", "on" });
+                    netcards::run ({ "bluetoothctl", "--timeout", "20", "pair", device.mac });
+                    netcards::run ({ "bluetoothctl", "trust", device.mac });
+                    out = netcards::run ({ "bluetoothctl", "--timeout", "20", "connect", device.mac });
+                    juce::Thread::sleep (3000); // controllers that ask to pair once connected (Chocolate) do it now
+                    netcards::run ({ "bluetoothctl", "pairable", "off" });
+                }
             }
             const bool ok = out.containsIgnoreCase ("successful");
             juce::MessageManager::callAsync ([safe, device, ok, out]
