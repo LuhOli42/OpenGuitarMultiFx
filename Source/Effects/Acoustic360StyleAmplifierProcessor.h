@@ -97,6 +97,7 @@ private:
         NodalCircuit::Node wOut = 0;
         NodalCircuit::Node wTone = 0;
         double bmRail = 0.0, bmEnvelope = 0.0, bmOutput = 0.0, bmToneState = 0.0, bmDcState = 0.0;
+        double bmPrevU = 0.0; // the clip's previous normalised input, for its antiderivative anti-aliasing
         tubeamp::PowerStageTail bmTail; // OT + speaker reaction + even-order tail (TubeAmpCommon.h)
     };
 
