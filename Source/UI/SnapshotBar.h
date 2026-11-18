@@ -66,7 +66,7 @@ public:
     /** Press and hold (longPressMs) a cell: the snapshot's edit menu (rename, colour, copy). A tap stays a pure,
         instant recall, which is what the bar is for on stage -- same hidden-gesture pattern as MIDI Learn. */
     std::function<void (int)> onSnapshotLongPressed;
-    /** Tap "+": add a scene (the owner copies the live one). Hold "+": choose which scene the new one copies. */
+    /** Tap or hold "+": the owner adds a scene (a copy of the live one) and opens its editor, where "Start from" picks another source. */
     std::function<void()> onAddPressed;
     std::function<void()> onAddLongPressed;
 

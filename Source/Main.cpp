@@ -161,7 +161,7 @@ public:
         // `--window-snapshot <file.png> [screen]`: build the main screen OFF-screen (no window), give its
         // async start-up ~3 s, render it at the target's 1280x800 to <file> and quit -- for comparing
         // against docs/ui/prototype.html without grabbing the desktop. The optional screen name opens
-        // that overlay before the shot: presets | tuner | eq | settings.
+        // that overlay before the shot: presets | tuner | eq | settings | live | scene | scene-new.
         if (const int at = args.indexOf ("--window-snapshot"); at >= 0 && at + 1 < args.size())
         {
             const juce::File out (args[at + 1].unquoted());

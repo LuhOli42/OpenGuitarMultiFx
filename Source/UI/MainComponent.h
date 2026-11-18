@@ -192,6 +192,7 @@ private:
         part of the preset (a change marks it unsaved); copying overwrites only the target's knobs/bypass, it keeps the
         target's own name and colour. */
     void showSnapshotMenu (int index);
+    void showSnapshotEditor (int index, int newFromScene);
     /** Pedal -> scene (docs/PresetsAndSnapshots.md, "Footswitch"): learn or clear the footswitch CC for scene
         `action` (0-7, or scenemidi::nextScene / previousScene). Learning arms the action; the next CC press on any
         MIDI input is bound to it. Global, saved in scene_midi.xml -- not part of a preset. */
@@ -232,7 +233,7 @@ private:
         "carrega o valor da scene ai como default"), and switches to it. No-op when all eight are in use. */
     void addSnapshot (int source);
     /** Hold "+": pick which scene the new one copies. */
-    void showAddSnapshotMenu();
+    void addSnapshotAndEdit (int source);
     /** Removes scene `index`; later scenes move up a letter (names and colours with them). The last scene stays. */
     void removeSnapshot (int index);
     juce::Colour colourOfSnapshot (int index) const;
@@ -499,16 +500,18 @@ private:
     class IconButton : public juce::Button
     {
     public:
-        enum class Glyph { chevronLeft, chevronRight, undo, redo, live, wifi, bluetooth };
+        enum class Glyph { chevronLeft, chevronRight, undo, redo, live, wifi, bluetooth, save };
         explicit IconButton (Glyph glyphIn) : juce::Button ({}) , glyph (glyphIn) {}
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
 
         /** A small, non-interactive status icon: no fill or border, dim until `lit`, then the app accent. */
         void setStatusOnly (bool statusOnlyIn) { statusOnly = statusOnlyIn; setInterceptsMouseClicks (! statusOnlyIn, ! statusOnlyIn); repaint(); }
         void setLit (bool litIn) { if (lit != litIn) { lit = litIn; repaint(); } }
+        /** Draw a tick instead of the glyph for a moment (the save button's "saved" feedback). */
+        void flashTick();
     private:
         Glyph glyph;
-        bool statusOnly = false, lit = false;
+        bool statusOnly = false, lit = false, tick = false;
     };
 
     /** Prototype .cpu pill: "CPU 23%" plus the 3px load bar. */
@@ -541,6 +544,9 @@ private:
 
     IconButton presetPrevButton { IconButton::Glyph::chevronLeft };
     IconButton presetNextButton { IconButton::Glyph::chevronRight };
+    // One-tap resave of the loaded preset (user request 2026-11-18); accent-lit while there are unsaved changes.
+    IconButton presetSaveButton { IconButton::Glyph::save };
+    void quickSavePreset();
     IconButton undoButton { IconButton::Glyph::undo };
     IconButton redoButton { IconButton::Glyph::redo };
     int undoPollCounter = 0;
