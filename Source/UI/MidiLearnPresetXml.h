@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "MidiSourceCc.h"
 
 #include <map>
 #include <vector>
@@ -58,7 +59,7 @@ inline Bindings read (const juce::XmlElement& presetXml, const BlockGroups& bloc
         const int block = bindingXml->getIntAttribute ("block", -1);
         const auto paramId = bindingXml->getStringAttribute ("param");
 
-        if (cc < 0 || cc > 127 || block < 0 || block >= (int) blocks.size() || blocks[(size_t) block] == nullptr)
+        if (! midicc::isValid (cc) || block < 0 || block >= (int) blocks.size() || blocks[(size_t) block] == nullptr)
             continue;
 
         for (auto* p : blocks[(size_t) block]->getParameters (true))

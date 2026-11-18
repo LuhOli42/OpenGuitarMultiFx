@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include "MidiSourceCc.h"
 
 namespace openguitarmultifx::tunersettings
 {
@@ -35,11 +36,11 @@ inline void load (Settings& settings, const juce::File& file = settingsFile())
     if (const auto xml = juce::XmlDocument::parse (file); xml != nullptr && xml->hasTagName ("Tuner"))
     {
         const int cc = xml->getIntAttribute ("cc", -1);
-        settings.cc = cc >= 0 && cc <= 127 ? cc : -1;
+        settings.cc = midicc::isValid (cc) ? cc : -1;
         settings.muteWhileOpen = xml->getBoolAttribute ("muteWhileOpen", false);
         settings.strobeMode = xml->getBoolAttribute ("strobeMode", false);
         const int tap = xml->getIntAttribute ("tapCc", -1);
-        settings.tapCc = tap >= 0 && tap <= 127 ? tap : -1;
+        settings.tapCc = midicc::isValid (tap) ? tap : -1;
     }
 }
 

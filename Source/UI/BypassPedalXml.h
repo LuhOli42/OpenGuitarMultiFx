@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Effects/EffectProcessor.h"
+#include "MidiSourceCc.h"
 
 #include <juce_core/juce_core.h>
 
@@ -62,7 +63,7 @@ inline Bindings read (const juce::XmlElement& presetXml, const Blocks& blocks)
         const int cc = pedalXml->getIntAttribute ("cc", -1);
         const int block = pedalXml->getIntAttribute ("block", -1);
 
-        if (cc < 0 || cc > 127 || cc == 69 || bindings.count (cc) != 0
+        if (! midicc::isValid (cc) || midicc::isSnapshotSelect (cc) || bindings.count (cc) != 0
             || block < 0 || block >= (int) blocks.size() || blocks[(size_t) block] == nullptr)
             continue;
 

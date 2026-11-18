@@ -1,4 +1,5 @@
 #include "SnapshotEditorCard.h"
+#include "MidiSourceCc.h"
 
 #include "OverlayChrome.h"
 #include "SnapshotPresetXml.h"
@@ -162,7 +163,7 @@ void SnapshotEditorCard::FootswitchRow::refresh()
     }
     else if (cc >= 0)
     {
-        statusLabel.setText ("CC " + juce::String (cc), juce::dontSendNotification);
+        statusLabel.setText (midicc::label (cc), juce::dontSendNotification);
         statusLabel.setColour (juce::Label::textColourId, t.text);
         toggleButton.text = "Clear";
     }

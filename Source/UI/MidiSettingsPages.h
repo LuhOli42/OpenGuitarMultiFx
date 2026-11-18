@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ExpressionPedal.h"
+#include "MidiSourceCc.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Theme.h"
 #include "TouchSizing.h"
@@ -212,7 +213,7 @@ public:
         else if (! p.isAssigned())
             ccText = "Not set. Tap Learn CC and move the pedal.";
         else
-            ccText = "CC " + juce::String (p.cc) + (s.lastRaw >= 0 ? "  -  raw " + juce::String (s.lastRaw)
+            ccText = midicc::label (p.cc) + (s.lastRaw >= 0 ? "  -  raw " + juce::String (s.lastRaw)
                                                                          + "  ->  " + juce::String (juce::roundToInt (p.shape (s.lastRaw) * 100.0f)) + "%"
                                                                        : juce::String ("  -  waiting for the pedal"));
         ccLabel.setText (ccText, juce::dontSendNotification);

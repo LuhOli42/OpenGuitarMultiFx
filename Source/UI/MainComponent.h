@@ -261,6 +261,8 @@ private:
     /** MIDI thread -- never touches PresetManager/the chain directly, only
         hops to the message thread first. See MainComponent.cpp for why. */
     void handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiMessage& message) override;
+    /** Every MIDI input ends here; `bluetooth` = from BleMidiInput, so its CCs get their own keys (MidiSourceCc.h). */
+    void handleMidiMessage (const juce::MidiMessage& message, bool bluetooth);
 
     /** Same "outlives the object" guard Tone3000Manager uses for its own
         callAsync callbacks: set false in the destructor, captured by value
@@ -368,6 +370,7 @@ private:
     scenemidi::StompDetector tunerStomps;
     bool tunerMidiArmed = false;
     scenemidi::StompDetector tapStomps;
+    scenemidi::StompDetector learnStomps;   // is this message the stomp an armed pedal learn should take
     bool tapMidiArmed = false;
     void refreshTapPedal();
     int audioStatTicks = 0;               // timerCallback ticks since the last AudioStats log line
