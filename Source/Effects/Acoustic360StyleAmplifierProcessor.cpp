@@ -260,6 +260,59 @@ double Acoustic360StyleAmplifierProcessor::sagRail (double envelope) const noexc
     return 65.0 * juce::jlimit (0.94, 1.0, 1.0 - 0.002 * envelope);
 }
 
+namespace
+{
+    /** The solid-state clip's shape g(u) = u / (1 + |u|^N)^(1/N) and its integral G(u), tabulated once. The clip is a
+        near-square edge (gain ~214 into +-40 V rails): sampled at 48 kHz without oversampling its edges alias (-50 dB of
+        inharmonic energy at high Volume). First-order antiderivative anti-aliasing replaces g(u_n) by the average of g
+        over the step from u_(n-1) to u_n, (G(u_n) - G(u_(n-1))) / (u_n - u_(n-1)): the same level for slow signals, far less
+        aliasing for fast ones, and no pow() per sample. */
+    struct KneeTable
+    {
+        static constexpr double maxU = 8.0;
+        static constexpr int size = 4096;
+        std::array<double, size + 1> G {}, g {};
+
+        static double shape (double u, double n) noexcept
+        {
+            return u / std::pow (1.0 + std::pow (std::abs (u), n), 1.0 / n);
+        }
+
+        explicit KneeTable (double n)
+        {
+            const double h = maxU / (double) size;
+            for (int i = 0; i <= size; ++i)
+                g[(size_t) i] = shape ((double) i * h, n);
+            for (int i = 0; i < size; ++i)
+            {
+                const double a = (double) i * h;
+                G[(size_t) i + 1] = G[(size_t) i] + h / 6.0 * (g[(size_t) i] + 4.0 * shape (a + 0.5 * h, n) + g[(size_t) i + 1]);
+            }
+        }
+
+        /** G(|u|), cubic Hermite between the nodes (its slope is g, so G stays C1) and linear beyond maxU, where g is 1. */
+        double integral (double u) const noexcept
+        {
+            const double a = std::abs (u);
+            if (a >= maxU)
+                return G[size] + (a - maxU);
+            const double pos = a * ((double) size / maxU);
+            const int i = (int) pos;
+            const double t = pos - (double) i;
+            const double h = maxU / (double) size;
+            const double t2 = t * t, t3 = t2 * t;
+            return (2.0 * t3 - 3.0 * t2 + 1.0) * G[(size_t) i] + (t3 - 2.0 * t2 + t) * h * g[(size_t) i]
+                 + (-2.0 * t3 + 3.0 * t2) * G[(size_t) i + 1] + (t3 - t2) * h * g[(size_t) i + 1];
+        }
+    };
+
+    const KneeTable& kneeTable()
+    {
+        static const KneeTable table (Acoustic360StyleAmplifierProcessor::bmKneeN);
+        return table;
+    }
+}
+
 double Acoustic360StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, double toneVoltage) noexcept
 {
     const double attackCoeff = 1.0 - std::exp (-1.0 / (0.008 * sampleRate));
@@ -271,14 +324,14 @@ double Acoustic360StyleAmplifierProcessor::behavioralPowerStage (Channel& ch, do
     const double k = ch.bmRail * bmYmax / bmGain0;
     const double over = toneVoltage / bmGridClampV;
     const double clamped = toneVoltage / std::sqrt (1.0 + over * over);
-    // a hard solid-state clip (the 361's quasi-complementary pair runs clean up to its rails)
-    const auto knee = [k, rail = ch.bmRail] (double x)
-    {
-        const double u = x / juce::jmax (1.0e-9, k);
-        return u / std::pow (1.0 + std::pow (std::abs (u), bmKneeN), 1.0 / bmKneeN) * rail * bmYmax;
-    };
-    const double shift = bmAsym * k;
-    const double raw = knee (clamped + shift) - knee (shift);
+    // a hard solid-state clip (the 361's quasi-complementary pair runs clean up to its rails), anti-aliased (KneeTable)
+    const double u = (clamped + bmAsym * k) / juce::jmax (1.0e-9, k);
+    const double du = u - ch.bmPrevU;
+    const auto& table = kneeTable();
+    const double shaped = std::abs (du) > 1.0e-5 ? (table.integral (u) - table.integral (ch.bmPrevU)) / du
+                                                 : KneeTable::shape (0.5 * (u + ch.bmPrevU), bmKneeN);
+    ch.bmPrevU = u;
+    const double raw = (shaped - KneeTable::shape (bmAsym, bmKneeN)) * ch.bmRail * bmYmax;
 
     const double dcCoeff = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * bmDcHz / sampleRate);
     ch.bmDcState += dcCoeff * (raw - ch.bmDcState);
@@ -386,6 +439,7 @@ void Acoustic360StyleAmplifierProcessor::prepare (double newSampleRate, int, int
     if (juce::exactlyEqual (sampleRate, newSampleRate) && sampleRate > 0.0)
         return;
     sampleRate = newSampleRate;
+    (void) kneeTable(); // built here, never on the audio thread
 
     for (auto& ch : channels)
     {
