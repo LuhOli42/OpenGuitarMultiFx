@@ -192,6 +192,7 @@ private:
         part of the preset (a change marks it unsaved); copying overwrites only the target's knobs/bypass, it keeps the
         target's own name and colour. */
     void showSnapshotMenu (int index);
+    void showSnapshotEditor (int index, int newFromScene);
     /** Pedal -> scene (docs/PresetsAndSnapshots.md, "Footswitch"): learn or clear the footswitch CC for scene
         `action` (0-7, or scenemidi::nextScene / previousScene). Learning arms the action; the next CC press on any
         MIDI input is bound to it. Global, saved in scene_midi.xml -- not part of a preset. */
@@ -232,7 +233,7 @@ private:
         "carrega o valor da scene ai como default"), and switches to it. No-op when all eight are in use. */
     void addSnapshot (int source);
     /** Hold "+": pick which scene the new one copies. */
-    void showAddSnapshotMenu();
+    void addSnapshotAndEdit (int source);
     /** Removes scene `index`; later scenes move up a letter (names and colours with them). The last scene stays. */
     void removeSnapshot (int index);
     juce::Colour colourOfSnapshot (int index) const;

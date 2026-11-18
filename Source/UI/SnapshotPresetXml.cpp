@@ -154,10 +154,11 @@ juce::String letterFor (int index)
 juce::Colour defaultColourFor (int index)
 {
     static const std::array<juce::Colour, maxSnapshots> palette {
-        juce::Colour (0xff3d9970), // A green
+        // A is purple by the user's choice (2026-11-18); green moved to D.
+        juce::Colour (0xffb10dc9), // A purple
         juce::Colour (0xff0074d9), // B blue
         juce::Colour (0xffff851b), // C orange
-        juce::Colour (0xffb10dc9), // D purple
+        juce::Colour (0xff3d9970), // D green
         juce::Colour (0xffffdc00), // E yellow
         juce::Colour (0xffff4136), // F red
         juce::Colour (0xff39cccc), // G teal

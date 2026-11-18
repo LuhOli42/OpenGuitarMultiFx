@@ -152,8 +152,8 @@ MainComponent::MainComponent()
     snapshotBar.setCurrent (currentSnapshot);
     snapshotBar.onSnapshotSelected = [this] (int index) { selectSnapshot (index); };
     snapshotBar.onSnapshotLongPressed = [this] (int index) { showSnapshotMenu (index); };
-    snapshotBar.onAddPressed = [this] { addSnapshot (currentSnapshot); };
-    snapshotBar.onAddLongPressed = [this] { showAddSnapshotMenu(); };
+    snapshotBar.onAddPressed = [this] { addSnapshotAndEdit (currentSnapshot); };
+    snapshotBar.onAddLongPressed = [this] { addSnapshotAndEdit (currentSnapshot); };
     parameterPanel.getSnapshotMarkerColour = [this] (EffectProcessor* processor, juce::AudioParameterFloat* param)
     {
         return snapshotVaries (processor, param) ? colourOfSnapshot (currentSnapshot) : juce::Colours::transparentBlack;
@@ -1585,6 +1585,14 @@ void MainComponent::openOverlayForSnapshot (const juce::String& screen)
         showSettingsPanel();
     else if (screen == "live")
         showLive();
+    else if (screen == "scene")
+        showSnapshotEditor (currentSnapshot, -1);
+    else if (screen == "scene-new")
+    {
+        addSnapshot (currentSnapshot);
+        addSnapshot (currentSnapshot);
+        showSnapshotEditor (snapshotCount - 1, 0);
+    }
 }
 
 void MainComponent::showPresetsPanel()
@@ -2021,19 +2029,48 @@ void MainComponent::selectSnapshot (int index)
 
 void MainComponent::showSnapshotMenu (int index)
 {
-    index = juce::jlimit (0, snapshotCount - 1, index);
-    const auto letter = snapshotxml::letterFor (index);
-    const auto label = [this] (int i)
+    showSnapshotEditor (juce::jlimit (0, snapshotCount - 1, index), -1);
+}
+
+// The scene editor card (docs/ui/prototype.html, page "snap"). `newFromScene` >= 0 means the scene was just made by
+// the "+" cell as a copy of that scene: the card then offers "Start from" and a Cancel that drops it again.
+void MainComponent::showSnapshotEditor (int index, int newFromScene)
+{
+    const bool isNew = newFromScene >= 0;
+    auto source = std::make_shared<int> (newFromScene);
+
+    SnapshotEditorCard::Actions actions;
+
+    actions.getState = [this, index, source]
     {
-        const auto& name = snapshots[(size_t) i].name;
-        return snapshotxml::letterFor (i) + (name.isNotEmpty() ? " - " + name : juce::String());
+        SnapshotEditorCard::State st;
+        st.index = index;
+        st.name = snapshots[(size_t) index].name;
+        st.colour = colourOfSnapshot (index);
+        st.usingDefaultColour = snapshots[(size_t) index].colour.isEmpty();
+        st.sourceIndex = *source;
+        for (int i = 0; i < snapshotCount; ++i)
+            st.scenes.push_back ({ snapshotxml::letterFor (i), snapshots[(size_t) i].name, colourOfSnapshot (i) });
+        return st;
     };
 
-    // Card 4 of docs/ui/REDESIGN.md: the snapshot editor is an OverlayHost
-    // card now, not a nested PopupMenu -- name, colour, footswitch CC and
-    // copy/remove all on one touch-sized surface.
-    SnapshotEditorCard::Actions actions;
-    actions.onClose = [this] { overlayHost.popOverlay(); };
+    actions.onClose = [this]
+    {
+        overlayHost.popOverlay();
+        if (sceneMidiArmed != scenemidi::noAction)
+        {
+            sceneMidiArmed = scenemidi::noAction; // leaving the card cancels a pending Learn
+            refreshScenePedalDisplay();
+        }
+    };
+
+    actions.onCancelNew = [this, index, source]
+    {
+        const int back = *source;
+        overlayHost.popOverlay();
+        removeSnapshot (index);
+        selectSnapshot (juce::jlimit (0, snapshotCount - 1, back));
+    };
 
     actions.onNameChanged = [this, index] (juce::String newName)
     {
@@ -2052,10 +2089,10 @@ void MainComponent::showSnapshotMenu (int index)
         updatePresetDisplay();
     };
 
-    actions.onCustomColour = [this, index, letter]
+    actions.onCustomColour = [this, index]
     {
         overlayHost.pushOverlay (std::make_unique<ColourPickerCard> (
-            "Colour for snapshot " + letter, colourOfSnapshot (index),
+            "Colour for scene " + snapshotxml::letterFor (index), colourOfSnapshot (index),
             [this, index] (juce::Colour colour)
             {
                 snapshots[(size_t) index].colour = colour.toString();
@@ -2069,38 +2106,21 @@ void MainComponent::showSnapshotMenu (int index)
     actions.pedalArmed = [this] (int action) { return sceneMidiArmed == action; };
     actions.onTogglePedal = [this] (int action) { toggleScenePedal (action); };
 
-    // Copy to / copy from pick the other scene in a small PopupMenu -- the
-    // same pattern the preset browser's setlist menu uses.
-    auto showCopyMenu = [this, index, label] (bool to)
+    actions.onStartFrom = [this, index, source] (int from)
     {
-        juce::PopupMenu menu;
-        for (int t = 0; t < snapshotCount; ++t)
-            if (t != index)
-                menu.addItem (1 + t, label (t));
-        menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
-            [this, index, to] (int result)
-            {
-                if (result <= 0)
-                    return;
-                const int target = result - 1;
-                if (to)
-                    copySnapshot (index, target);
-                else
-                    copySnapshot (target, index);
-            });
+        *source = from;
+        copySnapshot (from, index);
     };
-    actions.onCopyTo = [showCopyMenu] (int) { showCopyMenu (true); };
-    actions.onCopyFrom = [showCopyMenu] (int) { showCopyMenu (false); };
+
+    actions.onCopyTo = [this, index] (int target) { copySnapshot (index, target); };
 
     actions.onRemove = [this, index]
     {
-        removeSnapshot (index);
         overlayHost.popOverlay();
+        removeSnapshot (index);
     };
 
-    overlayHost.pushOverlay (std::make_unique<SnapshotEditorCard> (
-        index, letter, snapshots[(size_t) index].name, colourOfSnapshot (index),
-        snapshots[(size_t) index].colour.isEmpty(), std::move (actions)));
+    overlayHost.pushOverlay (std::make_unique<SnapshotEditorCard> (isNew, std::move (actions)));
 }
 
 void MainComponent::addSnapshot (int source)
@@ -2118,27 +2138,13 @@ void MainComponent::addSnapshot (int source)
     selectSnapshot (added);
 }
 
-void MainComponent::showAddSnapshotMenu()
+void MainComponent::addSnapshotAndEdit (int source)
 {
     if (snapshotCount >= snapshotxml::maxSnapshots)
         return;
 
-    juce::PopupMenu menu;
-    menu.addSectionHeader ("New scene " + snapshotxml::letterFor (snapshotCount) + ": copy from");
-    for (int i = 0; i < snapshotCount; ++i)
-    {
-        const auto& name = snapshots[(size_t) i].name;
-        menu.addItem (1 + i, snapshotxml::letterFor (i) + (name.isNotEmpty() ? " - " + name : juce::String())
-                                 + (i == currentSnapshot ? "  (current)" : ""));
-    }
-
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&snapshotBar)
-                                                   .withStandardItemHeight (touch::minTapTarget),
-                        [this, alive = aliveFlag] (int result)
-    {
-        if (alive->load() && result > 0)
-            addSnapshot (result - 1);
-    });
+    addSnapshot (source);
+    showSnapshotEditor (snapshotCount - 1, source);
 }
 
 void MainComponent::removeSnapshot (int index)
@@ -2201,6 +2207,10 @@ void MainComponent::refreshScenePedalDisplay()
         caption = "press the footswitch for " + what + " ...";
     }
     snapshotBar.setCaptionOverride (caption);
+
+    // A footswitch learned (or a Learn cancelled) while the scene card is open shows there at once.
+    if (auto* card = dynamic_cast<SnapshotEditorCard*> (overlayHost.topLayer()))
+        card->refresh();
 }
 
 void MainComponent::freeCcForLearning (int cc, bool learningKnob)
