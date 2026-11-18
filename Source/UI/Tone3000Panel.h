@@ -85,7 +85,8 @@ public:
     /** Settings > Audio > System monitor: show / hide the live panel (core clocks and busy-%, GPU busy-%, temperature). */
     std::function<void (bool)> onSystemMonitorChanged;
     void setSystemMonitor (bool shown);
-    /** Settings > Audio > Slow cores clock: 0 = auto, else 416 or 780 (MHz). */
+    /** Settings > Audio > CPU: cpuAuto, cpuFull, cpuMax, or 416 / 780 (slow cores locked at that many MHz). */
+    static constexpr int cpuAuto = 0, cpuFull = 1, cpuMax = 2;
     std::function<void (int)> onSlowClockChanged;
     void setSlowClock (int mhz);
     void setSendMode (bool enabled);
@@ -171,9 +172,10 @@ private:
     juce::Label monitorSectionLabel { {}, "System monitor" };
     juce::Label monitorHintLabel;
     juce::TextButton monitorButton { "Off" };
-    juce::Label slowClockSectionLabel { {}, "Slow cores clock" };
+    juce::Label slowClockSectionLabel { {}, "CPU" };
     juce::Label slowClockHintLabel;
-    juce::TextButton slowAutoButton { "Auto" }, slow416Button { "416 MHz" }, slow780Button { "780 MHz" };
+    juce::TextButton slowAutoButton { "Auto" }, slowFullButton { "Full" }, slowMaxButton { "Max" },
+                     slow416Button { "416 MHz" }, slow780Button { "780 MHz" };
     juce::OwnedArray<juce::TextButton> bufferButtons;
     juce::Array<int> bufferValues;
     int currentBuffer = 0;
