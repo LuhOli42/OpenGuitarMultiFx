@@ -1,4 +1,5 @@
 #include "FooterBar.h"
+#include "MidiSourceCc.h"
 #include "Theme.h"
 #include "OverlayHost.h"
 #include <cmath>
@@ -97,7 +98,7 @@ FooterBar::FooterBar()
         g.drawRoundedRectangle (pill.reduced (0.5f), 8.0f, tapArmed ? 2.0f : 1.0f);
         g.setColour (tapArmed ? armedColour : t.text);
         g.setFont (juce::FontOptions (tapCc >= 0 && ! tapArmed ? 11.0f : 10.0f, juce::Font::bold));
-        g.drawText (tapArmed ? juce::String ("...") : tapCc >= 0 ? "CC " + juce::String (tapCc) : juce::String ("TAP"),
+        g.drawText (tapArmed ? juce::String ("...") : tapCc >= 0 ? midicc::label (tapCc) : juce::String ("TAP"),
                     pill.toNearestInt(), juce::Justification::centred);
     };
 

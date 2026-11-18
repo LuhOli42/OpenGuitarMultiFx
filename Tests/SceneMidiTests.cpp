@@ -24,6 +24,19 @@ public:
             expectEquals (b.targetFor (99, 127, 0, 5000), -1, "unbound CC does nothing");
         }
 
+        beginTest ("the same CC number from a cable and a Bluetooth controller are two bindings");
+        {
+            Bindings b;
+            const int cable = midicc::key (20, false), bt = midicc::key (20, true);
+            expect (b.bind (cable, 1));
+            expect (b.bind (bt, 3));
+            expectEquals (b.targetFor (cable, 127, 0, 1000), 1);
+            expectEquals (b.targetFor (bt, 127, 0, 1000), 3);
+            expectEquals (midicc::label (cable), juce::String ("CC 20"));
+            expectEquals (midicc::label (bt), juce::String ("BT CC 20"));
+            expectEquals (midicc::number (bt), 20);
+        }
+
         beginTest ("contact bounce within the debounce window counts once");
         {
             Bindings b;
@@ -77,7 +90,8 @@ public:
             expect (! b.bind (snapshotxml::snapshotSelectCcNumber, 0));
             expect (! b.bind (10, 8));
             expect (! b.bind (10, scenemidi::noAction));
-            expect (! b.bind (128, 0));
+            expect (! b.bind (midicc::key (snapshotxml::snapshotSelectCcNumber, true), 0), "reserved on Bluetooth too");
+            expect (! b.bind (midicc::numKeys, 0));
             expect (! b.bind (-1, 0));
             expect (b.empty());
         }

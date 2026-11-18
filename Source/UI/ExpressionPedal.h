@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include "MidiSourceCc.h"
 
 #include <array>
 #include <cmath>
@@ -47,7 +48,7 @@ struct Pedal
     bool autoEngage = false;
     int autoOffMs = 500;
 
-    bool isAssigned() const { return cc >= 0 && cc <= 127; }
+    bool isAssigned() const { return midicc::isValid (cc); }
 
     /** Raw CC value -> 0..1 at the parameter: calibrated to heel..toe, inverted if asked, then the taper. */
     float shape (int raw) const
@@ -91,7 +92,7 @@ struct Settings
     /** Puts pedal `index` on `cc`; another pedal already on that CC loses it. */
     void assignCc (int index, int cc)
     {
-        if (index < 0 || index >= numPedals || cc < 0 || cc > 127)
+        if (index < 0 || index >= numPedals || ! midicc::isValid (cc))
             return;
         for (auto& p : pedals)
             if (p.cc == cc)
@@ -221,7 +222,7 @@ inline Settings fromXml (const juce::XmlElement* xml)
         settings.pedals[(size_t) index] = p;
 
         const int cc = e->getIntAttribute ("cc", -1);
-        if (cc >= 0 && cc <= 127 && cc != 69) // 69 is the reserved snapshot-select CC
+        if (midicc::isValid (cc) && ! midicc::isSnapshotSelect (cc))
             settings.assignCc (index, cc);
     }
     return settings;

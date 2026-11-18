@@ -1,4 +1,5 @@
 #include "ParameterPanel.h"
+#include "MidiSourceCc.h"
 
 #include "Theme.h"
 #include "ModelListDialog.h"
@@ -763,7 +764,7 @@ void ParameterPanel::showMidiLearnMenu (juce::AudioParameterFloat* param)
 
     juce::PopupMenu menu;
     if (currentCc >= 0)
-        menu.addItem (1, "Clear MIDI Mapping (CC " + juce::String (currentCc) + ")");
+        menu.addItem (1, "Clear MIDI Mapping (" + midicc::label (currentCc) + ")");
     else
         menu.addItem (1, "Learn MIDI CC...");
 
@@ -798,7 +799,7 @@ void ParameterPanel::showMidiLearnMenuForProcessor()
     {
         const int cc = getMidiCcForParam ? getMidiCcForParam (params[i]) : -1;
         const auto name = params[i]->getName (48);
-        menu.addItem ((int) i + 1, cc >= 0 ? "CC " + juce::String (cc) + " - " + name : name);
+        menu.addItem ((int) i + 1, cc >= 0 ? midicc::label (cc) + " - " + name : name);
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&midiButton)

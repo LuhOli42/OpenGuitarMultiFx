@@ -57,7 +57,7 @@ public:
                 "<Pedal cc=\"11\" block=\"2\"/>"   // repeated CC
                 "<Pedal cc=\"69\" block=\"1\"/>"   // reserved
                 "<Pedal cc=\"12\" block=\"9\"/>"   // no such block
-                "<Pedal cc=\"200\" block=\"1\"/>"  // not a CC
+                "<Pedal cc=\"300\" block=\"1\"/>"  // not a CC key (Bluetooth CCs are 128-255)
                 "</BypassPedals></Preset>");
             const auto bindings = bypasspedal::read (*xml, { nullptr, &tremolo, &other });
             expectEquals ((int) bindings.size(), 1);
@@ -73,6 +73,25 @@ public:
             expect (stomps.isPress (20, 127, 3000), "a pedal that never sends 0 still works");
             expect (! stomps.isPress (20, 127, 3000 + scenemidi::debounceMs - 1), "bounce");
             expect (stomps.isPress (21, 127, 3001), "other CCs are independent");
+        }
+
+        beginTest ("a latching switch (127 on one stomp, 0 on the next) counts every stomp");
+        {
+            scenemidi::StompDetector stomps;
+            expect (stomps.isPress (53, 0, 1000), "a latching switch may start at 0");
+            expect (stomps.isPress (53, 127, 2000));
+            expect (stomps.isPress (53, 0, 3000), "a 0 long after the 127 is the next stomp");
+            expect (stomps.isPress (53, 127, 3800));
+            expect (! stomps.isPress (53, 0, 3800 + scenemidi::debounceMs - 1), "bounce");
+        }
+
+        beginTest ("a momentary switch's release is ignored even after a long hold, once it has been tapped");
+        {
+            scenemidi::StompDetector stomps;
+            expect (stomps.isPress (30, 127, 1000));
+            expect (! stomps.isPress (30, 0, 1100), "quick release");
+            expect (stomps.isPress (30, 127, 2000));
+            expect (! stomps.isPress (30, 0, 5000), "held 3 s: still a release, the CC is known momentary");
         }
     }
 };

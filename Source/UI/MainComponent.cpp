@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "Theme.h"
 #include "MidiLearnPresetXml.h"
+#include "MidiSourceCc.h"
 #include "PromptCards.h"
 #include "SnapshotPresetXml.h"
 
@@ -443,7 +444,7 @@ MainComponent::MainComponent()
         rawMidi = std::make_unique<RawMidiInput> ([this] (const juce::MidiMessage& message)
                                                   { handleIncomingMidiMessage (nullptr, message); });
         bleMidi = std::make_unique<BleMidiInput> ([this] (const juce::MidiMessage& message)
-                                                  { handleIncomingMidiMessage (nullptr, message); });
+                                                  { handleMidiMessage (message, true); });
     }
 
     // Snapshot A's colour owns the accent from launch -- no updatePresetDisplay()
@@ -1372,7 +1373,7 @@ void MainComponent::refreshTunerOverlay()
     if (tunerMidiArmed)
         tunerOverlay->setMidiLabel ("Press the pedal...", true);
     else if (tunerSettings.cc >= 0)
-        tunerOverlay->setMidiLabel ("Pedal: CC " + juce::String (tunerSettings.cc), false, true);
+        tunerOverlay->setMidiLabel ("Pedal: " + midicc::label (tunerSettings.cc), false, true);
     else
         tunerOverlay->setMidiLabel ("MIDI LEARN", false, false);
 }
@@ -1973,6 +1974,11 @@ void MainComponent::stepPresetBy (int delta)
 
 void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
 {
+    handleMidiMessage (message, false);
+}
+
+void MainComponent::handleMidiMessage (const juce::MidiMessage& message, bool bluetooth)
+{
     // Both branches below hop to the message thread via callAsync before
     // touching anything -- this callback runs on JUCE's own MIDI thread,
     // and both loadPresetByName() (file I/O, chain/UI mutation) and
@@ -2000,7 +2006,7 @@ void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::Mid
     }
     else if (message.isController())
     {
-        const int ccNumber = message.getControllerNumber();
+        const int ccNumber = midicc::key (message.getControllerNumber(), bluetooth); // a BT CC is its own binding
         const int ccValue = message.getControllerValue();
 
         juce::MessageManager::callAsync ([this, ccNumber, ccValue, alive = aliveFlag]
@@ -2294,7 +2300,7 @@ std::vector<MidiMappingRow> MainComponent::describeMidiMappings() const
         MidiMappingRow row;
         row.kind = kind;
         row.cc = cc;
-        row.source = "CC " + juce::String (cc);
+        row.source = midicc::label (cc);
         if (const int pedal = expressionPedals.indexForCc (cc); pedal >= 0)
             row.source << " - EXP " << (pedal + 1);
         row.type = type;
@@ -2607,7 +2613,7 @@ void MainComponent::showBypassPedalMenu (EffectProcessor* processor)
 
     juce::PopupMenu menu;
     menu.addSectionHeader (processor->getName());
-    menu.addItem (1, boundCc >= 0 ? "Clear pedal (CC " + juce::String (boundCc) + ")" : "Learn pedal (on/off)",
+    menu.addItem (1, boundCc >= 0 ? "Clear pedal (" + midicc::label (boundCc) + ")" : "Learn pedal (on/off)",
                   true, bypassPedalArmed == processor);
     if (bypassPedalArmed != nullptr && bypassPedalArmed != processor)
         menu.addItem (2, "Cancel learning");
@@ -2777,7 +2783,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     // -- the Line 6 convention: value 0-7 = A-H). It always switches
     // snapshots, is never learnable onto a parameter, and ignores
     // out-of-range values.
-    if (ccNumber == snapshotxml::snapshotSelectCcNumber)
+    if (midicc::isSnapshotSelect (ccNumber))
     {
         const int index = snapshotxml::indexForCcValue (ccValue);
         if (index >= 0)
@@ -2816,12 +2822,12 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
             setExpressionBlocksOn (pedalIndex, true);
     }
 
-    // A scene armed for pedal learning takes the next stomp. Only a press is
-    // learned: the footswitch's release (value 0) arrives right after and must
-    // not bind a second, useless CC.
+    // A scene armed for pedal learning takes the next stomp. learnStomps decides what a stomp is for all four pedal
+    // learns below: a momentary switch's release (a low value right after its press) must not bind a second, useless
+    // CC, but a latching switch (M-Vave Chocolate) sends 0 on every other stomp, often the learning one.
     if (sceneMidiArmed != scenemidi::noAction)
     {
-        if (ccValue >= scenemidi::pressThreshold)
+        if (learnStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()))
         {
             freeCcForLearning (ccNumber);
             if (sceneMidi.bind (ccNumber, sceneMidiArmed))
@@ -2838,7 +2844,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     // The tuner screen's MIDI Learn button takes the next stomp (opens/closes the tuner from then on).
     if (tunerMidiArmed)
     {
-        if (ccValue >= scenemidi::pressThreshold)
+        if (learnStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()))
         {
             freeCcForLearning (ccNumber);
             tunerSettings.cc = ccNumber;
@@ -2860,7 +2866,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     // Holding TAP in the footer arms this: the next stomp becomes the tap-tempo pedal.
     if (tapMidiArmed)
     {
-        if (ccValue >= scenemidi::pressThreshold)
+        if (learnStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()))
         {
             freeCcForLearning (ccNumber);
             tunerSettings.tapCc = ccNumber;
@@ -2882,7 +2888,7 @@ void MainComponent::handleMidiCc (int ccNumber, int ccValue)
     // Same for a block armed for its on/off pedal.
     if (bypassPedalArmed != nullptr)
     {
-        if (ccValue >= scenemidi::pressThreshold)
+        if (learnStomps.isPress (ccNumber, ccValue, juce::Time::getMillisecondCounter()))
         {
             freeCcForLearning (ccNumber);
             for (auto it = bypassPedals.begin(); it != bypassPedals.end();)

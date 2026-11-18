@@ -1,6 +1,9 @@
 #pragma once
 
 #include "SnapshotPresetXml.h"
+#include "MidiSourceCc.h"
+
+static_assert (openguitarmultifx::midicc::snapshotSelectCcNumber == openguitarmultifx::snapshotxml::snapshotSelectCcNumber);
 
 #include <juce_core/juce_core.h>
 
@@ -33,38 +36,65 @@ inline bool isValidAction (int action)
         || (action >= 0 && action < snapshotxml::maxSnapshots);
 }
 
-/** A footswitch sends a value >= this when pressed (127 on every controller seen so far). */
+/** A momentary footswitch sends a value >= this when pressed (127 on every controller seen so far). */
 constexpr int pressThreshold = 64;
 
 /** A second stomp on the same CC this soon after the first is contact bounce, not a new stomp. */
 constexpr juce::uint32 debounceMs = 150;
 
+/** A low value this soon after a high one on the same CC is a momentary switch being released, not a stomp. */
+constexpr juce::uint32 releaseWindowMs = 400;
+
 /** Footswitch press detection shared by every "pedal does X" binding (scenes here, effect on/off in BypassPedalXml.h). */
 class StompDetector
 {
 public:
-    /** True when this message is a stomp: a value at or above the threshold, not within debounceMs of the previous
-        stomp on the same CC. Deliberately does NOT wait for a release (value 0) before accepting the next press --
-        many footswitches send 127 on every stomp and never send 0, and a press-after-release rule then fires
-        once and ignores the pedal forever. The release (or any value below the threshold) is simply ignored, so a
-        switch that sends 127 then 0 still counts once per stomp. */
+    /** True when this message is a stomp. Three kinds of footswitch exist:
+          - momentary, 127 on press and 0 on release: the release is not a stomp;
+          - 127 on every stomp, never 0: every message is a stomp (a press-after-release rule would fire once and
+            then ignore the pedal forever);
+          - latching/toggle (M-Vave Chocolate): 127 on one stomp, 0 on the next -- or 0 first -- so a low value IS
+            a stomp; a threshold-only rule missed every other stomp, and learning never saw a stomp sent as 0.
+        A high value is always a stomp. A low value is a release when it arrives within releaseWindowMs of a high one
+        on that CC -- that also marks the CC momentary, so its later releases are ignored however long it was held --
+        and a stomp otherwise. The only miss: a momentary switch held longer than the window before its first quick
+        tap fires once more on that release. Stomps within debounceMs of the previous one on the CC are bounce. */
     bool isPress (int cc, int value, juce::uint32 nowMs)
     {
-        if (value < pressThreshold)
+        auto& s = states[cc];
+        if (value >= pressThreshold)
+        {
+            s.lastHighMs = nowMs;
+            s.sawHigh = true;
+        }
+        else
+        {
+            if (s.momentary)
+                return false;
+            if (s.sawHigh && nowMs - s.lastHighMs < releaseWindowMs)
+            {
+                s.momentary = true;
+                return false;
+            }
+        }
+
+        if (s.pressed && nowMs - s.lastPressMs < debounceMs)
             return false;
 
-        const auto it = lastPressMs.find (cc);
-        if (it != lastPressMs.end() && nowMs - it->second < debounceMs)
-            return false;
-
-        lastPressMs[cc] = nowMs;
+        s.lastPressMs = nowMs;
+        s.pressed = true;
         return true;
     }
 
-    void clear() { lastPressMs.clear(); }
+    void clear() { states.clear(); }
 
 private:
-    std::map<int, juce::uint32> lastPressMs;
+    struct State
+    {
+        juce::uint32 lastPressMs = 0, lastHighMs = 0;
+        bool pressed = false, sawHigh = false, momentary = false;
+    };
+    std::map<int, State> states;
 };
 
 class Bindings
@@ -74,7 +104,7 @@ public:
         replaced. CC 69 is the reserved snapshot-select CC and cannot be bound. Returns false if refused. */
     bool bind (int cc, int action)
     {
-        if (cc < 0 || cc > 127 || cc == snapshotxml::snapshotSelectCcNumber || ! isValidAction (action))
+        if (! midicc::isValid (cc) || midicc::isSnapshotSelect (cc) || ! isValidAction (action))
             return false;
 
         clearAction (action);
