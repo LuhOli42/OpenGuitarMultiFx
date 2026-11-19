@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <initializer_list>
 #include <vector>
 
 /*  Shared pieces for the "Multi-Type" blocks: one generic engine per category whose "types" are only presets of
@@ -40,6 +41,15 @@ inline std::unique_ptr<juce::AudioParameterFloat> choiceParam (const juce::Strin
 }
 
 inline int asIndex (const juce::AudioParameterFloat* p) { return juce::roundToInt (p->get()); }
+
+/** True when `p` is one of `list`. The blocks' isParameterActive() uses it: the panel shows only the controls that
+    shape the current type; every other parameter keeps working (the type sets it) and stays in presets/snapshots. */
+inline bool isAny (const juce::AudioParameterFloat& p, std::initializer_list<const juce::AudioParameterFloat*> list)
+{
+    for (auto* q : list)
+        if (q == &p) return true;
+    return false;
+}
 
 /** Watches a block's Type parameter on the message thread and loads that type's defaults into the other
     parameters when the user changes it -- never on the audio thread, and not when a preset restores the type. */

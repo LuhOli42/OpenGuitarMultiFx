@@ -133,6 +133,28 @@ void MultiTypeDelayProcessor::applyType (int index)
     setParam (phaseReverse, 0); setParam (echoPan, 0); setParam (inputGain, 100); setParam (level, 0);
 }
 
+// The panel shows the knobs a delay pedal has (time, feedback, wet, level, tone cuts) plus the few that shape THIS
+// type -- modulation on the modulated types, drive / bit crush where the type uses them, the stereo ratio, the tape's
+// second head, the ducker, the sweep filter. The rest (EQ bands, LFO shapes/phase, compander, input gain...) are
+// type voicing: still running, set by the type, saved in presets, just not on screen.
+bool MultiTypeDelayProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+{
+    if (&p == type) return fixedName.empty();
+    if (isAny (p, { time, feedback, mix, killDry, level, lowCut, highCut })) return true;
+    const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, asIndex (type))];
+    const bool stereo = t.algo == Algo::stereo || t.algo == Algo::dual || t.algo == Algo::pingPong;
+    if (isAny (p, { lfo1Rate, lfo1Depth })) return t.lfo1Depth > 0.0f || t.lfo2Depth > 0.0f;
+    if (&p == drive) return t.drive > 0.0f;
+    if (&p == bitReduction) return t.bits > 0.0f;
+    if (&p == ratio) return stereo;
+    if (isAny (p, { feedbackR, crossFeedback })) return t.algo == Algo::dual;
+    if (&p == head2Level) return t.algo == Algo::tape;
+    if (&p == diffusion) return t.diffusion > 0.0f;
+    if (isAny (p, { duckAtten, duckThreshold })) return t.duckAtten > 0.0f;
+    if (isAny (p, { sweepRate, sweepQ, sweepStart, sweepStop })) return t.sweep > 0.0f;
+    return false;
+}
+
 void MultiTypeDelayProcessor::setState (const juce::XmlElement& state)
 {
     EffectProcessor::setState (state);

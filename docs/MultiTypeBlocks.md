@@ -7,6 +7,15 @@ that engine's parameters. Each type is also registered as its own block (`MtCmp_
 All DSP is written here; type parameter values come from public pedal and amp schematics. Sources:
 `Source/Effects/MultiType/`, registration in `EffectRegistry.cpp`.
 
+## Panel: pedal-sized controls
+
+Every engine parameter exists and runs, but each block's `isParameterActive()` shows only the knobs a pedal of that
+kind has plus the few that shape the current type (e.g. LFO rate/depth on modulated delays, Drive where the type
+drives, Spring Tone/Drive/Boing on springs, the ducker on Ducking Delay). The rest is the type's voicing: set by
+`applyType()`, still saved in presets and snapshots, just not on screen. Fixed-type blocks (`Mt*_N`) hide the Type
+selector; the generic `MultiType*` blocks keep it and their extras follow the selected type.
+`Tests/MultiTypePanelTests.cpp` caps every block at 14 shown controls and logs each block's list.
+
 ## Pitch
 
 `MultiTypePitchProcessor` (types registered as `MtPit_*`, in the Pitch category): up to 4 voices over

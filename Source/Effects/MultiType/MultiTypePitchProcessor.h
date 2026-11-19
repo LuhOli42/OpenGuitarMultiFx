@@ -36,6 +36,7 @@ public:
     void reset() override;
     bool hasTrails() const override { return true; }
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override;
     void setState (const juce::XmlElement& state) override;
     juce::String getStatusText() const override;
     const char* getName() const override { return fixedName.empty() ? "Multi-Type Pitch" : fixedName.c_str(); }
