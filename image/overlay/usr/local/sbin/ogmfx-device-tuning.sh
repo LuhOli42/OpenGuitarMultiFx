@@ -52,6 +52,13 @@ if [ "$(cat "$dropin" 2>/dev/null)" != "$want" ]; then
     bluez_changed=1
 fi
 
+# A hand-provisioned board (app as root, ogmfx.service override running `xinit /usr/local/bin/ogmfx-client`) skips
+# ogmfx-kiosk, so its client script gets the same post-Xorg re-modeset (ogmfx-display-kick.sh has the story).
+client=/usr/local/bin/ogmfx-client
+if [ -f "$client" ] && ! grep -q ogmfx-display-kick "$client"; then
+    sed -i '0,/^exec /s|^exec |/usr/local/sbin/ogmfx-display-kick.sh \&\nexec |' "$client"
+fi
+
 if [ "${1:-}" = "--now" ]; then
     pkill -x mpris-proxy 2>/dev/null
     systemctl daemon-reexec 2>/dev/null
