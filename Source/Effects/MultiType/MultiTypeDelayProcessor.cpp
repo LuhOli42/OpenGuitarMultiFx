@@ -96,8 +96,8 @@ MultiTypeDelayProcessor::MultiTypeDelayProcessor()
 
     auto* mod = parameters.get(); // one page: every control is a direct child
     lfo1Type = add (*mod, choiceParam ("lfo1Type", "LFO1 Type", lfoShapeNames(), 0));
-    lfo1Rate = add (*mod, floatParam ("lfo1Rate", "LFO1 Rate", 0.05f, 10, 0.5f, 0.5f, "Hz", 2));
-    lfo1Depth = add (*mod, floatParam ("lfo1Depth", "LFO1 Depth", 0, 100, 0, 1.0f, "%", 0));
+    lfo1Rate = add (*mod, floatParam ("lfo1Rate", "Mod Rate", 0.05f, 10, 0.5f, 0.5f, "Hz", 2));
+    lfo1Depth = add (*mod, floatParam ("lfo1Depth", "Mod", 0, 100, 0, 1.0f, "%", 0));
     lfo2Type = add (*mod, choiceParam ("lfo2Type", "LFO2 Type", lfoShapeNames(), 0));
     lfo2Rate = add (*mod, floatParam ("lfo2Rate", "LFO2 Rate", 0.05f, 10, 0.3f, 0.5f, "Hz", 2));
     lfo2Depth = add (*mod, floatParam ("lfo2Depth", "LFO2 Depth", 0, 100, 0, 1.0f, "%", 0));
@@ -137,22 +137,37 @@ void MultiTypeDelayProcessor::applyType (int index)
 // type -- modulation on the modulated types, drive / bit crush where the type uses them, the stereo ratio, the tape's
 // second head, the ducker, the sweep filter. The rest (EQ bands, LFO shapes/phase, compander, input gain...) are
 // type voicing: still running, set by the type, saved in presets, just not on screen.
-bool MultiTypeDelayProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+mt::PanelLayout MultiTypeDelayProcessor::getPanelLayout() const
 {
-    if (&p == type) return fixedName.empty();
-    if (isAny (p, { time, feedback, mix, killDry, level, lowCut, highCut })) return true;
+    // Front: Time, Feedback (repeats), Mix, Level -- a DD-8 / Carbon Copy -- plus what the type is named for.
     const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, asIndex (type))];
+    const bool modulated = t.lfo1Depth > 0.0f || t.lfo2Depth > 0.0f;
     const bool stereo = t.algo == Algo::stereo || t.algo == Algo::dual || t.algo == Algo::pingPong;
-    if (isAny (p, { lfo1Rate, lfo1Depth })) return t.lfo1Depth > 0.0f || t.lfo2Depth > 0.0f;
-    if (&p == drive) return t.drive > 0.0f;
-    if (&p == bitReduction) return t.bits > 0.0f;
-    if (&p == ratio) return stereo;
-    if (isAny (p, { feedbackR, crossFeedback })) return t.algo == Algo::dual;
-    if (&p == head2Level) return t.algo == Algo::tape;
-    if (&p == diffusion) return t.diffusion > 0.0f;
-    if (isAny (p, { duckAtten, duckThreshold })) return t.duckAtten > 0.0f;
-    if (isAny (p, { sweepRate, sweepQ, sweepStart, sweepStop })) return t.sweep > 0.0f;
-    return false;
+    mt::PanelLayout l (2);
+    auto& front = l[0];
+    auto& more = l[1];
+    if (fixedName.empty()) front.push_back (type);
+    front.push_back (time);
+    front.push_back (feedback);
+    if (modulated) front.push_back (lfo1Depth);
+    if (t.drive > 0.0f) front.push_back (drive);
+    if (t.bits > 0.0f) front.push_back (bitReduction);
+    if (t.duckAtten > 0.0f) front.push_back (duckAtten);
+    if (t.sweep > 0.0f) front.push_back (sweepRate);
+    front.push_back (mix);
+    front.push_back (level);
+
+    more.push_back (highCut);
+    more.push_back (lowCut);
+    if (modulated) more.push_back (lfo1Rate);
+    if (stereo) more.push_back (ratio);
+    if (t.algo == Algo::dual) { more.push_back (feedbackR); more.push_back (crossFeedback); }
+    if (t.algo == Algo::tape) more.push_back (head2Level);
+    if (t.diffusion > 0.0f) more.push_back (diffusion);
+    if (t.duckAtten > 0.0f) more.push_back (duckThreshold);
+    if (t.sweep > 0.0f) more.push_back (sweepQ);
+    more.push_back (killDry);
+    return l;
 }
 
 void MultiTypeDelayProcessor::setState (const juce::XmlElement& state)

@@ -238,6 +238,24 @@ public:
     /** Editor hint: draw this control as a vertical fader, not a knob -- a graphic EQ's band sliders. */
     virtual bool prefersFader (const juce::AudioParameterFloat&) const { return false; }
 
+    /** An explicit panel layout, for effects whose controls don't map onto pages by group: the pages in display order,
+        page 0 the front (the pedal's own knobs), page 1 "More" (secondary controls). A control not listed is hidden; it
+        keeps its value and stays in presets, snapshots and MIDI Learn. Empty (the default) = pages by group. */
+    virtual std::vector<std::vector<juce::AudioParameterFloat*>> getPanelLayout() const { return {}; }
+
+    /** The pages the panel shows: getPanelLayout() when the effect has one, else getParameterPages(). */
+    std::vector<std::vector<juce::AudioParameterFloat*>> getPanelPages()
+    {
+        auto layout = getPanelLayout();
+        if (layout.empty())
+            return getParameterPages();
+        std::vector<std::vector<juce::AudioParameterFloat*>> pages;
+        for (auto& page : layout)
+            if (pages.empty() || ! page.empty())
+                pages.push_back (std::move (page));
+        return pages;
+    }
+
     /** The editor's pages of knobs. Page 0 is the float parameters that are direct children of getParameters(); every
         sub-group of it is a further page (its float parameters, in order). Almost every effect has one page; the
         amplifiers keep their "second page" controls (power drive, bias, ...) in a sub-group. All of them stay in

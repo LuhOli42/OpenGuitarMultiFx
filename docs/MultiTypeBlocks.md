@@ -7,14 +7,25 @@ that engine's parameters. Each type is also registered as its own block (`MtCmp_
 All DSP is written here; type parameter values come from public pedal and amp schematics. Sources:
 `Source/Effects/MultiType/`, registration in `EffectRegistry.cpp`.
 
-## Panel: pedal-sized controls
+## Panel: front page + More
 
-Every engine parameter exists and runs, but each block's `isParameterActive()` shows only the knobs a pedal of that
-kind has plus the few that shape the current type (e.g. LFO rate/depth on modulated delays, Drive where the type
-drives, Spring Tone/Drive/Boing on springs, the ducker on Ducking Delay). The rest is the type's voicing: set by
-`applyType()`, still saved in presets and snapshots, just not on screen. Fixed-type blocks (`Mt*_N`) hide the Type
-selector; the generic `MultiType*` blocks keep it and their extras follow the selected type.
-`Tests/MultiTypePanelTests.cpp` caps every block at 14 shown controls and logs each block's list.
+Every Multi-Type block follows one rule (`mt::PanelLayout`, `EffectProcessor::getPanelLayout()`):
+
+- **Front**: Type (generic block only), the real pedal's knobs, plus the knob the type is named for, then Mix, Level.
+- **More**: fine tuning: cut filters, ratio/release, stereo and routing, the type's second-order controls.
+- Everything else is the type's voicing: hidden, still set by the type, saved in presets and snapshots, MIDI-learnable.
+
+| Block | Front | + by type | More |
+|---|---|---|---|
+| Delay | Time, Feedback, Wet, Level | Mod, Drive, Bits, Ducker, Sweep Rate | High/Low Cut, Mod Rate, L/R Ratio, Fb R/Cross, Head 2, Diffusion, Ducker Threshold, Resonance, Kill Dry |
+| Reverb | Time, High Cut, Wet, Level | Pitch Mix (shimmer); spring: Dwell, Time, Spring Tone | Pre-Delay, Size, Mod Depth (spring: Boing, High Cut), Low Cut, Kill Dry |
+| Chorus | Rate, Depth, Mix, Level | | High Cut |
+| Flanger | Rate, Depth, Feedback, Manual, Level | | Mix, LFO Quantize (step type) |
+| Phaser | Rate, Depth, Feedback, Level | | Manual, Tone, Mix |
+| Compressor | Threshold, Attack, Mix, Level | Dynamics | Ratio, Release |
+| Pitch | Whammy: Position, Range; Harmony: Key, Scale, Harmony 1-2; Shift/Detune 1-2 | | voices 3-4, voice levels, delays, LFO, Low/High Cut (generic: Mode, Voices) |
+
+`Tests/MultiTypePanelTests.cpp` checks the shape (two pages, front <= 8 ending in Level, Type first on the generic block).
 
 ## Pitch
 

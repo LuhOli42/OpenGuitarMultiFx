@@ -71,6 +71,7 @@ public:
 
     juce::AudioProcessorParameterGroup* getParameters() override { return inner->getParameters(); }
     bool isParameterActive (const juce::AudioParameterFloat& p) const override { return inner->isParameterActive (p); }
+    std::vector<std::vector<juce::AudioParameterFloat*>> getPanelLayout() const override { return inner->getPanelLayout(); }
     bool prefersSteppedKnob (const juce::AudioParameterFloat& p) const override { return inner->prefersSteppedKnob (p); }
     bool prefersFader (const juce::AudioParameterFloat& p) const override { return inner->prefersFader (p); }
     std::unique_ptr<juce::XmlElement> getState() const override { return inner->getState(); }

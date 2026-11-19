@@ -108,7 +108,7 @@ MultiTypeReverbProcessor::MultiTypeReverbProcessor()
     duckRelease = add (*mod, floatParam ("duckRelease", "Ducker Release", 10, 1000, 300, 0.5f, "ms", 0));
     numSprings = add (*mod, floatParam ("springs", "Number of Springs", 1, 6, 3, 1.0f, {}, 0));
     springTone = add (*mod, floatParam ("springTone", "Spring Tone", 0, 10, 5));
-    springDrive = add (*mod, floatParam ("springDrive", "Spring Drive", 0, 10, 2));
+    springDrive = add (*mod, floatParam ("springDrive", "Dwell", 0, 10, 2));
     boing = add (*mod, floatParam ("boing", "Boiiinnng!", 0, 10, 5));
 
     auto* eq = parameters.get(); // one page: every control is a direct child
@@ -141,15 +141,34 @@ void MultiTypeReverbProcessor::applyType (int index)
 // The panel shows a reverb pedal's knobs (time, size, pre-delay, wet, level, low/high cut, mod depth) plus the
 // spring's tone/drive/boing or the shimmer amount. The tank's inner voicing (early/late levels, diffusions, density,
 // decay multipliers, mid EQ, ducker, pitch voices...) is set by the type, keeps running and stays in presets.
-bool MultiTypeReverbProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+mt::PanelLayout MultiTypeReverbProcessor::getPanelLayout() const
 {
-    if (&p == type) return fixedName.empty();
-    if (isAny (p, { time, size, mix, killDry, level, lowCut, highCut })) return true;
+    // Front: Decay, Tone, Mix, Level -- an RV-6 / Hall of Fame; a spring adds Dwell (a Fender tank), Shimmer its mix.
     const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, asIndex (type))];
-    if (isAny (p, { predelay, modDepth })) return ! t.spring;
-    if (isAny (p, { springTone, springDrive, boing })) return t.spring;
-    if (&p == pitchMix) return t.pitchMix > 0.0f;
-    return false;
+    mt::PanelLayout l (2);
+    auto& front = l[0];
+    auto& more = l[1];
+    if (fixedName.empty()) front.push_back (type);
+    if (t.spring)
+    {
+        front.push_back (springDrive);
+        front.push_back (time);
+        front.push_back (springTone);
+    }
+    else
+    {
+        front.push_back (time);
+        front.push_back (highCut);
+        if (t.pitchMix > 0.0f) front.push_back (pitchMix);
+    }
+    front.push_back (mix);
+    front.push_back (level);
+
+    if (! t.spring) { more.push_back (predelay); more.push_back (size); more.push_back (modDepth); }
+    else { more.push_back (boing); more.push_back (highCut); }
+    more.push_back (lowCut);
+    more.push_back (killDry);
+    return l;
 }
 
 void MultiTypeReverbProcessor::setState (const juce::XmlElement& state)

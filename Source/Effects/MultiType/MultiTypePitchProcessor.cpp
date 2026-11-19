@@ -122,29 +122,52 @@ void MultiTypePitchProcessor::applyType (int index)
 // On top of the fixed-type trimming in the constructor: grain size, per-voice pan and the harmony glide are voicing
 // (set by the type), Shift / Detune / Delay show only where the type uses them, and the generic block shows only the
 // voices and the mode controls of what is currently selected.
-bool MultiTypePitchProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+mt::PanelLayout MultiTypePitchProcessor::getPanelLayout() const
 {
+    // Front, by mode: Whammy = Position, Range (a Whammy pedal); harmony = Key, Scale, the first two intervals (a
+    // harmonist); shifter/detuner = the first two Shift or Detune amounts. Then Mix, Level. More: the other voices,
+    // voice levels and delays, the modulation, the cut filters.
     const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, asIndex (type))];
     const auto m = (Mode) juce::jlimit (0, 2, asIndex (mode));
     const int nv = juce::jlimit (1, kVoices, juce::roundToInt (voices->get()));
-    if (&p == grain) return false;
-    // A detuner shows Detune, an interval shifter shows Shift (a type with neither, the free shifter, shows Shift).
-    bool anyShift = false, anyDetune = false;
-    for (int v = 0; v < kVoices; ++v) { anyShift = anyShift || t.shift[v] != 0.0f; anyDetune = anyDetune || t.detune[v] != 0.0f; }
-    for (int v = 0; v < kVoices; ++v)
+    mt::PanelLayout l (2);
+    auto& front = l[0];
+    auto& more = l[1];
+    if (fixedName.empty()) front.push_back (type);
+    auto voiceControl = [&] (int v) -> juce::AudioParameterFloat*
     {
-        if (&p == pan[v]) return false;
-        if (&p == shift[v]) return v < nv && m == Mode::fixed && (anyShift || ! anyDetune);
-        if (&p == detune[v]) return v < nv && m == Mode::fixed && anyDetune;
-        if (&p == step[v]) return v < nv && m == Mode::diatonic;
-        if (&p == delay[v]) return v < nv && m != Mode::whammy && t.delayMs[v] != 0.0f;
-        if (&p == voiceLevel[v]) return v < nv && nv > 1;
+        if (m == Mode::diatonic) return step[v];
+        // a detuner voice shows Detune, an interval voice (or the free shifter) shows Shift
+        return t.detune[v] != 0.0f && t.shift[v] == 0.0f ? detune[v] : shift[v];
+    };
+    if (m == Mode::whammy)
+    {
+        front.push_back (whammyPos);
+        front.push_back (whammyRange);
     }
-    if (&p == glide) return m == Mode::whammy;
-    if (isAny (p, { lfoRate, lfoDepth })) return m != Mode::whammy && (fixedName.empty() || t.lfoDepth > 0.0f);
-    if (isAny (p, { whammyPos, whammyRange })) return m == Mode::whammy;
-    if (isAny (p, { key, scale })) return m == Mode::diatonic;
-    return true;
+    else
+    {
+        if (m == Mode::diatonic) { front.push_back (key); front.push_back (scale); }
+        for (int v = 0; v < nv; ++v)
+            (v < 2 ? front : more).push_back (voiceControl (v));
+    }
+    front.push_back (mix);
+    front.push_back (level);
+
+    if (m == Mode::whammy)
+        more.push_back (glide);
+    else
+    {
+        if (nv > 1)
+            for (int v = 0; v < nv; ++v) more.push_back (voiceLevel[v]);
+        for (int v = 0; v < nv; ++v)
+            if (t.delayMs[v] != 0.0f) more.push_back (delay[v]);
+        if (fixedName.empty() || t.lfoDepth > 0.0f) { more.push_back (lfoDepth); more.push_back (lfoRate); }
+    }
+    if (fixedName.empty()) { more.push_back (mode); more.push_back (voices); }
+    more.push_back (lowCut);
+    more.push_back (highCut);
+    return l;
 }
 
 void MultiTypePitchProcessor::setState (const juce::XmlElement& state)
