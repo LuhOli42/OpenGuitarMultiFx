@@ -3,6 +3,7 @@
 #include "Effects/EffectProcessor.h"
 #include "Effects/GuitarSynth/HybridShifter.h"
 #include "Effects/Modulation/Chorus/EnsembleDelay.h"
+#include "NoteTracker.h"
 #include "PitchParts.h"
 
 #include <array>
@@ -22,8 +23,9 @@ enum class AlgorithmicPitch
     Pitch effects that are algorithms (docs/circuits/AlgorithmicPitch.md). The Poly Octave and Organ Machine voices are
     gs::HybridShifter (Mode: MONO splice shifter, POLY phase vocoder, or HYBRID: MONO attack into POLY), run once on the
     mono sum. The Whammy's voice is time-domain: two taps sweeping a short window of a delay line at (1 - ratio) times
-    real time, sin^2-crossfaded. The Mono Synth tracks the pitch the way analog guitar synths did: low-pass,
-    level-tracking comparator, period measurement.
+    real time, sin^2-crossfaded. The Mono Synth's pitch comes from pitchparts::NoteTracker: low-pass and
+    level-tracking comparator like the analog guitar synths, then a note lock that holds the played note through its
+    decay (no octave flips or wandering as the string rings out).
 */
 class AlgorithmicPitchProcessor : public EffectProcessor
 {
@@ -53,7 +55,7 @@ private:
     {
         EnsembleDelay line;
         std::array<Shifter, 4> shifters;
-        pitchparts::Analyser analyser;
+        pitchparts::NoteTracker tracker;
         pitchparts::Vcf vcf;
         WetLowpass tone;
         double env = 0.0, oscPhase = 0.0, freq = 0.0, click = 0.0, lastLevel = 0.0, modPhase = 0.0;

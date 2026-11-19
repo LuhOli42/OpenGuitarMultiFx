@@ -113,7 +113,7 @@ void AlgorithmicPitchProcessor::prepare (double newSampleRate, int, int)
     {
         // Room for the slowest voice: an octave-down window and a little headroom.
         ch.line.prepare (newSampleRate, 4.0 * windowMs * 1.0e-3 + 0.01);
-        ch.analyser.prepare (newSampleRate, 600.0, 3, 0.3, 0.1);
+        ch.tracker.prepare (newSampleRate);
         ch.tone.prepare (newSampleRate, 5000.0);
     }
     if (usesVoices())
@@ -131,7 +131,7 @@ void AlgorithmicPitchProcessor::reset()
         ch.line.reset();
         for (auto& s : ch.shifters)
             s.phase = 0.0;
-        ch.analyser.reset();
+        ch.tracker.reset();
         ch.vcf.reset();
         ch.tone.reset();
         ch.env = ch.oscPhase = ch.freq = ch.click = ch.lastLevel = ch.modPhase = 0.0;
@@ -228,13 +228,12 @@ void AlgorithmicPitchProcessor::process (juce::AudioBuffer<float>& buffer)
                 }
                 case AlgorithmicPitch::monoSynth:
                 {
-                    ch.analyser.process (x);
+                    ch.tracker.process (x);
                     ch.env += envA * (std::abs (x) - ch.env);
-                    const double period = ch.analyser.periodSamples();
-                    if (period > 1.0 && ch.analyser.level() > 0.003)
+                    if (const double played = ch.tracker.hz(); played > 0.0)
                     {
                         const int oct = juce::roundToInt (knobs[1]->get()) - 1;
-                        const double target = sampleRate / period * std::pow (2.0, oct);
+                        const double target = played * std::pow (2.0, oct);
                         const double glide = 1.0 - std::exp (-1.0 / ((0.001 + 0.4 * knobs[2]->get()) * sampleRate));
                         ch.freq = ch.freq <= 0.0 ? target : ch.freq + glide * (target - ch.freq);
                     }

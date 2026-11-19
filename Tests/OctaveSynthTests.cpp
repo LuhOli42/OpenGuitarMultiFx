@@ -311,6 +311,66 @@ public:
             expectWithinAbsoluteError (p.debugTrackedHz(), 220.0, 5.0);
         }
 
+        beginTest ("Mono Synth holds a decaying note: no octave flips or wandering in the tail");
+        for (const double f0 : { 82.41, 110.0, 146.83, 196.0, 329.63, 659.26 })
+        {
+            // a plucked string: strong 2nd harmonic, upper partials dying faster, each partial a beating pair (the
+            // two polarisations), hum and noise underneath -- the case where a lone comparator flips octaves
+            AlgorithmicPitchProcessor p (AlgorithmicPitch::monoSynth);
+            p.prepare (sr, 256, 1);
+            juce::AudioBuffer<float> b (1, 256);
+            juce::Random rng (7);
+            double worst = 0.0, phase[12] {};
+            for (auto& ph : phase) ph = rng.nextDouble() * 6.28;
+            const int total = (int) (3.5 * sr); // the fundamental is ~-40 dB by the end
+            for (int base = 0; base < total; base += 256)
+            {
+                for (int i = 0; i < 256; ++i)
+                {
+                    const double t = (base + i) / sr;
+                    double x = 0.0;
+                    for (int n = 1; n < 12 && n * f0 < 9000.0; ++n)
+                    {
+                        const double amp = (n == 2 ? 1.6 : n == 3 ? 1.3 : 1.0) / n * std::exp (-t * (1.0 + 0.35 * (n - 1)) / 0.9);
+                        const double w = 2.0 * juce::MathConstants<double>::pi * f0 * n * t;
+                        x += amp * (0.65 * std::sin (w + phase[n]) + 0.35 * std::sin (w + 2.0 * juce::MathConstants<double>::pi * 0.4 * n * t + phase[n] + 1.0));
+                    }
+                    x = 0.12 * x + 2.5e-4 * (rng.nextDouble() - 0.5) + 1.8e-4 * std::sin (2.0 * juce::MathConstants<double>::pi * 60.0 * t);
+                    b.setSample (0, i, (float) x);
+                }
+                p.process (b);
+                if (base > (int) (0.1 * sr))
+                    worst = std::max (worst, std::abs (1200.0 * std::log2 (std::max (1.0, p.debugTrackedHz()) / f0)));
+            }
+            logMessage (juce::String (f0, 2) + " Hz: worst " + juce::String (worst, 1) + " cents over the decay");
+            expectLessThan (worst, 35.0, juce::String (f0, 2) + " Hz");
+        }
+
+        beginTest ("Mono Synth follows a new note within 60 ms");
+        {
+            AlgorithmicPitchProcessor p (AlgorithmicPitch::monoSynth);
+            set (p, "_glide", 0.0f);
+            p.prepare (sr, 256, 1);
+            juce::AudioBuffer<float> b (1, 256);
+            double settledAt = -1.0;
+            for (int base = 0; base < (int) (1.0 * sr); base += 256)
+            {
+                for (int i = 0; i < 256; ++i)
+                {
+                    const int n = base + i;
+                    const bool second = n >= (int) (0.5 * sr);
+                    const double f = second ? 196.0 : 110.0, t = (second ? n - (int) (0.5 * sr) : n) / sr;
+                    const double w = 2.0 * juce::MathConstants<double>::pi * f * t;
+                    b.setSample (0, i, (float) (0.3 * std::exp (-t / 0.6) * (std::sin (w) + 0.8 * std::sin (2.0 * w) + 0.4 * std::sin (3.0 * w))));
+                }
+                p.process (b);
+                if (base >= (int) (0.5 * sr) && settledAt < 0.0 && std::abs (1200.0 * std::log2 (std::max (1.0, p.debugTrackedHz()) / 196.0)) < 20.0)
+                    settledAt = (base + 256) / sr - 0.5;
+            }
+            logMessage ("new note tracked after " + juce::String (settledAt * 1000.0, 1) + " ms");
+            expect (settledAt >= 0.0 && settledAt < 0.06);
+        }
+
         beginTest ("OCT-1 in -2: 55 Hz");
         {
             auto fx = registry.create ("OCT1StyleOctaver");
