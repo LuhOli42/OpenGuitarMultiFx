@@ -138,6 +138,20 @@ void MultiTypeReverbProcessor::applyType (int index)
     setParam (predelayMix, 0); setParam (mix, t.spring ? 43.0f : 33.0f); setParam (level, 0);
 }
 
+// The panel shows a reverb pedal's knobs (time, size, pre-delay, wet, level, low/high cut, mod depth) plus the
+// spring's tone/drive/boing or the shimmer amount. The tank's inner voicing (early/late levels, diffusions, density,
+// decay multipliers, mid EQ, ducker, pitch voices...) is set by the type, keeps running and stays in presets.
+bool MultiTypeReverbProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+{
+    if (&p == type) return fixedName.empty();
+    if (isAny (p, { time, size, mix, killDry, level, lowCut, highCut })) return true;
+    const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, asIndex (type))];
+    if (isAny (p, { predelay, modDepth })) return ! t.spring;
+    if (isAny (p, { springTone, springDrive, boing })) return t.spring;
+    if (&p == pitchMix) return t.pitchMix > 0.0f;
+    return false;
+}
+
 void MultiTypeReverbProcessor::setState (const juce::XmlElement& state)
 {
     EffectProcessor::setState (state);

@@ -144,6 +144,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   PedalDiagnostics.cpp
   NamPedalCompare.cpp
   MixLawTests.cpp
+  MultiTypePanelTests.cpp
   NAMProcessorTests.cpp
   DelayProcessorTests.cpp
   TapeDelayProcessorTests.cpp

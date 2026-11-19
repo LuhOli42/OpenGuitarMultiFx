@@ -119,6 +119,34 @@ void MultiTypePitchProcessor::applyType (int index)
     setParam (lowCut, 20); setParam (highCut, 20000); setParam (level, 0); setParam (whammyPos, 0);
 }
 
+// On top of the fixed-type trimming in the constructor: grain size, per-voice pan and the harmony glide are voicing
+// (set by the type), Shift / Detune / Delay show only where the type uses them, and the generic block shows only the
+// voices and the mode controls of what is currently selected.
+bool MultiTypePitchProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+{
+    const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, asIndex (type))];
+    const auto m = (Mode) juce::jlimit (0, 2, asIndex (mode));
+    const int nv = juce::jlimit (1, kVoices, juce::roundToInt (voices->get()));
+    if (&p == grain) return false;
+    // A detuner shows Detune, an interval shifter shows Shift (a type with neither, the free shifter, shows Shift).
+    bool anyShift = false, anyDetune = false;
+    for (int v = 0; v < kVoices; ++v) { anyShift = anyShift || t.shift[v] != 0.0f; anyDetune = anyDetune || t.detune[v] != 0.0f; }
+    for (int v = 0; v < kVoices; ++v)
+    {
+        if (&p == pan[v]) return false;
+        if (&p == shift[v]) return v < nv && m == Mode::fixed && (anyShift || ! anyDetune);
+        if (&p == detune[v]) return v < nv && m == Mode::fixed && anyDetune;
+        if (&p == step[v]) return v < nv && m == Mode::diatonic;
+        if (&p == delay[v]) return v < nv && m != Mode::whammy && t.delayMs[v] != 0.0f;
+        if (&p == voiceLevel[v]) return v < nv && nv > 1;
+    }
+    if (&p == glide) return m == Mode::whammy;
+    if (isAny (p, { lfoRate, lfoDepth })) return m != Mode::whammy && (fixedName.empty() || t.lfoDepth > 0.0f);
+    if (isAny (p, { whammyPos, whammyRange })) return m == Mode::whammy;
+    if (isAny (p, { key, scale })) return m == Mode::diatonic;
+    return true;
+}
+
 void MultiTypePitchProcessor::setState (const juce::XmlElement& state)
 {
     EffectProcessor::setState (state);

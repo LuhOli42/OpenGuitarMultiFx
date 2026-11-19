@@ -93,6 +93,14 @@ void MultiTypeChorusProcessor::applyType (int index)
     setParam (spread, t.mono ? 0.0f : 100.0f); setParam (level, 0);
 }
 
+// Chorus pedal knobs only: rate, depth, mix, level and the high cut (tone). Voices, delay time, width, LFO 2,
+// dimension... are the type's voicing (set by it, kept in presets).
+bool MultiTypeChorusProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+{
+    if (&p == type) return fixedName.empty();
+    return isAny (p, { rate, depth, mix, level, highCut });
+}
+
 void MultiTypeChorusProcessor::setState (const juce::XmlElement& s) { EffectProcessor::setState (s); watcher.syncWithoutApplying(); }
 
 void MultiTypeChorusProcessor::prepare (double sr, int, int)
@@ -258,6 +266,17 @@ void MultiTypeFlangerProcessor::applyType (int index)
     setParam (bassFocus, 0); setParam (lowCut, 20); setParam (dryDelay, 50); setParam (level, 0);
 }
 
+// Flanger pedal knobs: rate, depth, feedback (regen), manual, mix, level, plus the step count on the step type.
+// Sweep times, thru-zero routing, VCO law, LFO shape/phase... are the type's voicing.
+bool MultiTypeFlangerProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+{
+    if (&p == type) return fixedName.empty();
+    if (isAny (p, { rate, depth, feedback, manual, mix, level })) return true;
+    const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, asIndex (type))];
+    if (&p == lfoQuantize) return t.quantize > 0.0f;
+    return false;
+}
+
 void MultiTypeFlangerProcessor::setState (const juce::XmlElement& s) { EffectProcessor::setState (s); watcher.syncWithoutApplying(); }
 
 void MultiTypeFlangerProcessor::prepare (double sr, int, int)
@@ -417,6 +436,14 @@ void MultiTypePhaserProcessor::applyType (int index)
     setParam (manual, t.manual); setParam (minFreq, t.minHz); setParam (maxFreq, t.maxHz); setParam (mix, t.mix);
     setParam (lfoPhase, t.phase); setParam (tone, t.tone); setParam (vcrType, (float) t.vcr); setParam (feedbackPoint, (float) t.fbPoint);
     setParam (vcrBias, t.bias); setParam (level, 0);
+}
+
+// Phaser pedal knobs: rate, depth, feedback, manual, tone, mix, level. Stage count, sweep range, VCR law/bias,
+// LFO shape/phase... are the type's voicing.
+bool MultiTypePhaserProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+{
+    if (&p == type) return fixedName.empty();
+    return isAny (p, { rate, depth, feedback, manual, tone, mix, level });
 }
 
 void MultiTypePhaserProcessor::setState (const juce::XmlElement& s) { EffectProcessor::setState (s); watcher.syncWithoutApplying(); }

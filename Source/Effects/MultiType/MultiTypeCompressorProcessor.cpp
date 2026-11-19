@@ -89,6 +89,17 @@ void MultiTypeCompressorProcessor::applyType (int index)
     setParam (mix, 100); setParam (level, 0); setParam (lookAhead, 0); setParam (emphasis, 0);
 }
 
+// The panel shows a compressor's knobs (threshold, ratio, attack, release, mix, level) and the Dynamics amount on the
+// dynamics type; knee, detector, side-chain filters, emphasis, look-ahead... are set by the type and stay in presets.
+bool MultiTypeCompressorProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
+{
+    if (&p == type) return fixedName.empty();
+    if (isAny (p, { threshold, ratio, attack, release, mix, level })) return true;
+    const auto& t = types()[(size_t) juce::jlimit (0, (int) types().size() - 1, asIndex (type))];
+    if (&p == dynamicsAmt) return t.mode == Mode::dynamics;
+    return false;
+}
+
 void MultiTypeCompressorProcessor::setState (const juce::XmlElement& s) { EffectProcessor::setState (s); watcher.syncWithoutApplying(); }
 
 void MultiTypeCompressorProcessor::prepare (double sr, int, int)
