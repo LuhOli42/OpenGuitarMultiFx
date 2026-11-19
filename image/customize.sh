@@ -164,7 +164,7 @@ step "5. RT/audio target setup"
 # layout, enables ogmfx.service + ogmfx-updater.timer, default ogmfx.target.
 "$BUILD_DIR/setup-target.sh" --image --kiosk
 # Overlay files must be root-owned; the launcher must be executable.
-chmod 0755 /usr/local/bin/ogmfx-kiosk /usr/local/sbin/ogmfx-thermal.sh /usr/local/sbin/ogmfx-audio-irq.sh /usr/local/sbin/ogmfx-device-tuning.sh
+chmod 0755 /usr/local/bin/ogmfx-kiosk /usr/local/sbin/ogmfx-display-kick.sh /usr/local/sbin/ogmfx-thermal.sh /usr/local/sbin/ogmfx-audio-irq.sh /usr/local/sbin/ogmfx-device-tuning.sh
 /usr/local/sbin/ogmfx-device-tuning.sh # irqbalance/mpris-proxy off, audio IRQ + thermal guard on (Cubie only)
 systemctl is-enabled ogmfx.service ogmfx-updater.timer
 [[ "$(systemctl get-default)" == ogmfx.target ]] || die "default target is not ogmfx.target"

@@ -10,6 +10,8 @@ APP="${OGMFX_APP:-/opt/ogmfx/current/bin/OpenGuitarMultiFx}"
 if [ "${1:-}" = "--client" ]; then
     # No screen blanking on a pedalboard.
     xset s off s noblank -dpms 2>/dev/null || true
+    # The Cubie's monitor goes black after Xorg's first modeset until a second one (script header has the story).
+    [ -x /usr/local/sbin/ogmfx-display-kick.sh ] && /usr/local/sbin/ogmfx-display-kick.sh &
     exec "$APP"
 fi
 

@@ -86,10 +86,11 @@ install -D -m 0644 packaging/updater.conf          "$stage/etc/ogmfx/updater.con
 install -D -m 0755 packaging/install.sh            "$stage/install.sh"
 # Cubie A7S device tuning (canonical copies live in the image overlay), re-applied by install.sh on every update.
 for f in usr/local/sbin/ogmfx-device-tuning.sh usr/local/sbin/ogmfx-audio-irq.sh usr/local/sbin/ogmfx-thermal.sh \
+         usr/local/sbin/ogmfx-display-kick.sh usr/local/bin/ogmfx-kiosk \
          usr/local/sbin/ogmfx-power.sh etc/systemd/system/ogmfx-power.service \
          etc/systemd/system/ogmfx-audio-irq.service etc/systemd/system/ogmfx-thermal.service \
          etc/systemd/system.conf.d/ogmfx-cores.conf etc/systemd/user.conf.d/ogmfx-cores.conf; do
-  install -D -m "$(case "$f" in *.sh) echo 0755;; *) echo 0644;; esac)" "image/overlay/$f" "$stage/device/$f"
+  install -D -m "$(case "$f" in *.sh|*/bin/*) echo 0755;; *) echo 0644;; esac)" "image/overlay/$f" "$stage/device/$f"
 done
 printf '%s\n' "$VERSION" > "$stage/VERSION"
 
