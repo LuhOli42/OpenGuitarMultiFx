@@ -17,7 +17,8 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override;
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    bool isParameterActive (const juce::AudioParameterFloat& p) const override;
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override { return mt::inLayout (getPanelLayout(), p); }
+    mt::PanelLayout getPanelLayout() const override;
     void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return fixedName.empty() ? "Multi-Type Chorus" : fixedName.c_str(); }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff2fae9b); }
@@ -53,7 +54,8 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override;
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    bool isParameterActive (const juce::AudioParameterFloat& p) const override;
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override { return mt::inLayout (getPanelLayout(), p); }
+    mt::PanelLayout getPanelLayout() const override;
     void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return fixedName.empty() ? "Multi-Type Flanger" : fixedName.c_str(); }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8c5bd6); }
@@ -90,7 +92,8 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override;
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    bool isParameterActive (const juce::AudioParameterFloat& p) const override;
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override { return mt::inLayout (getPanelLayout(), p); }
+    mt::PanelLayout getPanelLayout() const override;
     void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return fixedName.empty() ? "Multi-Type Phaser" : fixedName.c_str(); }
     juce::Colour getAccentColour() const override { return juce::Colour (0xffc75b9b); }

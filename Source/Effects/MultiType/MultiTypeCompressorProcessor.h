@@ -18,7 +18,8 @@ public:
     void process (juce::AudioBuffer<float>& buffer) override;
     void reset() override;
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    bool isParameterActive (const juce::AudioParameterFloat& p) const override;
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override { return mt::inLayout (getPanelLayout(), p); }
+    mt::PanelLayout getPanelLayout() const override;
     void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return fixedName.empty() ? "Multi-Type Compressor" : fixedName.c_str(); }
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b) const override;

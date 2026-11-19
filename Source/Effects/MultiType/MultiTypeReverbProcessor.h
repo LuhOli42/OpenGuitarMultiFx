@@ -23,7 +23,8 @@ public:
     bool hasTrails() const override { return true; }
     double trailLatencySeconds() const override { return 0.3; }
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
-    bool isParameterActive (const juce::AudioParameterFloat& p) const override;
+    bool isParameterActive (const juce::AudioParameterFloat& p) const override { return mt::inLayout (getPanelLayout(), p); }
+    mt::PanelLayout getPanelLayout() const override;
     void setState (const juce::XmlElement& state) override;
     const char* getName() const override { return fixedName.empty() ? "Multi-Type Reverb" : fixedName.c_str(); }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff5d6fd6); }

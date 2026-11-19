@@ -51,6 +51,21 @@ inline bool isAny (const juce::AudioParameterFloat& p, std::initializer_list<con
     return false;
 }
 
+/** The blocks' panel layout (EffectProcessor::getPanelLayout), one rule for all of them:
+    - front: the Type selector on a generic block, the knobs the real pedal of that family has, plus the one knob the
+      current type is named for (Mod, Drive, Dwell, Shimmer...), ordered effect controls -> Mix -> Level;
+    - More: fine tuning (tone/cut filters, ratio, release, stereo/routing, the type's second-order controls);
+    - every other parameter is the type's voicing: hidden, still set by the type and saved in presets. */
+using PanelLayout = std::vector<std::vector<juce::AudioParameterFloat*>>;
+
+inline bool inLayout (const PanelLayout& layout, const juce::AudioParameterFloat& p)
+{
+    for (const auto& page : layout)
+        for (auto* q : page)
+            if (q == &p) return true;
+    return false;
+}
+
 /** Watches a block's Type parameter on the message thread and loads that type's defaults into the other
     parameters when the user changes it -- never on the audio thread, and not when a preset restores the type. */
 class TypeWatcher : private juce::Timer

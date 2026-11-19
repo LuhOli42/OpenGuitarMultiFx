@@ -300,7 +300,7 @@ void ParameterPanel::refresh()
         bypassSwitch.setOn (! current->isBypassed());
 
         std::vector<juce::AudioParameterFloat*> activeNow;
-        for (const auto& sourcePage : current->getParameterPages())
+        for (const auto& sourcePage : current->getPanelPages())
             for (auto* param : sourcePage)
                 if (param != nullptr && current->isParameterActive (*param))
                     activeNow.push_back (param);
@@ -445,7 +445,8 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
     bypassSwitch.setVisible (true);
     bypassSwitch.setOn (! current->isBypassed());
 
-    const auto sourcePages = current->getParameterPages();
+    const auto sourcePages = current->getPanelPages();
+    const bool pedalLayout = ! current->getPanelLayout().empty();
     const int sourceCount = (int) sourcePages.size();
     activeParameters.clear();
     for (const auto& sourcePage : sourcePages)
@@ -471,6 +472,8 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
                         hasCab = true;
                 return hasCab ? juce::String ("Cab") : juce::String ("Page ") + juce::String (pageIndex + 1);
             }
+            if (pedalLayout && pageIndex == 1)
+                return juce::String ("More");
             return pageIndex == 0 ? juce::String ("Main") : juce::String ("Page ") + juce::String (pageIndex + 1);
         }());
 
