@@ -3,6 +3,7 @@
 #include "MidiLearnPresetXml.h"
 #include "MidiSourceCc.h"
 #include "PromptCards.h"
+#include "RouteEditorCard.h"
 #include "SnapshotPresetXml.h"
 
 #include "AddEffectBrowserDialog.h"
@@ -800,8 +801,8 @@ void MainComponent::showRowOutputMenu (int row)
     {
         const auto ticked = [&] (OutputRoute::Channels c)
         {
-            return std::find (routing.deviceOutputs.begin(), routing.deviceOutputs.end(), OutputRoute { i * 2, c })
-                   != routing.deviceOutputs.end();
+            return std::any_of (routing.deviceOutputs.begin(), routing.deviceOutputs.end(),
+                                [&] (const OutputRoute& o) { return o.sameDestination ({ i * 2, c }); });
         };
         menu.addItem (2 + i * 3, "Output " + outputNames[i], true, ticked (OutputRoute::Channels::stereo));
 
@@ -833,11 +834,24 @@ void MainComponent::showRowOutputMenu (int row)
         menu.addItem (rowItemBase + target, "Line " + juce::String (target + 1), true, alreadyOn);
     }
 
+    constexpr int editItem = 99;
+    if (routing.feedsAnything())
+    {
+        menu.addSeparator();
+        menu.addItem (editItem, "Levels / phase...");
+    }
+
     menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
         [this, row, outputCount = outputNames.size()] (int result)
         {
             if (result <= 0)
                 return;
+
+            if (result == editItem)
+            {
+                showRowRouteEditor (row);
+                return;
+            }
 
             auto& r = rowRouting[(size_t) row];
 
@@ -845,12 +859,14 @@ void MainComponent::showRowOutputMenu (int row)
             {
                 r.deviceOutputs.clear();
                 r.toRows.fill (false);
+                r.rowLinks.fill ({});
             }
             else if (result >= rowItemBase)
             {
                 const int target = result - rowItemBase;
                 const bool nowOn = ! r.toRows[(size_t) target];
                 r.toRows[(size_t) target] = nowOn;
+                r.rowLinks[(size_t) target] = {}; // a re-made link starts at unity
 
                 // The target now has a source; a device input on top of it
                 // would be a second one (see showRowInputMenu()).
@@ -872,6 +888,69 @@ void MainComponent::showRowOutputMenu (int row)
             rebuildSignalGraph();
             layoutChain();
         });
+}
+
+void MainComponent::showRowRouteEditor (int row)
+{
+    using Entry = RouteEditorCard::Entry;
+    const auto& routing = rowRouting[(size_t) row];
+    std::vector<Entry> entries;
+    std::vector<int> targets; // per entry: -1 - outputIndex for an output, the target row for a link
+
+    for (int i = 0; i < (int) routing.deviceOutputs.size(); ++i)
+    {
+        const auto& out = routing.deviceOutputs[(size_t) i];
+        Entry e;
+        const int first = out.pairStart + 1;
+        switch (out.channels)
+        {
+            case OutputRoute::Channels::left:  e.name = "Out " + juce::String (first) + " (L)"; e.kind = Entry::Kind::monoOutput; break;
+            case OutputRoute::Channels::right: e.name = "Out " + juce::String (first + 1) + " (R)"; e.kind = Entry::Kind::monoOutput; break;
+            case OutputRoute::Channels::stereo: e.name = "Out " + juce::String (first) + "/" + juce::String (first + 1); break;
+        }
+        e.gainDb = RouteEditorCard::dbFromGain (out.gain);
+        e.pan = out.pan;
+        e.invert = out.invert;
+        entries.push_back (e);
+        targets.push_back (-1 - i);
+    }
+
+    for (int target = 0; target < numRows; ++target)
+    {
+        if (! routing.toRows[(size_t) target])
+            continue;
+        const auto& link = routing.rowLinks[(size_t) target];
+        Entry e;
+        e.name = "Line " + juce::String (target + 1);
+        e.kind = Entry::Kind::rowLink;
+        e.gainDb = RouteEditorCard::dbFromGain (link.gain);
+        e.invert = link.invert;
+        e.map = link.map;
+        entries.push_back (e);
+        targets.push_back (target);
+    }
+
+    if (entries.empty())
+        return;
+
+    overlayHost.pushOverlay (std::make_unique<RouteEditorCard> (
+        "Line " + juce::String (row + 1) + " -- levels / phase", std::move (entries),
+        [this, row, targets] (int index, const Entry& e)
+        {
+            auto& r = rowRouting[(size_t) row];
+            const int t = targets[(size_t) index];
+            if (t < 0)
+            {
+                auto& out = r.deviceOutputs[(size_t) (-1 - t)];
+                out.gain = RouteEditorCard::gainFromDb (e.gainDb);
+                out.pan = e.pan;
+                out.invert = e.invert;
+            }
+            else
+                r.rowLinks[(size_t) t] = { RouteEditorCard::gainFromDb (e.gainDb), e.invert, e.map };
+            rebuildSignalGraph();
+        },
+        [this] { overlayHost.popOverlay(); }));
 }
 
 void MainComponent::rebuildSignalGraph()
@@ -906,7 +985,7 @@ void MainComponent::rebuildSignalGraph()
 
         for (int target = 0; target < numRows; ++target)
             if (routing.toRows[(size_t) target])
-                signalGraph->addLaneConnection (row, target); // target > row always -- forward-only, enforced in showRowOutputMenu()
+                signalGraph->addLaneConnection (row, target, routing.rowLinks[(size_t) target]); // target > row always -- forward-only, enforced in showRowOutputMenu()
     }
 
     audioEngine.setSignalGraph (std::move (signalGraph));
@@ -1628,6 +1707,17 @@ void MainComponent::openOverlayForSnapshot (const juce::String& screen)
         addSnapshot (currentSnapshot);
         addSnapshot (currentSnapshot);
         showSnapshotEditor (snapshotCount - 1, 0);
+    }
+    else if (screen == "routes")
+    {
+        // Row 1 on its pair, on Out 4 alone (quieter, inverted) and linked to row 2 (left half of a split).
+        auto& r = rowRouting[0];
+        r.toggleDeviceOutput ({ 2, OutputRoute::Channels::right, 0.5f, 0.0f, true });
+        r.toRows[1] = true;
+        r.rowLinks[1] = { 0.7f, false, LaneLink::ChannelMap::leftOnly };
+        refreshRowEndpoints();
+        rebuildSignalGraph();
+        showRowRouteEditor (0);
     }
 }
 
@@ -3145,6 +3235,9 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
             auto* outXml = rowXml->createNewChildElement ("Output");
             outXml->setAttribute ("pair", out.pairStart);
             outXml->setAttribute ("channels", OutputRoute::channelsToString (out.channels));
+            outXml->setAttribute ("gainDb", RouteEditorCard::dbFromGain (out.gain));
+            outXml->setAttribute ("pan", out.pan);
+            outXml->setAttribute ("invert", out.invert);
         }
 
         int toRowsMask = 0;
@@ -3152,6 +3245,20 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
             if (r.toRows[(size_t) target])
                 toRowsMask |= (1 << target);
         rowXml->setAttribute ("toRowsMask", toRowsMask);
+
+        // A link's mix, only when it is not the plain sum (toRowsMask alone
+        // still describes the topology, for older builds too).
+        for (int target = 0; target < numRows; ++target)
+        {
+            const auto& link = r.rowLinks[(size_t) target];
+            if (! r.toRows[(size_t) target] || link == LaneLink {})
+                continue;
+            auto* linkXml = rowXml->createNewChildElement ("Link");
+            linkXml->setAttribute ("target", target);
+            linkXml->setAttribute ("gainDb", RouteEditorCard::dbFromGain (link.gain));
+            linkXml->setAttribute ("invert", link.invert);
+            linkXml->setAttribute ("map", LaneLink::mapToString (link.map));
+        }
     }
 
     return xml;
@@ -3183,6 +3290,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         spillLanes[(size_t) lane].writesDeviceOutput = outgoingRouting[(size_t) lane].toDevice();
         // The tail keeps ringing out of the outputs its row had, not whatever the new preset routes that lane to.
         spillLanes[(size_t) lane].outputRoutes = outgoingRouting[(size_t) lane].deviceOutputs;
+        spillLanes[(size_t) lane].linksTo = outgoingRouting[(size_t) lane].rowLinks;
         for (int target = lane + 1; target < numRows; ++target)
             if (outgoingRouting[(size_t) lane].toRows[(size_t) target])
                 spillConnections.push_back ({ lane, target });
@@ -3274,8 +3382,13 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
             for (auto* outXml : rowXml->getChildWithTagNameIterator ("Output"))
             {
                 const int pair = outXml->getIntAttribute ("pair", -1);
-                if (pair >= 0 && pair % 2 == 0)
-                    r.toggleDeviceOutput ({ pair, OutputRoute::channelsFromString (outXml->getStringAttribute ("channels", "stereo")) });
+                if (pair < 0 || pair % 2 != 0)
+                    continue;
+                OutputRoute out { pair, OutputRoute::channelsFromString (outXml->getStringAttribute ("channels", "stereo")) };
+                out.gain = RouteEditorCard::gainFromDb ((float) outXml->getDoubleAttribute ("gainDb", 0.0));
+                out.pan = juce::jlimit (-1.0f, 1.0f, (float) outXml->getDoubleAttribute ("pan", 0.0));
+                out.invert = outXml->getBoolAttribute ("invert", false);
+                r.toggleDeviceOutput (out);
             }
             if (rowXml->getChildByName ("Output") == nullptr && rowXml->getBoolAttribute ("toDevice", false))
                 r.deviceOutputs.push_back ({ rowXml->getIntAttribute ("deviceOutputPair", 0),
@@ -3284,6 +3397,16 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
             const int toRowsMask = rowXml->getIntAttribute ("toRowsMask", 0);
             for (int target = 0; target < numRows; ++target)
                 r.toRows[(size_t) target] = (toRowsMask & (1 << target)) != 0;
+
+            for (auto* linkXml : rowXml->getChildWithTagNameIterator ("Link"))
+            {
+                const int target = linkXml->getIntAttribute ("target", -1);
+                if (target <= row || target >= numRows || ! r.toRows[(size_t) target])
+                    continue;
+                r.rowLinks[(size_t) target] = { RouteEditorCard::gainFromDb ((float) linkXml->getDoubleAttribute ("gainDb", 0.0)),
+                                                linkXml->getBoolAttribute ("invert", false),
+                                                LaneLink::mapFromString (linkXml->getStringAttribute ("map", "stereo")) };
+            }
 
             if (r.inputChannel >= 0 && ! globalInputSet)
             {

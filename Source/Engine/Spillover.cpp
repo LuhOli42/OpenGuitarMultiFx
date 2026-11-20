@@ -51,7 +51,8 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
     for (const auto& connection : connections)
         if (connection.first >= 0 && connection.first < connection.second
             && connection.second < SignalGraph::numLanes)
-            graph->addLaneConnection (connection.first, connection.second);
+            graph->addLaneConnection (connection.first, connection.second,
+                                      lanes[(size_t) connection.first].linksTo[(size_t) connection.second]);
 
     // Longest serial wait reaching the device, over the lane DAG: a repeat
     // inside the LAST of two serial delays waits for both lines (add per

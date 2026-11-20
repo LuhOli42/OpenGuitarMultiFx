@@ -90,6 +90,7 @@ public:
         std::vector<EffectProcessor*> processors;
         bool writesDeviceOutput = false;
         std::vector<OutputRoute> outputRoutes;   // the outgoing row's physical outputs (OutputRoute.h) -- the tail keeps them
+        std::array<LaneLink, SignalGraph::numLanes> linksTo {};   // level/map of this lane's edge to each target (connections)
     };
 
     /** Control thread. Builds the unit for an outgoing preset: keeps the

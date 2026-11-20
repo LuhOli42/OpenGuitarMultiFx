@@ -398,6 +398,7 @@ target_sources(OpenGuitarMultiFx PRIVATE
   Source/UI/PresetBadge.cpp
   Source/UI/PresetBrowserDialog.cpp
   Source/UI/PromptCards.cpp
+  Source/UI/RouteEditorCard.cpp
   Source/UI/SnapshotBar.cpp
   Source/UI/SnapshotEditorCard.cpp
   Source/UI/Tone3000Panel.cpp

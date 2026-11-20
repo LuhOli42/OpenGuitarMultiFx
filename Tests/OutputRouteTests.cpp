@@ -4,6 +4,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <tuple>
+
 namespace openguitarmultifx
 {
 
@@ -90,6 +92,74 @@ public:
             expectEquals ((int) OutputRoute { 2, C::stereo }.channelMask(), 0b1100);
             expectEquals ((int) OutputRoute { 2, C::left }.channelMask(), 0b0100);
             expectEquals ((int) OutputRoute { 0, C::right }.channelMask(), 0b0010);
+        }
+
+        beginTest ("route level, balance and polarity");
+        {
+            juce::AudioBuffer<float> src (2, 4);
+            juce::FloatVectorOperations::fill (src.getWritePointer (0), 1.0f, 4);
+            juce::FloatVectorOperations::fill (src.getWritePointer (1), 1.0f, 4);
+            juce::AudioBuffer<float> dev (2, 4);
+
+            dev.clear();
+            OutputRoute r { 0, C::stereo };
+            r.gain = 0.5f;
+            r.pan = 0.5f;            // right: L drops to half, R stays (balance never boosts)
+            r.invert = true;
+            r.addInto (dev, src, 4);
+            expectWithinAbsoluteError (dev.getSample (0, 0), -0.25f, 1.0e-6f);
+            expectWithinAbsoluteError (dev.getSample (1, 0), -0.5f, 1.0e-6f);
+
+            dev.clear();
+            OutputRoute mono { 0, C::left };
+            mono.gain = 2.0f;
+            mono.addInto (dev, src, 4);
+            expectWithinAbsoluteError (dev.getSample (0, 0), 2.0f, 1.0e-6f);
+            expect (mono.sameDestination ({ 0, C::left }) && ! mono.sameDestination ({ 0, C::right }));
+        }
+
+        beginTest ("row link channel maps, level and polarity");
+        {
+            juce::AudioBuffer<float> src (2, 4);
+            juce::FloatVectorOperations::fill (src.getWritePointer (0), 1.0f, 4);
+            juce::FloatVectorOperations::fill (src.getWritePointer (1), 0.2f, 4);
+            juce::AudioBuffer<float> dst (2, 4);
+            using M = LaneLink::ChannelMap;
+            const auto run = [&] (LaneLink link) { dst.clear(); link.addInto (dst, src, 4); return std::pair { dst.getSample (0, 1), dst.getSample (1, 1) }; };
+
+            auto [l, r] = run ({ 1.0f, false, M::stereo });
+            expectWithinAbsoluteError (l, 1.0f, 1.0e-6f); expectWithinAbsoluteError (r, 0.2f, 1.0e-6f);
+            std::tie (l, r) = run ({ 1.0f, false, M::monoSum });
+            expectWithinAbsoluteError (l, 0.6f, 1.0e-6f); expectWithinAbsoluteError (r, 0.6f, 1.0e-6f);
+            std::tie (l, r) = run ({ 1.0f, false, M::leftOnly });
+            expectWithinAbsoluteError (l, 1.0f, 1.0e-6f); expectWithinAbsoluteError (r, 1.0f, 1.0e-6f);
+            std::tie (l, r) = run ({ 1.0f, false, M::rightOnly });
+            expectWithinAbsoluteError (l, 0.2f, 1.0e-6f); expectWithinAbsoluteError (r, 0.2f, 1.0e-6f);
+            std::tie (l, r) = run ({ 0.5f, true, M::swapLR });
+            expectWithinAbsoluteError (l, -0.1f, 1.0e-6f); expectWithinAbsoluteError (r, -0.5f, 1.0e-6f);
+        }
+
+        beginTest ("a weighted row link feeds the target at its level; an inverted copy cancels the plain one");
+        {
+            RouteGain a (1.0f), b (1.0f), c (1.0f);
+            SignalGraph graph;
+            graph.setLaneProcessors (0, { &a });
+            graph.setLaneProcessors (1, { &b });
+            graph.setLaneProcessors (2, { &c });
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.addLaneConnection (0, 1, { 0.25f, false, LaneLink::ChannelMap::stereo });
+            graph.addLaneConnection (0, 2);
+            graph.addLaneConnection (1, 2, { 4.0f, true, LaneLink::ChannelMap::stereo }); // 0.25 * 4 inverted = -1
+            graph.setLaneWritesDeviceOutput (1, true);
+            graph.setLaneWritesDeviceOutput (2, true);
+            graph.setLaneOutputRoute (1, { 0, C::left });
+            graph.setLaneOutputRoute (2, { 0, C::right });
+            graph.prepare (48000.0, 16, 2);
+            juce::AudioBuffer<float> dev (2, 16);
+            fill (dev, 0.8f);
+            graph.process (dev);
+            expectWithinAbsoluteError (dev.getSample (0, 3), 0.2f, 1.0e-6f);
+            expectWithinAbsoluteError (dev.getSample (1, 3), 0.0f, 1.0e-6f);
         }
 
         beginTest ("routed graph: two rows play out of different pairs at once, unrouted channels silent");
