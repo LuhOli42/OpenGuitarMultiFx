@@ -263,6 +263,17 @@ private:
     std::array<Lane, numLanes> lanes;
     std::vector<std::pair<int, int>> connections;
     std::array<std::array<LaneLink, numLanes>, numLanes> links {};   // [source][target]
+
+    // Crossover state (phase 4), coefficients set in prepare(). A filtered
+    // route runs on a copy of its source: per TARGET lane for links (lanes of
+    // one stage load their inputs on different threads), one shared scratch
+    // for the output routes (written on the audio thread only).
+    std::array<std::array<RouteFilterState, numLanes>, numLanes> linkFilterState {};
+    std::array<std::array<RouteFilterState, maxOutputRoutesPerLane>, numLanes> outputFilterState {};
+    std::array<juce::AudioBuffer<float>, numLanes> linkScratch;
+    juce::AudioBuffer<float> outputScratch;
+    void addOutputRoute (juce::AudioBuffer<float>& device, const juce::AudioBuffer<float>& src,
+                         int lane, int routeIndex, int numSamples) noexcept;
     juce::AudioBuffer<float> deviceInputSnapshot;
     const float* const* perChannelInputs = nullptr;   // set by process(), read by lanes in the same call
     int numPerChannelInputs = 0;

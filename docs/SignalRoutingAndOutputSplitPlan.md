@@ -1,6 +1,6 @@
 # Plano de implementação — split de linha, split de sinal e split de output
 
-Status: Fases 1, 2 e 3 implementadas (2026-11-20, ver "Como ficou" abaixo); Fase 4 em andamento.
+Status: Fases 1–5 implementadas (2026-11-20, ver "Como ficou" abaixo; a Fase 5 saiu junto com a 1).
 Data: 2026-11-08 (plano), 2026-11-20 (Fase 1).
 
 ## Fase 1 — como ficou (2026-11-20)
@@ -26,6 +26,14 @@ A primeira tentativa (PR #217, `OutputMatrix` como objeto separado publicado ao 
 - `LaneLink` (em `OutputRoute.h`): `gain`, `invert`, `ChannelMap` (`stereo`, `monoSum`, `leftOnly`, `rightOnly`, `swapLR`) por aresta linha→linha. `SignalGraph::addLaneConnection (src, tgt, LaneLink)`; um `LaneLink` padrão usa o mesmo `addClamped` de antes (bit-idêntico). Guardado em `links[src][tgt]` (sem mudar o `std::vector<std::pair>` das conexões, que o spillover e os testes usam).
 - UI: "Levels / phase..." no menu de saída da linha abre o `RouteEditorCard` (`Source/UI/RouteEditorCard.{h,cpp}`): uma linha por destino com fader de nível (-40 dB = silêncio .. +12 dB), balance (saídas estéreo) ou channel map (links), e botão de fase Ø. Fader aplica ao soltar (cada aplicação troca o grafo; o swap fade cobre a mudança), toggles/combos na hora. `--window-snapshot <png> routes` renderiza o card off-screen.
 - Preset: `<Output ... gainDb pan invert/>`; `<Link target gainDb invert map/>` dentro do `<Row>` só para links que não são a soma pura (`toRowsMask` continua descrevendo a topologia).
+
+## Fase 4 — como ficou (2026-11-20)
+
+- **Crossover por rota** (`RouteFilter` em `OutputRoute.h`): `lowPass` / `highPass` Linkwitz-Riley de 4ª ordem (duas seções Butterworth Q 0.7071 em cascata), em qualquer `OutputRoute` ou `LaneLink`. Uma rota LP e uma HP na mesma frequência somam de volta ao nível de entrada (teste `crossover ... sum back flat`). Usos: sub no Out 3/4 com low pass direto no app; split de banda de um baixo em duas linhas com processamento diferente.
+- Estado do filtro mora no `SignalGraph` (`linkFilterState[src][tgt]`, `outputFilterState[lane][route]`, coeficientes em `prepare()`); a rota filtrada roda numa cópia da fonte — scratch **por lane destino** para links (lanes do mesmo estágio carregam a entrada em threads diferentes) e um scratch único para as rotas de saída (só a audio thread escreve). Grafo sem filtros não aloca scratch.
+- **Split/merge L/R formal**: `ChannelMap::toLeft` / `toRight` (mono → só o L / só o R da linha destino) completam `leftOnly`/`rightOnly`: linha 1 → linha 2 `leftOnly` + linha 1 → linha 3 `rightOnly` é um split L/R; linhas 2 e 3 → linha 4 com `toLeft` / `toRight` é o merge L/R.
+- UI: segunda linha "Crossover" (Off / Low pass / High pass + frequência 20 Hz–5 kHz) em cada destino do `RouteEditorCard`; channel map ganhou "Mono to L" / "Mono to R". Preset: `filter="lowPass|highPass" filterHz` em `<Output>`/`<Link>` (ausente = sem filtro).
+- Não feito: preferência de canal declarada por `EffectProcessor` (item especulativo da seção 7) — nenhum efeito precisou, e acoplar isso ao grafo iria contra "sem caso especial por efeito".
 
 ## 1. Objetivo
 

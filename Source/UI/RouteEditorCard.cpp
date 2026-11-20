@@ -7,7 +7,9 @@ namespace openguitarmultifx
 
 namespace
 {
-    constexpr int lineHeight = touch::minTapTarget + 12;
+    constexpr int rowHeight = touch::minTapTarget + 8;
+    constexpr int lineHeight = 2 * rowHeight + 12;   // mix row + crossover row, plus the gap to the next line
+    constexpr int maxVisibleLines = 4;
     constexpr int nameWidth = 120;
     constexpr int extraWidth = 190;   // pan fader or channel-map picker
     constexpr int invertWidth = 64;
@@ -52,7 +54,7 @@ public:
         }
         else if (entry.kind == Entry::Kind::rowLink)
         {
-            map.addItemList ({ "Stereo", "Mono sum", "Left only", "Right only", "Swap L/R" }, 1);
+            map.addItemList ({ "Stereo", "Mono sum", "Left only", "Right only", "Swap L/R", "Mono to L", "Mono to R" }, 1);
             map.setSelectedItemIndex ((int) entry.map, juce::dontSendNotification);
             map.onChange = [this]
             {
@@ -61,6 +63,36 @@ public:
             };
             addAndMakeVisible (map);
         }
+
+        crossoverLabel.setText ("Crossover", juce::dontSendNotification);
+        crossoverLabel.setFont (juce::Font (13.0f));
+        crossoverLabel.setColour (juce::Label::textColourId, theme::current().textMuted);
+        addAndMakeVisible (crossoverLabel);
+
+        filterType.addItemList ({ "Off", "Low pass", "High pass" }, 1);
+        filterType.setSelectedItemIndex ((int) entry.filter.type, juce::dontSendNotification);
+        filterType.onChange = [this]
+        {
+            entry.filter.type = (RouteFilter::Type) filterType.getSelectedItemIndex();
+            filterFreq.setEnabled (entry.filter.active());
+            onChange (index, entry);
+        };
+        addAndMakeVisible (filterType);
+
+        filterFreq.setSliderStyle (juce::Slider::LinearHorizontal);
+        filterFreq.setTextBoxStyle (juce::Slider::TextBoxRight, false, 84, touch::minTapTarget);
+        filterFreq.setRange (20.0, 5000.0, 1.0);
+        filterFreq.setSkewFactorFromMidPoint (300.0);
+        filterFreq.setDoubleClickReturnValue (true, 120.0);
+        filterFreq.textFromValueFunction = [] (double hz)
+        {
+            return hz >= 1000.0 ? juce::String (hz / 1000.0, 2) + " kHz" : juce::String (juce::roundToInt (hz)) + " Hz";
+        };
+        filterFreq.setValue (entry.filter.freqHz, juce::dontSendNotification);
+        filterFreq.updateText();
+        filterFreq.setEnabled (entry.filter.active());
+        bindApplyOnRelease (filterFreq, [this] { entry.filter.freqHz = (float) filterFreq.getValue(); });
+        addAndMakeVisible (filterFreq);
 
         invert.setButtonText (juce::CharPointer_UTF8 ("\xc3\x98")); // the polarity glyph
         invert.setClickingTogglesState (true);
@@ -76,7 +108,17 @@ public:
 
     void resized() override
     {
-        auto area = getLocalBounds().reduced (0, 6);
+        auto area = getLocalBounds().withTrimmedBottom (12);
+        auto second = area.removeFromBottom (rowHeight).reduced (0, 4);
+        area = area.reduced (0, 4);
+
+        crossoverLabel.setBounds (second.removeFromLeft (nameWidth));
+        second.removeFromLeft (gap);
+        filterType.setBounds (second.removeFromLeft (160));
+        second.removeFromLeft (gap);
+        second.removeFromRight (invertWidth + gap);
+        filterFreq.setBounds (second);
+
         nameLabel.setBounds (area.removeFromLeft (nameWidth));
         area.removeFromLeft (gap);
         invert.setBounds (area.removeFromRight (invertWidth));
@@ -111,9 +153,9 @@ private:
     int index;
     Entry entry;
     std::function<void (int, const Entry&)> onChange;
-    juce::Label nameLabel;
-    juce::Slider level, pan;
-    juce::ComboBox map;
+    juce::Label nameLabel, crossoverLabel;
+    juce::Slider level, pan, filterFreq;
+    juce::ComboBox map, filterType;
     juce::TextButton invert;
 };
 
@@ -146,7 +188,7 @@ RouteEditorCard::RouteEditorCard (const juce::String& title, std::vector<Entry> 
     doneButton.onClick = [onDone] { if (auto callback = onDone) callback(); };
     addAndMakeVisible (doneButton);
 
-    const int visibleLines = juce::jlimit (1, 6, (int) entries.size());
+    const int visibleLines = juce::jlimit (1, maxVisibleLines, (int) entries.size());
     setSize (760, 14 + 30 + 18 + visibleLines * lineHeight + 10 + touch::minTapTarget + 14);
 }
 
@@ -174,7 +216,7 @@ void RouteEditorCard::resized()
     area.removeFromBottom (10);
 
     viewport.setBounds (area);
-    const int width = area.getWidth() - (lines.size() > 6 ? viewport.getScrollBarThickness() : 0);
+    const int width = area.getWidth() - (lines.size() > maxVisibleLines ? viewport.getScrollBarThickness() : 0);
     content.setSize (width, lines.size() * lineHeight);
     for (int i = 0; i < lines.size(); ++i)
         lines[i]->setBounds (0, i * lineHeight, width, lineHeight);

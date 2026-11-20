@@ -838,7 +838,7 @@ void MainComponent::showRowOutputMenu (int row)
     if (routing.feedsAnything())
     {
         menu.addSeparator();
-        menu.addItem (editItem, "Levels / phase...");
+        menu.addItem (editItem, "Levels / phase / crossover...");
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withStandardItemHeight (touch::minTapTarget),
@@ -890,6 +890,15 @@ void MainComponent::showRowOutputMenu (int row)
         });
 }
 
+namespace
+{
+    RouteFilter readRouteFilter (const juce::XmlElement& xml)
+    {
+        return { RouteFilter::typeFromString (xml.getStringAttribute ("filter", "none")),
+                 juce::jlimit (10.0f, 20000.0f, (float) xml.getDoubleAttribute ("filterHz", 120.0)) };
+    }
+}
+
 void MainComponent::showRowRouteEditor (int row)
 {
     using Entry = RouteEditorCard::Entry;
@@ -911,6 +920,7 @@ void MainComponent::showRowRouteEditor (int row)
         e.gainDb = RouteEditorCard::dbFromGain (out.gain);
         e.pan = out.pan;
         e.invert = out.invert;
+        e.filter = out.filter;
         entries.push_back (e);
         targets.push_back (-1 - i);
     }
@@ -926,6 +936,7 @@ void MainComponent::showRowRouteEditor (int row)
         e.gainDb = RouteEditorCard::dbFromGain (link.gain);
         e.invert = link.invert;
         e.map = link.map;
+        e.filter = link.filter;
         entries.push_back (e);
         targets.push_back (target);
     }
@@ -934,7 +945,7 @@ void MainComponent::showRowRouteEditor (int row)
         return;
 
     overlayHost.pushOverlay (std::make_unique<RouteEditorCard> (
-        "Line " + juce::String (row + 1) + " -- levels / phase", std::move (entries),
+        "Line " + juce::String (row + 1) + " -- levels / phase / crossover", std::move (entries),
         [this, row, targets] (int index, const Entry& e)
         {
             auto& r = rowRouting[(size_t) row];
@@ -945,9 +956,10 @@ void MainComponent::showRowRouteEditor (int row)
                 out.gain = RouteEditorCard::gainFromDb (e.gainDb);
                 out.pan = e.pan;
                 out.invert = e.invert;
+                out.filter = e.filter;
             }
             else
-                r.rowLinks[(size_t) t] = { RouteEditorCard::gainFromDb (e.gainDb), e.invert, e.map };
+                r.rowLinks[(size_t) t] = { RouteEditorCard::gainFromDb (e.gainDb), e.invert, e.map, e.filter };
             rebuildSignalGraph();
         },
         [this] { overlayHost.popOverlay(); }));
@@ -1714,7 +1726,7 @@ void MainComponent::openOverlayForSnapshot (const juce::String& screen)
         auto& r = rowRouting[0];
         r.toggleDeviceOutput ({ 2, OutputRoute::Channels::right, 0.5f, 0.0f, true });
         r.toRows[1] = true;
-        r.rowLinks[1] = { 0.7f, false, LaneLink::ChannelMap::leftOnly };
+        r.rowLinks[1] = { 0.7f, false, LaneLink::ChannelMap::leftOnly, { RouteFilter::Type::highPass, 250.0f } };
         refreshRowEndpoints();
         rebuildSignalGraph();
         showRowRouteEditor (0);
@@ -3238,6 +3250,11 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
             outXml->setAttribute ("gainDb", RouteEditorCard::dbFromGain (out.gain));
             outXml->setAttribute ("pan", out.pan);
             outXml->setAttribute ("invert", out.invert);
+            if (out.filter.active())
+            {
+                outXml->setAttribute ("filter", RouteFilter::typeToString (out.filter.type));
+                outXml->setAttribute ("filterHz", out.filter.freqHz);
+            }
         }
 
         int toRowsMask = 0;
@@ -3258,6 +3275,11 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
             linkXml->setAttribute ("gainDb", RouteEditorCard::dbFromGain (link.gain));
             linkXml->setAttribute ("invert", link.invert);
             linkXml->setAttribute ("map", LaneLink::mapToString (link.map));
+            if (link.filter.active())
+            {
+                linkXml->setAttribute ("filter", RouteFilter::typeToString (link.filter.type));
+                linkXml->setAttribute ("filterHz", link.filter.freqHz);
+            }
         }
     }
 
@@ -3388,6 +3410,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
                 out.gain = RouteEditorCard::gainFromDb ((float) outXml->getDoubleAttribute ("gainDb", 0.0));
                 out.pan = juce::jlimit (-1.0f, 1.0f, (float) outXml->getDoubleAttribute ("pan", 0.0));
                 out.invert = outXml->getBoolAttribute ("invert", false);
+                out.filter = readRouteFilter (*outXml);
                 r.toggleDeviceOutput (out);
             }
             if (rowXml->getChildByName ("Output") == nullptr && rowXml->getBoolAttribute ("toDevice", false))
@@ -3405,7 +3428,8 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
                     continue;
                 r.rowLinks[(size_t) target] = { RouteEditorCard::gainFromDb ((float) linkXml->getDoubleAttribute ("gainDb", 0.0)),
                                                 linkXml->getBoolAttribute ("invert", false),
-                                                LaneLink::mapFromString (linkXml->getStringAttribute ("map", "stereo")) };
+                                                LaneLink::mapFromString (linkXml->getStringAttribute ("map", "stereo")),
+                                                readRouteFilter (*linkXml) };
             }
 
             if (r.inputChannel >= 0 && ! globalInputSet)
