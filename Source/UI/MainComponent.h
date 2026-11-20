@@ -292,13 +292,15 @@ private:
         // Out 1 and a bass row on Out 2 of the same pair.
         std::vector<OutputRoute> deviceOutputs;
         std::array<bool, numRows> toRows {};
+        std::array<LaneLink, numRows> rowLinks {};   // level/polarity/channel map of each toRows link (phase 3)
 
         bool toDevice() const { return ! deviceOutputs.empty(); }
 
         /** Adds the route, or removes it if it is already there. */
         void toggleDeviceOutput (OutputRoute route)
         {
-            const auto it = std::find (deviceOutputs.begin(), deviceOutputs.end(), route);
+            const auto it = std::find_if (deviceOutputs.begin(), deviceOutputs.end(),
+                                          [&] (const OutputRoute& o) { return o.sameDestination (route); });
             if (it != deviceOutputs.end())
                 deviceOutputs.erase (it);
             else
@@ -322,6 +324,8 @@ private:
         Empty if nothing feeds it. */
     std::vector<int> feedersFor (int row) const;
     void showRowOutputMenu (int row);
+    /** Level / polarity / balance / channel map of every destination of `row` (RouteEditorCard). */
+    void showRowRouteEditor (int row);
     /** "Line 2, 3" / "Out 1/2 + Line 3" -- what a row's output tile shows. */
     juce::String describeRowDestinations (int row) const;
     /** "Line 1 + Line 2" -- what a row's input tile shows when fed by more

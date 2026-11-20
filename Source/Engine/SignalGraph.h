@@ -122,7 +122,11 @@ public:
         targets is a split, calling it for the same target from different
         sources is a merge -- both are just "add another edge", not a
         special case. Requires sourceLane < targetLane (see class doc). */
-    void addLaneConnection (int sourceLane, int targetLane);
+    void addLaneConnection (int sourceLane, int targetLane, LaneLink link = {});
+
+    /** The level/polarity/channel map of the sourceLane -> targetLane edge
+        (a default LaneLink when the edge was added without one). */
+    const LaneLink& getLaneLink (int sourceLane, int targetLane) const { return links[(size_t) sourceLane][(size_t) targetLane]; }
 
     void prepare (double sampleRate, int maxBlockSize, int numChannels);
 
@@ -258,6 +262,7 @@ private:
 
     std::array<Lane, numLanes> lanes;
     std::vector<std::pair<int, int>> connections;
+    std::array<std::array<LaneLink, numLanes>, numLanes> links {};   // [source][target]
     juce::AudioBuffer<float> deviceInputSnapshot;
     const float* const* perChannelInputs = nullptr;   // set by process(), read by lanes in the same call
     int numPerChannelInputs = 0;

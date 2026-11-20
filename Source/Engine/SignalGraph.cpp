@@ -72,16 +72,18 @@ void SignalGraph::addLaneOutputRoute (int lane, OutputRoute route)
 {
     auto& l = lanes[(size_t) lane];
     for (int i = 0; i < l.numOutputRoutes; ++i)
-        if (l.outputRoutes[(size_t) i] == route)
+        if (l.outputRoutes[(size_t) i].sameDestination (route))
             return;
     if (l.numOutputRoutes < maxOutputRoutesPerLane)
         l.outputRoutes[(size_t) l.numOutputRoutes++] = route;
 }
 
-void SignalGraph::addLaneConnection (int sourceLane, int targetLane)
+void SignalGraph::addLaneConnection (int sourceLane, int targetLane, LaneLink link)
 {
     jassert (sourceLane < targetLane); // see the class doc comment -- forward-only by construction
     connections.emplace_back (sourceLane, targetLane);
+    if (sourceLane >= 0 && sourceLane < numLanes && targetLane >= 0 && targetLane < numLanes)
+        links[(size_t) sourceLane][(size_t) targetLane] = link;
 }
 
 void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
@@ -310,7 +312,14 @@ void SignalGraph::loadLaneInput (int laneIndex, int numSamples)
     }
 
     for (int s = 0; s < laneSourceCounts[(size_t) laneIndex]; ++s)
-        addClamped (lane.buffer, lanes[(size_t) laneSources[(size_t) laneIndex][(size_t) s]].buffer, numSamples);
+    {
+        const int source = laneSources[(size_t) laneIndex][(size_t) s];
+        const auto& link = links[(size_t) source][(size_t) laneIndex];
+        if (link == LaneLink {})
+            addClamped (lane.buffer, lanes[(size_t) source].buffer, numSamples); // the plain sum, bit-identical to before
+        else
+            link.addInto (lane.buffer, lanes[(size_t) source].buffer, numSamples);
+    }
 }
 
 void SignalGraph::collectJobs (int numJobs, int numSamples)

@@ -1,6 +1,6 @@
 # Plano de implementação — split de linha, split de sinal e split de output
 
-Status: Fases 1 e 2 implementadas (2026-11-20, ver "Como ficou" abaixo); Fases 3–4 em andamento.
+Status: Fases 1, 2 e 3 implementadas (2026-11-20, ver "Como ficou" abaixo); Fase 4 em andamento.
 Data: 2026-11-08 (plano), 2026-11-20 (Fase 1).
 
 ## Fase 1 — como ficou (2026-11-20)
@@ -19,6 +19,13 @@ A primeira tentativa (PR #217, `OutputMatrix` como objeto separado publicado ao 
 - Uma linha tem **qualquer número de saídas físicas** (`RowRouting::deviceOutputs`, até `SignalGraph::maxOutputRoutesPerLane = 8` por lane; `addLaneOutputRoute()`, duplicata exata ignorada). O menu de saída virou toggle por destino (par, só L, só R), igual às linhas.
 - Preset: `<Row ...><Output pair="0" channels="stereo"/><Output pair="2" channels="left"/></Row>`. Em vez de um `<Routing version="2">` separado, os filhos `<Output>` convivem com os atributos antigos: `toDevice`/`deviceOutputPair` continuam sendo escritos com a primeira saída, então um build anterior ainda carrega a linha na saída principal; um `<Row>` sem `<Output>` é lido no formato antigo (incluindo o `deviceOutputChannels` da Fase 1).
 - Caudas de spillover levam a lista inteira de saídas do preset que saiu.
+
+## Fase 3 — como ficou (2026-11-20)
+
+- `OutputRoute` ganhou `gain` (linear), `pan` (balance -1..1, só rotas estéreo; nunca aumenta o outro lado, então pan 0 é exatamente o som de antes) e `invert`. `sameDestination()` compara só par + canais (toggle/menu/dedupe).
+- `LaneLink` (em `OutputRoute.h`): `gain`, `invert`, `ChannelMap` (`stereo`, `monoSum`, `leftOnly`, `rightOnly`, `swapLR`) por aresta linha→linha. `SignalGraph::addLaneConnection (src, tgt, LaneLink)`; um `LaneLink` padrão usa o mesmo `addClamped` de antes (bit-idêntico). Guardado em `links[src][tgt]` (sem mudar o `std::vector<std::pair>` das conexões, que o spillover e os testes usam).
+- UI: "Levels / phase..." no menu de saída da linha abre o `RouteEditorCard` (`Source/UI/RouteEditorCard.{h,cpp}`): uma linha por destino com fader de nível (-40 dB = silêncio .. +12 dB), balance (saídas estéreo) ou channel map (links), e botão de fase Ø. Fader aplica ao soltar (cada aplicação troca o grafo; o swap fade cobre a mudança), toggles/combos na hora. `--window-snapshot <png> routes` renderiza o card off-screen.
+- Preset: `<Output ... gainDb pan invert/>`; `<Link target gainDb invert map/>` dentro do `<Row>` só para links que não são a soma pura (`toRowsMask` continua descrevendo a topologia).
 
 ## 1. Objetivo
 
