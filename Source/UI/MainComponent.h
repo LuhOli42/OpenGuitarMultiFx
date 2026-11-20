@@ -286,7 +286,11 @@ private:
         // sinal splitado"). Destinations are independent toggles, not one
         // choice, so "device output AND line 3" is expressible too.
         bool toDevice = false;
-        int deviceOutputPair = 0;
+        int deviceOutputPair = 0;   // first channel of the pair: 0, 2, 4, ...
+        // Both channels of the pair, or only its L / R channel (the row
+        // folded to mono) -- e.g. a guitar row on Out 1 and a bass row on
+        // Out 2 of the same pair.
+        OutputRoute::Channels deviceOutputChannels = OutputRoute::Channels::stereo;
         std::array<bool, numRows> toRows {};
 
         bool feedsAnything() const

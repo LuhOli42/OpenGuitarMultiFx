@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Effects/EffectProcessor.h"
+#include "OutputRoute.h"
 
 #include <array>
 #include <atomic>
@@ -94,6 +95,22 @@ public:
         process() hands back to the device. */
     void setLaneWritesDeviceOutput (int lane, bool writesOutput);
 
+    /** Where this lane's output lands on the physical outputs (OutputRoute.h).
+        Setting a route on ANY lane switches the graph to routed output: when a
+        lane writes the device output, process() clears every device channel
+        and each writing lane adds itself along its own route (a writing lane
+        with no route uses Out 1/2 stereo), so two rows can play out of
+        different pairs -- or single channels -- at once. A graph with no
+        routes keeps the legacy mix-and-spread to every channel, which
+        AudioEngine then narrows to its one selected pair. Control thread,
+        before prepare(). */
+    void setLaneOutputRoute (int lane, OutputRoute route);
+
+    /** Device channels process() writes when the graph is routed and some
+        lane writes the output; 0 otherwise (passthrough or legacy spread --
+        AudioEngine's selected pair decides then). Valid after prepare(). */
+    uint32_t getRoutedChannelMask() const noexcept { return routedChannelMask; }
+
     /** sourceLane's processed output is summed into targetLane's input.
         Call once per edge: calling it for the same source with different
         targets is a split, calling it for the same target from different
@@ -163,8 +180,16 @@ private:
         bool readsDeviceInput = false;
         int deviceInputChannel = -1;   // -1 = shared buffer
         bool writesDeviceOutput = false;
+        bool hasOutputRoute = false;
+        OutputRoute outputRoute;
         juce::AudioBuffer<float> buffer;
     };
+
+    /** Writes the lanes' output into the device buffer: routed (per-lane
+        OutputRoute) or the legacy mix spread to every channel. `pipelined`
+        is the delayed output of pipeLane when the pipeline/send path runs. */
+    void writeDeviceOutput (juce::AudioBuffer<float>& buffer, int numSamples,
+                            const juce::AudioBuffer<float>* pipelined) noexcept;
 
     /** One dispatchable unit of lane work. `word` packs the job state in
         the high bits and the lane index in the low byte so a claimant
@@ -240,6 +265,8 @@ private:
     std::array<std::array<int, numLanes - 1>, numLanes> laneSources {};
     std::array<int, numLanes> laneSourceCounts {};
     bool anyLaneWritesOutput = false;
+    bool routedOutput = false;           // some lane has an OutputRoute (prepare())
+    uint32_t routedChannelMask = 0;      // see getRoutedChannelMask()
     bool legacySerialOrder = false;   // shared processor instance across lanes -> old index-order pass
     bool workersAreRealtime = true;   // every LaneWorker got RT scheduling in prepare()
     std::atomic<bool> audioCallerIsRealtime { false }; // set via setAudioCallerIsRealtime

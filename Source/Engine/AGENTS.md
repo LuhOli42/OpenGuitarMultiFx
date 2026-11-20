@@ -13,6 +13,7 @@ Does not own: what the chain contains (see `Source/Effects`) or who builds/owns 
 | Input/output channel selection | `AudioEngine.h` — `setInputChannel`/`setOutputChannelPair`, both plain atomics, no graph rebuild |
 | The atomic-swap pattern used everywhere (graphs, NAM models, IRs) | `DeferredReclaimer.h` |
 | Control→audio parameter updates | `ParameterManager.h` (SPSC lock-free queue) |
+| Lane -> physical output routing (rows on different pairs, or only L / R of a pair) | `OutputRoute.h` + `SignalGraph::setLaneOutputRoute()` — the route lives in the graph (published with it; spill tails keep their outgoing preset's routes); `AudioEngine` silences everything outside the audible-channel mask (routed channels, else the selected pair, + routed tails + a running swap fade). Plan: `docs/SignalRoutingAndOutputSplitPlan.md` |
 | Chain ordering/execution, real split/merge (parallel lanes summed) | `SignalGraph.h` — 4 lanes matching `MainComponent::numRows`, lanes always run 0→3 (see its class doc for why that's always a valid order, no topo-sort needed) |
 | Pitch detection (tuner) | `PitchDetector.h/.cpp` — YIN algorithm, fed raw input in `AudioEngine`'s callback |
 | Level metering (IN/OUT footer meters) | `AudioEngine.cpp::audioDeviceIOCallbackWithContext` — peak-per-block via `FloatVectorOperations::findMinAndMax`, published as `std::atomic<float>` |
@@ -99,7 +100,7 @@ Does not own: what the chain contains (see `Source/Effects`) or who builds/owns 
 
 ## Master section (2026-10-11)
 
-Post-graph, pre-OUT-meter: input gain -> SignalGraph (its parallel spill already included) -> **`MasterEq` -> `masterGainSmooth` -> `lastOutputLevel` tap** -> stereo-pair silencing. The meter reads what actually reaches the device; the EQ goes first so a +12 dB peak can't be hidden by a low master fader.
+Post-graph, pre-OUT-meter: input gain -> SignalGraph (its parallel spill already included) -> **`MasterEq` -> `masterGainSmooth` -> `lastOutputLevel` tap** -> silencing of every channel outside the audible mask (see the output-routing row above). EQ, per-pair limiters, soft ceiling and the meter only touch audible channels. The meter reads what actually reaches the device; the EQ goes first so a +12 dB peak can't be hidden by a low master fader.
 
 - `MasterEq` is the engine-side band cascade (`Source/Engine/MasterEq.{h,cpp}`): up to 16 `MasterEqBand`s (low/high cut up to 48 dB/oct as 4 cascaded Butterworth sections, low/high shelf, peak, notch). Edits land via `setBands()` on the control thread, which recomputes a plain-`float` `CoeffSet` and publishes it through `coeffSlot` — the same `DeferredReclaimer` swap as models/graphs; `sweep()` rides `timerCallback()`'s cadence like the other slots. `process()` detects a new pointer, **copies coefficients into the persistent `Biquad` array without resetting z1/z2** (state continuity across a mid-drag recompute — the anti-click trick `ParametricEQProcessor`'s ramped coefficients also aim at), then runs the whole cascade per sample. Because the swap preserves filter state rather than resetting it, the editor can publish on every drag move — no slew-limiting machinery needed.
 - `masterGainSmooth` (`SmoothedValue<float, Linear>`, 20 ms) ramps `setMasterGainDb()` changes; -60 dB on the UI is the floor, the engine accepts -70 dB as silence (the footer shows "-inf").

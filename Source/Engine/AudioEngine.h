@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "OutputLimiter.h"
 #include "ClickDetector.h"
 #include "ClickCapture.h"
@@ -272,7 +274,14 @@ private:
     std::atomic<bool> tunerActive { false }; // see setTunerActive()
     std::atomic<float> inputGainDb { 0.0f }, inputGainLinear { 1.0f }; // see setInputGainDb()
     std::atomic<float> masterGainDb { 0.0f }, masterGainLinear { 1.0f }; // see setMasterGainDb()
-    OutputLimiter outputLimiter;                  // audio thread only
+    // One per output pair (linked within a pair, independent across pairs): with rows routed to different pairs,
+    // a peak on Out 1/2 must not duck Out 3/4.
+    static constexpr int maxOutputPairs = 8;
+    std::array<OutputLimiter, maxOutputPairs> outputLimiters; // audio thread only
+    // Audio thread only. Device channels audible this block (bit n = channel n): the routed graph's channels, or the
+    // selected pair; plus channels routed tails and a running swap fade still write. Everything else is silenced.
+    uint32_t activeChannelMask = 0;
+    uint32_t currentGraphChannelMask = 0;         // set by processCurrentGraph
     std::atomic<bool> limiterEnabled { true };
     std::atomic<bool> performanceMode { false };
     std::atomic<bool> sendMode { false };
