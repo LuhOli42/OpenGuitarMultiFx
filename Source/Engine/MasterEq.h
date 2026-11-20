@@ -67,8 +67,17 @@ public:
     /** Control thread. The bands as last set (for the settings file + editor). */
     const std::vector<MasterEqBand>& getBands() const noexcept { return bands; }
 
-    /** Audio thread. */
+    static constexpr int maxChannels = 16;   // AudioEngine's maxSaneChannelCount
+
+    /** Audio thread. Filters the first numChannels (from prepare()) channels. */
     void process (juce::AudioBuffer<float>& buffer) noexcept;
+
+    /** Audio thread. Filters only the channels whose bit is set (bit n =
+        channel n) -- the ones actually audible, so a second routed output
+        pair gets the EQ too while silent channels cost nothing. A channel
+        that was not filtered last block starts from a cleared state rather
+        than whatever it held the last time it was audible. */
+    void process (juce::AudioBuffer<float>& buffer, uint32_t channelMask) noexcept;
 
     /** Control thread -- frees retired CoeffSets (the usual DeferredReclaimer
         discipline; AudioEngine calls this from its 10 Hz timer alongside the
@@ -112,7 +121,8 @@ private:
     // Audio thread only: the live cascade, one column per channel. Coefficients
     // are copied out of the published CoeffSet when it changes -- the Biquads'
     // z-state is deliberately NOT touched, so re-tuning mid-note doesn't pop.
-    std::array<std::array<Biquad, maxSections>, 2> live;
+    std::array<std::array<Biquad, maxSections>, maxChannels> live;
+    uint32_t lastChannelMask = 0;
     int liveSectionCount = 0;
     const CoeffSet* applied = nullptr;
     int numLiveChannels = 0;

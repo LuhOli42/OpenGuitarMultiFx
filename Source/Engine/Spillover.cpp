@@ -21,6 +21,8 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
         // an emptied lane still relays an upstream tail to the device -- a
         // lane1 delay feeding an emptied lane2 amp lane must stay audible.
         graph->setLaneWritesDeviceOutput (lane, lanes[(size_t) lane].writesDeviceOutput);
+        if (lanes[(size_t) lane].hasOutputRoute)
+            graph->setLaneOutputRoute (lane, lanes[(size_t) lane].outputRoute);
 
         std::vector<EffectProcessor*> kept;
         for (auto* p : lanes[(size_t) lane].processors)
@@ -165,13 +167,17 @@ void Spillover::process (juce::AudioBuffer<float>& buffer, double sampleRate) no
     // `active` (or out of `pending`) -- never while the audio thread can
     // still reach it -- which is the whole contract sweep() relies on.
     int kept = 0;
+    routedChannelMask = 0;
     for (int i = 0; i < activeCount; ++i)
     {
         auto* unit = active[(size_t) i];
         if (unit->finished)
             unit->done.store (true, std::memory_order_release);
         else
+        {
             active[(size_t) kept++] = unit;
+            routedChannelMask |= unit->graph->getRoutedChannelMask();
+        }
     }
     activeCount = kept;
 }
@@ -181,6 +187,7 @@ void Spillover::reset() noexcept
     for (int i = 0; i < activeCount; ++i)
         active[(size_t) i]->done.store (true, std::memory_order_release);
     activeCount = 0;
+    routedChannelMask = 0;
 
     if (auto* unit = pending.exchange (nullptr, std::memory_order_acq_rel))
         unit->done.store (true, std::memory_order_release);
@@ -189,6 +196,7 @@ void Spillover::reset() noexcept
 void Spillover::clear()
 {
     activeCount = 0;
+    routedChannelMask = 0;
     pending.store (nullptr, std::memory_order_release);
     units.clear();
 }

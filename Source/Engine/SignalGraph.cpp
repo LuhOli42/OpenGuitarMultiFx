@@ -62,6 +62,13 @@ void SignalGraph::setLaneWritesDeviceOutput (int lane, bool writesOutput)
     lanes[(size_t) lane].writesDeviceOutput = writesOutput;
 }
 
+void SignalGraph::setLaneOutputRoute (int lane, OutputRoute route)
+{
+    auto& l = lanes[(size_t) lane];
+    l.hasOutputRoute = true;
+    l.outputRoute = route;
+}
+
 void SignalGraph::addLaneConnection (int sourceLane, int targetLane)
 {
     jassert (sourceLane < targetLane); // see the class doc comment -- forward-only by construction
@@ -113,6 +120,15 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
                                    || lane.writesDeviceOutput
                                    || isEndpoint[(size_t) i];
     }
+
+    routedOutput = false;
+    for (const auto& lane : lanes)
+        routedOutput = routedOutput || lane.hasOutputRoute;
+    routedChannelMask = 0;
+    if (routedOutput)
+        for (const auto& lane : lanes)
+            if (lane.writesDeviceOutput)
+                routedChannelMask |= (lane.hasOutputRoute ? lane.outputRoute : OutputRoute {}).channelMask();
 
     // Dependency level: 0 for a lane fed only by the device input,
     // 1 + max(source levels) otherwise. Iterating lanes ascending works
@@ -501,16 +517,43 @@ void SignalGraph::processImpl (juce::AudioBuffer<float>& buffer)
         }
     }
 
+    writeDeviceOutput (buffer, numSamples, nullptr);
+}
+
+void SignalGraph::writeDeviceOutput (juce::AudioBuffer<float>& buffer, int numSamples,
+                                     const juce::AudioBuffer<float>* pipelined) noexcept
+{
     if (! anyLaneWritesOutput)
         return; // leave `buffer` exactly as it came in -- the passthrough contract
+
+    if (routedOutput)
+    {
+        // Every device channel is this graph's now: unrouted ones go silent,
+        // each writing lane adds itself along its own route.
+        buffer.clear (0, numSamples);
+        for (int i = 0; i < numLanes; ++i)
+        {
+            const auto& lane = lanes[(size_t) i];
+            // The pipeline/send path runs only pipeLane (the other lanes'
+            // buffers are stale), exactly like its legacy mix below.
+            if (! lane.writesDeviceOutput || (pipelined != nullptr && i != pipeLane))
+                continue;
+            const auto& src = pipelined != nullptr ? *pipelined : lane.buffer;
+            (lane.hasOutputRoute ? lane.outputRoute : OutputRoute {}).addInto (buffer, src, numSamples);
+        }
+        return;
+    }
 
     // Reuse deviceInputSnapshot as the output-mix scratch buffer -- its
     // job as the input snapshot is already done for this block, and
     // allocating a second scratch buffer here would be pointless.
     deviceInputSnapshot.clear();
-    for (int i = 0; i < numLanes; ++i)
-        if (lanes[(size_t) i].writesDeviceOutput)
-            addClamped (deviceInputSnapshot, lanes[(size_t) i].buffer, numSamples);
+    if (pipelined != nullptr)
+        addClamped (deviceInputSnapshot, *pipelined, numSamples);
+    else
+        for (int i = 0; i < numLanes; ++i)
+            if (lanes[(size_t) i].writesDeviceOutput)
+                addClamped (deviceInputSnapshot, lanes[(size_t) i].buffer, numSamples);
 
     spreadInto (buffer, deviceInputSnapshot, numSamples);
 }
@@ -687,9 +730,7 @@ void SignalGraph::processSend (juce::AudioBuffer<float>& buffer)
             pipeLastOutput.copyFrom (ch, 0, lane.buffer, ch, 0, numSamples);
     }
 
-    deviceInputSnapshot.clear();
-    addClamped (deviceInputSnapshot, pipeLastOutput, numSamples);
-    spreadInto (buffer, deviceInputSnapshot, numSamples);
+    writeDeviceOutput (buffer, numSamples, &pipeLastOutput);
 }
 
 void SignalGraph::processPipelined (juce::AudioBuffer<float>& buffer)
@@ -724,9 +765,7 @@ void SignalGraph::processPipelined (juce::AudioBuffer<float>& buffer)
             pipeLateBlocks.fetch_add (1, std::memory_order_relaxed); // repeat the previous output
     }
 
-    deviceInputSnapshot.clear();
-    addClamped (deviceInputSnapshot, pipeLastOutput, numSamples);
-    spreadInto (buffer, deviceInputSnapshot, numSamples);
+    writeDeviceOutput (buffer, numSamples, &pipeLastOutput);
 
     // 2. Move the cut if the worker is idle (no processor may be touched by both threads at once).
     if (++pipeBlocksSinceRebalance >= 64)

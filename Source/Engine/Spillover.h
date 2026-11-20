@@ -56,10 +56,12 @@ public:
         /** Control thread. prepareIfNeeded() keeps every processor's tail
             state (same sample rate/block size/channels = no-op), and the
             scratch is sized here, where allocating is allowed. */
-        void prepare (double sampleRate, int maxBlockSize, int numChannels)
+        void prepare (double sampleRate, int maxBlockSize, int numChannels, int deviceChannels = -1)
         {
             graph->prepare (sampleRate, maxBlockSize, numChannels);
-            scratch.setSize (numChannels, maxBlockSize, false, true, true);
+            // Device-wide, not lane-wide: a routed tail must reach Out 3/4+
+            // (the lanes themselves stay numChannels wide inside the graph).
+            scratch.setSize (juce::jmax (numChannels, deviceChannels), maxBlockSize, false, true, true);
         }
 
         std::atomic<bool> done { false }; // see the class doc -- the "unreachable" handshake
@@ -87,6 +89,8 @@ public:
     {
         std::vector<EffectProcessor*> processors;
         bool writesDeviceOutput = false;
+        bool hasOutputRoute = false;   // the outgoing row's physical output (OutputRoute.h) -- the tail keeps it
+        OutputRoute outputRoute;
     };
 
     /** Control thread. Builds the unit for an outgoing preset: keeps the
@@ -129,6 +133,12 @@ public:
         `scratch` is pre-sized. */
     void process (juce::AudioBuffer<float>& buffer, double sampleRate) noexcept;
 
+    /** Audio thread, after process(): device channels the ringing tails write
+        through their own (outgoing preset's) output routes -- AudioEngine
+        keeps them open even when the new preset routes elsewhere. 0 when no
+        tail is routed. */
+    uint32_t getRoutedChannelMask() const noexcept { return routedChannelMask; }
+
     /** Audio thread only. Stamps the audio callback's realtime status
         onto every graph the callback can reach this block (active units
         + the pending hand-off) -- see SignalGraph's RT-parity gate and
@@ -154,6 +164,7 @@ private:
     std::atomic<Unit*> pending { nullptr };        // control -> audio hand-off slot
     std::array<Unit*, maxActiveUnits> active {};   // audio thread only
     int activeCount = 0;                           // audio thread only
+    uint32_t routedChannelMask = 0;                // audio thread only
 };
 
 } // namespace openguitarmultifx

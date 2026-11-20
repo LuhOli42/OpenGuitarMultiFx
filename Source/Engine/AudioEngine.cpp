@@ -163,11 +163,22 @@ juce::String AudioEngine::openDevice()
             // is exactly what a fresh initialiseWithDefaultDevices() would
             // pick for this device, computed by JUCE itself rather than
             // carried over from a different device.
+            // JUCE's "default channels" means the 2 outputs initialiseWithDefaultDevices() asked for, which leaves
+            // Out 3/4+ advertised but never opened -- a row routed there would play into a closed channel. Open
+            // every output the interface has (capped like the selectors).
+            int outputChannelCount = 2;
+            if (auto* probe = type->createDevice (usbOutputName, usbInputName))
+            {
+                outputChannelCount = juce::jmin (maxSaneChannelCount, probe->getOutputChannelNames().size());
+                delete probe;
+            }
+
             juce::AudioDeviceManager::AudioDeviceSetup setup;
             setup.inputDeviceName = usbInputName;
             setup.outputDeviceName = usbOutputName;
             setup.useDefaultInputChannels = true;
-            setup.useDefaultOutputChannels = true;
+            setup.useDefaultOutputChannels = false;
+            setup.outputChannels.setRange (0, juce::jmax (2, outputChannelCount), true);
 
             const auto switchErr = deviceManager.setAudioDeviceSetup (setup, true);
             if (switchErr.isNotEmpty())
@@ -388,7 +399,10 @@ void AudioEngine::addSpillover (std::unique_ptr<Spillover::Unit> unit)
         return; // no device running -- nothing to spill onto
 
     unit->graph->setAudioCallerIsRealtime (callbackIsRealtime.load (std::memory_order_relaxed));
-    unit->prepare (sr, bs, 2); // prepareIfNeeded keeps every processor's tail state
+    int deviceChannels = 2;
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        deviceChannels = juce::jlimit (2, maxSaneChannelCount, device->getActiveOutputChannels().countNumberOfSetBits());
+    unit->prepare (sr, bs, 2, deviceChannels); // prepareIfNeeded keeps every processor's tail state
     spillover.add (std::move (unit));
 }
 
@@ -419,6 +433,7 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
 {
     auto* graph = graphSlot.currentRaw();
     const auto now = juce::Time::getHighResolutionTicks();
+    currentGraphChannelMask = graph != nullptr ? graph->getRoutedChannelMask() : 0;
 
     if (graph != activeGraph)
     {
@@ -542,7 +557,9 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     // re-detect on the new stream's first callback.
     callbackRealtimeDetected.store (false, std::memory_order_relaxed);
     callbackIsRealtime.store (false, std::memory_order_relaxed);
-    outputLimiter.prepare (device != nullptr ? device->getCurrentSampleRate() : 48000.0);
+    for (auto& limiter : outputLimiters)
+        limiter.prepare (device != nullptr ? device->getCurrentSampleRate() : 48000.0);
+    activeChannelMask = 0;
     clickCapture.prepare (device != nullptr ? device->getCurrentSampleRate() : 48000.0);
 
     activeGraph = nullptr; // the callback is not running: forget any graph that may have been swept while stopped
@@ -647,9 +664,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 
     processGraph (buffer, numSamples);
 
+    // Which device channels are audible this block. A routed graph names its own (rows on different pairs or
+    // single L/R channels at once); otherwise the one selected pair. Tails of an outgoing preset keep their old
+    // routes open, and so does a swap fade still replaying the previous routing -- cutting those channels dead
+    // would click.
+    const uint32_t deviceMask = numOutputChannels >= 32 ? 0xffffffffu : ((1u << numOutputChannels) - 1u);
+    uint32_t mask = currentGraphChannelMask;
+    if (mask == 0 && numOutputChannels > 0)
+    {
+        const int pairStart = juce::jlimit (0, numOutputChannels - 1, selectedOutputPairStart.load (std::memory_order_relaxed));
+        mask = 3u << pairStart;
+    }
+    mask |= spillover.getRoutedChannelMask();
+    if (swapFadeRanThisBlock)
+        mask |= activeChannelMask;
+    mask &= deviceMask;
+    activeChannelMask = mask;
+
     // Master section: the free-form EQ, then the output gain -- both post-graph,
     // so the OUT meter below reads the level actually about to reach the device.
-    masterEq.process (buffer);
+    masterEq.process (buffer, mask);
 
     masterGainSmooth.setTargetValue (masterGainLinear.load (std::memory_order_relaxed));
     if (masterGainSmooth.isSmoothing())
@@ -670,9 +704,18 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 
     if (limiterEnabled.load (std::memory_order_relaxed))
     {
-        outputLimiter.process (outputChannelData, numOutputChannels, numSamples);
-        if (outputLimiter.takeMinimumGain() < 0.995f)
-            limiterActive.store (true, std::memory_order_relaxed);
+        for (int pair = 0; pair < maxOutputPairs && pair * 2 < numOutputChannels; ++pair)
+        {
+            auto& limiter = outputLimiters[(size_t) pair];
+            if ((mask & (3u << (pair * 2))) == 0)
+            {
+                limiter.reset(); // silent pair: start clean when it comes back
+                continue;
+            }
+            limiter.process (outputChannelData + pair * 2, juce::jmin (2, numOutputChannels - pair * 2), numSamples);
+            if (limiter.takeMinimumGain() < 0.995f)
+                limiterActive.store (true, std::memory_order_relaxed);
+        }
     }
 
     // Final device boundary: the DAC hard-clips past full scale, so whatever the chain or master
@@ -682,17 +725,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     // gain, so the OUT meter below still reads the level actually about to reach the device.
     for (int ch = 0; ch < numOutputChannels; ++ch)
     {
+        if ((mask & (1u << ch)) == 0)
+            continue; // silenced below anyway
         auto* out = outputChannelData[ch];
         for (int i = 0; i < numSamples; ++i)
             out[i] = (float) deviceSoftCeiling (out[i]);
     }
 
-    // Peak across every channel the graph actually produced -- what's
-    // about to reach the device, before the pair-silencing below decides
-    // which of those channels the listener actually hears.
+    // Peak across every audible channel -- what actually reaches the device.
     float outPeak = 0.0f;
     for (int ch = 0; ch < numOutputChannels; ++ch)
     {
+        if ((mask & (1u << ch)) == 0)
+            continue;
         const auto range = juce::FloatVectorOperations::findMinAndMax (outputChannelData[ch], numSamples);
         outPeak = juce::jmax (outPeak, std::abs (range.getStart()), std::abs (range.getEnd()));
     }
@@ -701,7 +746,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     ClickDetector::Result outClickResult;
     if (numOutputChannels > 0)
     {
-        const int watched = juce::jlimit (0, numOutputChannels - 1, selectedOutputPairStart.load (std::memory_order_relaxed));
+        int watched = 0; // the lowest audible channel
+        while (watched < numOutputChannels - 1 && (mask & (1u << watched)) == 0)
+            ++watched;
         outClickResult = outDetector.process (outputChannelData[watched], numSamples);
         clickCapture.push (in, outputChannelData[watched], numSamples, outClickResult.clicks > 0 || lastInClicks > 0,
                            lastInClicks > 0);
@@ -713,18 +760,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         }
     }
 
-    // Silence every physical output channel outside the selected pair --
-    // clamped to what this device actually has, so a stale selection from a
-    // previously-connected interface with more outputs can never reach past
+    // Silence every physical output channel that is not audible this block (see `mask` above) -- the selected pair
+    // was clamped to what this device actually has, so a stale selection from a bigger interface never reaches past
     // the end of the current one's channel array.
-    if (numOutputChannels > 0)
-    {
-        const int pairStart = juce::jlimit (0, numOutputChannels - 1,
-                                             selectedOutputPairStart.load (std::memory_order_relaxed));
-        for (int ch = 0; ch < numOutputChannels; ++ch)
-            if (ch < pairStart || ch > pairStart + 1)
-                juce::FloatVectorOperations::clear (outputChannelData[ch], numSamples);
-    }
+    for (int ch = 0; ch < numOutputChannels; ++ch)
+        if ((mask & (1u << ch)) == 0)
+            juce::FloatVectorOperations::clear (outputChannelData[ch], numSamples);
 
     const auto elapsedSeconds = juce::Time::highResolutionTicksToSeconds (
         juce::Time::getHighResolutionTicks() - startTicks);

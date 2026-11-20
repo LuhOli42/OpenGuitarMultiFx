@@ -112,7 +112,7 @@ void MasterEq::computeSections (const std::vector<MasterEqBand>& bandList, doubl
 void MasterEq::prepare (double newSampleRate, int numChannels) noexcept
 {
     sampleRate = newSampleRate;
-    numLiveChannels = juce::jlimit (0, 2, numChannels);
+    numLiveChannels = juce::jlimit (0, maxChannels, numChannels);
 
     // Recompute + republish for the new rate: the sections' bilinear
     // coefficients are sample-rate-dependent.
@@ -130,6 +130,7 @@ void MasterEq::reset() noexcept
             biquad.reset();
     applied = nullptr; // next block re-copies coefficients (z stays cleared -- this is a real reset)
     liveSectionCount = 0;
+    lastChannelMask = 0;
 }
 
 void MasterEq::setBands (const std::vector<MasterEqBand>& newBands)
@@ -148,6 +149,11 @@ void MasterEq::setBands (const std::vector<MasterEqBand>& newBands)
 
 void MasterEq::process (juce::AudioBuffer<float>& buffer) noexcept
 {
+    process (buffer, numLiveChannels >= 32 ? 0xffffffffu : ((1u << numLiveChannels) - 1u));
+}
+
+void MasterEq::process (juce::AudioBuffer<float>& buffer, uint32_t channelMask) noexcept
+{
     if (auto* coeffs = coeffSlot.currentRaw(); coeffs != applied)
     {
         applied = coeffs;
@@ -165,14 +171,23 @@ void MasterEq::process (juce::AudioBuffer<float>& buffer) noexcept
                 }
     }
 
+    const int numChannels = juce::jmin (buffer.getNumChannels(), maxChannels);
+    const uint32_t fresh = channelMask & ~lastChannelMask;
+    lastChannelMask = channelMask;
+
     if (liveSectionCount == 0)
         return;
 
-    const int numChannels = juce::jmin (buffer.getNumChannels(), numLiveChannels);
     const int numSamples = buffer.getNumSamples();
 
     for (int ch = 0; ch < numChannels; ++ch)
     {
+        if ((channelMask & (1u << ch)) == 0)
+            continue;
+        if ((fresh & (1u << ch)) != 0)
+            for (auto& biquad : live[(size_t) ch])
+                biquad.reset();
+
         auto* data = buffer.getWritePointer (ch);
         auto* sections = live[(size_t) ch].data();
         for (int i = 0; i < numSamples; ++i)
