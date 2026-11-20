@@ -162,6 +162,98 @@ public:
             expectWithinAbsoluteError (dev.getSample (1, 3), 0.0f, 1.0e-6f);
         }
 
+        beginTest ("merge L/R: mono to the target's L only / R only");
+        {
+            juce::AudioBuffer<float> src (2, 4);
+            juce::FloatVectorOperations::fill (src.getWritePointer (0), 1.0f, 4);
+            juce::FloatVectorOperations::fill (src.getWritePointer (1), 0.2f, 4);
+            juce::AudioBuffer<float> dst (2, 4);
+            dst.clear();
+            LaneLink { 1.0f, false, LaneLink::ChannelMap::toLeft }.addInto (dst, src, 4);
+            LaneLink { 1.0f, false, LaneLink::ChannelMap::toRight }.addInto (dst, src, 4);
+            LaneLink { 1.0f, false, LaneLink::ChannelMap::toRight }.addInto (dst, src, 4);
+            expectWithinAbsoluteError (dst.getSample (0, 0), 0.6f, 1.0e-6f);
+            expectWithinAbsoluteError (dst.getSample (1, 0), 1.2f, 1.0e-6f);
+        }
+
+        beginTest ("crossover: a low-pass route and a high-pass route at the same frequency sum back flat");
+        {
+            RouteGain a (1.0f);
+            SignalGraph graph;
+            graph.setLaneProcessors (0, { &a });
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneWritesDeviceOutput (0, true);
+            OutputRoute low { 0, C::left };
+            low.filter = { RouteFilter::Type::lowPass, 500.0f };
+            OutputRoute high { 0, C::right };
+            high.filter = { RouteFilter::Type::highPass, 500.0f };
+            graph.addLaneOutputRoute (0, low);
+            graph.addLaneOutputRoute (0, high);
+            constexpr int block = 256;
+            graph.prepare (48000.0, block, 1);
+
+            for (const double freq : { 60.0, 500.0, 6000.0 })
+            {
+                graph.prepare (48000.0, block, 1); // clears the filter state between tones
+                double inPow = 0.0, lowPow = 0.0, highPow = 0.0, sumPow = 0.0;
+                juce::AudioBuffer<float> dev (2, block);
+                for (int blk = 0; blk < 200; ++blk)
+                {
+                    for (int i = 0; i < block; ++i)
+                    {
+                        const float x = (float) std::sin (2.0 * juce::MathConstants<double>::pi * freq * (blk * block + i) / 48000.0);
+                        dev.setSample (0, i, x);
+                        dev.setSample (1, i, x);
+                    }
+                    juce::AudioBuffer<float> in;
+                    in.makeCopyOf (dev);
+                    graph.process (dev);
+                    if (blk < 100)
+                        continue; // let the filters settle
+                    for (int i = 0; i < block; ++i)
+                    {
+                        const double l = dev.getSample (0, i), h = dev.getSample (1, i), x = in.getSample (0, i);
+                        inPow += x * x; lowPow += l * l; highPow += h * h; sumPow += (l + h) * (l + h);
+                    }
+                }
+                // LR4: the bands are 6 dB down each at the crossover and in phase, so they sum to the input's level.
+                expectWithinAbsoluteError (sumPow / inPow, 1.0, 0.02);
+                if (freq < 100.0)
+                    expect (highPow / inPow < 0.001 && lowPow / inPow > 0.95);
+                if (freq > 5000.0)
+                    expect (lowPow / inPow < 0.001 && highPow / inPow > 0.95);
+            }
+        }
+
+        beginTest ("crossover on a row link: the target lane gets only its band");
+        {
+            RouteGain a (1.0f), b (1.0f);
+            SignalGraph graph;
+            graph.setLaneProcessors (0, { &a });
+            graph.setLaneProcessors (1, { &b });
+            graph.setLaneReadsDeviceInput (0, true);
+            LaneLink link;
+            link.filter = { RouteFilter::Type::highPass, 2000.0f };
+            graph.addLaneConnection (0, 1, link);
+            graph.setLaneWritesDeviceOutput (1, true);
+            graph.setLaneOutputRoute (1, { 0, C::stereo });
+            constexpr int block = 128;
+            graph.prepare (48000.0, block, 2);
+            double outPow = 0.0;
+            juce::AudioBuffer<float> dev (2, block);
+            for (int blk = 0; blk < 100; ++blk)
+            {
+                for (int i = 0; i < block; ++i)
+                    for (int ch = 0; ch < 2; ++ch)
+                        dev.setSample (ch, i, (float) std::sin (2.0 * juce::MathConstants<double>::pi * 80.0 * (blk * block + i) / 48000.0));
+                graph.process (dev);
+                if (blk >= 50)
+                    for (int i = 0; i < block; ++i)
+                        outPow += dev.getSample (0, i) * dev.getSample (0, i);
+            }
+            expect (outPow / (50.0 * block * 0.5) < 1.0e-4); // 80 Hz is ~ -116 dB through a 2 kHz LR4 high pass
+        }
+
         beginTest ("routed graph: two rows play out of different pairs at once, unrouted channels silent");
         {
             RouteGain a (0.5f), b (2.0f);

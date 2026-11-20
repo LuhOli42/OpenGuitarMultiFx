@@ -13,9 +13,9 @@ namespace openguitarmultifx
 
 /**
     Per-destination mix of one row (docs/SignalRoutingAndOutputSplitPlan.md,
-    phase 3): one line per place the row sends to -- each physical output and
-    each row link -- with its level, polarity and, where it means something,
-    balance (stereo outputs) or channel map (row links). Hosted on OverlayHost
+    phases 3-4): one line per place the row sends to -- each physical output and
+    each row link -- with its level, polarity, crossover and, where it means
+    something, balance (stereo outputs) or channel map (row links). Hosted on OverlayHost
     like every other card. Knob moves are applied when the drag ends (each
     apply swaps the graph; the swap fade covers the change), toggles at once.
 */
@@ -33,6 +33,7 @@ public:
         float pan = 0.0f;   // -1 .. 1, stereo outputs
         bool invert = false;
         LaneLink::ChannelMap map = LaneLink::ChannelMap::stereo;   // row links
+        RouteFilter filter;   // crossover, every kind
     };
 
     static constexpr float minGainDb = -40.0f;   // the bottom of the fader is silence

@@ -1,11 +1,83 @@
 #pragma once
 
+#include "Biquad.h"
+
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <array>
 #include <cstdint>
 
 namespace openguitarmultifx
 {
+
+/**
+    Crossover on one route (phase 4): a 4th-order Linkwitz-Riley low or high
+    pass -- two cascaded Butterworth sections -- so a low-pass route and a
+    high-pass route at the same frequency sum back to a flat magnitude (a band
+    split: lows to a sub on Out 3/4, highs to Out 1/2; or a bass row into two
+    rows with different processing per band).
+*/
+struct RouteFilter
+{
+    enum class Type : uint8_t { none = 0, lowPass, highPass };
+
+    Type type = Type::none;
+    float freqHz = 120.0f;
+
+    bool operator== (const RouteFilter&) const = default;
+    bool active() const noexcept { return type != Type::none; }
+
+    static const char* typeToString (Type t) noexcept
+    {
+        switch (t)
+        {
+            case Type::lowPass:  return "lowPass";
+            case Type::highPass: return "highPass";
+            case Type::none:     break;
+        }
+        return "none";
+    }
+
+    static Type typeFromString (const juce::String& s) noexcept
+    {
+        if (s == "lowPass")  return Type::lowPass;
+        if (s == "highPass") return Type::highPass;
+        return Type::none;
+    }
+};
+
+/** The running state of one RouteFilter (up to 2 channels). Coefficients are
+    set on the control thread in prepare(); process() is audio-thread only. */
+struct RouteFilterState
+{
+    std::array<std::array<Biquad, 2>, 2> sections {};   // [channel][stage]
+
+    void prepare (const RouteFilter& filter, double sampleRate) noexcept
+    {
+        const double sr = sampleRate > 0.0 ? sampleRate : 48000.0;
+        const double f = juce::jlimit (10.0, 0.45 * sr, (double) filter.freqHz);
+        for (auto& channel : sections)
+            for (auto& biquad : channel)
+            {
+                if (filter.type == RouteFilter::Type::highPass)
+                    biquad.makeHighPass (sr, f);
+                else
+                    biquad.makeLowPass (sr, f);
+                biquad.reset();
+            }
+    }
+
+    void process (juce::AudioBuffer<float>& buffer, int numSamples) noexcept
+    {
+        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+        {
+            auto* data = buffer.getWritePointer (ch);
+            auto& stages = sections[(size_t) ch];
+            for (int i = 0; i < numSamples; ++i)
+                data[i] = (float) stages[1].process (stages[0].process (data[i]));
+        }
+    }
+};
 
 /**
     Where one lane's output lands on the physical device outputs
@@ -32,6 +104,7 @@ struct OutputRoute
     float gain = 1.0f;
     float pan = 0.0f;
     bool invert = false;
+    RouteFilter filter;   // phase 4 crossover; applied by SignalGraph, which owns the filter state
 
     bool operator== (const OutputRoute&) const = default;
 
@@ -124,12 +197,15 @@ struct LaneLink
         monoSum,      // (L + R) / 2 -> both
         leftOnly,     // L -> both (the left half of a split L/R)
         rightOnly,    // R -> both
-        swapLR        // L -> R, R -> L
+        swapLR,       // L -> R, R -> L
+        toLeft,       // (L + R) / 2 -> the target's L only (one half of a merge L/R)
+        toRight       // (L + R) / 2 -> the target's R only
     };
 
     float gain = 1.0f;
     bool invert = false;
     ChannelMap map = ChannelMap::stereo;
+    RouteFilter filter;   // phase 4 crossover; applied by SignalGraph, which owns the filter state
 
     bool operator== (const LaneLink&) const = default;
 
@@ -143,6 +219,19 @@ struct LaneLink
 
         const float g = invert ? -gain : gain;
         const int lastSrc = srcChannels - 1;
+
+        if (map == ChannelMap::toLeft || map == ChannelMap::toRight)
+        {
+            const int dstCh = juce::jmin (dstChannels - 1, map == ChannelMap::toRight ? 1 : 0);
+            if (srcChannels == 1)
+                dst.addFrom (dstCh, 0, src, 0, 0, numSamples, g);
+            else
+            {
+                dst.addFrom (dstCh, 0, src, 0, 0, numSamples, 0.5f * g);
+                dst.addFrom (dstCh, 0, src, 1, 0, numSamples, 0.5f * g);
+            }
+            return;
+        }
 
         for (int ch = 0; ch < dstChannels; ++ch)
         {
@@ -164,6 +253,8 @@ struct LaneLink
                 case ChannelMap::leftOnly:  dst.addFrom (ch, 0, src, 0, 0, numSamples, g); break;
                 case ChannelMap::rightOnly: dst.addFrom (ch, 0, src, juce::jmin (1, lastSrc), 0, numSamples, g); break;
                 case ChannelMap::swapLR:    dst.addFrom (ch, 0, src, juce::jmin (lastSrc, ch == 0 ? 1 : 0), 0, numSamples, g); break;
+                case ChannelMap::toLeft:
+                case ChannelMap::toRight:   break; // handled above
             }
         }
     }
@@ -176,6 +267,8 @@ struct LaneLink
             case ChannelMap::leftOnly:  return "leftOnly";
             case ChannelMap::rightOnly: return "rightOnly";
             case ChannelMap::swapLR:    return "swapLR";
+            case ChannelMap::toLeft:    return "toLeft";
+            case ChannelMap::toRight:   return "toRight";
             case ChannelMap::stereo:    break;
         }
         return "stereo";
@@ -187,6 +280,8 @@ struct LaneLink
         if (s == "leftOnly")  return ChannelMap::leftOnly;
         if (s == "rightOnly") return ChannelMap::rightOnly;
         if (s == "swapLR")    return ChannelMap::swapLR;
+        if (s == "toLeft")    return ChannelMap::toLeft;
+        if (s == "toRight")   return ChannelMap::toRight;
         return ChannelMap::stereo;
     }
 };

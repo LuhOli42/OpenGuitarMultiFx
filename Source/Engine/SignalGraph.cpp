@@ -91,6 +91,27 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
     preparedNumChannels = numChannels;
     deviceInputSnapshot.setSize (numChannels, maxBlockSize, false, true, true);
 
+    bool anyFilter = false;
+    for (int src = 0; src < numLanes; ++src)
+    {
+        for (int tgt = 0; tgt < numLanes; ++tgt)
+            if (links[(size_t) src][(size_t) tgt].filter.active())
+            {
+                linkFilterState[(size_t) src][(size_t) tgt].prepare (links[(size_t) src][(size_t) tgt].filter, sampleRate);
+                anyFilter = true;
+            }
+        for (int r = 0; r < lanes[(size_t) src].numOutputRoutes; ++r)
+            if (lanes[(size_t) src].outputRoutes[(size_t) r].filter.active())
+            {
+                outputFilterState[(size_t) src][(size_t) r].prepare (lanes[(size_t) src].outputRoutes[(size_t) r].filter, sampleRate);
+                anyFilter = true;
+            }
+    }
+    const int scratchSamples = anyFilter ? maxBlockSize : 0;
+    for (auto& scratch : linkScratch)
+        scratch.setSize (numChannels, scratchSamples, false, true, true);
+    outputScratch.setSize (numChannels, scratchSamples, false, true, true);
+
     for (auto& lane : lanes)
     {
         lane.buffer.setSize (numChannels, maxBlockSize, false, true, true);
@@ -317,6 +338,15 @@ void SignalGraph::loadLaneInput (int laneIndex, int numSamples)
         const auto& link = links[(size_t) source][(size_t) laneIndex];
         if (link == LaneLink {})
             addClamped (lane.buffer, lanes[(size_t) source].buffer, numSamples); // the plain sum, bit-identical to before
+        else if (link.filter.active() && linkScratch[(size_t) laneIndex].getNumSamples() >= numSamples)
+        {
+            auto& scratch = linkScratch[(size_t) laneIndex];
+            const auto& from = lanes[(size_t) source].buffer;
+            for (int ch = 0; ch < juce::jmin (scratch.getNumChannels(), from.getNumChannels()); ++ch)
+                scratch.copyFrom (ch, 0, from, ch, 0, numSamples);
+            linkFilterState[(size_t) source][(size_t) laneIndex].process (scratch, numSamples);
+            link.addInto (lane.buffer, scratch, numSamples);
+        }
         else
             link.addInto (lane.buffer, lanes[(size_t) source].buffer, numSamples);
     }
@@ -544,6 +574,24 @@ void SignalGraph::processImpl (juce::AudioBuffer<float>& buffer)
     writeDeviceOutput (buffer, numSamples, nullptr);
 }
 
+void SignalGraph::addOutputRoute (juce::AudioBuffer<float>& device, const juce::AudioBuffer<float>& src,
+                                  int lane, int routeIndex, int numSamples) noexcept
+{
+    const auto& route = lanes[(size_t) lane].outputRoutes[(size_t) routeIndex];
+    if (! route.filter.active() || outputScratch.getNumSamples() < numSamples)
+    {
+        route.addInto (device, src, numSamples);
+        return;
+    }
+
+    const int channels = juce::jmin (outputScratch.getNumChannels(), src.getNumChannels());
+    for (int ch = 0; ch < channels; ++ch)
+        outputScratch.copyFrom (ch, 0, src, ch, 0, numSamples);
+    juce::AudioBuffer<float> view (outputScratch.getArrayOfWritePointers(), channels, numSamples);
+    outputFilterState[(size_t) lane][(size_t) routeIndex].process (view, numSamples);
+    route.addInto (device, view, numSamples);
+}
+
 void SignalGraph::writeDeviceOutput (juce::AudioBuffer<float>& buffer, int numSamples,
                                      const juce::AudioBuffer<float>* pipelined) noexcept
 {
@@ -566,7 +614,7 @@ void SignalGraph::writeDeviceOutput (juce::AudioBuffer<float>& buffer, int numSa
             if (lane.numOutputRoutes == 0)
                 OutputRoute {}.addInto (buffer, src, numSamples);
             for (int r = 0; r < lane.numOutputRoutes; ++r)
-                lane.outputRoutes[(size_t) r].addInto (buffer, src, numSamples);
+                addOutputRoute (buffer, src, i, r, numSamples);
         }
         return;
     }
