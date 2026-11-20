@@ -106,6 +106,12 @@ public:
         before prepare(). */
     void setLaneOutputRoute (int lane, OutputRoute route);
 
+    /** One more physical destination for this lane (an output split: the same
+        row on Out 1/2 AND Out 3/4, say). Up to maxOutputRoutesPerLane; an exact
+        duplicate is ignored. Same routed-mode rules as setLaneOutputRoute(). */
+    void addLaneOutputRoute (int lane, OutputRoute route);
+    static constexpr int maxOutputRoutesPerLane = 8;
+
     /** Device channels process() writes when the graph is routed and some
         lane writes the output; 0 otherwise (passthrough or legacy spread --
         AudioEngine's selected pair decides then). Valid after prepare(). */
@@ -180,8 +186,8 @@ private:
         bool readsDeviceInput = false;
         int deviceInputChannel = -1;   // -1 = shared buffer
         bool writesDeviceOutput = false;
-        bool hasOutputRoute = false;
-        OutputRoute outputRoute;
+        std::array<OutputRoute, maxOutputRoutesPerLane> outputRoutes {};
+        int numOutputRoutes = 0;
         juce::AudioBuffer<float> buffer;
     };
 

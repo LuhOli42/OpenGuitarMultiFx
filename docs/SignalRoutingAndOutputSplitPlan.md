@@ -1,6 +1,6 @@
 # Plano de implementação — split de linha, split de sinal e split de output
 
-Status: Fase 1 implementada (2026-11-20, ver "Fase 1 — como ficou" abaixo); Fases 2–5 são proposta.
+Status: Fases 1 e 2 implementadas (2026-11-20, ver "Como ficou" abaixo); Fases 3–4 em andamento.
 Data: 2026-11-08 (plano), 2026-11-20 (Fase 1).
 
 ## Fase 1 — como ficou (2026-11-20)
@@ -14,7 +14,11 @@ A primeira tentativa (PR #217, `OutputMatrix` como objeto separado publicado ao 
 - **Device USB abre todas as saídas** (antes só 2 — Out 3/4 aparecia no menu mas o canal nem estava aberto).
 - Load de preset: entrada/par globais do engine seguem a **primeira** linha alimentada (antes a última vencia).
 
-Continua para a Fase 2: uma linha com vários destinos de device (o engine já aceita; falta lista de rotas por lane, UI multi-toggle e schema v2).
+## Fase 2 — como ficou (2026-11-20)
+
+- Uma linha tem **qualquer número de saídas físicas** (`RowRouting::deviceOutputs`, até `SignalGraph::maxOutputRoutesPerLane = 8` por lane; `addLaneOutputRoute()`, duplicata exata ignorada). O menu de saída virou toggle por destino (par, só L, só R), igual às linhas.
+- Preset: `<Row ...><Output pair="0" channels="stereo"/><Output pair="2" channels="left"/></Row>`. Em vez de um `<Routing version="2">` separado, os filhos `<Output>` convivem com os atributos antigos: `toDevice`/`deviceOutputPair` continuam sendo escritos com a primeira saída, então um build anterior ainda carrega a linha na saída principal; um `<Row>` sem `<Output>` é lido no formato antigo (incluindo o `deviceOutputChannels` da Fase 1).
+- Caudas de spillover levam a lista inteira de saídas do preset que saiu.
 
 ## 1. Objetivo
 

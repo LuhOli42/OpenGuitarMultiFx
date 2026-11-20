@@ -381,8 +381,7 @@ MainComponent::MainComponent()
     // ends. Rows are independent until you say otherwise (user decision
     // 2026-09-11).
     rowRouting[0].inputChannel = audioEngine.getInputChannel();
-    rowRouting[0].toDevice = true;
-    rowRouting[0].deviceOutputPair = audioEngine.getOutputChannelPair();
+    rowRouting[0].deviceOutputs = { { audioEngine.getOutputChannelPair(), OutputRoute::Channels::stereo } };
 
     for (int row = 0; row < numRows; ++row)
     {
@@ -609,7 +608,7 @@ juce::String MainComponent::describeRowDestinations (int row) const
     const auto& routing = rowRouting[(size_t) row];
     juce::StringArray parts;
 
-    if (routing.toDevice)
+    if (routing.toDevice())
         parts.add ("OUT");
 
     for (int target = 0; target < numRows; ++target)
@@ -625,10 +624,10 @@ juce::String MainComponent::describeRowDestinationDetail (int row) const
     juce::StringArray parts;
 
     // Prototype: OUT over "1 / 2" (the physical pair), "-> L2" over "Line 2".
-    if (routing.toDevice)
+    for (const auto& out : routing.deviceOutputs)
     {
-        const int first = routing.deviceOutputPair + 1;
-        switch (routing.deviceOutputChannels)
+        const int first = out.pairStart + 1;
+        switch (out.channels)
         {
             case OutputRoute::Channels::left:  parts.add (juce::String (first) + " (L)"); break;
             case OutputRoute::Channels::right: parts.add (juce::String (first + 1) + " (R)"); break;
@@ -799,8 +798,11 @@ void MainComponent::showRowOutputMenu (int row)
     // folded to mono). Item ids: 2 + pair * 3 + {0 stereo, 1 L, 2 R}.
     for (int i = 0; i < outputNames.size(); ++i)
     {
-        const bool onPair = routing.toDevice && routing.deviceOutputPair / 2 == i;
-        const auto ticked = [&] (OutputRoute::Channels c) { return onPair && routing.deviceOutputChannels == c; };
+        const auto ticked = [&] (OutputRoute::Channels c)
+        {
+            return std::find (routing.deviceOutputs.begin(), routing.deviceOutputs.end(), OutputRoute { i * 2, c })
+                   != routing.deviceOutputs.end();
+        };
         menu.addItem (2 + i * 3, "Output " + outputNames[i], true, ticked (OutputRoute::Channels::stereo));
 
         if (! outputNames[i].contains ("/"))
@@ -841,7 +843,7 @@ void MainComponent::showRowOutputMenu (int row)
 
             if (result == 1)
             {
-                r.toDevice = false;
+                r.deviceOutputs.clear();
                 r.toRows.fill (false);
             }
             else if (result >= rowItemBase)
@@ -859,12 +861,11 @@ void MainComponent::showRowOutputMenu (int row)
             {
                 const int pair = ((result - 2) / 3) * 2;
                 const auto channels = (OutputRoute::Channels) ((result - 2) % 3);
-                // Same output twice = turn it off; a different one = move it.
-                r.toDevice = ! (r.toDevice && r.deviceOutputPair == pair && r.deviceOutputChannels == channels);
-                r.deviceOutputPair = pair;
-                r.deviceOutputChannels = channels;
-                if (r.toDevice)
-                    audioEngine.setOutputChannelPair (pair);
+                // A toggle like the row entries: outputs add up (an output
+                // split), tapping a ticked one removes just that one.
+                r.toggleDeviceOutput ({ pair, channels });
+                if (! r.deviceOutputs.empty())
+                    audioEngine.setOutputChannelPair (r.deviceOutputs.front().pairStart);
             }
 
             refreshRowEndpoints();
@@ -899,9 +900,9 @@ void MainComponent::rebuildSignalGraph()
 
         signalGraph->setLaneReadsDeviceInput (row, routing.inputChannel >= 0);
         signalGraph->setLaneDeviceInputChannel (row, routing.inputChannel); // each row reads its own physical input
-        signalGraph->setLaneWritesDeviceOutput (row, routing.toDevice);
-        if (routing.toDevice)
-            signalGraph->setLaneOutputRoute (row, { routing.deviceOutputPair, routing.deviceOutputChannels }); // each row plays out of its own pair/channel
+        signalGraph->setLaneWritesDeviceOutput (row, routing.toDevice());
+        for (const auto& out : routing.deviceOutputs)
+            signalGraph->addLaneOutputRoute (row, out); // each row plays out of its own pairs/channels
 
         for (int target = 0; target < numRows; ++target)
             if (routing.toRows[(size_t) target])
@@ -1900,8 +1901,7 @@ void MainComponent::newPreset()
     // when the XML has no <Routing>, while a fresh board wires row 0
     // device-in -> device-out like the constructor does.
     rowRouting[0].inputChannel = audioEngine.getInputChannel();
-    rowRouting[0].toDevice = true;
-    rowRouting[0].deviceOutputPair = audioEngine.getOutputChannelPair();
+    rowRouting[0].deviceOutputs = { { audioEngine.getOutputChannelPair(), OutputRoute::Channels::stereo } };
     refreshRowEndpoints();
     // applyPresetXml already rebuilt the graph on the empty routing -- rebuild
     // again or the fresh board's row-0 device in->out link stays UI-only and
@@ -3136,9 +3136,16 @@ std::unique_ptr<juce::XmlElement> MainComponent::buildPresetXml() const
         auto* rowXml = routingXml->createNewChildElement ("Row");
         rowXml->setAttribute ("index", row);
         rowXml->setAttribute ("inputChannel", r.inputChannel);
-        rowXml->setAttribute ("toDevice", r.toDevice);
-        rowXml->setAttribute ("deviceOutputPair", r.deviceOutputPair);
-        rowXml->setAttribute ("deviceOutputChannels", OutputRoute::channelsToString (r.deviceOutputChannels));
+        // The first output also goes in the legacy attributes, so an older
+        // build still loads the row onto its main output.
+        rowXml->setAttribute ("toDevice", r.toDevice());
+        rowXml->setAttribute ("deviceOutputPair", r.toDevice() ? r.deviceOutputs.front().pairStart : 0);
+        for (const auto& out : r.deviceOutputs)
+        {
+            auto* outXml = rowXml->createNewChildElement ("Output");
+            outXml->setAttribute ("pair", out.pairStart);
+            outXml->setAttribute ("channels", OutputRoute::channelsToString (out.channels));
+        }
 
         int toRowsMask = 0;
         for (int target = 0; target < numRows; ++target)
@@ -3173,11 +3180,9 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 
     for (int lane = 0; lane < numRows; ++lane)
     {
-        spillLanes[(size_t) lane].writesDeviceOutput = outgoingRouting[(size_t) lane].toDevice;
-        // The tail keeps ringing out of the output its row had, not whatever the new preset routes that lane to.
-        spillLanes[(size_t) lane].hasOutputRoute = outgoingRouting[(size_t) lane].toDevice;
-        spillLanes[(size_t) lane].outputRoute = { outgoingRouting[(size_t) lane].deviceOutputPair,
-                                                  outgoingRouting[(size_t) lane].deviceOutputChannels };
+        spillLanes[(size_t) lane].writesDeviceOutput = outgoingRouting[(size_t) lane].toDevice();
+        // The tail keeps ringing out of the outputs its row had, not whatever the new preset routes that lane to.
+        spillLanes[(size_t) lane].outputRoutes = outgoingRouting[(size_t) lane].deviceOutputs;
         for (int target = lane + 1; target < numRows; ++target)
             if (outgoingRouting[(size_t) lane].toRows[(size_t) target])
                 spillConnections.push_back ({ lane, target });
@@ -3263,9 +3268,18 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
 
             auto& r = rowRouting[(size_t) row];
             r.inputChannel = rowXml->getIntAttribute ("inputChannel", -1);
-            r.toDevice = rowXml->getBoolAttribute ("toDevice", false);
-            r.deviceOutputPair = rowXml->getIntAttribute ("deviceOutputPair", 0);
-            r.deviceOutputChannels = OutputRoute::channelsFromString (rowXml->getStringAttribute ("deviceOutputChannels", "stereo"));
+            // <Output> children (2026-11-20, any number per row); a row
+            // without them is the older single-output form.
+            r.deviceOutputs.clear();
+            for (auto* outXml : rowXml->getChildWithTagNameIterator ("Output"))
+            {
+                const int pair = outXml->getIntAttribute ("pair", -1);
+                if (pair >= 0 && pair % 2 == 0)
+                    r.toggleDeviceOutput ({ pair, OutputRoute::channelsFromString (outXml->getStringAttribute ("channels", "stereo")) });
+            }
+            if (rowXml->getChildByName ("Output") == nullptr && rowXml->getBoolAttribute ("toDevice", false))
+                r.deviceOutputs.push_back ({ rowXml->getIntAttribute ("deviceOutputPair", 0),
+                                             OutputRoute::channelsFromString (rowXml->getStringAttribute ("deviceOutputChannels", "stereo")) });
 
             const int toRowsMask = rowXml->getIntAttribute ("toRowsMask", 0);
             for (int target = 0; target < numRows; ++target)
@@ -3276,9 +3290,9 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
                 audioEngine.setInputChannel (r.inputChannel);
                 globalInputSet = true;
             }
-            if (r.toDevice && ! globalOutputSet)
+            if (r.toDevice() && ! globalOutputSet)
             {
-                audioEngine.setOutputChannelPair (r.deviceOutputPair);
+                audioEngine.setOutputChannelPair (r.deviceOutputs.front().pairStart);
                 globalOutputSet = true;
             }
         }
@@ -3293,8 +3307,7 @@ void MainComponent::applyPresetXml (const juce::XmlElement& xml)
         audioEngine.setInputChannel (inCh);
         audioEngine.setOutputChannelPair (outPair);
         rowRouting[0].inputChannel = inCh;
-        rowRouting[0].toDevice = true;
-        rowRouting[0].deviceOutputPair = outPair;
+        rowRouting[0].deviceOutputs = { { outPair, OutputRoute::Channels::stereo } };
     }
 
     // Per-preset, like a hardware pedalboard's controller assignments: a preset saved without any leaves none active.

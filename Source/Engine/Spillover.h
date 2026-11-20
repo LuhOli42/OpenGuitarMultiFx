@@ -89,8 +89,7 @@ public:
     {
         std::vector<EffectProcessor*> processors;
         bool writesDeviceOutput = false;
-        bool hasOutputRoute = false;   // the outgoing row's physical output (OutputRoute.h) -- the tail keeps it
-        OutputRoute outputRoute;
+        std::vector<OutputRoute> outputRoutes;   // the outgoing row's physical outputs (OutputRoute.h) -- the tail keeps them
     };
 
     /** Control thread. Builds the unit for an outgoing preset: keeps the

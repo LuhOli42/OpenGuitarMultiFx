@@ -285,17 +285,29 @@ private:
         // (user request 2026-09-11: "out 1 pra linha 2 e 3 ao mesmo tempo,
         // sinal splitado"). Destinations are independent toggles, not one
         // choice, so "device output AND line 3" is expressible too.
-        bool toDevice = false;
-        int deviceOutputPair = 0;   // first channel of the pair: 0, 2, 4, ...
-        // Both channels of the pair, or only its L / R channel (the row
-        // folded to mono) -- e.g. a guitar row on Out 1 and a bass row on
-        // Out 2 of the same pair.
-        OutputRoute::Channels deviceOutputChannels = OutputRoute::Channels::stereo;
+        //
+        // Physical outputs: any number at once (an output split, 2026-11-20 --
+        // the same row on Out 1/2 and Out 3/4). Each is a whole pair or only
+        // its L / R channel (the row folded to mono) -- e.g. a guitar row on
+        // Out 1 and a bass row on Out 2 of the same pair.
+        std::vector<OutputRoute> deviceOutputs;
         std::array<bool, numRows> toRows {};
+
+        bool toDevice() const { return ! deviceOutputs.empty(); }
+
+        /** Adds the route, or removes it if it is already there. */
+        void toggleDeviceOutput (OutputRoute route)
+        {
+            const auto it = std::find (deviceOutputs.begin(), deviceOutputs.end(), route);
+            if (it != deviceOutputs.end())
+                deviceOutputs.erase (it);
+            else
+                deviceOutputs.push_back (route);
+        }
 
         bool feedsAnything() const
         {
-            if (toDevice)
+            if (toDevice())
                 return true;
             for (const bool t : toRows)
                 if (t)
