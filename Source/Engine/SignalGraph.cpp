@@ -64,9 +64,18 @@ void SignalGraph::setLaneWritesDeviceOutput (int lane, bool writesOutput)
 
 void SignalGraph::setLaneOutputRoute (int lane, OutputRoute route)
 {
+    lanes[(size_t) lane].numOutputRoutes = 0;
+    addLaneOutputRoute (lane, route);
+}
+
+void SignalGraph::addLaneOutputRoute (int lane, OutputRoute route)
+{
     auto& l = lanes[(size_t) lane];
-    l.hasOutputRoute = true;
-    l.outputRoute = route;
+    for (int i = 0; i < l.numOutputRoutes; ++i)
+        if (l.outputRoutes[(size_t) i] == route)
+            return;
+    if (l.numOutputRoutes < maxOutputRoutesPerLane)
+        l.outputRoutes[(size_t) l.numOutputRoutes++] = route;
 }
 
 void SignalGraph::addLaneConnection (int sourceLane, int targetLane)
@@ -123,12 +132,18 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
 
     routedOutput = false;
     for (const auto& lane : lanes)
-        routedOutput = routedOutput || lane.hasOutputRoute;
+        routedOutput = routedOutput || lane.numOutputRoutes > 0;
     routedChannelMask = 0;
     if (routedOutput)
         for (const auto& lane : lanes)
-            if (lane.writesDeviceOutput)
-                routedChannelMask |= (lane.hasOutputRoute ? lane.outputRoute : OutputRoute {}).channelMask();
+        {
+            if (! lane.writesDeviceOutput)
+                continue;
+            if (lane.numOutputRoutes == 0)
+                routedChannelMask |= OutputRoute {}.channelMask();
+            for (int r = 0; r < lane.numOutputRoutes; ++r)
+                routedChannelMask |= lane.outputRoutes[(size_t) r].channelMask();
+        }
 
     // Dependency level: 0 for a lane fed only by the device input,
     // 1 + max(source levels) otherwise. Iterating lanes ascending works
@@ -539,7 +554,10 @@ void SignalGraph::writeDeviceOutput (juce::AudioBuffer<float>& buffer, int numSa
             if (! lane.writesDeviceOutput || (pipelined != nullptr && i != pipeLane))
                 continue;
             const auto& src = pipelined != nullptr ? *pipelined : lane.buffer;
-            (lane.hasOutputRoute ? lane.outputRoute : OutputRoute {}).addInto (buffer, src, numSamples);
+            if (lane.numOutputRoutes == 0)
+                OutputRoute {}.addInto (buffer, src, numSamples);
+            for (int r = 0; r < lane.numOutputRoutes; ++r)
+                lane.outputRoutes[(size_t) r].addInto (buffer, src, numSamples);
         }
         return;
     }

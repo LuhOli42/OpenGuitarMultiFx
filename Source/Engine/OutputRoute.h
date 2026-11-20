@@ -28,6 +28,8 @@ struct OutputRoute
     int pairStart = 0;
     Channels channels = Channels::stereo;
 
+    bool operator== (const OutputRoute&) const = default;
+
     /** Bit per physical channel this route writes (bit n = channel n). */
     uint32_t channelMask() const noexcept
     {

@@ -119,6 +119,27 @@ public:
             expectEquals (dev.getSample (5, 5), 0.0f);
         }
 
+        beginTest ("one row on several outputs at once (an output split)");
+        {
+            RouteGain a (0.5f);
+            SignalGraph graph;
+            graph.setLaneProcessors (0, { &a });
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneWritesDeviceOutput (0, true);
+            graph.addLaneOutputRoute (0, { 0, C::stereo });
+            graph.addLaneOutputRoute (0, { 2, C::right });
+            graph.addLaneOutputRoute (0, { 2, C::right }); // duplicate ignored
+            graph.prepare (48000.0, 16, 2);
+            expectEquals ((int) graph.getRoutedChannelMask(), 0b1011);
+            juce::AudioBuffer<float> dev (4, 16);
+            fill (dev, 0.4f);
+            graph.process (dev);
+            expectWithinAbsoluteError (dev.getSample (0, 0), 0.2f, 1.0e-6f);
+            expectWithinAbsoluteError (dev.getSample (1, 0), 0.2f, 1.0e-6f);
+            expectEquals (dev.getSample (2, 0), 0.0f);
+            expectWithinAbsoluteError (dev.getSample (3, 0), 0.2f, 1.0e-6f);
+        }
+
         beginTest ("rows routed to the same channel sum (an output merge)");
         {
             RouteGain a (1.0f), b (1.0f);
@@ -199,8 +220,7 @@ public:
             retired.push_back (std::make_unique<ConstantTail>());
             lanes[0].processors = { retired.back().get() };
             lanes[0].writesDeviceOutput = true;
-            lanes[0].hasOutputRoute = true;
-            lanes[0].outputRoute = { 2, C::stereo };
+            lanes[0].outputRoutes = { { 2, C::stereo } };
 
             auto unit = Spillover::build (lanes, {}, retired);
             expect (unit != nullptr);

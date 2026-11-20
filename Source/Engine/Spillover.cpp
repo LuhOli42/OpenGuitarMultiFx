@@ -21,8 +21,8 @@ std::unique_ptr<Spillover::Unit> Spillover::build (
         // an emptied lane still relays an upstream tail to the device -- a
         // lane1 delay feeding an emptied lane2 amp lane must stay audible.
         graph->setLaneWritesDeviceOutput (lane, lanes[(size_t) lane].writesDeviceOutput);
-        if (lanes[(size_t) lane].hasOutputRoute)
-            graph->setLaneOutputRoute (lane, lanes[(size_t) lane].outputRoute);
+        for (const auto& route : lanes[(size_t) lane].outputRoutes)
+            graph->addLaneOutputRoute (lane, route);
 
         std::vector<EffectProcessor*> kept;
         for (auto* p : lanes[(size_t) lane].processors)
