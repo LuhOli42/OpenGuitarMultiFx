@@ -7,6 +7,7 @@ target_sources(OpenGuitarMultiFx_Tests PRIVATE
   RunTests.cpp
   SignalGraphTests.cpp
   OutputRouteTests.cpp
+  DeviceIoProcessorTests.cpp
   BleMidiParserTests.cpp
   SignalGraphBench.cpp
   EffectRegistryCategoryTests.cpp

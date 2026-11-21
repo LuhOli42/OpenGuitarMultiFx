@@ -75,6 +75,7 @@
 #include "Effects/Pitch/BossOC2StyleOctaverProcessor.h"
 #include "Effects/ParametricEQProcessor.h"
 #include "Effects/RingModProcessor.h"
+#include "Effects/DeviceIoProcessors.h"
 #include "Effects/NoiseGates/DS201StyleNoiseGateProcessor.h"
 #include "Effects/NoiseGates/NS2StyleNoiseSuppressorProcessor.h"
 #include "Effects/DynaCompStyleCompressorProcessor.h"
@@ -808,6 +809,11 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // Phase 5 (partial): Looper. Sits in the Delay category per the
     // reference sheet, not alongside the other Phase 4 Pitch effects.
     registry.registerType ("Looper", EffectRegistry::Category::delay, [] { return std::make_unique<LooperProcessor>(); }, "Special");
+
+    // Utility: blocks that reach past their row to the physical device (EffectProcessor::DeviceIo). Registered
+    // unwrapped on purpose -- a wrapper would hide usesDeviceIo() from SignalGraph.
+    registry.registerType ("OutputSend", EffectRegistry::Category::utility, [] { return std::make_unique<OutputSendProcessor>(); });
+    registry.registerType ("InputSource", EffectRegistry::Category::utility, [] { return std::make_unique<InputSourceProcessor>(); });
     registry.registerType ("Ambient", EffectRegistry::Category::reverb, [] { return std::make_unique<ReverbProcessor>(); }, "Ambient");
     registry.registerType ("Spring", EffectRegistry::Category::reverb, [] { return std::make_unique<SpringReverbProcessor>(); }, "Spring");
     registry.registerType ("Hall", EffectRegistry::Category::reverb, [] { return std::make_unique<HallReverbProcessor>(); }, "Room/Hall");

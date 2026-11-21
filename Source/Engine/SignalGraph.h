@@ -114,8 +114,10 @@ public:
 
     /** Device channels process() writes when the graph is routed and some
         lane writes the output; 0 otherwise (passthrough or legacy spread --
-        AudioEngine's selected pair decides then). Valid after prepare(). */
-    uint32_t getRoutedChannelMask() const noexcept { return routedChannelMask; }
+        AudioEngine's selected pair decides then). Valid after prepare(), plus
+        the channels the DeviceIo blocks (EffectProcessor::usesDeviceIo) sent
+        to in the last process() call -- read it after process(). */
+    uint32_t getRoutedChannelMask() const noexcept { return routedChannelMask | sendChannelMask; }
 
     /** sourceLane's processed output is summed into targetLane's input.
         Call once per edge: calling it for the same source with different
@@ -290,6 +292,16 @@ private:
     bool routedOutput = false;           // some lane has an OutputRoute (prepare())
     uint32_t routedChannelMask = 0;      // see getRoutedChannelMask()
     bool legacySerialOrder = false;   // shared processor instance across lanes -> old index-order pass
+
+    // Device I/O blocks (EffectProcessor::usesDeviceIo): one DeviceIo + device-wide send bus per lane (lanes of a
+    // stage run on different threads), sized in prepare() only when such a block exists. A graph with one is always
+    // routed and never pipelined (see usesDeviceIo).
+    bool anyDeviceIo = false;
+    std::array<bool, numLanes> laneHasDeviceIo {};
+    std::array<EffectProcessor::DeviceIo, numLanes> laneIo {};
+    std::array<juce::AudioBuffer<float>, numLanes> laneSends;
+    uint32_t sendChannelMask = 0;     // audio thread: channels the blocks sent to in the last process()
+    void addDeviceSends (juce::AudioBuffer<float>& device, int numSamples) noexcept;
     bool workersAreRealtime = true;   // every LaneWorker got RT scheduling in prepare()
     std::atomic<bool> audioCallerIsRealtime { false }; // set via setAudioCallerIsRealtime
 
