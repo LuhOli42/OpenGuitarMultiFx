@@ -119,6 +119,21 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
             p->prepareIfNeeded (sampleRate, maxBlockSize, numChannels);
     }
 
+    anyDeviceIo = false;
+    sendChannelMask = 0;
+    for (int i = 0; i < numLanes; ++i)
+    {
+        bool uses = false;
+        for (auto* p : lanes[(size_t) i].processors)
+            uses = uses || p->usesDeviceIo();
+        laneHasDeviceIo[(size_t) i] = uses;
+        anyDeviceIo = anyDeviceIo || uses;
+        laneSends[(size_t) i].setSize (uses ? EffectProcessor::DeviceIo::maxChannels : 0, uses ? maxBlockSize : 0, false, true, false);
+        laneSends[(size_t) i].clear();
+        laneIo[(size_t) i] = {};
+        laneIo[(size_t) i].outputs = uses ? &laneSends[(size_t) i] : nullptr;
+    }
+
     // ---- Parallel schedule (see the class doc) ----
     // Per-lane incoming source lanes, and whether each lane does anything
     // at all this block. A lane with no processors, no input, no output
@@ -153,7 +168,8 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
                                    || isEndpoint[(size_t) i];
     }
 
-    routedOutput = false;
+    // A send block owns its own channels, so the lanes cannot keep the legacy spread to every channel.
+    routedOutput = anyDeviceIo;
     for (const auto& lane : lanes)
         routedOutput = routedOutput || lane.numOutputRoutes > 0;
     routedChannelMask = 0;
@@ -234,7 +250,7 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
     pipeLane = -1;
     pipeSendMode = false;
     pipeSendHead = false;
-    if ((pipelineRequested || sendRequested) && connections.empty())
+    if ((pipelineRequested || sendRequested) && connections.empty() && ! anyDeviceIo)
     {
         int bearing = -1, count = 0;
         for (int l = 0; l < numLanes; ++l)
@@ -310,8 +326,57 @@ void SignalGraph::runLane (int laneIndex, int numSamples)
     auto& lane = lanes[(size_t) laneIndex];
     loadLaneInput (laneIndex, numSamples);
 
+    if (! laneHasDeviceIo[(size_t) laneIndex])
+    {
+        for (auto* p : lane.processors)
+            p->processWithBypass (lane.buffer); // bypass is a crossfade now, not a skip -- see EffectProcessor
+        return;
+    }
+
+    // Only the channels sent to last block hold anything; clear those, then let the blocks mark this block's.
+    auto& io = laneIo[(size_t) laneIndex];
+    for (int ch = 0; ch < EffectProcessor::DeviceIo::maxChannels; ++ch)
+        if ((io.outputMask >> ch) & 1u)
+            laneSends[(size_t) laneIndex].clear (ch, 0, laneSends[(size_t) laneIndex].getNumSamples());
+    io.outputMask = 0;
+    if (perChannelInputs != nullptr)
+    {
+        io.inputs = perChannelInputs;
+        io.numInputs = numPerChannelInputs;
+        io.inputGain = perChannelGain;
+    }
+    else
+    {
+        // process() without the per-channel inputs: the shared buffer (already gained) is the device input.
+        io.inputs = deviceInputSnapshot.getArrayOfReadPointers();
+        io.numInputs = deviceInputSnapshot.getNumChannels();
+        io.inputGain = 1.0f;
+    }
+
     for (auto* p : lane.processors)
-        p->processWithBypass (lane.buffer); // bypass is a crossfade now, not a skip -- see EffectProcessor
+    {
+        const bool reaches = p->usesDeviceIo();
+        if (reaches)
+            p->setDeviceIo (&io);
+        p->processWithBypass (lane.buffer);
+        if (reaches)
+            p->setDeviceIo (nullptr); // never left pointing at a graph that may be reclaimed
+    }
+}
+
+void SignalGraph::addDeviceSends (juce::AudioBuffer<float>& device, int numSamples) noexcept
+{
+    sendChannelMask = 0;
+    for (int i = 0; i < numLanes; ++i)
+    {
+        if (! laneHasDeviceIo[(size_t) i])
+            continue;
+        const uint32_t mask = laneIo[(size_t) i].outputMask;
+        sendChannelMask |= mask;
+        for (int ch = 0; ch < juce::jmin (device.getNumChannels(), EffectProcessor::DeviceIo::maxChannels); ++ch)
+            if ((mask >> ch) & 1u)
+                device.addFrom (ch, 0, laneSends[(size_t) i], ch, 0, numSamples);
+    }
 }
 
 void SignalGraph::loadLaneInput (int laneIndex, int numSamples)
@@ -595,7 +660,7 @@ void SignalGraph::addOutputRoute (juce::AudioBuffer<float>& device, const juce::
 void SignalGraph::writeDeviceOutput (juce::AudioBuffer<float>& buffer, int numSamples,
                                      const juce::AudioBuffer<float>* pipelined) noexcept
 {
-    if (! anyLaneWritesOutput)
+    if (! anyLaneWritesOutput && ! anyDeviceIo)
         return; // leave `buffer` exactly as it came in -- the passthrough contract
 
     if (routedOutput)
@@ -616,6 +681,8 @@ void SignalGraph::writeDeviceOutput (juce::AudioBuffer<float>& buffer, int numSa
             for (int r = 0; r < lane.numOutputRoutes; ++r)
                 addOutputRoute (buffer, src, i, r, numSamples);
         }
+        if (anyDeviceIo)
+            addDeviceSends (buffer, numSamples);
         return;
     }
 

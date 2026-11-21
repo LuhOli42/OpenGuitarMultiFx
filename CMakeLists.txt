@@ -119,6 +119,8 @@ juce_add_binary_data(OpenGuitarMultiFx_Icons
     Assets/Icons/pitch_shift.svg
     Assets/Icons/harmonizer.svg
     Assets/Icons/looper.svg
+    Assets/Icons/output_send.svg
+    Assets/Icons/input_source.svg
     Assets/Icons/amp.svg
     Assets/Icons/amp_head.svg
     Assets/Icons/fuzz.svg
@@ -206,6 +208,7 @@ set(OGMFX_CORE_SOURCES
   Source/Effects/GEB7StyleEqualizerProcessor.cpp
   Source/Effects/ParametricEQProcessor.cpp
   Source/Effects/RingModProcessor.cpp
+  Source/Effects/DeviceIoProcessors.cpp
   Source/Effects/NoiseGates/DS201StyleNoiseGateProcessor.cpp
   Source/Effects/NoiseGates/NS2StyleNoiseSuppressorProcessor.cpp
   Source/Effects/DynaCompStyleCompressorProcessor.cpp

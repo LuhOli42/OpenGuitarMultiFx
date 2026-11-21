@@ -248,6 +248,16 @@ Critério de pronto: testes de `OutputMatrix` verdes; preset antigo soa igual; d
 
 - Hoje spillover soma no bus principal. Evoluir para que a cauda de um preset saia pelas mesmas rotas de output que a linha tinha, ou documentar explicitamente que spill segue o bus principal.
 
+### Depois do plano — blocos Utility de I/O (2026-11-21)
+
+Pedido da usuária depois das fases: "um utility q faz vc mandar o sinal pra qualquer saida" e "um q recebe de qualquer entrada".
+
+- **Output Send** (`OutputSendProcessor`): copia o sinal do ponto da cadeia em que está para qualquer par ou canal único (Out 1/2, Out 1 (L), Out 2 (R), ... até Out 7/8). A cadeia continua igual; **Mute Thru** corta o resto. Level -inf..+12 dB.
+- **Input Source** (`InputSourceProcessor`): traz qualquer entrada física (In 1..In 8 mono, ou os pares In 1/2..In 7/8) para aquele ponto. **Mix**: 0% = só a cadeia, 50% = as duas em nível cheio (soma), 100% = só a entrada. Level -inf..+24 dB, depois do ganho de entrada do app.
+- Os dois fazem rampa de ~10 ms em level, bypass e troca de destino/fonte (fade out, troca, fade in).
+- Engine: `EffectProcessor::DeviceIo` genérico (ver `Source/Engine/AGENTS.md`). Um grafo com esses blocos nunca roda em pipeline/send mode.
+- Não existe bloco combinado de send/return (decisão da usuária: os dois separados bastam para montar um loop).
+
 ## 8. Testes e gates
 
 - **Unitários de grafo:** manter split/merge atuais; adicionar gain=0.5, invert, channel map e soma com clipping controlado.

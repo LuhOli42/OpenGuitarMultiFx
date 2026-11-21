@@ -433,7 +433,6 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
 {
     auto* graph = graphSlot.currentRaw();
     const auto now = juce::Time::getHighResolutionTicks();
-    currentGraphChannelMask = graph != nullptr ? graph->getRoutedChannelMask() : 0;
 
     if (graph != activeGraph)
     {
@@ -464,6 +463,8 @@ void AudioEngine::processCurrentGraph (juce::AudioBuffer<float>& buffer, int num
 
     if (graph != nullptr)
         graph->process (buffer, callbackInputs, callbackNumInputs, inputGainLinear.load (std::memory_order_relaxed));
+    // After process(): an Output Send block's channels are known only once it has run this block.
+    currentGraphChannelMask = graph != nullptr ? graph->getRoutedChannelMask() : 0;
 
     // Record this block's output before any fade mixing: the ring always holds the clean
     // single-graph signal a later swap replays. Frozen while a fade is active: when the ring is

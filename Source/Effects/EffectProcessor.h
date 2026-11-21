@@ -6,6 +6,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -174,6 +175,27 @@ public:
         wet part alone is `process(x) - x`. Only such an effect can be moved to a parallel send (SignalGraph): an effect
         with a crossfading Mix would leave a ghost of the delayed dry. */
     bool isWetOverDryEffect() const noexcept { return ! legacyMixes.empty(); }
+
+    /** The physical device I/O a block can reach past its own lane (the Utility blocks Output Send and Input Source).
+        SignalGraph owns one per lane: `inputs` are the device's raw input channels for this block (a block scales
+        them by `inputGain`, the app's input gain), `outputs` is the lane's device-wide send bus -- every
+        channel a block writes must be marked in `outputMask`, and only marked channels are cleared and played. */
+    struct DeviceIo
+    {
+        static constexpr int maxChannels = 16;
+        const float* const* inputs = nullptr;
+        int numInputs = 0;
+        float inputGain = 1.0f;
+        juce::AudioBuffer<float>* outputs = nullptr;
+        uint32_t outputMask = 0;
+    };
+
+    /** True for a block that reads or writes DeviceIo. SignalGraph then hands it its lane's DeviceIo around each
+        process() call (setDeviceIo) and keeps the graph off the pipeline/send worker, which runs a block late, after
+        the callback's input pointers are gone. Without a DeviceIo (tests, offline renders) such a block sends nothing
+        and reads silence. A wrapper (OversampledEffect, ...) does not forward this, so register these unwrapped. */
+    virtual bool usesDeviceIo() const { return false; }
+    void setDeviceIo (DeviceIo* io) noexcept { deviceIo = io; }
 
     /** A guitar-synth block: it tracks the pitch of its input and builds its own voices, so as the first block of a
         chain (clean guitar in) it can run as a send on the second fast core. */
@@ -444,6 +466,8 @@ public:
     }
 
 protected:
+    DeviceIo* deviceIo = nullptr;   // see usesDeviceIo(); set by SignalGraph only around process()
+
     /** Called by a subclass's constructor, after the parameter itself is
         constructed, to mark it as eligible for BPM-synced note-subdivision
         control instead of a raw ms drag -- e.g. a Delay's "Time" param.
