@@ -5,6 +5,7 @@
 #include "ModelListDialog.h"
 #include "PromptCards.h"
 #include "ParameterPanelPagePlanner.h"
+#include "ScrollListSelector.h"
 #include "OpenGuitarMultiFxLookAndFeel.h"
 #include "Tone3000SearchDialog.h"
 #include "TouchSizing.h"
@@ -329,8 +330,15 @@ void ParameterPanel::refresh()
                 row.valueBox->setButtonText (row.slider->getTextFromValue (row.slider->getValue()));
             if (row.selector != nullptr)
             {
-                const auto range = row.param->getNormalisableRange();
-                row.selector->setSelectedIndex ((int) std::lround ((v - range.start) / range.interval), juce::dontSendNotification);
+                // The interface can change while the drawer is open: re-ask which positions exist (Output Send /
+                // Input Source list only the channels the open interface has).
+                auto shown = parameterPanelLayout::availableSteps (*current, *row.param);
+                if (shown != row.selectorShownSteps)
+                {
+                    row.selectorShownSteps = std::move (shown);
+                    row.selector->setOptions (parameterPanelLayout::optionsFor (*row.param, row.selectorShownSteps));
+                }
+                row.selector->setSelectedIndex (row.shownIndexOf (v), juce::dontSendNotification);
             }
         }
 
@@ -541,8 +549,7 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
             const auto range = floatParam->getNormalisableRange();
             row.slider->setRange (range.start, range.end, range.interval > 0.0f ? range.interval : 0.01);
             row.slider->setValue (floatParam->get(), juce::dontSendNotification);
-            const bool isSelector = range.interval >= 1.0f && (range.end - range.start) / range.interval <= 8.0f
-                                     && ! current->prefersSteppedKnob (*floatParam);
+            const bool isSelector = parameterPanelLayout::isSelector (*current, *floatParam);
             if (! isSelector)
                 row.slider->setDoubleClickReturnValue (true, range.convertFrom0to1 (0.5f));
             if (isSelector || range.interval >= 1.0f)
@@ -590,22 +597,24 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
 
             if (isSelector)
             {
-                row.selector = std::make_unique<SelectorSwitch>();
-                juce::StringArray options;
-                const int steps = (int) std::lround ((range.end - range.start) / range.interval) + 1;
-                row.selectorSteps = steps;
-                for (int step = 0; step < steps; ++step)
-                {
-                    const float v = range.start + (float) step * range.interval;
-                    options.add (static_cast<juce::AudioProcessorParameter*> (floatParam)->getText (floatParam->convertTo0to1 (v), 32));
-                }
-                row.selector->setOptions (options);
+                if (current->prefersScrollingSelector (*floatParam))
+                    row.selector = std::make_unique<ScrollListSelector>();
+                else
+                    row.selector = std::make_unique<SelectorSwitch>();
+                row.selectorSteps = (int) std::lround ((range.end - range.start) / range.interval) + 1;
+                row.selectorShownSteps = parameterPanelLayout::availableSteps (*current, *floatParam);
+                row.selector->setOptions (parameterPanelLayout::optionsFor (*floatParam, row.selectorShownSteps));
                 row.selector->setAccentColour (effectAccent);
-                row.selector->setSelectedIndex ((int) std::lround ((floatParam->get() - range.start) / range.interval), juce::dontSendNotification);
+                row.selector->setSelectedIndex (row.shownIndexOf (floatParam->get()), juce::dontSendNotification);
                 const double selectorStart = (double) range.start, selectorInterval = (double) range.interval;
-                row.selector->onChange = [rawSlider, selectorStart, selectorInterval] (int index)
+                const size_t rowIndex = sliders.size();   // `row` is moved into `sliders` below: look it up at call time
+                row.selector->onChange = [this, rawSlider, rowIndex, selectorStart, selectorInterval] (int index)
                 {
-                    rawSlider->setValue (selectorStart + (double) index * selectorInterval);
+                    if (rowIndex >= sliders.size())
+                        return;
+                    const auto& shown = sliders[rowIndex].selectorShownSteps;
+                    if (index >= 0 && index < (int) shown.size())
+                        rawSlider->setValue (selectorStart + (double) shown[(size_t) index] * selectorInterval);
                 };
             }
 

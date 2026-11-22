@@ -28,7 +28,7 @@ public:
         repaint();
     }
 
-    void setSelectedIndex (int index, juce::NotificationType notification = juce::sendNotificationAsync)
+    virtual void setSelectedIndex (int index, juce::NotificationType notification = juce::sendNotificationAsync)
     {
         index = juce::jlimit (0, juce::jmax (0, options.size() - 1), index);
         if (index == selected)
@@ -41,9 +41,9 @@ public:
 
     int getSelectedIndex() const noexcept { return selected; }
     int getNumOptions() const noexcept { return options.size(); }
-    int getPreferredHeight() const noexcept { return touch::minTapTarget; }
+    virtual int getPreferredHeight() const { return touch::minTapTarget; }
 
-    int getPreferredWidth() const
+    virtual int getPreferredWidth() const
     {
         if (options.size() == 2)
             return optionTextWidth (0) + labelGap + switchWidth + labelGap + optionTextWidth (1);
@@ -114,6 +114,35 @@ public:
             selectSegmentAt (event.position.x);
     }
 
+protected:
+    juce::StringArray options;
+    int selected = 0;
+    juce::Colour accent = juce::Colours::grey;
+
+    juce::Font fontFor (float height, bool bold) const
+    {
+        const int style = bold ? juce::Font::bold : juce::Font::plain;
+        const juce::Font base (juce::FontOptions (height, style));
+        return juce::Font (juce::FontOptions (height, style)
+                               .withTypeface (getLookAndFeel().getTypefaceForFont (base)));
+    }
+
+    juce::String optionText (int index) const
+    {
+        auto text = options[index];
+        if (theme::current().uppercaseLabels)
+            text = text.toUpperCase();
+        return text;
+    }
+
+    int optionTextWidth (int index) const
+    {
+        const auto text = optionText (index);
+        return (int) std::ceil (juce::jmax (
+            juce::GlyphArrangement::getStringWidth (fontFor (12.0f, false), text),
+            juce::GlyphArrangement::getStringWidth (fontFor (12.0f, true), text))) + 1;
+    }
+
 private:
     enum class Gesture { none, leftLabel, track, rightLabel, segments };
 
@@ -124,30 +153,6 @@ private:
     static constexpr int segmentHeight = 32;
     static constexpr int segmentPadding = 3;
     static constexpr int segmentGap = 3;
-
-    juce::String optionText (int index) const
-    {
-        auto text = options[index];
-        if (theme::current().uppercaseLabels)
-            text = text.toUpperCase();
-        return text;
-    }
-
-    juce::Font fontFor (float height, bool bold) const
-    {
-        const int style = bold ? juce::Font::bold : juce::Font::plain;
-        const juce::Font base (juce::FontOptions (height, style));
-        return juce::Font (juce::FontOptions (height, style)
-                               .withTypeface (getLookAndFeel().getTypefaceForFont (base)));
-    }
-
-    int optionTextWidth (int index) const
-    {
-        const auto text = optionText (index);
-        return (int) std::ceil (juce::jmax (
-            juce::GlyphArrangement::getStringWidth (fontFor (12.0f, false), text),
-            juce::GlyphArrangement::getStringWidth (fontFor (12.0f, true), text))) + 1;
-    }
 
     int segmentWidth (int index) const
     {
@@ -289,9 +294,6 @@ private:
         }
     }
 
-    juce::StringArray options;
-    int selected = 0;
-    juce::Colour accent = juce::Colours::grey;
     juce::Point<float> dragOrigin;
     bool dragged = false;
     Gesture gesture = Gesture::none;

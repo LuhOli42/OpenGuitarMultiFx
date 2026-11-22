@@ -119,7 +119,7 @@ Every physically-modelled (non-neural) pedal/amp gets a `docs/circuits/<Name>.md
 - `nam::DSP::process()` output saturates to exactly `1.0f` in float32 at extreme drive — a bound test must use `<=`, not `<` (real bug, commit `dc090fe`).
 - `juce::AudioProcessorParameterGroup`'s constructor is variadic-template (each `unique_ptr<Parameter>` as a separate argument), not a vector-taking constructor.
 - `format` is the load-bearing TONE3000 field, not `gear`: `"nam"` → `NAMProcessor` only, `"ir"` → `IRLoaderProcessor` only. Mixing these up is a routing bug (see `Source/Tone3000/AGENTS.md`), not a matter of taste.
-- A block that touches the physical device (`usesDeviceIo()` true: `OutputSendProcessor`, `InputSourceProcessor` in `DeviceIoProcessors.{h,cpp}`) must be registered UNWRAPPED -- `OversampledEffect`/`trimmedLimited` do not forward `usesDeviceIo()`, so SignalGraph would never hand it a DeviceIo and it would go silent. With `deviceIo == nullptr` (tests, RenderFx) it must pass the chain through.
+- A block that touches the physical device (`usesDeviceIo()` true: `OutputSendProcessor`, `InputSourceProcessor` in `DeviceIoProcessors.{h,cpp}`; a new "send somewhere" block reuses `DeviceOutputSend` for the ramp / fade-switch / mask logic and `LinkwitzRileySplit` for a band split) must be registered UNWRAPPED -- `OversampledEffect`/`trimmedLimited` do not forward `usesDeviceIo()`, so SignalGraph would never hand it a DeviceIo and it would go silent. With `deviceIo == nullptr` (tests, RenderFx) it must pass the chain through.
 
 ## Patterns
 

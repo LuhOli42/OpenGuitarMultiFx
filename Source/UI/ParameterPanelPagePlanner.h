@@ -2,6 +2,7 @@
 
 #include "../Effects/EffectProcessor.h"
 #include "SelectorSwitch.h"
+#include "ScrollListSelector.h"
 
 #include <algorithm>
 #include <cmath>
@@ -41,8 +42,33 @@ inline bool isSelector (const EffectProcessor& processor, const juce::AudioParam
 {
     const auto range = param.getNormalisableRange();
     return range.interval >= 1.0f
-        && (range.end - range.start) / range.interval <= 8.0f
+        && ((range.end - range.start) / range.interval <= 8.0f
+            || processor.prefersScrollingSelector (param))
         && ! processor.prefersSteppedKnob (param);
+}
+
+/** The positions of a stepped parameter its processor offers right now (isSelectorOptionAvailable). */
+inline std::vector<int> availableSteps (const EffectProcessor& processor, const juce::AudioParameterFloat& param)
+{
+    std::vector<int> steps;
+    const auto range = param.getNormalisableRange();
+    const int count = (int) std::lround ((range.end - range.start) / range.interval) + 1;
+    for (int step = 0; step < count; ++step)
+        if (processor.isSelectorOptionAvailable (param, step))
+            steps.push_back (step);
+    return steps;
+}
+
+inline juce::StringArray optionsFor (juce::AudioParameterFloat& param, const std::vector<int>& steps)
+{
+    juce::StringArray options;
+    const auto range = param.getNormalisableRange();
+    for (int step : steps)
+    {
+        const float value = range.start + (float) step * range.interval;
+        options.add (static_cast<juce::AudioProcessorParameter&> (param).getText (param.convertTo0to1 (value), 32));
+    }
+    return options;
 }
 
 inline juce::StringArray optionsFor (juce::AudioParameterFloat& param)
@@ -60,9 +86,15 @@ inline juce::StringArray optionsFor (juce::AudioParameterFloat& param)
 
 inline int selectorWidth (EffectProcessor& processor, juce::AudioParameterFloat& param)
 {
-    juce::ignoreUnused (processor);
+    const auto options = optionsFor (param, availableSteps (processor, param));
+    if (processor.prefersScrollingSelector (param))
+    {
+        ScrollListSelector list;
+        list.setOptions (options);
+        return list.getPreferredWidth();
+    }
     SelectorSwitch measurement;
-    measurement.setOptions (optionsFor (param));
+    measurement.setOptions (options);
     return measurement.getPreferredWidth();
 }
 

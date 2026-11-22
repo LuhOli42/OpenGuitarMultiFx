@@ -1,5 +1,7 @@
 #include "Effects/DeviceIoProcessors.h"
 #include "Engine/SignalGraph.h"
+#include "Engine/OutputRoute.h"
+#include "UI/ScrollListSelector.h"
 
 #include <juce_core/juce_core.h>
 
@@ -160,6 +162,128 @@ public:
             expectWithinAbsoluteError (buf.getSample (0, block - 1), 0.3f, 1.0e-6f);
         }
 
+        beginTest ("Output Send to a later line: Lows into Line 3, the line keeps the highs; both sum back flat");
+        {
+            for (float hz : { 60.0f, 120.0f, 1000.0f })
+            {
+                OutputSendProcessor send;
+                setParam (send, "outsend_dest", (float) (DeviceIoChoices::numOutputChoices + 2));   // Line 3
+                setParam (send, "outsend_band", 1.0f);         // Lows
+                setParam (send, "outsend_freq", 120.0f);
+                setParam (send, "outsend_mute_thru", 2.0f);    // Thru: Other band
+                const auto peaks = runLineSine (&send, nullptr, hz);
+                expectWithinAbsoluteError (peaks.sum, 0.5f, 0.02f, "flat at " + juce::String (hz) + " Hz");
+                if (hz == 60.0f)
+                    expect (peaks.line > 0.45f && peaks.row < 0.1f, "60 Hz goes to Line 3");
+                if (hz == 1000.0f)
+                    expect (peaks.row > 0.49f && peaks.line < 0.01f, "1 kHz stays on the row");
+            }
+        }
+
+        beginTest ("Output Send: Crossover Off sends full range to the line, Thru Full keeps the row untouched");
+        {
+            OutputSendProcessor send;
+            setParam (send, "outsend_dest", (float) (DeviceIoChoices::numOutputChoices + 2));
+            const auto peaks = runLineSine (&send, nullptr, 440.0f);
+            expectWithinAbsoluteError (peaks.line, 0.5f, 1.0e-3f);
+            expectWithinAbsoluteError (peaks.row, 0.5f, 1.0e-3f);
+        }
+
+        beginTest ("lines are forward-only: a send to its own or an earlier line is silent");
+        {
+            OutputSendProcessor send;
+            setParam (send, "outsend_dest", (float) (DeviceIoChoices::numOutputChoices + 0));   // Line 1 from Line 1
+            const auto peaks = runLineSine (&send, nullptr, 440.0f);
+            expectWithinAbsoluteError (peaks.line, 0.0f, 1.0e-6f);
+            expectWithinAbsoluteError (peaks.row, 0.5f, 1.0e-3f);
+        }
+
+        beginTest ("Input Source on Line 3 reads Line 1's output (highs only with the crossover)");
+        {
+            InputSourceProcessor source;
+            setParam (source, "insource_src", (float) (DeviceIoChoices::numInputChoices + 0));   // Line 1
+            setParam (source, "insource_mix", 1.0f);
+            setParam (source, "insource_band", 2.0f);   // Highs
+            setParam (source, "insource_freq", 120.0f);
+            const auto high = runLineSine (nullptr, &source, 2000.0f);
+            expectWithinAbsoluteError (high.line, 0.5f, 0.02f);
+            InputSourceProcessor source2;
+            setParam (source2, "insource_src", (float) (DeviceIoChoices::numInputChoices + 0));
+            setParam (source2, "insource_mix", 1.0f);
+            setParam (source2, "insource_band", 2.0f);
+            setParam (source2, "insource_freq", 1000.0f);
+            const auto low = runLineSine (nullptr, &source2, 60.0f);
+            expect (low.line < 0.01f, "60 Hz is cut by a 1 kHz high pass: " + juce::String (low.line));
+
+            InputSourceProcessor later;   // Line 1 reading Line 3 (a later line) gets silence
+            setParam (later, "insource_src", (float) (DeviceIoChoices::numInputChoices + 2));
+            setParam (later, "insource_mix", 1.0f);
+            SignalGraph graph;
+            graph.setLaneProcessors (0, { &later });
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneWritesDeviceOutput (0, true);
+            graph.prepare (48000.0, block, 2);
+            juce::AudioBuffer<float> dev (2, block);
+            for (int i = 0; i < settleBlocks; ++i)
+            {
+                dev.clear();
+                fill (dev, 0, 0.3f);
+                fill (dev, 1, 0.3f);
+                graph.process (dev);
+            }
+            expectWithinAbsoluteError (dev.getSample (0, block - 1), 0.0f, 1.0e-6f);
+        }
+
+        beginTest ("only the channels the open interface has are offered; lines always are");
+        {
+            EffectProcessor::DeviceIo::setAvailableChannels (2, 6);   // e.g. 2 in / 6 out
+            expect (DeviceIoChoices::isOutputAvailable (0));                                 // Out 1/2
+            expect (DeviceIoChoices::isOutputAvailable (6));                                 // Out 5/6
+            expect (! DeviceIoChoices::isOutputAvailable (9));                               // Out 7/8
+            expect (! DeviceIoChoices::isOutputAvailable (10));                              // Out 7 (L)
+            expect (DeviceIoChoices::isOutputAvailable (DeviceIoChoices::numOutputChoices)); // Line 1
+            expect (DeviceIoChoices::isInputAvailable (0) && DeviceIoChoices::isInputAvailable (1));
+            expect (! DeviceIoChoices::isInputAvailable (2));                                // In 3
+            expect (DeviceIoChoices::isInputAvailable (DeviceIoChoices::numInputChannels));      // In 1/2
+            expect (! DeviceIoChoices::isInputAvailable (DeviceIoChoices::numInputChannels + 1)); // In 3/4
+            expect (DeviceIoChoices::isInputAvailable (DeviceIoChoices::numInputChoices + 3));   // Line 4
+
+            OutputSendProcessor send;
+            int shown = 0;
+            for (auto* param : send.getParameters()->getParameters (true))
+                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param); f != nullptr && f->paramID == "outsend_dest")
+                {
+                    expect (send.prefersScrollingSelector (*f) && ! send.prefersSteppedKnob (*f));
+                    for (int step = 0; step < DeviceIoChoices::numOutputDestinations; ++step)
+                        shown += send.isSelectorOptionAvailable (*f, step) ? 1 : 0;
+                }
+            expectEquals (shown, 3 * 3 + DeviceIoChoices::numLines);
+
+            EffectProcessor::DeviceIo::setAvailableChannels (-1, -1);   // no device known: everything listed
+            expect (DeviceIoChoices::isOutputAvailable (11) && DeviceIoChoices::isInputAvailable (11));
+        }
+
+        beginTest ("ScrollListSelector: a box of 3.5 touch rows that scrolls down; a drag scrolls, a tap selects");
+        {
+            ScrollListSelector list;
+            juce::StringArray names;
+            for (int i = 0; i < DeviceIoChoices::numInputSources; ++i)
+                names.add (DeviceIoChoices::inputName (i));
+            list.setOptions (names);
+            expectEquals (list.getPreferredHeight(), (int) std::round (ScrollListSelector::rowHeight * 3.5f) + 2 * ScrollListSelector::padding);
+            list.setSize (list.getPreferredWidth(), list.getPreferredHeight());
+
+            int chosen = -1;
+            list.onChange = [&chosen] (int i) { chosen = i; };
+            list.setSelectedIndex (DeviceIoChoices::numInputSources - 1, juce::dontSendNotification);
+            expect (list.getScroll() > 0.0f, "selecting the last row scrolls it into view");
+            list.setSelectedIndex (-1, juce::dontSendNotification);
+            expectEquals (list.getSelectedIndex(), -1);
+            list.setSelectedIndex (0, juce::sendNotificationSync);
+            expectEquals (chosen, 0);
+            expectEquals (list.getScroll(), 0.0f);
+        }
+
         beginTest ("a graph with a device I/O block is never pipelined (its input pointers last one callback)");
         {
             OutputSendProcessor send;
@@ -191,6 +315,51 @@ private:
         fill (dev, 1, 0.2f);
         graph.process (dev);
         return graph.getRoutedChannelMask();
+    }
+
+    struct LinePeaks { float row = 0.0f, line = 0.0f, sum = 0.0f; };
+
+    /** Line 1 (lane 0) reads the device input -> Out 1/2 ("row"); Line 3 (lane 2) -> Out 3/4 ("line"). `send` sits on
+        Line 1, `source` on Line 3. A 0.5-peak sine; peaks over the second half of 1 s. */
+    static LinePeaks runLineSine (OutputSendProcessor* send, InputSourceProcessor* source, float hz)
+    {
+        SignalGraph graph;
+        graph.setLaneProcessors (0, send != nullptr ? std::vector<EffectProcessor*> { send } : std::vector<EffectProcessor*> {});
+        graph.setLaneReadsDeviceInput (0, true);
+        graph.setLaneWritesDeviceOutput (0, true);
+        graph.setLaneOutputRoute (0, {});
+        graph.setLaneProcessors (2, source != nullptr ? std::vector<EffectProcessor*> { source } : std::vector<EffectProcessor*> {});
+        graph.setLaneWritesDeviceOutput (2, true);
+        OutputRoute out34;
+        out34.pairStart = 2;
+        graph.setLaneOutputRoute (2, out34);
+        graph.prepare (48000.0, block, 2);
+
+        LinePeaks peaks;
+        juce::AudioBuffer<float> dev (4, block);
+        const int total = 48000 / block;
+        double phase = 0.0;
+        for (int b = 0; b < total; ++b)
+        {
+            dev.clear();
+            for (int i = 0; i < block; ++i)
+            {
+                const float v = 0.5f * (float) std::sin (phase);
+                phase += juce::MathConstants<double>::twoPi * hz / 48000.0;
+                dev.setSample (0, i, v);
+                dev.setSample (1, i, v);
+            }
+            graph.process (dev);
+            if (b < total / 2)
+                continue;
+            for (int i = 0; i < block; ++i)
+            {
+                peaks.row = juce::jmax (peaks.row, std::abs (dev.getSample (0, i)));
+                peaks.line = juce::jmax (peaks.line, std::abs (dev.getSample (2, i)));
+                peaks.sum = juce::jmax (peaks.sum, std::abs (dev.getSample (0, i) + dev.getSample (2, i)));
+            }
+        }
+        return peaks;
     }
 
     static std::pair<juce::AudioBuffer<float>, uint32_t> runSendGraph (OutputSendProcessor& send)

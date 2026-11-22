@@ -575,6 +575,9 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
                             juce::jmax (1, juce::jmax (device->getCurrentBufferSizeSamples(), (int) (0.010 * devRate))),
                             false, true, false);
 
+    EffectProcessor::DeviceIo::setAvailableChannels (juce::jmin (maxSaneChannelCount, device->getInputChannelNames().size()),
+                                                     juce::jmin (maxSaneChannelCount, device->getOutputChannelNames().size()));
+
     sampleRate.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
     blockSize.store (device->getCurrentBufferSizeSamples(), std::memory_order_relaxed);
     pitchDetector.prepare (device->getCurrentSampleRate());
