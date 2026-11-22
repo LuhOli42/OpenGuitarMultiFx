@@ -300,6 +300,9 @@ private:
     std::array<bool, numLanes> laneHasDeviceIo {};
     std::array<EffectProcessor::DeviceIo, numLanes> laneIo {};
     std::array<juce::AudioBuffer<float>, numLanes> laneSends;
+    std::array<juce::AudioBuffer<float>, numLanes> lineBus;   // [target lane]: what blocks in earlier lanes sent to it
+    uint32_t pendingLineSends = 0;                              // lanes whose lineBus holds something this block
+    static_assert (EffectProcessor::DeviceIo::maxLines == numLanes);
     uint32_t sendChannelMask = 0;     // audio thread: channels the blocks sent to in the last process()
     void addDeviceSends (juce::AudioBuffer<float>& device, int numSamples) noexcept;
     bool workersAreRealtime = true;   // every LaneWorker got RT scheduling in prepare()

@@ -5,6 +5,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -179,15 +180,23 @@ public:
     /** The physical device I/O a block can reach past its own lane (the Utility blocks Output Send and Input Source).
         SignalGraph owns one per lane: `inputs` are the device's raw input channels for this block (a block scales
         them by `inputGain`, the app's input gain), `outputs` is the lane's device-wide send bus -- every
-        channel a block writes must be marked in `outputMask`, and only marked channels are cleared and played. */
+        channel a block writes must be marked in `outputMask`, and only marked channels are cleared and played.
+        The other lanes ("Line 1".."Line 4") are reachable too, forward-only like a row link: `lineSends[t]` is summed
+        into lane t's input (only t > `lane` -- mark it in `lineSendMask`), `lineOutputs[s]` is lane s's finished output
+        this block (only s < `lane`). SignalGraph runs such a graph in plain lane order so both hold. */
     struct DeviceIo
     {
         static constexpr int maxChannels = 16;
+        static constexpr int maxLines = 4;
         const float* const* inputs = nullptr;
         int numInputs = 0;
         float inputGain = 1.0f;
         juce::AudioBuffer<float>* outputs = nullptr;
         uint32_t outputMask = 0;
+        int lane = -1;
+        std::array<juce::AudioBuffer<float>*, maxLines> lineSends {};
+        uint32_t lineSendMask = 0;
+        std::array<const juce::AudioBuffer<float>*, maxLines> lineOutputs {};
     };
 
     /** True for a block that reads or writes DeviceIo. SignalGraph then hands it its lane's DeviceIo around each

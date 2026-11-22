@@ -1,5 +1,6 @@
 #include "Effects/DeviceIoProcessors.h"
 #include "Engine/SignalGraph.h"
+#include "Engine/OutputRoute.h"
 #include "UI/SelectorSwitch.h"
 
 #include <juce_core/juce_core.h>
@@ -161,61 +162,76 @@ public:
             expectWithinAbsoluteError (buf.getSample (0, block - 1), 0.3f, 1.0e-6f);
         }
 
-        beginTest ("Crossover: the sent band and the chain's band sum back to the input level (LR4 all-pass)");
+        beginTest ("Output Send to a later line: Lows into Line 3, the line keeps the highs; both sum back flat");
         {
-            for (float hz : { 60.0f, 200.0f, 1000.0f, 4000.0f })
+            for (float hz : { 60.0f, 120.0f, 1000.0f })
             {
-                CrossoverProcessor xover;
-                setParam (xover, "xover_freq", 200.0f);
-                setParam (xover, "xover_band", 1.0f);   // Highs out, Lows stay in the chain
-                setParam (xover, "xover_dest", 3.0f);   // Out 3/4
-                const auto peaks = runCrossoverSine (xover, hz);
-                expectWithinAbsoluteError (peaks.sum, 0.5f, 0.02f, "sum flat at " + juce::String (hz) + " Hz");
+                OutputSendProcessor send;
+                setParam (send, "outsend_dest", (float) (DeviceIoChoices::numOutputChoices + 2));   // Line 3
+                setParam (send, "outsend_band", 1.0f);         // Lows
+                setParam (send, "outsend_freq", 120.0f);
+                setParam (send, "outsend_mute_thru", 2.0f);    // Thru: Other band
+                const auto peaks = runLineSine (&send, nullptr, hz);
+                expectWithinAbsoluteError (peaks.sum, 0.5f, 0.02f, "flat at " + juce::String (hz) + " Hz");
+                if (hz == 60.0f)
+                    expect (peaks.line > 0.45f && peaks.row < 0.1f, "60 Hz goes to Line 3");
+                if (hz == 1000.0f)
+                    expect (peaks.row > 0.49f && peaks.line < 0.01f, "1 kHz stays on the row");
             }
         }
 
-        beginTest ("Crossover: lows go out, highs stay in the chain; 24 dB/oct away from the split");
+        beginTest ("Output Send: Crossover Off sends full range to the line, Thru Full keeps the row untouched");
         {
-            CrossoverProcessor xover;
-            setParam (xover, "xover_freq", 1000.0f);
-            setParam (xover, "xover_band", 0.0f);   // Lows out
-            setParam (xover, "xover_dest", 3.0f);
-            const auto low = runCrossoverSine (xover, 100.0f);
-            expectWithinAbsoluteError (low.sent, 0.5f, 0.02f);
-            expect (low.chain < 0.5f * 0.012f, "100 Hz is ~-40 dB in the high band: " + juce::String (low.chain));
-
-            CrossoverProcessor xover2;
-            setParam (xover2, "xover_freq", 1000.0f);
-            setParam (xover2, "xover_dest", 3.0f);
-            const auto atSplit = runCrossoverSine (xover2, 1000.0f);
-            expectWithinAbsoluteError (atSplit.sent, 0.25f, 0.01f, "LR4 is -6 dB per band at the split");
-            expectWithinAbsoluteError (atSplit.chain, 0.25f, 0.01f);
+            OutputSendProcessor send;
+            setParam (send, "outsend_dest", (float) (DeviceIoChoices::numOutputChoices + 2));
+            const auto peaks = runLineSine (&send, nullptr, 440.0f);
+            expectWithinAbsoluteError (peaks.line, 0.5f, 1.0e-3f);
+            expectWithinAbsoluteError (peaks.row, 0.5f, 1.0e-3f);
         }
 
-        beginTest ("Crossover: Chain = Full range leaves the chain untouched; offline it still splits the chain");
+        beginTest ("lines are forward-only: a send to its own or an earlier line is silent");
         {
-            CrossoverProcessor xover;
-            setParam (xover, "xover_freq", 1000.0f);
-            setParam (xover, "xover_chain", 1.0f);
-            const auto full = runCrossoverSine (xover, 100.0f);
-            expectWithinAbsoluteError (full.chain, 0.5f, 1.0e-3f);
-            expectWithinAbsoluteError (full.sent, 0.5f, 0.02f);
+            OutputSendProcessor send;
+            setParam (send, "outsend_dest", (float) (DeviceIoChoices::numOutputChoices + 0));   // Line 1 from Line 1
+            const auto peaks = runLineSine (&send, nullptr, 440.0f);
+            expectWithinAbsoluteError (peaks.line, 0.0f, 1.0e-6f);
+            expectWithinAbsoluteError (peaks.row, 0.5f, 1.0e-3f);
+        }
 
-            CrossoverProcessor offline;
-            setParam (offline, "xover_freq", 1000.0f);   // sends Lows: the chain keeps the highs
-            offline.prepareIfNeeded (48000.0, block, 2);
-            juce::AudioBuffer<float> buf (2, block);
-            float peak = 0.0f;
-            for (int b = 0; b < 200; ++b)
+        beginTest ("Input Source on Line 3 reads Line 1's output (highs only with the crossover)");
+        {
+            InputSourceProcessor source;
+            setParam (source, "insource_src", (float) (DeviceIoChoices::numInputChoices + 0));   // Line 1
+            setParam (source, "insource_mix", 1.0f);
+            setParam (source, "insource_band", 2.0f);   // Highs
+            setParam (source, "insource_freq", 120.0f);
+            const auto high = runLineSine (nullptr, &source, 2000.0f);
+            expectWithinAbsoluteError (high.line, 0.5f, 0.02f);
+            InputSourceProcessor source2;
+            setParam (source2, "insource_src", (float) (DeviceIoChoices::numInputChoices + 0));
+            setParam (source2, "insource_mix", 1.0f);
+            setParam (source2, "insource_band", 2.0f);
+            setParam (source2, "insource_freq", 1000.0f);
+            const auto low = runLineSine (nullptr, &source2, 60.0f);
+            expect (low.line < 0.01f, "60 Hz is cut by a 1 kHz high pass: " + juce::String (low.line));
+
+            InputSourceProcessor later;   // Line 1 reading Line 3 (a later line) gets silence
+            setParam (later, "insource_src", (float) (DeviceIoChoices::numInputChoices + 2));
+            setParam (later, "insource_mix", 1.0f);
+            SignalGraph graph;
+            graph.setLaneProcessors (0, { &later });
+            graph.setLaneReadsDeviceInput (0, true);
+            graph.setLaneWritesDeviceOutput (0, true);
+            graph.prepare (48000.0, block, 2);
+            juce::AudioBuffer<float> dev (2, block);
+            for (int i = 0; i < settleBlocks; ++i)
             {
-                buf.clear();
-                for (int i = 0; i < block; ++i)
-                    buf.setSample (0, i, 0.5f), buf.setSample (1, i, 0.5f);   // DC: all lows
-                offline.processWithBypass (buf);
-                if (b > 150)
-                    peak = juce::jmax (peak, buf.getMagnitude (0, 0, block));
+                dev.clear();
+                fill (dev, 0, 0.3f);
+                fill (dev, 1, 0.3f);
+                graph.process (dev);
             }
-            expect (peak < 1.0e-3f, "DC is removed from the chain's high band: " + juce::String (peak));
+            expectWithinAbsoluteError (dev.getSample (0, block - 1), 0.0f, 1.0e-6f);
         }
 
         beginTest ("SelectorSwitch past 8 options scrolls in a capped strip; a drag scrolls, a tap selects");
@@ -271,21 +287,27 @@ private:
         return graph.getRoutedChannelMask();
     }
 
-    struct CrossoverPeaks { float sent = 0.0f, chain = 0.0f, sum = 0.0f; };
+    struct LinePeaks { float row = 0.0f, line = 0.0f, sum = 0.0f; };
 
-    /** A 0.5-peak sine through a Crossover on a routed lane (Out 1/2 = chain, Out 3/4 = send); peaks after settling. */
-    static CrossoverPeaks runCrossoverSine (CrossoverProcessor& xover, float hz)
+    /** Line 1 (lane 0) reads the device input -> Out 1/2 ("row"); Line 3 (lane 2) -> Out 3/4 ("line"). `send` sits on
+        Line 1, `source` on Line 3. A 0.5-peak sine; peaks over the second half of 1 s. */
+    static LinePeaks runLineSine (OutputSendProcessor* send, InputSourceProcessor* source, float hz)
     {
         SignalGraph graph;
-        graph.setLaneProcessors (0, { &xover });
+        graph.setLaneProcessors (0, send != nullptr ? std::vector<EffectProcessor*> { send } : std::vector<EffectProcessor*> {});
         graph.setLaneReadsDeviceInput (0, true);
         graph.setLaneWritesDeviceOutput (0, true);
         graph.setLaneOutputRoute (0, {});
+        graph.setLaneProcessors (2, source != nullptr ? std::vector<EffectProcessor*> { source } : std::vector<EffectProcessor*> {});
+        graph.setLaneWritesDeviceOutput (2, true);
+        OutputRoute out34;
+        out34.pairStart = 2;
+        graph.setLaneOutputRoute (2, out34);
         graph.prepare (48000.0, block, 2);
 
-        CrossoverPeaks peaks;
+        LinePeaks peaks;
         juce::AudioBuffer<float> dev (4, block);
-        const int total = 48000 / block;   // 1 s
+        const int total = 48000 / block;
         double phase = 0.0;
         for (int b = 0; b < total; ++b)
         {
@@ -302,8 +324,8 @@ private:
                 continue;
             for (int i = 0; i < block; ++i)
             {
-                peaks.chain = juce::jmax (peaks.chain, std::abs (dev.getSample (0, i)));
-                peaks.sent = juce::jmax (peaks.sent, std::abs (dev.getSample (2, i)));
+                peaks.row = juce::jmax (peaks.row, std::abs (dev.getSample (0, i)));
+                peaks.line = juce::jmax (peaks.line, std::abs (dev.getSample (2, i)));
                 peaks.sum = juce::jmax (peaks.sum, std::abs (dev.getSample (0, i) + dev.getSample (2, i)));
             }
         }

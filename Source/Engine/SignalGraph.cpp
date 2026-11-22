@@ -133,6 +133,19 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
         laneIo[(size_t) i] = {};
         laneIo[(size_t) i].outputs = uses ? &laneSends[(size_t) i] : nullptr;
     }
+    pendingLineSends = 0;
+    for (int i = 0; i < numLanes; ++i)
+    {
+        lineBus[(size_t) i].setSize (anyDeviceIo ? numChannels : 0, anyDeviceIo ? maxBlockSize : 0, false, true, false);
+        lineBus[(size_t) i].clear();
+        auto& io = laneIo[(size_t) i];
+        io.lane = i;
+        for (int t = 0; t < numLanes; ++t)
+        {
+            io.lineSends[(size_t) t] = anyDeviceIo && t > i ? &lineBus[(size_t) t] : nullptr;
+            io.lineOutputs[(size_t) t] = anyDeviceIo && t < i ? &lanes[(size_t) t].buffer : nullptr;
+        }
+    }
 
     // ---- Parallel schedule (see the class doc) ----
     // Per-lane incoming source lanes, and whether each lane does anything
@@ -229,7 +242,9 @@ void SignalGraph::prepare (double sampleRate, int maxBlockSize, int numChannels)
     // can reorder it vs. the old index-order pass. Either way the flat
     // 0->3 pass is the only provably identical schedule, so any
     // cross-lane sharing forces it for the whole graph.
-    legacySerialOrder = false;
+    // A device I/O block can also send to a later lane / read an earlier lane's output (DeviceIo::lineSends /
+    // lineOutputs), edges the schedule cannot see -- only the plain 0->3 pass guarantees they are honoured.
+    legacySerialOrder = anyDeviceIo;
     for (int i = 0; i < numLanes && ! legacySerialOrder; ++i)
         for (int j = i + 1; j < numLanes && ! legacySerialOrder; ++j)
             for (auto* pa : lanes[(size_t) i].processors)
@@ -339,6 +354,7 @@ void SignalGraph::runLane (int laneIndex, int numSamples)
         if ((io.outputMask >> ch) & 1u)
             laneSends[(size_t) laneIndex].clear (ch, 0, laneSends[(size_t) laneIndex].getNumSamples());
     io.outputMask = 0;
+    io.lineSendMask = 0;
     if (perChannelInputs != nullptr)
     {
         io.inputs = perChannelInputs;
@@ -362,6 +378,7 @@ void SignalGraph::runLane (int laneIndex, int numSamples)
         if (reaches)
             p->setDeviceIo (nullptr); // never left pointing at a graph that may be reclaimed
     }
+    pendingLineSends |= io.lineSendMask;
 }
 
 void SignalGraph::addDeviceSends (juce::AudioBuffer<float>& device, int numSamples) noexcept
@@ -395,6 +412,14 @@ void SignalGraph::loadLaneInput (int laneIndex, int numSamples)
         }
         else
             addClamped (lane.buffer, deviceInputSnapshot, numSamples);
+    }
+
+    if (((pendingLineSends >> laneIndex) & 1u) != 0)
+    {
+        auto& bus = lineBus[(size_t) laneIndex];
+        addClamped (lane.buffer, bus, numSamples);
+        bus.clear();
+        pendingLineSends &= ~(1u << laneIndex);
     }
 
     for (int s = 0; s < laneSourceCounts[(size_t) laneIndex]; ++s)
