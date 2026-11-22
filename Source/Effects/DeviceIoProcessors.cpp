@@ -271,6 +271,15 @@ bool OutputSendProcessor::isSelectorOptionAvailable (const juce::AudioParameterF
     return &p != destination || DeviceIoChoices::isOutputAvailable (step);
 }
 
+int OutputSendProcessor::getSelectorOptionGroups (const juce::AudioParameterFloat& p, int step) const
+{
+    if (&p != destination)
+        return 0;
+    if (DeviceIoChoices::outputLine (step) >= 0)
+        return 4;
+    return DeviceIoChoices::outputChannels (step) == 0 ? 1 : 2;
+}
+
 bool OutputSendProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
 {
     return &p != frequency || stepOf (band, 3) != LinkwitzRileySplit::full;
@@ -391,6 +400,15 @@ InputSourceProcessor::InputSourceProcessor()
 bool InputSourceProcessor::isSelectorOptionAvailable (const juce::AudioParameterFloat& p, int step) const
 {
     return &p != source || DeviceIoChoices::isInputAvailable (step);
+}
+
+int InputSourceProcessor::getSelectorOptionGroups (const juce::AudioParameterFloat& p, int step) const
+{
+    if (&p != source)
+        return 0;
+    if (DeviceIoChoices::inputLine (step) >= 0)
+        return 4;
+    return DeviceIoChoices::inputIsPair (step) ? 1 : 2;
 }
 
 bool InputSourceProcessor::isParameterActive (const juce::AudioParameterFloat& p) const

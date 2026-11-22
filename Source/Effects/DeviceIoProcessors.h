@@ -133,6 +133,7 @@ public:
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     bool prefersScrollingSelector (const juce::AudioParameterFloat& p) const override { return &p == destination; }
     bool isSelectorOptionAvailable (const juce::AudioParameterFloat& p, int step) const override;
+    int getSelectorOptionGroups (const juce::AudioParameterFloat& p, int step) const override;
     bool isParameterActive (const juce::AudioParameterFloat& p) const override;
     const char* getName() const override { return "Output Send"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8d94a5); }
@@ -168,6 +169,7 @@ public:
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     bool prefersScrollingSelector (const juce::AudioParameterFloat& p) const override { return &p == source; }
     bool isSelectorOptionAvailable (const juce::AudioParameterFloat& p, int step) const override;
+    int getSelectorOptionGroups (const juce::AudioParameterFloat& p, int step) const override;
     bool isParameterActive (const juce::AudioParameterFloat& p) const override;
     const char* getName() const override { return "Input Source"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8d94a5); }

@@ -284,6 +284,37 @@ public:
             expectEquals (list.getScroll(), 0.0f);
         }
 
+        beginTest ("ScrollListSelector tabs: Stereo lists the pairs, Mono the single channels, Line the lines");
+        {
+            InputSourceProcessor source;
+            juce::AudioParameterFloat* src = nullptr;
+            for (auto* param : source.getParameters()->getParameters (true))
+                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param); f != nullptr && f->paramID == "insource_src")
+                    src = f;
+            expect (src != nullptr);
+            juce::StringArray names;
+            std::vector<int> masks;
+            for (int i = 0; i < DeviceIoChoices::numInputSources; ++i)
+            {
+                names.add (DeviceIoChoices::inputName (i));
+                masks.push_back (source.getSelectorOptionGroups (*src, i));
+            }
+            ScrollListSelector list;
+            list.setOptions (names);
+            list.setGroups (masks);
+            list.setSize (list.getPreferredWidth(), list.getPreferredHeight());
+            expect (list.hasTabs());
+
+            list.setSelectedIndex (2, juce::dontSendNotification);   // In 3: a mono input -> Mono tab
+            expectEquals (list.getActiveGroup(), (int) ScrollListSelector::mono);
+            expectEquals (list.getNumVisibleRows(), DeviceIoChoices::numInputChannels);
+            list.setActiveGroup (ScrollListSelector::stereo);
+            expectEquals (list.getNumVisibleRows(), DeviceIoChoices::numInputChannels / 2);
+            list.setSelectedIndex (DeviceIoChoices::numInputChoices, juce::dontSendNotification);   // Line 1 -> Line tab
+            expectEquals (list.getActiveGroup(), (int) ScrollListSelector::line);
+            expectEquals (list.getNumVisibleRows(), DeviceIoChoices::numLines);
+        }
+
         beginTest ("a graph with a device I/O block is never pipelined (its input pointers last one callback)");
         {
             OutputSendProcessor send;
