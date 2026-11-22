@@ -257,6 +257,10 @@ public:
         (a rotary switch with many positions, like the Steel String's 7-way filters). */
     virtual bool prefersSteppedKnob (const juce::AudioParameterFloat&) const { return false; }
 
+    /** Editor hint: draw this stepped parameter as a row of buttons even past 8 positions, in a strip that scrolls
+        sideways (SelectorSwitch) -- a list of device channels, where every name should be readable at a glance. */
+    virtual bool prefersScrollingSelector (const juce::AudioParameterFloat&) const { return false; }
+
     /** Editor hint: draw this control as a vertical fader, not a knob -- a graphic EQ's band sliders. */
     virtual bool prefersFader (const juce::AudioParameterFloat&) const { return false; }
 

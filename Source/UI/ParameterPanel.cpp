@@ -541,8 +541,7 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
             const auto range = floatParam->getNormalisableRange();
             row.slider->setRange (range.start, range.end, range.interval > 0.0f ? range.interval : 0.01);
             row.slider->setValue (floatParam->get(), juce::dontSendNotification);
-            const bool isSelector = range.interval >= 1.0f && (range.end - range.start) / range.interval <= 8.0f
-                                     && ! current->prefersSteppedKnob (*floatParam);
+            const bool isSelector = parameterPanelLayout::isSelector (*current, *floatParam);
             if (! isSelector)
                 row.slider->setDoubleClickReturnValue (true, range.convertFrom0to1 (0.5f));
             if (isSelector || range.interval >= 1.0f)

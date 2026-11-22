@@ -814,6 +814,7 @@ void registerBuiltInEffects (EffectRegistry& registry)
     // unwrapped on purpose -- a wrapper would hide usesDeviceIo() from SignalGraph.
     registry.registerType ("OutputSend", EffectRegistry::Category::utility, [] { return std::make_unique<OutputSendProcessor>(); });
     registry.registerType ("InputSource", EffectRegistry::Category::utility, [] { return std::make_unique<InputSourceProcessor>(); });
+    registry.registerType ("Crossover", EffectRegistry::Category::utility, [] { return std::make_unique<CrossoverProcessor>(); });
     registry.registerType ("Ambient", EffectRegistry::Category::reverb, [] { return std::make_unique<ReverbProcessor>(); }, "Ambient");
     registry.registerType ("Spring", EffectRegistry::Category::reverb, [] { return std::make_unique<SpringReverbProcessor>(); }, "Spring");
     registry.registerType ("Hall", EffectRegistry::Category::reverb, [] { return std::make_unique<HallReverbProcessor>(); }, "Room/Hall");

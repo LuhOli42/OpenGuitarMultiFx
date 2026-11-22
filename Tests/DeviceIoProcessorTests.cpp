@@ -1,5 +1,6 @@
 #include "Effects/DeviceIoProcessors.h"
 #include "Engine/SignalGraph.h"
+#include "UI/SelectorSwitch.h"
 
 #include <juce_core/juce_core.h>
 
@@ -160,6 +161,83 @@ public:
             expectWithinAbsoluteError (buf.getSample (0, block - 1), 0.3f, 1.0e-6f);
         }
 
+        beginTest ("Crossover: the sent band and the chain's band sum back to the input level (LR4 all-pass)");
+        {
+            for (float hz : { 60.0f, 200.0f, 1000.0f, 4000.0f })
+            {
+                CrossoverProcessor xover;
+                setParam (xover, "xover_freq", 200.0f);
+                setParam (xover, "xover_band", 1.0f);   // Highs out, Lows stay in the chain
+                setParam (xover, "xover_dest", 3.0f);   // Out 3/4
+                const auto peaks = runCrossoverSine (xover, hz);
+                expectWithinAbsoluteError (peaks.sum, 0.5f, 0.02f, "sum flat at " + juce::String (hz) + " Hz");
+            }
+        }
+
+        beginTest ("Crossover: lows go out, highs stay in the chain; 24 dB/oct away from the split");
+        {
+            CrossoverProcessor xover;
+            setParam (xover, "xover_freq", 1000.0f);
+            setParam (xover, "xover_band", 0.0f);   // Lows out
+            setParam (xover, "xover_dest", 3.0f);
+            const auto low = runCrossoverSine (xover, 100.0f);
+            expectWithinAbsoluteError (low.sent, 0.5f, 0.02f);
+            expect (low.chain < 0.5f * 0.012f, "100 Hz is ~-40 dB in the high band: " + juce::String (low.chain));
+
+            CrossoverProcessor xover2;
+            setParam (xover2, "xover_freq", 1000.0f);
+            setParam (xover2, "xover_dest", 3.0f);
+            const auto atSplit = runCrossoverSine (xover2, 1000.0f);
+            expectWithinAbsoluteError (atSplit.sent, 0.25f, 0.01f, "LR4 is -6 dB per band at the split");
+            expectWithinAbsoluteError (atSplit.chain, 0.25f, 0.01f);
+        }
+
+        beginTest ("Crossover: Chain = Full range leaves the chain untouched; offline it still splits the chain");
+        {
+            CrossoverProcessor xover;
+            setParam (xover, "xover_freq", 1000.0f);
+            setParam (xover, "xover_chain", 1.0f);
+            const auto full = runCrossoverSine (xover, 100.0f);
+            expectWithinAbsoluteError (full.chain, 0.5f, 1.0e-3f);
+            expectWithinAbsoluteError (full.sent, 0.5f, 0.02f);
+
+            CrossoverProcessor offline;
+            setParam (offline, "xover_freq", 1000.0f);   // sends Lows: the chain keeps the highs
+            offline.prepareIfNeeded (48000.0, block, 2);
+            juce::AudioBuffer<float> buf (2, block);
+            float peak = 0.0f;
+            for (int b = 0; b < 200; ++b)
+            {
+                buf.clear();
+                for (int i = 0; i < block; ++i)
+                    buf.setSample (0, i, 0.5f), buf.setSample (1, i, 0.5f);   // DC: all lows
+                offline.processWithBypass (buf);
+                if (b > 150)
+                    peak = juce::jmax (peak, buf.getMagnitude (0, 0, block));
+            }
+            expect (peak < 1.0e-3f, "DC is removed from the chain's high band: " + juce::String (peak));
+        }
+
+        beginTest ("SelectorSwitch past 8 options scrolls in a capped strip; a drag scrolls, a tap selects");
+        {
+            SelectorSwitch strip;
+            juce::StringArray names;
+            for (int i = 0; i < DeviceIoChoices::numInputChoices; ++i)
+                names.add (DeviceIoChoices::inputName (i));
+            strip.setOptions (names);
+            expect (strip.isScrolling());
+            expect (strip.getPreferredWidth() <= SelectorSwitch::maxScrollingWidth);
+
+            SelectorSwitch few;
+            few.setOptions ({ "A", "B", "C" });
+            expect (! few.isScrolling());
+
+            InputSourceProcessor source;
+            for (auto* param : source.getParameters()->getParameters (true))
+                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param); f != nullptr && f->paramID == "insource_src")
+                    expect (source.prefersScrollingSelector (*f) && ! source.prefersSteppedKnob (*f));
+        }
+
         beginTest ("a graph with a device I/O block is never pipelined (its input pointers last one callback)");
         {
             OutputSendProcessor send;
@@ -191,6 +269,45 @@ private:
         fill (dev, 1, 0.2f);
         graph.process (dev);
         return graph.getRoutedChannelMask();
+    }
+
+    struct CrossoverPeaks { float sent = 0.0f, chain = 0.0f, sum = 0.0f; };
+
+    /** A 0.5-peak sine through a Crossover on a routed lane (Out 1/2 = chain, Out 3/4 = send); peaks after settling. */
+    static CrossoverPeaks runCrossoverSine (CrossoverProcessor& xover, float hz)
+    {
+        SignalGraph graph;
+        graph.setLaneProcessors (0, { &xover });
+        graph.setLaneReadsDeviceInput (0, true);
+        graph.setLaneWritesDeviceOutput (0, true);
+        graph.setLaneOutputRoute (0, {});
+        graph.prepare (48000.0, block, 2);
+
+        CrossoverPeaks peaks;
+        juce::AudioBuffer<float> dev (4, block);
+        const int total = 48000 / block;   // 1 s
+        double phase = 0.0;
+        for (int b = 0; b < total; ++b)
+        {
+            dev.clear();
+            for (int i = 0; i < block; ++i)
+            {
+                const float v = 0.5f * (float) std::sin (phase);
+                phase += juce::MathConstants<double>::twoPi * hz / 48000.0;
+                dev.setSample (0, i, v);
+                dev.setSample (1, i, v);
+            }
+            graph.process (dev);
+            if (b < total / 2)
+                continue;
+            for (int i = 0; i < block; ++i)
+            {
+                peaks.chain = juce::jmax (peaks.chain, std::abs (dev.getSample (0, i)));
+                peaks.sent = juce::jmax (peaks.sent, std::abs (dev.getSample (2, i)));
+                peaks.sum = juce::jmax (peaks.sum, std::abs (dev.getSample (0, i) + dev.getSample (2, i)));
+            }
+        }
+        return peaks;
     }
 
     static std::pair<juce::AudioBuffer<float>, uint32_t> runSendGraph (OutputSendProcessor& send)

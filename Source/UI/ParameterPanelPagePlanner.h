@@ -41,7 +41,8 @@ inline bool isSelector (const EffectProcessor& processor, const juce::AudioParam
 {
     const auto range = param.getNormalisableRange();
     return range.interval >= 1.0f
-        && (range.end - range.start) / range.interval <= 8.0f
+        && ((range.end - range.start) / range.interval <= (float) SelectorSwitch::maxUnscrolledOptions
+            || processor.prefersScrollingSelector (param))
         && ! processor.prefersSteppedKnob (param);
 }
 

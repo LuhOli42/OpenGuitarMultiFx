@@ -255,6 +255,8 @@ Pedido da usuária depois das fases: "um utility q faz vc mandar o sinal pra qua
 - **Output Send** (`OutputSendProcessor`): copia o sinal do ponto da cadeia em que está para qualquer par ou canal único (Out 1/2, Out 1 (L), Out 2 (R), ... até Out 7/8). A cadeia continua igual; **Mute Thru** corta o resto. Level -inf..+12 dB.
 - **Input Source** (`InputSourceProcessor`): traz qualquer entrada física (In 1..In 8 mono, ou os pares In 1/2..In 7/8) para aquele ponto. **Mix**: 0% = só a cadeia, 50% = as duas em nível cheio (soma), 100% = só a entrada. Level -inf..+24 dB, depois do ganho de entrada do app.
 - Os dois fazem rampa de ~10 ms em level, bypass e troca de destino/fonte (fade out, troca, fade in).
+- **Crossover** (`CrossoverProcessor`, 2026-11-22): divisor de 2 bandas Linkwitz-Riley 24 dB/oct (40 Hz..5 kHz). **Send** escolhe a banda (Lows/Highs) que vai para a saída escolhida; **Chain** = Other band (a cadeia segue com a outra banda) ou Full range. Graves + agudos somam plano (all-pass). Trocar a banda faz fade out do send e do split, troca, e volta.
+- Os seletores de entrada/saída desses blocos são uma barra de segmentos com scroll lateral (`EffectProcessor::prefersScrollingSelector` → `SelectorSwitch` com mais de 8 opções, limitada a 420 px): arrastar/roda rola, toque sem arrastar seleciona.
 - Engine: `EffectProcessor::DeviceIo` genérico (ver `Source/Engine/AGENTS.md`). Um grafo com esses blocos nunca roda em pipeline/send mode.
 - Não existe bloco combinado de send/return (decisão da usuária: os dois separados bastam para montar um loop).
 
