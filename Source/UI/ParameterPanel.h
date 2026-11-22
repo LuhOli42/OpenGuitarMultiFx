@@ -344,6 +344,18 @@ private:
         juce::AudioParameterFloat* param = nullptr;
         int page = 0;
         int selectorSteps = 0;
+        /** The parameter positions the selector shows, in order (all of them unless the processor hides some via
+            isSelectorOptionAvailable); selector index i = position selectorShownSteps[i]. */
+        std::vector<int> selectorShownSteps;
+        int shownIndexOf (float value) const
+        {
+            const auto range = param->getNormalisableRange();
+            const int step = (int) std::lround ((value - range.start) / range.interval);
+            for (size_t i = 0; i < selectorShownSteps.size(); ++i)
+                if (selectorShownSteps[i] == step)
+                    return (int) i;
+            return -1;
+        }
         bool active = true; // the processor's isParameterActive() at the last layout: false = hidden
         bool fader = false; // drawn as a vertical fader (prefersFader)
 

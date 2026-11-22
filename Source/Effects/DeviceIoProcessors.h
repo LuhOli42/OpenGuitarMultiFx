@@ -42,12 +42,15 @@ struct DeviceIoChoices
     /** -1 for a device output, else the line (lane index) the choice names. */
     static int outputLine (int choice) noexcept { return choice >= numOutputChoices ? choice - numOutputChoices : -1; }
     static juce::String outputName (int choice);
+    /** Whether the open interface has this output (lines always exist). Unknown interface = all of them. */
+    static bool isOutputAvailable (int choice) noexcept;
 
     /** First device input channel of a choice, and whether it is a stereo pair. */
     static int inputFirstChannel (int choice) noexcept { return choice < numInputChannels ? choice : 2 * (choice - numInputChannels); }
     static bool inputIsPair (int choice) noexcept { return choice >= numInputChannels && choice < numInputChoices; }
     static int inputLine (int choice) noexcept { return choice >= numInputChoices ? choice - numInputChoices : -1; }
     static juce::String inputName (int choice);
+    static bool isInputAvailable (int choice) noexcept;
 };
 
 /** A 4th-order Linkwitz-Riley split (two Butterworth TPT state-variable sections per band, the first one shared), up
@@ -129,6 +132,7 @@ public:
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     bool prefersScrollingSelector (const juce::AudioParameterFloat& p) const override { return &p == destination; }
+    bool isSelectorOptionAvailable (const juce::AudioParameterFloat& p, int step) const override;
     bool isParameterActive (const juce::AudioParameterFloat& p) const override;
     const char* getName() const override { return "Output Send"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8d94a5); }
@@ -163,6 +167,7 @@ public:
 
     juce::AudioProcessorParameterGroup* getParameters() override { return parameters.get(); }
     bool prefersScrollingSelector (const juce::AudioParameterFloat& p) const override { return &p == source; }
+    bool isSelectorOptionAvailable (const juce::AudioParameterFloat& p, int step) const override;
     bool isParameterActive (const juce::AudioParameterFloat& p) const override;
     const char* getName() const override { return "Input Source"; }
     juce::Colour getAccentColour() const override { return juce::Colour (0xff8d94a5); }

@@ -68,6 +68,28 @@ juce::String DeviceIoChoices::inputName (int choice)
                                 : "In " + juce::String (first);
 }
 
+bool DeviceIoChoices::isOutputAvailable (int choice) noexcept
+{
+    const int outputs = EffectProcessor::DeviceIo::getAvailableOutputs();
+    if (outputLine (choice) >= 0 || outputs < 0)
+        return true;
+    // A pair needs both channels; Out N (L)/(R) only its own. A 1-channel device still offers Out 1 (L).
+    switch (outputChannels (choice))
+    {
+        case 1:  return outputPairStart (choice) < outputs;
+        case 2:  return outputPairStart (choice) + 1 < outputs;
+        default: return outputPairStart (choice) + 1 < outputs;
+    }
+}
+
+bool DeviceIoChoices::isInputAvailable (int choice) noexcept
+{
+    const int inputs = EffectProcessor::DeviceIo::getAvailableInputs();
+    if (inputLine (choice) >= 0 || inputs < 0)
+        return true;
+    return inputFirstChannel (choice) + (inputIsPair (choice) ? 1 : 0) < inputs;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 
 void LinkwitzRileySplit::prepare (double newSampleRate, float frequencyHz)
@@ -244,6 +266,11 @@ OutputSendProcessor::OutputSendProcessor()
                                                                          std::move (thruParam), std::move (levelParam));
 }
 
+bool OutputSendProcessor::isSelectorOptionAvailable (const juce::AudioParameterFloat& p, int step) const
+{
+    return &p != destination || DeviceIoChoices::isOutputAvailable (step);
+}
+
 bool OutputSendProcessor::isParameterActive (const juce::AudioParameterFloat& p) const
 {
     return &p != frequency || stepOf (band, 3) != LinkwitzRileySplit::full;
@@ -359,6 +386,11 @@ InputSourceProcessor::InputSourceProcessor()
     parameters = std::make_unique<juce::AudioProcessorParameterGroup> ("insource", "Input Source", "|", std::move (srcParam),
                                                                          std::move (bandParam), std::move (freqParam),
                                                                          std::move (levelParam), std::move (mixParam));
+}
+
+bool InputSourceProcessor::isSelectorOptionAvailable (const juce::AudioParameterFloat& p, int step) const
+{
+    return &p != source || DeviceIoChoices::isInputAvailable (step);
 }
 
 bool InputSourceProcessor::isParameterActive (const juce::AudioParameterFloat& p) const

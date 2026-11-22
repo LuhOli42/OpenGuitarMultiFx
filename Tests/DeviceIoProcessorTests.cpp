@@ -1,7 +1,7 @@
 #include "Effects/DeviceIoProcessors.h"
 #include "Engine/SignalGraph.h"
 #include "Engine/OutputRoute.h"
-#include "UI/SelectorSwitch.h"
+#include "UI/ScrollListSelector.h"
 
 #include <juce_core/juce_core.h>
 
@@ -234,24 +234,54 @@ public:
             expectWithinAbsoluteError (dev.getSample (0, block - 1), 0.0f, 1.0e-6f);
         }
 
-        beginTest ("SelectorSwitch past 8 options scrolls in a capped strip; a drag scrolls, a tap selects");
+        beginTest ("only the channels the open interface has are offered; lines always are");
         {
-            SelectorSwitch strip;
+            EffectProcessor::DeviceIo::setAvailableChannels (2, 6);   // e.g. 2 in / 6 out
+            expect (DeviceIoChoices::isOutputAvailable (0));                                 // Out 1/2
+            expect (DeviceIoChoices::isOutputAvailable (6));                                 // Out 5/6
+            expect (! DeviceIoChoices::isOutputAvailable (9));                               // Out 7/8
+            expect (! DeviceIoChoices::isOutputAvailable (10));                              // Out 7 (L)
+            expect (DeviceIoChoices::isOutputAvailable (DeviceIoChoices::numOutputChoices)); // Line 1
+            expect (DeviceIoChoices::isInputAvailable (0) && DeviceIoChoices::isInputAvailable (1));
+            expect (! DeviceIoChoices::isInputAvailable (2));                                // In 3
+            expect (DeviceIoChoices::isInputAvailable (DeviceIoChoices::numInputChannels));      // In 1/2
+            expect (! DeviceIoChoices::isInputAvailable (DeviceIoChoices::numInputChannels + 1)); // In 3/4
+            expect (DeviceIoChoices::isInputAvailable (DeviceIoChoices::numInputChoices + 3));   // Line 4
+
+            OutputSendProcessor send;
+            int shown = 0;
+            for (auto* param : send.getParameters()->getParameters (true))
+                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param); f != nullptr && f->paramID == "outsend_dest")
+                {
+                    expect (send.prefersScrollingSelector (*f) && ! send.prefersSteppedKnob (*f));
+                    for (int step = 0; step < DeviceIoChoices::numOutputDestinations; ++step)
+                        shown += send.isSelectorOptionAvailable (*f, step) ? 1 : 0;
+                }
+            expectEquals (shown, 3 * 3 + DeviceIoChoices::numLines);
+
+            EffectProcessor::DeviceIo::setAvailableChannels (-1, -1);   // no device known: everything listed
+            expect (DeviceIoChoices::isOutputAvailable (11) && DeviceIoChoices::isInputAvailable (11));
+        }
+
+        beginTest ("ScrollListSelector: a box of 3.5 touch rows that scrolls down; a drag scrolls, a tap selects");
+        {
+            ScrollListSelector list;
             juce::StringArray names;
-            for (int i = 0; i < DeviceIoChoices::numInputChoices; ++i)
+            for (int i = 0; i < DeviceIoChoices::numInputSources; ++i)
                 names.add (DeviceIoChoices::inputName (i));
-            strip.setOptions (names);
-            expect (strip.isScrolling());
-            expect (strip.getPreferredWidth() <= SelectorSwitch::maxScrollingWidth);
+            list.setOptions (names);
+            expectEquals (list.getPreferredHeight(), (int) std::round (ScrollListSelector::rowHeight * 3.5f) + 2 * ScrollListSelector::padding);
+            list.setSize (list.getPreferredWidth(), list.getPreferredHeight());
 
-            SelectorSwitch few;
-            few.setOptions ({ "A", "B", "C" });
-            expect (! few.isScrolling());
-
-            InputSourceProcessor source;
-            for (auto* param : source.getParameters()->getParameters (true))
-                if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param); f != nullptr && f->paramID == "insource_src")
-                    expect (source.prefersScrollingSelector (*f) && ! source.prefersSteppedKnob (*f));
+            int chosen = -1;
+            list.onChange = [&chosen] (int i) { chosen = i; };
+            list.setSelectedIndex (DeviceIoChoices::numInputSources - 1, juce::dontSendNotification);
+            expect (list.getScroll() > 0.0f, "selecting the last row scrolls it into view");
+            list.setSelectedIndex (-1, juce::dontSendNotification);
+            expectEquals (list.getSelectedIndex(), -1);
+            list.setSelectedIndex (0, juce::sendNotificationSync);
+            expectEquals (chosen, 0);
+            expectEquals (list.getScroll(), 0.0f);
         }
 
         beginTest ("a graph with a device I/O block is never pipelined (its input pointers last one callback)");

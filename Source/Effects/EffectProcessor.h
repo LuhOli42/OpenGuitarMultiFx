@@ -197,6 +197,19 @@ public:
         std::array<juce::AudioBuffer<float>*, maxLines> lineSends {};
         uint32_t lineSendMask = 0;
         std::array<const juce::AudioBuffer<float>*, maxLines> lineOutputs {};
+
+        /** How many input / output channels the OPEN interface has, as AudioEngine last saw it when a device started
+            (-1 = no device yet). The editor reads it to list only channels that exist; any thread may read it. */
+        static void setAvailableChannels (int numInputs, int numOutputs) noexcept
+        {
+            availableInputs.store (numInputs, std::memory_order_relaxed);
+            availableOutputs.store (numOutputs, std::memory_order_relaxed);
+        }
+        static int getAvailableInputs() noexcept { return availableInputs.load (std::memory_order_relaxed); }
+        static int getAvailableOutputs() noexcept { return availableOutputs.load (std::memory_order_relaxed); }
+
+    private:
+        static inline std::atomic<int> availableInputs { -1 }, availableOutputs { -1 };
     };
 
     /** True for a block that reads or writes DeviceIo. SignalGraph then hands it its lane's DeviceIo around each
@@ -269,6 +282,10 @@ public:
     /** Editor hint: draw this stepped parameter as a row of buttons even past 8 positions, in a strip that scrolls
         sideways (SelectorSwitch) -- a list of device channels, where every name should be readable at a glance. */
     virtual bool prefersScrollingSelector (const juce::AudioParameterFloat&) const { return false; }
+
+    /** Editor hint: false leaves position `step` of a stepped parameter out of its selector -- a device channel the
+        interface open right now does not have. Polled by the editor (message thread), so it can change live. */
+    virtual bool isSelectorOptionAvailable (const juce::AudioParameterFloat&, int /*step*/) const { return true; }
 
     /** Editor hint: draw this control as a vertical fader, not a knob -- a graphic EQ's band sliders. */
     virtual bool prefersFader (const juce::AudioParameterFloat&) const { return false; }
