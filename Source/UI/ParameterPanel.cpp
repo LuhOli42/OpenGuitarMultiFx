@@ -337,6 +337,8 @@ void ParameterPanel::refresh()
                 {
                     row.selectorShownSteps = std::move (shown);
                     row.selector->setOptions (parameterPanelLayout::optionsFor (*row.param, row.selectorShownSteps));
+                    if (auto* list = dynamic_cast<ScrollListSelector*> (row.selector.get()))
+                        list->setGroups (parameterPanelLayout::groupsFor (*current, *row.param, row.selectorShownSteps));
                 }
                 row.selector->setSelectedIndex (row.shownIndexOf (v), juce::dontSendNotification);
             }
@@ -604,6 +606,8 @@ void ParameterPanel::rebuildForCurrentProcessor (int pageToPreserve)
                 row.selectorSteps = (int) std::lround ((range.end - range.start) / range.interval) + 1;
                 row.selectorShownSteps = parameterPanelLayout::availableSteps (*current, *floatParam);
                 row.selector->setOptions (parameterPanelLayout::optionsFor (*floatParam, row.selectorShownSteps));
+                if (auto* list = dynamic_cast<ScrollListSelector*> (row.selector.get()))
+                    list->setGroups (parameterPanelLayout::groupsFor (*current, *floatParam, row.selectorShownSteps));
                 row.selector->setAccentColour (effectAccent);
                 row.selector->setSelectedIndex (row.shownIndexOf (floatParam->get()), juce::dontSendNotification);
                 const double selectorStart = (double) range.start, selectorInterval = (double) range.interval;

@@ -71,6 +71,20 @@ inline juce::StringArray optionsFor (juce::AudioParameterFloat& param, const std
     return options;
 }
 
+/** Per shown step, the tab mask the processor gives it (getSelectorOptionGroups); empty when it gives none. */
+inline std::vector<int> groupsFor (const EffectProcessor& processor, const juce::AudioParameterFloat& param,
+                                   const std::vector<int>& steps)
+{
+    std::vector<int> groups;
+    bool any = false;
+    for (int step : steps)
+    {
+        groups.push_back (processor.getSelectorOptionGroups (param, step));
+        any = any || groups.back() != 0;
+    }
+    return any ? groups : std::vector<int> {};
+}
+
 inline juce::StringArray optionsFor (juce::AudioParameterFloat& param)
 {
     juce::StringArray options;
@@ -91,6 +105,7 @@ inline int selectorWidth (EffectProcessor& processor, juce::AudioParameterFloat&
     {
         ScrollListSelector list;
         list.setOptions (options);
+        list.setGroups (groupsFor (processor, param, availableSteps (processor, param)));
         return list.getPreferredWidth();
     }
     SelectorSwitch measurement;

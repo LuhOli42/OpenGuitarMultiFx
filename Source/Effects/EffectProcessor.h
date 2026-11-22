@@ -287,6 +287,10 @@ public:
         interface open right now does not have. Polled by the editor (message thread), so it can change live. */
     virtual bool isSelectorOptionAvailable (const juce::AudioParameterFloat&, int /*step*/) const { return true; }
 
+    /** Editor hint for a scrolling selector: which tab(s) position `step` is listed under -- bit 0 = "Stereo", bit 1 =
+        "Mono", bit 2 = "Line" (several bits = shown in several tabs). 0 for every step (the default) = no tabs. */
+    virtual int getSelectorOptionGroups (const juce::AudioParameterFloat&, int /*step*/) const { return 0; }
+
     /** Editor hint: draw this control as a vertical fader, not a knob -- a graphic EQ's band sliders. */
     virtual bool prefersFader (const juce::AudioParameterFloat&) const { return false; }
 
